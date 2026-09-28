@@ -18,8 +18,12 @@ const brightGold = Color(0xFFFFD700);
 const backendBaseUrl = String.fromEnvironment(
   'BACKEND_BASE_URL',
   defaultValue:'https://pgnt-asian-backend.onrender.com',
-const pageBg = Color(0xFFF8F5F0);
+const backendBaseUrl = String.fromEnvironment(
+  'BACKEND_BASE_URL',
+  defaultValue: 'https://pgnt-asian-backend.onrender.com',
+);
 
+const pageBg = Color(0xFFF8F5F0);
 class TopUpRecord {
   final String country;
   final String phone;
