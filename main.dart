@@ -17,7 +17,7 @@ const brightGold = Color(0xFFFFD700);
 // flutter build apk --dart-define=BACKEND_BASE_URL=https://api.example.com
 const backendBaseUrl = String.fromEnvironment(
   'BACKEND_BASE_URL',
-  defaultValue: defaultValue: 'https://pgnt-asian-backend.onrender.com',
+  defaultValue:'https://pgnt-asian-backend.onrender.com',
 const pageBg = Color(0xFFF8F5F0);
 
 class TopUpRecord {
