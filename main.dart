@@ -20,7 +20,6 @@ const backendBaseUrl = String.fromEnvironment(
   defaultValue:'https://pgnt-asian-backend.onrender.com',
 const backendBaseUrl = String.fromEnvironment(
   'BACKEND_BASE_URL',
-  defaultValue: 'https://pgnt-asian-backend.onrender.com',
 );
 
 const pageBg = Color(0xFFF8F5F0);
