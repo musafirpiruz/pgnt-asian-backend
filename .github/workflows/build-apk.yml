@@ -1,0 +1,41 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Flutter Android project
+        run: |
+          flutter create --platforms=android --project-name pgnt_asian build_app
+          cp main.dart build_app/lib/main.dart
+          cp pubspec.yaml build_app/pubspec.yaml
+
+      - name: Get dependencies
+        working-directory: build_app
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: build_app
+        run: flutter build apk --release --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgnt-asian-topup-apk
+          path: build_app/build/app/outputs/flutter-apk/app-release.apk
