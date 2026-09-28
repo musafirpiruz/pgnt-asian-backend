@@ -12,12 +12,9 @@ void main() {
 const primaryRed = Color(0xFF7A0C10);
 const gold = Color(0xFFD4B896);
 const brightGold = Color(0xFFFFD700);
-
-// Set this when building the app, for example:
-// flutter build apk --dart-define=BACKEND_BASE_URL=https://api.example.com
 const backendBaseUrl = String.fromEnvironment(
   'BACKEND_BASE_URL',
-  defaultValue:'https://pgnt-asian-backend.onrender.com',
+  defaultValue: 'https://pgnt-asian-backend.onrender.com',
 );
 const pageBg = Color(0xFFF8F5F0);
 class TopUpRecord {
