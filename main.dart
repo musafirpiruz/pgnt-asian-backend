@@ -148,18 +148,19 @@ class _HomePageState extends State<HomePage> {
   String country = 'Afghanistan';
   String operator = 'Auto Detect';
 
+  final TextEditingController phoneController =
+      TextEditingController();
+
   int? selectedAmount;
 
-  final phoneController = TextEditingController();
-
-  final countries = const [
+  final List<String> countries = const [
     'Afghanistan',
     'Pakistan',
     'Bangladesh',
     'India',
   ];
 
-  final languages = const [
+  final List<String> languages = const [
     'پښتو',
     'دری',
     'اردو',
@@ -174,8 +175,62 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  List<String> get operators {
+    switch (country) {
+      case 'Afghanistan':
+        return const [
+          'Auto Detect',
+          'Roshan',
+          'Etisalat',
+          'MTN',
+          'AWCC',
+        ];
+      case 'Pakistan':
+        return const [
+          'Auto Detect',
+          'Jazz',
+          'Zong',
+          'Ufone',
+          'Telenor',
+        ];
+      case 'Bangladesh':
+        return const [
+          'Auto Detect',
+          'Grameenphone',
+          'Robi',
+          'Banglalink',
+        ];
+      case 'India':
+        return const [
+          'Auto Detect',
+          'Airtel',
+          'Jio',
+          'Vi',
+        ];
+      default:
+        return const ['Auto Detect'];
+    }
+  }
+
+  List<int> get amounts {
+    switch (country) {
+      case 'Afghanistan':
+        return const [100, 250, 500, 1000];
+      case 'Pakistan':
+        return const [100, 250, 500, 1000];
+      case 'Bangladesh':
+        return const [100, 250, 500, 1000];
+      case 'India':
+        return const [100, 250, 500, 1000];
+      default:
+        return const [100, 250, 500, 1000];
+    }
+  }
+
   String get currency {
     switch (country) {
+      case 'Afghanistan':
+        return 'AFN';
       case 'Pakistan':
         return 'PKR';
       case 'Bangladesh':
@@ -189,6 +244,8 @@ class _HomePageState extends State<HomePage> {
 
   String get countryFlag {
     switch (country) {
+      case 'Afghanistan':
+        return '🇦🇫';
       case 'Pakistan':
         return '🇵🇰';
       case 'Bangladesh':
@@ -196,66 +253,32 @@ class _HomePageState extends State<HomePage> {
       case 'India':
         return '🇮🇳';
       default:
-        return '🇦🇫';
+        return '🌏';
     }
   }
-
-  List<String> get operators {
-    switch (country) {
-      case 'Pakistan':
-        return [
-          'Auto Detect',
-          'Jazz',
-          'Zong',
-          'Ufone',
-          'Telenor',
-        ];
-      case 'Bangladesh':
-        return [
-          'Auto Detect',
-          'Grameenphone',
-          'Robi',
-          'Banglalink',
-        ];
-      case 'India':
-        return [
-          'Auto Detect',
-          'Airtel',
-          'Jio',
-          'Vi',
-        ];
-      default:
-        return [
-          'Auto Detect',
-          'Roshan',
-          'Etisalat',
-          'MTN',
-          'AWCC',
-        ];
-    }
-  }
-
-  List<int> get amounts {
-    switch (country) {
-      case 'Afghanistan':
-        return [100, 250, 500, 1000];
-      default:
-        return [100, 250, 500, 1000];
-    }
-  }
-
-  double get fee => 0.75;
 
   bool get validPhone {
-    final number = phoneController.text
-        .trim()
-        .replaceAll(RegExp(r'\D'), '');
+    final digits =
+        phoneController.text.replaceAll(RegExp(r'\D'), '');
 
-    return number.length >= 7;
+    switch (country) {
+      case 'Afghanistan':
+        return digits.length >= 9 && digits.length <= 10;
+      case 'Pakistan':
+        return digits.length >= 10 && digits.length <= 11;
+      case 'Bangladesh':
+        return digits.length >= 10 && digits.length <= 11;
+      case 'India':
+        return digits.length >= 10 && digits.length <= 12;
+      default:
+        return digits.length >= 8;
+    }
   }
 
   double get selectedEuroPrice {
-    if (selectedAmount == null) return 0;
+    if (selectedAmount == null) {
+      return 0;
+    }
 
     if (country == 'Afghanistan') {
       switch (selectedAmount) {
@@ -270,7 +293,28 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    return 0;
+    // Temporary display conversion for the other countries.
+    // The final production rate should come from the backend.
+    switch (selectedAmount) {
+      case 100:
+        return 1.64;
+      case 250:
+        return 3.89;
+      case 500:
+        return 7.49;
+      case 1000:
+        return 14.29;
+      default:
+        return 0;
+    }
+  }
+
+  double get fee {
+    if (selectedAmount == null) {
+      return 0;
+    }
+
+    return selectedEuroPrice * 0.02;
   }
 
   int get bonusAmount {
@@ -278,7 +322,11 @@ class _HomePageState extends State<HomePage> {
       return 0;
     }
 
-    switch (selectedAmount) {
+    return _bonusFor(selectedAmount!);
+  }
+
+  int _bonusFor(int amount) {
+    switch (amount) {
       case 100:
         return 10;
       case 250:
@@ -292,12 +340,16 @@ class _HomePageState extends State<HomePage> {
 
   void continueTopUp() {
     if (!validPhone) {
-      _showMessage('مهرباني وکړئ د موبایل صحیح شمېره دننه کړئ.');
+      _showMessage(
+        'مهرباني وکړئ د موبایل صحیح شمېره دننه کړئ.',
+      );
       return;
     }
 
     if (selectedAmount == null) {
-      _showMessage('مهرباني وکړئ مقدار انتخاب کړئ.');
+      _showMessage(
+        'مهرباني وکړئ مقدار انتخاب کړئ.',
+      );
       return;
     }
 
@@ -341,7 +393,12 @@ class _HomePageState extends State<HomePage> {
       builder: (_) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+            padding: const EdgeInsets.fromLTRB(
+              20,
+              10,
+              20,
+              30,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -363,39 +420,37 @@ class _HomePageState extends State<HomePage> {
                 const Text(
                   '€24.50',
                   style: TextStyle(
-                    fontSize: 34,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w900,
+                    color: primaryRed,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '2% بونس فعال',
+                  style: TextStyle(
+                    color: Colors.green,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '2% بونس فعال',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'Wallet کې پیسې وساته او 2% اضافه بونس وګټه.',
+                  'Wallet کې پیسې وساته او 2% اضافه بونس وګټه',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _showMessage(
-                        'د Wallet اضافه کولو برخه به د Payment سیستم سره وصل شي.',
-                      );
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('پیسې اضافه کړئ'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: primaryRed,
-                      minimumSize: const Size.fromHeight(52),
-                    ),
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _showMessage(
+                      'Wallet top-up به په راتلونکې نسخه کې فعال شي.',
+                    );
+                  },
+                  icon: const Icon(
+                    Icons.add,
+                  ),
+                  label: const Text(
+                    'پیسې اضافه کړئ',
                   ),
                 ),
               ],
@@ -414,18 +469,28 @@ class _HomePageState extends State<HomePage> {
       builder: (_) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+            padding: const EdgeInsets.fromLTRB(
+              20,
+              10,
+              20,
+              30,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const Icon(
+                  Icons.card_giftcard,
+                  color: primaryRed,
+                  size: 48,
+                ),
+                const SizedBox(height: 10),
                 const Text(
                   'شیر کړئ او 50 AFN بونس ترلاسه کړئ',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
                     color: primaryRed,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -434,41 +499,15 @@ class _HomePageState extends State<HomePage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 18),
-                Container(
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: gold),
-                  ),
-                  child: const Text(
-                    'PGNT ASIAN TOP UP\n'
-                    'https://pgnt-asian.com/ref',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
                 FilledButton.icon(
                   onPressed: () {
-                    Clipboard.setData(
-                      const ClipboardData(
-                        text: 'PGNT ASIAN TOP UP - PGNT VIP Rewards',
-                      ),
-                    );
-
                     Navigator.pop(context);
-
-                    _showMessage('Referral معلومات Copy شول.');
+                    _showMessage(
+                      'د Share سیستم به د Referral backend سره فعال شي.',
+                    );
                   },
                   icon: const Icon(Icons.share),
-                  label: const Text('له ملګرو سره شریک کړئ'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: primaryRed,
-                    minimumSize: const Size.fromHeight(52),
-                  ),
+                  label: const Text('شریک کړئ'),
                 ),
               ],
             ),
@@ -519,7 +558,12 @@ class _HomePageState extends State<HomePage> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+          padding: const EdgeInsets.fromLTRB(
+            16,
+            14,
+            16,
+            28,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -562,7 +606,8 @@ class _HomePageState extends State<HomePage> {
                       SizedBox(width: 14),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           children: [
                             Text(
                               'زما والټ',
@@ -585,7 +630,8 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                        crossAxisAlignment:
+                            CrossAxisAlignment.end,
                         children: [
                           Text(
                             '2% بونس فعال',
@@ -623,14 +669,16 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.all(12),
                     child: Text(
                       countryFlag,
-                      style: const TextStyle(fontSize: 23),
+                      style: const TextStyle(
+                        fontSize: 23,
+                      ),
                     ),
                   ),
                   labelText: 'Country',
                 ),
                 items: countries
                     .map(
-                      (item) => DropdownMenuItem(
+                      (item) => DropdownMenuItem<String>(
                         value: item,
                         child: Text(item),
                       ),
@@ -657,6 +705,11 @@ class _HomePageState extends State<HomePage> {
               TextField(
                 controller: phoneController,
                 keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(
+                    RegExp(r'[0-9+ ]'),
+                  ),
+                ],
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   prefixIcon: const Icon(
@@ -683,7 +736,9 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 8),
 
               DropdownButtonFormField<String>(
-                value: operator,
+                value: operators.contains(operator)
+                    ? operator
+                    : 'Auto Detect',
                 decoration: const InputDecoration(
                   prefixIcon: Icon(
                     Icons.sim_card,
@@ -692,7 +747,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 items: operators
                     .map(
-                      (item) => DropdownMenuItem(
+                      (item) => DropdownMenuItem<String>(
                         value: item,
                         child: Text(item),
                       ),
@@ -710,17 +765,19 @@ class _HomePageState extends State<HomePage> {
               const _SectionTitle(
                 title: 'مقدار انتخاب او واستوئ',
               ),
-              const SizedBox(height:10),
+              const SizedBox(height: 10),
 
               GridView.count(
                 crossAxisCount: 2,
                 shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
+                physics:
+                    const NeverScrollableScrollPhysics(),
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
                 childAspectRatio: 2.25,
                 children: amounts.map((amount) {
-                  final selected = selectedAmount == amount;
+                  final selected =
+                      selectedAmount == amount;
 
                   return InkWell(
                     onTap: () {
@@ -728,14 +785,17 @@ class _HomePageState extends State<HomePage> {
                         selectedAmount = amount;
                       });
                     },
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius:
+                        BorderRadius.circular(16),
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
+                      duration:
+                          const Duration(milliseconds: 180),
                       decoration: BoxDecoration(
                         color: selected
                             ? brightGold
                             : Colors.white,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius:
+                            BorderRadius.circular(16),
                         border: Border.all(
                           color: selected
                               ? primaryRed
@@ -752,7 +812,8 @@ class _HomePageState extends State<HomePage> {
                               '$amount $currency',
                               style: TextStyle(
                                 fontSize: 17,
-                                fontWeight: FontWeight.w900,
+                                fontWeight:
+                                    FontWeight.w900,
                                 color: selected
                                     ? primaryRed
                                     : Colors.black87,
@@ -764,7 +825,8 @@ class _HomePageState extends State<HomePage> {
                                 '+${_bonusFor(amount)} BONUS',
                                 style: const TextStyle(
                                   fontSize: 11,
-                                  fontWeight: FontWeight.w800,
+                                  fontWeight:
+                                      FontWeight.w800,
                                   color: primaryRed,
                                 ),
                               ),
@@ -793,16 +855,19 @@ class _HomePageState extends State<HomePage> {
                 style: FilledButton.styleFrom(
                   backgroundColor: primaryRed,
                   foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(58),
+                  minimumSize:
+                      const Size.fromHeight(58),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius:
+                        BorderRadius.circular(16),
                   ),
                 ),
                 child: Text(
                   selectedAmount == null
                       ? 'ټاپ اپ واستوئ • €0.00'
                       : 'ټاپ اپ واستوئ',
-                  style: const TextStyle(
+                  style: const
+                  TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
                   ),
@@ -825,10 +890,12 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52),
+                  minimumSize:
+                      const Size.fromHeight(52),
                   side: const BorderSide(color: gold),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
+                    borderRadius:
+                        BorderRadius.circular(15),
                   ),
                 ),
               ),
@@ -864,7 +931,9 @@ class _HomePageState extends State<HomePage> {
 
               OutlinedButton.icon(
                 onPressed: showHistory,
-                icon: const Icon(Icons.receipt_long),
+                icon: const Icon(
+                  Icons.receipt_long,
+                ),
                 label: const Text(
                   'Transaction History',
                   style: TextStyle(
@@ -872,7 +941,8 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
+                  minimumSize:
+                      const Size.fromHeight(50),
                 ),
               ),
 
@@ -917,8 +987,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 5),
 
               const Text(
-                '4.9★ • 10s
-                Delivery • 24/7 Support',
+                '4.9★ • 10s Delivery • 24/7 Support',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: primaryRed,
@@ -942,19 +1011,6 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
-  }
-
-  int _bonusFor(int amount) {
-    switch (amount) {
-      case 100:
-        return 10;
-      case 250:
-        return 35;
-      case 500:
-        return 80;
-      default:
-        return 0;
-    }
   }
 }
 
@@ -987,7 +1043,8 @@ class _VipHeader extends StatelessWidget {
             height: 65,
             decoration: BoxDecoration(
               color: brightGold,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius:
+                  BorderRadius.circular(18),
             ),
             child: const Center(
               child: Text(
@@ -1003,7 +1060,8 @@ class _VipHeader extends StatelessWidget {
           const SizedBox(width: 14),
           const Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
               children: [
                 Text(
                   'PGNT ASIAN',
@@ -1064,7 +1122,8 @@ class _PriceCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: beige,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(16),
           border: Border.all(color: gold),
         ),
         child: const Row(
@@ -1076,7 +1135,7 @@ class _PriceCard extends StatelessWidget {
             SizedBox(width: 10),
             Expanded(
               child: Text(
-                  'مقدار انتخاب کړئ تر څو قیمت ښکاره شي.',
+                'مقدار انتخاب کړئ تر څو قیمت ښکاره شي.',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                 ),
@@ -1091,7 +1150,8 @@ class _PriceCard extends StatelessWidget {
       padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: beige,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius:
+            BorderRadius.circular(18),
         border: Border.all(
           color: gold,
         ),
@@ -1209,7 +1269,8 @@ class _SecurityItem extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius:
+            BorderRadius.circular(14),
         border: Border.all(color: gold),
       ),
       child: Column(
@@ -1258,8 +1319,7 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-//
-============================================================
+// ============================================================
 // CHECKOUT PAGE
 // ============================================================
 
@@ -1269,7 +1329,8 @@ class CheckoutPage extends StatefulWidget {
   final int amount;
   final String currency;
   final double fee;
-  final ValueChanged<TopUpRecord> onCompleted;
+  final
+   ValueChanged<TopUpRecord> onCompleted;
 
   const CheckoutPage({
     super.key,
@@ -1282,15 +1343,21 @@ class CheckoutPage extends StatefulWidget {
   });
 
   @override
-  State<CheckoutPage> createState() => _CheckoutPageState();
+  State<CheckoutPage> createState() =>
+      _CheckoutPageState();
 }
 
-class _CheckoutPageState extends State<CheckoutPage> {
+class _CheckoutPageState
+    extends State<CheckoutPage> {
   bool processing = false;
 
   Future<void> startStripeCheckout() async {
-    if (backendBaseUrl.contains('YOUR-BACKEND-DOMAIN')) {
-      _showError('Backend URL is not configured yet.');
+    if (backendBaseUrl.contains(
+      'YOUR-BACKEND-DOMAIN',
+    )) {
+      _showError(
+        'Backend URL is not configured yet.',
+      );
       return;
     }
 
@@ -1306,7 +1373,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
-              'country': _countryCode(widget.country),
+              'country':
+                  _countryCode(widget.country),
               'phone': widget.phone,
               'amount': widget.amount,
             }),
@@ -1316,7 +1384,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
           );
 
       final data =
-          jsonDecode(response.body) as Map<String, dynamic>;
+          jsonDecode(response.body)
+              as Map<String, dynamic>;
 
       if (response.statusCode < 200 ||
           response.statusCode >= 300) {
@@ -1351,6 +1420,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
 
       if (!mounted) return;
+
+      // IMPORTANT:
+      // Opening Stripe Checkout is NOT proof of payment.
+      // The verified Stripe webhook on the backend is
+      // the authoritative payment confirmation.
+      widget.onCompleted(
+        TopUpRecord(
+          country: widget.country,
+          phone: widget.phone,
+          amount: widget.amount,
+          fee: widget.fee,
+          date: DateTime.now(),
+          status: 'Stripe Checkout opened',
+        ),
+      );
 
       await showDialog(
         context: context,
@@ -1400,7 +1484,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
       case 'India':
         return 'IN';
       default:
-        return country.substring(0, 2).toUpperCase();
+        return country
+            .substring(
+              0,
+              country.length >= 2
+                  ? 2
+                  : country.length,
+            )
+            .toUpperCase();
     }
   }
 
@@ -1476,7 +1567,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
               style: FilledButton.styleFrom(
                 backgroundColor: primaryRed,
                 minimumSize:
-                    const Size.fromHeight(56),
+                    const
+                Size.fromHeight(56),
               ),
               child: processing
                   ? const SizedBox(
@@ -1517,7 +1609,7 @@ class _SummaryRow extends StatelessWidget {
   });
 
   @override
-Widget build(BuildContext context) {
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(
         vertical: 14,
@@ -1619,7 +1711,7 @@ class HistoryPage extends StatelessWidget {
                     leading: const CircleAvatar(
                       backgroundColor: primaryRed,
                       child: Icon(
-                        Icons.check,
+                        Icons.receipt_long,
                         color: Colors.white,
                       ),
                     ),
@@ -1648,4 +1740,4 @@ class HistoryPage extends StatelessWidget {
             ),
     );
   }
-}    
+}
