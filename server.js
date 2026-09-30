@@ -180,7 +180,150 @@ app.get("/health", async (_req, res) => {
     database,
   });
 });
+/*
+ * ADMIN SETTINGS
+ * Fee / Bonus / Fixed Fee control
+ */
 
+function requireAdmin(req, res, next) {
+  const adminKey = process.env.ADMIN_API_KEY;
+
+  if (!adminKey) {
+    return res.status(503).json({
+      error: "ADMIN_API_KEY is not configured",
+    });
+  }
+
+  const providedKey = req.headers["x-admin-key"];
+
+  if (!providedKey || providedKey !== adminKey) {
+    return res.status(401).json({
+      error: "Unauthorized",
+    });
+  }
+
+  next();
+}
+
+/*
+ * GET ADMIN SETTINGS
+ */
+app.get(
+  "/api/admin/settings",
+  requireAdmin,
+  async (_req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          fee_percent,
+          bonus_percent,
+          fixed_fee_cents,
+          updated_at
+        FROM app_settings
+        WHERE id = 1
+        LIMIT 1
+      `);
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "Settings not found",
+        });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Admin settings read error:", err);
+
+      return res.status(500).json({
+        error: "Unable to read admin settings",
+      });
+    }
+  }
+);
+
+/*
+ * UPDATE ADMIN SETTINGS
+ */
+app.put(
+  "/api/admin/settings",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const {
+        feePercent,
+        bonusPercent,
+        fixedFeeCents,
+      } = req.body || {};
+
+      const fee = Number(feePercent);
+      const bonus = Number(bonusPercent);
+      const fixedFee = Number(fixedFeeCents);
+
+      if (
+        !Number.isFinite(fee) ||
+        !Number.isFinite(bonus) ||
+        !Number.isInteger(fixedFee)
+      ) {
+        return res.status(400).json({
+          error: "Invalid fee, bonus or fixed fee",
+        });
+      }
+
+      if (fee < 0 || fee > 100) {
+        return res.status(400).json({
+          error: "feePercent must be between 0 and 100",
+        });
+      }
+
+      if (bonus < 0 || bonus > 100) {
+        return res.status(400).json({
+          error: "bonusPercent must be between 0 and 100",
+        });
+      }
+
+      if (fixedFee < 0) {
+        return res.status(400).json({
+          error: "fixedFeeCents cannot be negative",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE app_settings
+        SET
+          fee_percent = $1,
+          bonus_percent = $2,
+          fixed_fee_cents = $3,
+          updated_at = NOW()
+        WHERE id = 1
+        RETURNING
+          fee_percent,
+          bonus_percent,
+          fixed_fee_cents,
+          updated_at
+        `,
+        [fee, bonus, fixedFee]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "Settings not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+        settings: result.rows[0],
+      });
+    } catch (err) {
+      console.error("Admin settings update error:", err);
+
+      return res.status(500).json({
+        error: "Unable to update admin settings",
+      });
+    }
+  }
+);
 /*
  * CREATE STRIPE CHECKOUT
  */
