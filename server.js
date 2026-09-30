@@ -66,6 +66,29 @@ async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_orders_phone
     ON orders(phone);
   `);
+    /*
+   * Admin settings
+   */
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id INTEGER PRIMARY KEY,
+      fee_percent NUMERIC NOT NULL DEFAULT 0,
+      bonus_percent NUMERIC NOT NULL DEFAULT 0,
+      fixed_fee_cents INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    INSERT INTO app_settings (
+      id,
+      fee_percent,
+      bonus_percent,
+      fixed_fee_cents
+    )
+    VALUES (1, 0, 0, 0)
+    ON CONFLICT (id) DO NOTHING;
+  `);
 
   console.log("PostgreSQL database ready.");
 }
