@@ -475,10 +475,6 @@ app.put(
  * The final Stripe price is controlled by the server.
  *
  * Flutter sends:
- *   country
- *   phone
- *   amount
- *   productId
  *
  * Flutter does NOT control:
  *   product price
