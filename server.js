@@ -470,6 +470,21 @@ app.put(
 );
 /*
  * CREATE STRIPE CHECKOUT
+ *
+ * IMPORTANT:
+ * The final Stripe price is controlled by the server.
+ *
+ * Flutter sends:
+ *   country
+ *   phone
+ *   amount
+ *   productId
+ *
+ * Flutter does NOT control:
+ *   product price
+ *   fee
+ *   fixed fee
+ *   final Stripe charge
  */
 app.post("/api/payments/checkout", async (req, res) => {
   try {
@@ -478,10 +493,11 @@ app.post("/api/payments/checkout", async (req, res) => {
       phone,
       amount,
       productId,
-      totalChargeEurCents,
-      currency = "eur",
     } = req.body || {};
 
+    /*
+     * Basic validation
+     */
     if (!country || !phone || !amount || !productId) {
       return res.status(400).json({
         error:
@@ -489,18 +505,13 @@ app.post("/api/payments/checkout", async (req, res) => {
       });
     }
 
-    if (!/^[0-9+][0-9\s-]{6,20}$/.test(String(phone))) {
+    if (
+      !/^[0-9+][0-9\s-]{6,20}$/.test(
+        String(phone)
+      )
+    ) {
       return res.status(400).json({
         error: "Invalid phone number",
-      });
-    }
-
-    const charge = Number(totalChargeEurCents);
-
-    if (!Number.isInteger(charge) || charge < 100) {
-      return res.status(400).json({
-        error:
-          "totalChargeEurCents must be a valid integer in cents",
       });
     }
 
@@ -510,11 +521,160 @@ app.post("/api/payments/checkout", async (req, res) => {
       });
     }
 
-    const orderId = crypto.randomUUID();
+    const numericProductId = Number(productId);
+
+    if (
+      !Number.isInteger(numericProductId) ||
+      numericProductId <= 0
+    ) {
+      return res.status(400).json({
+        error: "Invalid productId",
+      });
+    }
 
     /*
-     * Create the order BEFORE Stripe Checkout.
+     * ------------------------------------------------
+     * 1. GET PRODUCT PRICE FROM DATABASE
+     * ------------------------------------------------
+     *
+     * This price is controlled by Admin.
      */
+    const priceResult = await pool.query(
+      `
+      SELECT
+        product_id,
+        price_cents,
+        currency
+      FROM product_prices
+      WHERE product_id = $1
+      LIMIT 1
+      `,
+      [numericProductId]
+    );
+
+    if (priceResult.rows.length === 0) {
+      return res.status(400).json({
+        error:
+          "Product price is not configured",
+      });
+    }
+
+    const productPrice =
+      priceResult.rows[0];
+
+    const basePriceCents = Number(
+      productPrice.price_cents
+    );
+
+    const currency = String(
+      productPrice.currency || "eur"
+    ).toLowerCase();
+
+    if (
+      !Number.isInteger(basePriceCents) ||
+      basePriceCents <= 0
+    ) {
+      return res.status(400).json({
+        error:
+          "Invalid product price",
+      });
+    }
+
+    /*
+     * ------------------------------------------------
+     * 2. GET ADMIN FEE / BONUS SETTINGS
+     * ------------------------------------------------
+     */
+    const settingsResult =
+      await pool.query(
+        `
+        SELECT
+          fee_percent,
+          bonus_percent,
+          fixed_fee_cents
+        FROM app_settings
+        WHERE id = 1
+        LIMIT 1
+        `
+      );
+
+    if (settingsResult.rows.length === 0) {
+      return res.status(500).json({
+        error:
+          "Admin settings are not configured",
+      });
+    }
+
+    const settings =
+      settingsResult.rows[0];
+
+    const feePercent = Number(
+      settings.fee_percent
+    );
+
+    const bonusPercent = Number(
+      settings.bonus_percent
+    );
+
+    const fixedFeeCents = Number(
+      settings.fixed_fee_cents
+    );
+
+    if (
+      !Number.isFinite(feePercent) ||
+      !Number.isFinite(bonusPercent) ||
+      !Number.isInteger(fixedFeeCents)
+    ) {
+      return res.status(500).json({
+        error:
+          "Invalid admin settings",
+      });
+    }
+
+    /*
+     * ------------------------------------------------
+     * 3. CALCULATE CUSTOMER PAYMENT
+     * ------------------------------------------------
+     *
+     * Customer payment:
+     *
+     * Product Price
+     * + Percentage Fee
+     * + Fixed Fee
+     *
+     * Bonus is NOT charged to the customer.
+     */
+    const percentageFeeCents =
+      Math.round(
+        basePriceCents *
+          (feePercent / 100)
+      );
+
+    const finalChargeCents =
+      basePriceCents +
+      percentageFeeCents +
+      fixedFeeCents;
+
+    if (
+      !Number.isInteger(
+        finalChargeCents
+      ) ||
+      finalChargeCents < 100
+    ) {
+      return res.status(400).json({
+        error:
+          "Final charge is invalid",
+      });
+    }
+
+    /*
+     * ------------------------------------------------
+     * 4. CREATE ORDER
+     * ------------------------------------------------
+     */
+    const orderId =
+      crypto.randomUUID();
+
     await pool.query(
       `
       INSERT INTO orders (
@@ -527,101 +687,174 @@ app.post("/api/payments/checkout", async (req, res) => {
         charge_cents,
         status
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'pending')
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        'pending'
+      )
       `,
       [
         orderId,
         String(country),
         String(phone),
         Number(amount),
-        Number(productId),
-        String(currency).toLowerCase(),
-        charge,
+        numericProductId,
+        currency,
+        finalChargeCents,
       ]
     );
 
+    /*
+     * ------------------------------------------------
+     * 5. CREATE STRIPE CHECKOUT
+     * ------------------------------------------------
+     */
     let session;
 
     try {
-      session = await stripe.checkout.sessions.create({
-        mode: "payment",
+      session =
+        await stripe.checkout.sessions.create({
+          mode: "payment",
 
-        line_items: [
-          {
-            price_data: {
-              currency: String(currency).toLowerCase(),
+          line_items: [
+            {
+              price_data: {
+                currency,
 
-              product_data: {
-                name: `PGNT ASIAN mobile top-up (${country})`,
+                product_data: {
+                  name:
+                    `PGNT ASIAN mobile top-up (${country})`,
+                },
+
+                /*
+                 * IMPORTANT:
+                 * Stripe receives the price
+                 * calculated by our server.
+                 */
+                unit_amount:
+                  finalChargeCents,
               },
 
-              unit_amount: charge,
+              quantity: 1,
             },
+          ],
 
-            quantity: 1,
+          client_reference_id:
+            orderId,
+
+          metadata: {
+            orderId,
+            country: String(country),
+            phone: String(phone),
+            amount: String(amount),
+            productId:
+              String(numericProductId),
+
+            basePriceCents:
+              String(basePriceCents),
+
+            feePercent:
+              String(feePercent),
+
+            bonusPercent:
+              String(bonusPercent),
+
+            fixedFeeCents:
+              String(fixedFeeCents),
+
+            finalChargeCents:
+              String(finalChargeCents),
           },
-        ],
 
-        client_reference_id: orderId,
+          success_url:
+            `${process.env.APP_BASE_URL}` +
+            `/payment-success?session_id={CHECKOUT_SESSION_ID}`,
 
-        metadata: {
-          orderId,
-          country: String(country),
-          phone: String(phone),
-          amount: String(amount),
-          productId: String(productId),
-        },
-
-        success_url:
-          `${process.env.APP_BASE_URL}` +
-          `/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-
-        cancel_url:
-          `${process.env.APP_BASE_URL}` +
-          `/payment-cancelled`,
-      });
+          cancel_url:
+            `${process.env.APP_BASE_URL}` +
+            `/payment-cancelled`,
+        });
     } catch (stripeError) {
+      /*
+       * Stripe failed.
+       * Keep the order for Admin review.
+       */
       await pool.query(
         `
         UPDATE orders
-        SET status = 'checkout_failed',
-            error_message = $1,
-            updated_at = NOW()
+        SET
+          status = 'checkout_failed',
+          error_message = $1,
+          updated_at = NOW()
         WHERE order_id = $2
         `,
-        [stripeError.message, orderId]
+        [
+          stripeError.message,
+          orderId,
+        ]
       );
 
       throw stripeError;
     }
 
     /*
-     * Save Stripe session ID.
+     * ------------------------------------------------
+     * 6. SAVE STRIPE SESSION ID
+     * ------------------------------------------------
      */
     await pool.query(
       `
       UPDATE orders
-      SET stripe_session_id = $1,
-          updated_at = NOW()
+      SET
+        stripe_session_id = $1,
+        updated_at = NOW()
       WHERE order_id = $2
       `,
-      [session.id, orderId]
+      [
+        session.id,
+        orderId,
+      ]
     );
 
+    /*
+     * ------------------------------------------------
+     * 7. RETURN CHECKOUT URL
+     * ------------------------------------------------
+     */
     return res.json({
       orderId,
-      checkoutSessionId: session.id,
-      checkoutUrl: session.url,
+      checkoutSessionId:
+        session.id,
+      checkoutUrl:
+        session.url,
+
+      pricing: {
+        basePriceCents,
+        feePercent,
+        bonusPercent,
+        fixedFeeCents,
+        finalChargeCents,
+        currency,
+      },
     });
+
   } catch (err) {
-    console.error("Stripe checkout error:", err);
+    console.error(
+      "Stripe checkout error:",
+      err
+    );
 
     return res.status(500).json({
-      error: "Unable to create checkout session",
+      error:
+        "Unable to create checkout session",
     });
   }
 });
-
 /*
  * GET PAYMENT SESSION
  */
