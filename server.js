@@ -261,7 +261,130 @@ app.get(
     }
   }
 );
+/*
+ * GET PRODUCT PRICE
+ * Admin can view a product price
+ */
+app.get(
+  "/api/admin/product-prices/:productId",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const productId = Number(req.params.productId);
 
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({
+          error: "Invalid productId",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT
+          product_id,
+          price_cents,
+          currency,
+          updated_at
+        FROM product_prices
+        WHERE product_id = $1
+        LIMIT 1
+        `,
+        [productId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "Product price not found",
+        });
+      }
+
+      return res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Product price read error:", err);
+
+      return res.status(500).json({
+        error: "Unable to read product price",
+      });
+    }
+  }
+);
+
+/*
+ * SET PRODUCT PRICE
+ * Admin controls the price
+ */
+app.put(
+  "/api/admin/product-prices/:productId",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const productId = Number(req.params.productId);
+      const priceCents = Number(req.body?.priceCents);
+      const currency = String(
+        req.body?.currency || "eur"
+      ).toLowerCase();
+
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({
+          error: "Invalid productId",
+        });
+      }
+
+      if (
+        !Number.isInteger(priceCents) ||
+        priceCents < 1
+      ) {
+        return res.status(400).json({
+          error: "priceCents must be a positive integer",
+        });
+      }
+
+      if (!/^[a-z]{3}$/.test(currency)) {
+        return res.status(400).json({
+          error: "Invalid currency",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        INSERT INTO product_prices (
+          product_id,
+          price_cents,
+          currency,
+          updated_at
+        )
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (product_id)
+        DO UPDATE SET
+          price_cents = EXCLUDED.price_cents,
+          currency = EXCLUDED.currency,
+          updated_at = NOW()
+        RETURNING
+          product_id,
+          price_cents,
+          currency,
+          updated_at
+        `,
+        [
+          productId,
+          priceCents,
+          currency,
+        ]
+      );
+
+      return res.json({
+        success: true,
+        product: result.rows[0],
+      });
+    } catch (err) {
+      console.error("Product price update error:", err);
+
+      return res.status(500).json({
+        error: "Unable to update product price",
+      });
+    }
+  }
+);
 /*
  * UPDATE ADMIN SETTINGS
  */
