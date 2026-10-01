@@ -186,24 +186,33 @@ app.get("/health", async (_req, res) => {
  */
 
 function requireAdmin(req, res, next) {
-  const adminKey = process.env.ADMIN_API_KEY;
+  const adminKey = String(process.env.ADMIN_API_KEY || "").trim();
+  const providedKey = String(req.headers["x-admin-key"] || "").trim();
 
   if (!adminKey) {
+    console.error("ADMIN_API_KEY is missing on server.");
+
     return res.status(503).json({
       error: "ADMIN_API_KEY is not configured",
     });
   }
 
-  const providedKey = req.headers["x-admin-key"];
+  if (!providedKey) {
+    return res.status(401).json({
+      error: "Admin key is required",
+    });
+  }
 
-  if (!providedKey || providedKey !== adminKey) {
+  if (providedKey !== adminKey) {
+    console.error("Admin key mismatch.");
+
     return res.status(401).json({
       error: "Unauthorized",
     });
   }
 
   next();
-}
+  }
 
 /*
  * GET ADMIN SETTINGS
