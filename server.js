@@ -89,6 +89,18 @@ async function initDatabase() {
     VALUES (1, 0, 0, 0)
     ON CONFLICT (id) DO NOTHING;
   `);
+    /*
+   * Product prices controlled by Admin
+   */
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS product_prices (
+      id BIGSERIAL PRIMARY KEY,
+      product_id BIGINT UNIQUE NOT NULL,
+      price_cents INTEGER NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'eur',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 
   console.log("PostgreSQL database ready.");
 }
