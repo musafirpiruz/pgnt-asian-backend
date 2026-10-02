@@ -365,6 +365,112 @@ async function processPaidOrder(session) {
  * Stripe webhook must receive the RAW request body.
  * Therefore this route must be BEFORE express.json().
  */
+/*
+ * DT ONE CONFIGURATION
+ */
+const DTONE_API_BASE_URL =
+  process.env.DTONE_API_BASE_URL ||
+  "https://preprod-dvs-api.dtone.com/v1";
+
+function getDtoneAuth() {
+  const apiKey = String(
+    process.env.DTONE_API_KEY || ""
+  ).trim();
+
+  const apiSecret = String(
+    process.env.DTONE_API_SECRET || ""
+  ).trim();
+
+  if (!apiKey || !apiSecret) {
+    throw new Error(
+      "DTONE_API_KEY or DTONE_API_SECRET is not configured"
+    );
+  }
+
+  return Buffer
+    .from(`${apiKey}:${apiSecret}`)
+    .toString("base64");
+}
+
+/*
+ * Create DT One mobile top-up transaction
+ *
+ * IMPORTANT:
+ * productId must be a real DT One product ID.
+ */
+async function createDtoneTopup({
+  externalId,
+  productId,
+  phone,
+  callbackUrl,
+}) {
+  const authorization =
+    getDtoneAuth();
+
+  const response = await fetch(
+    `${DTONE_API_BASE_URL}/async/transactions`,
+    {
+      method: "POST",
+
+      headers: {
+        "Authorization":
+          `Basic ${authorization}`,
+        "Content-Type":
+          "application/json",
+        "Accept":
+          "application/json",
+      },
+
+      body: JSON.stringify({
+        external_id:
+          externalId,
+
+        product_id:
+          Number(productId),
+
+        credit_party_identifier: {
+          mobile_number:
+            String(phone),
+        },
+
+        auto_confirm: true,
+
+        callback_url:
+          callbackUrl,
+      }),
+    }
+  );
+
+  const text =
+    await response.text();
+
+  let data = null;
+
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = {
+      raw: text,
+    };
+  }
+
+  if (!response.ok) {
+    const error =
+      new Error(
+        `DT One API error (${response.status})`
+      );
+
+    error.status =
+      response.status;
+
+    error.response =
+      data;
+
+    throw error;
+  }
+
+  return data;
+}
 app.post(
   "/api/stripe/webhook",
   express.raw({ type: "application/json" }),
