@@ -352,117 +352,76 @@ async function initDatabase() {
 
 app.post(
   "/api/stripe/webhook",
-
   express.raw({
     type: "application/json",
   }),
-
   async (req, res) => {
-    const signature =
-      req.headers["stripe-signature"];
+    const signature = req.headers["stripe-signature"];
 
     let event;
 
-    /*
-     * Verify Stripe signature
-     */
-
+    // Verify Stripe webhook signature
     try {
-      event =
-        stripe.webhooks.constructEvent(
-          req.body,
-          signature,
-          process.env
-            .STRIPE_WEBHOOK_SECRET
-        );
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
     } catch (err) {
       console.error(
         "Stripe webhook signature error:",
         err.message
       );
 
-      return res
-        .status(400)
-        .send(
-          `Webhook Error: ${err.message}`
-        );
+      return res.status(400).send(
+        `Webhook Error: ${err.message}`
+      );
     }
 
-    /*
-     * Process Stripe event
-     */
+    // Process completed Checkout Session
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
 
-    try {
-      if (
-        event.type ===
-        "checkout.session.completed"
-      ) {
-        const session =
-          event.data.object;
+      try {
+        // Payment must actually be paid
+        if (session.payment_status !== "paid") {
+          throw new Error(
+            "Stripe payment is not paid"
+          );
+        }
+
+        // Read Stripe metadata
+        const metadata =
+          session.metadata || {};
 
         console.log(
-          "STRIPE CHECKOUT COMPLETED:",
+          "Stripe payment verified:",
           session.id
         );
 
-        /*
-         * Payment must be completed
-         */
+        // Process the paid order
+        await processPaidOrder(session);
 
-        if (
-          session.payment_status !==
-          "paid"
-        ) {
-          return res.json({
-            received: true,
-            processed: false,
-            reason:
-              "payment_not_paid",
-          });
-        }
+        console.log(
+          "Paid order processed:",
+          session.id
+        );
+      } catch (err) {
+        console.error(
+          "Paid order processing error:",
+          err.message
+        );
 
-        /*
-         * Verify and process order.
-         */
-
-        const verifiedOrder =
-          await processPaidOrder(
-            session
-          );
-
-        /*
-         * Fulfill only once.
-         */
-
-        if (
-          verifiedOrder &&
-          !verifiedOrder.alreadyProcessed
-        ) {
-          await fulfillPaidOrder(
-            verifiedOrder
-          );
-        } else {
-          console.log(
-            "Order already processed:",
-            session.id
-          );
-        }
+        return res.status(500).json({
+          error: err.message,
+        });
       }
-
-      return res.json({
-        received: true,
-      });
-    } catch (err) {
-      console.error(
-        "Stripe webhook processing error:",
-        err
-      );
-
-      return res.status(500).json({
-        error:
-          "Webhook processing failed",
-      });
     }
+
+    // Confirm webhook received
+    return res.json({
+      received: true,
+    });
   }
 );
 
