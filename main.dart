@@ -1,410 +1,190 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
-void main() {
-  runApp(const PgntAsianApp());
-}
-
-// ============================================================
-// PGNT ASIAN TOP UP
-// Jigari Edition • VIP Premium
-// ============================================================
+void main() => runApp(const PgntAsianApp());
 
 const primaryRed = Color(0xFF7A0C10);
+const darkRed = Color(0xFF4B0508);
 const gold = Color(0xFFD4B896);
 const brightGold = Color(0xFFFFD700);
-const nukhudi = Color(0xFFFFF8E7);
-const beige = Color(0xFFF5E6C8);
-const pageBg = Color(0xFFFFF8E7);
+const cream = Color(0xFFFFF8E7);
+const green = Color(0xFF18A957);
 
 const backendBaseUrl = String.fromEnvironment(
   'BACKEND_BASE_URL',
   defaultValue: 'https://pgnt-asian-backend.onrender.com',
 );
 
-// ============================================================
-// DATA MODEL
-// ============================================================
-
 class TopUpRecord {
-  final String country;
-  final String operator;
-  final String phone;
-  final int amount;
-  final double fee;
-  final double total;
+  final String country, operator, phone, status, orderId;
+  final int amount, bonus;
+  final double price, fee, total;
   final DateTime date;
-  final String status;
 
-  TopUpRecord({
+  const TopUpRecord({
     required this.country,
     required this.operator,
     required this.phone,
+    required this.status,
+    required this.orderId,
     required this.amount,
+    required this.bonus,
+    required this.price,
     required this.fee,
     required this.total,
     required this.date,
-    required this.status,
   });
 }
-
-// ============================================================
-// APP
-// ============================================================
 
 class PgntAsianApp extends StatefulWidget {
   const PgntAsianApp({super.key});
-
-  @override
-  State<PgntAsianApp> createState() => _PgntAsianAppState();
+  @override State<PgntAsianApp> createState() => _PgntAsianAppState();
 }
 
 class _PgntAsianAppState extends State<PgntAsianApp> {
-  String language = 'پښتو';
-
+  String language = 'English';
+  double wallet = 24.50;
   final List<TopUpRecord> history = [];
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'PGNT ASIAN TOP UP',
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: pageBg,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: primaryRed,
-          primary: primaryRed,
-          secondary: brightGold,
+  Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
+    title: 'PGNT ASIAN TOPUP',
+    theme: ThemeData(
+      useMaterial3: true,
+      scaffoldBackgroundColor: cream,
+      colorScheme: ColorScheme.fromSeed(seedColor: primaryRed),
+      fontFamily: 'sans',
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: gold),
         ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: primaryRed,
-          foregroundColor: Colors.white,
-          elevation: 0,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: gold),
         ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: const BorderSide(color: gold),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: const BorderSide(color: gold),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: const BorderSide(
-              color: primaryRed,
-              width: 2,
-            ),
-          ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: primaryRed, width: 2),
         ),
       ),
-      home: HomePage(
-        language: language,
-        history: history,
-        onLanguageChanged: (value) {
-          setState(() => language = value);
-        },
-        onAddHistory: (record) {
-          setState(() {
-            history.insert(0, record);
-          });
-        },
-      ),
-    );
-  }
+    ),
+    home: HomePage(
+      language: language,
+      wallet: wallet,
+      history: history,
+      onLanguage: (v) => setState(() => language = v),
+      onWallet: (v) => setState(() => wallet = v),
+      onHistory: (r) => setState(() => history.insert(0, r)),
+    ),
+  );
 }
-
-// ============================================================
-// HOME PAGE
-// ============================================================
 
 class HomePage extends StatefulWidget {
   final String language;
+  final double wallet;
   final List<TopUpRecord> history;
-  final ValueChanged<String> onLanguageChanged;
-  final ValueChanged<TopUpRecord> onAddHistory;
+  final ValueChanged<String> onLanguage;
+  final ValueChanged<double> onWallet;
+  final ValueChanged<TopUpRecord> onHistory;
 
   const HomePage({
-    super.key,
-    required this.language,
-    required this.history,
-    required this.onLanguageChanged,
-    required this.onAddHistory,
+    super.key, required this.language, required this.wallet,
+    required this.history, required this.onLanguage,
+    required this.onWallet, required this.onHistory,
   });
 
-  @override
-  State<HomePage> createState() => _HomePageState();
+  @override State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
   String country = 'Afghanistan';
-  String operator = 'Auto Detect';
+  String operator = 'Roshan';
+  int? amount;
+  final phone = TextEditingController();
 
-  final TextEditingController phoneController =
-      TextEditingController();
+  final countries = const ['Afghanistan','Pakistan','Bangladesh','India'];
+  final languages = const ['English','پښتو','دری','اردو','हिन्दी','বাংলা'];
 
-  int? selectedAmount;
+  List<String> get operators => switch (country) {
+    'Afghanistan' => const ['Auto Detect','Roshan','Etisalat','MTN','AWCC'],
+    'Pakistan' => const ['Auto Detect','Jazz','Zong','Ufone','Telenor'],
+    'Bangladesh' => const ['Auto Detect','Grameenphone','Robi','Banglalink'],
+    _ => const ['Auto Detect','Airtel','Jio','Vi'],
+  };
+    List<int> get amounts => const [100, 250, 500, 1000];
 
-  double? quotedPrice;
-  double? quotedFee;
-  double? quotedBonus;
-  double? quotedTotal;
+  String get currency => switch (country) {
+    'Afghanistan' => 'AFN',
+    'Pakistan' => 'PKR',
+    'Bangladesh' => 'BDT',
+    _ => 'INR',
+  };
 
-  bool loadingQuote = false;
+  String get flag => switch (country) {
+    'Afghanistan' => '🇦🇫',
+    'Pakistan' => '🇵🇰',
+    'Bangladesh' => '🇧🇩',
+    _ => '🇮🇳',
+  };
 
-  final List<String> countries = const [
-    'Afghanistan',
-    'Pakistan',
-    'Bangladesh',
-    'India',
-  ];
+  double get productPrice {
+    switch (amount) {
+      case 100: return 1.64;
+      case 250: return 3.89;
+      case 500: return 7.49;
+      case 1000: return 14.29;
+      default: return 0;
+    }
+  }
 
-  final List<String> languages = const [
-    'پښتو',
-    'دری',
-    'اردو',
-    'हिन्दी',
-    'বাংলা',
-    'English',
-  ];
+  double get fee => productPrice * 0.02;
+
+  int get bonus => switch (amount) {
+    100 => 10,
+    250 => 35,
+    500 => 80,
+    _ => 0,
+  };
+
+  double get total => productPrice + fee;
+
+  bool get validPhone {
+    final d = phone.text.replaceAll(RegExp(r'\D'), '');
+    return switch (country) {
+      'Afghanistan' => d.length >= 9 && d.length <= 10,
+      'Pakistan' => d.length >= 10 && d.length <= 11,
+      'Bangladesh' => d.length >= 10 && d.length <= 11,
+      _ => d.length >= 10 && d.length <= 12,
+    };
+  }
 
   @override
   void dispose() {
-    phoneController.dispose();
+    phone.dispose();
     super.dispose();
   }
 
-  List<String> get operators {
-    switch (country) {
-      case 'Afghanistan':
-        return const [
-          'Auto Detect',
-          'Roshan',
-          'Etisalat',
-          'MTN',
-          'AWCC',
-        ];
-
-      case 'Pakistan':
-        return const [
-          'Auto Detect',
-          'Jazz',
-          'Zong',
-          'Ufone',
-          'Telenor',
-        ];
-
-      case 'Bangladesh':
-        return const [
-          'Auto Detect',
-          'Grameenphone',
-          'Robi',
-          'Banglalink',
-        ];
-
-      case 'India':
-        return const [
-          'Auto Detect',
-          'Airtel',
-          'Jio',
-          'Vi',
-        ];
-
-      default:
-        return const ['Auto Detect'];
-    }
-  }
-
-  List<int> get amounts {
-    switch (country) {
-      case 'Afghanistan':
-        return const [100, 250, 500, 1000];
-
-      case 'Pakistan':
-        return const [100, 250, 500, 1000];
-
-      case 'Bangladesh':
-        return const [100, 250, 500, 1000];
-
-      case 'India':
-        return const [100, 250, 500, 1000];
-
-      default:
-        return const [100, 250, 500, 1000];
-    }
-  }
-
-  String get currency {
-    switch (country) {
-      case 'Afghanistan':
-        return 'AFN';
-
-      case 'Pakistan':
-        return 'PKR';
-
-      case 'Bangladesh':
-        return 'BDT';
-
-      case 'India':
-        return 'INR';
-
-      default:
-        return 'AFN';
-    }
-  }
-
-  String get countryFlag {
-    switch (country) {
-      case 'Afghanistan':
-        return '🇦🇫';
-
-      case 'Pakistan':
-        return '🇵🇰';
-
-      case 'Bangladesh':
-        return '🇧🇩';
-
-      case 'India':
-        return '🇮🇳';
-
-      default:
-        return '🌏';
-    }
-  }
-
-  bool get validPhone {
-    final digits =
-        phoneController.text.replaceAll(
-      RegExp(r'\D'),
-      '',
+  void message(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
     );
-
-    switch (country) {
-      case 'Afghanistan':
-        return digits.length >= 9 &&
-            digits.length <= 10;
-
-      case 'Pakistan':
-        return digits.length >= 10 &&
-            digits.length <= 11;
-
-      case 'Bangladesh':
-        return digits.length >= 10 &&
-            digits.length <= 11;
-
-      case 'India':
-        return digits.length >= 10 &&
-            digits.length <= 12;
-
-      default:
-        return digits.length >= 8;
-    }
-  }
-
-  void clearQuote() {
-    setState(() {
-      quotedPrice = null;
-      quotedFee = null;
-      quotedBonus = null;
-      quotedTotal = null;
-    });
-  }
-
-  Future<void> loadQuote() async {
-    if (selectedAmount == null) {
-      clearQuote();
-      return;
-    }
-
-    setState(() {
-      loadingQuote = true;
-    });
-
-    try {
-      final response = await http.post(
-        Uri.parse(
-          '$backendBaseUrl/api/payments/quote',
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'country': country,
-          'operator': operator,
-          'amount': selectedAmount,
-        }),
-      );
-
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
-        throw Exception(
-          'Quote request failed: ${response.statusCode}',
-        );
-      }
-
-      final data =
-          jsonDecode(response.body);
-
-      if (data is! Map) {
-        throw Exception(
-          'Invalid quote response',
-        );
-      }
-
-      setState(() {
-        quotedPrice =
-            (data['price'] as num?)?.toDouble();
-
-        quotedFee =
-            (data['fee'] as num?)?.toDouble();
-
-        quotedBonus =
-            (data['bonus'] as num?)?.toDouble();
-
-        quotedTotal =
-            (data['total'] as num?)?.toDouble();
-
-        loadingQuote = false;
-      });
-    } catch (err) {
-      setState(() {
-        loadingQuote = false;
-        quotedPrice = null;
-        quotedFee = null;
-        quotedBonus = null;
-        quotedTotal = null;
-      });
-
-      _showMessage(
-        'د قیمت معلومات ترلاسه نه شول. مهرباني وکړئ بیا هڅه وکړئ.',
-      );
-    }
   }
 
   void continueTopUp() {
     if (!validPhone) {
-      _showMessage(
-        'مهرباني وکړئ د موبایل صحیح شمېره دننه کړئ.',
-      );
+      message('مهرباني وکړئ صحیح موبایل شمېره ولیکئ.');
       return;
     }
 
-    if (selectedAmount == null) {
-      _showMessage(
-        'مهرباني وکړئ مقدار انتخاب کړئ.',
-      );
+    if (amount == null) {
+      message('مهرباني وکړئ مقدار انتخاب کړئ.');
       return;
     }
 
@@ -414,664 +194,335 @@ class _HomePageState extends State<HomePage> {
         builder: (_) => CheckoutPage(
           country: country,
           operator: operator,
-          phone: phoneController.text.trim(),
-          amount: selectedAmount!,
+          phone: phone.text.trim(),
+          amount: amount!,
           currency: currency,
-          quotedPrice: quotedPrice,
-          quotedFee: quotedFee,
-          quotedBonus: quotedBonus,
-          quotedTotal: quotedTotal,
-          onCompleted: widget.onAddHistory,
+          price: productPrice,
+          fee: fee,
+          bonus: bonus,
+          total: total,
+          onHistory: widget.onHistory,
         ),
       ),
     );
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
-  }
-
-  void showHistory() {
+  void openWallet() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => HistoryPage(
-          records: widget.history,
+        builder: (_) => WalletPage(
+          balance: widget.wallet,
+          onBalance: widget.onWallet,
         ),
       ),
     );
   }
 
-  void showWallet() {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: nukhudi,
-      builder: (_) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              20,
-              10,
-              20,
-              30,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.account_balance_wallet,
-                  color: primaryRed,
-                  size: 42,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'زما والټ',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                    color: primaryRed,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '€24.50',
-                  style: TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    color: primaryRed,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  '2% بونس فعال',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Wallet کې پیسې وساته او 2% اضافه بونس وګټه',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-
-                    _showMessage(
-                      'Wallet top-up به په راتلونکې نسخه کې فعال شي.',
-                    );
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text(
-                    'پیسې اضافه کړئ',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+  void openHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HistoryPage(records: widget.history),
+      ),
     );
   }
 
-  void showReferral() {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: nukhudi,
-      builder: (_) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              20,
-              10,
-              20,
-              30,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.card_giftcard,
-                  color: primaryRed,
-                  size: 48,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'شیر کړئ او 50 AFN بونس ترلاسه کړئ',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: primaryRed,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'له ملګرو سره شریک کړئ • PGNT VIP Rewards',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-
-                    _showMessage(
-                      'د Share سیستم به د Referral backend سره فعال شي.',
-                    );
-                  },
-                  icon: const Icon(Icons.share),
-                  label: const Text('شریک کړئ'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+  void openReferral() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ReferralPage(),
+      ),
     );
   }
-    @override
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'PGNT ASIAN',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-          ),
+          'PGNT ASIAN TOPUP',
+          style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
-            tooltip: 'Wallet',
-            onPressed: showWallet,
-            icon: const Icon(
-              Icons.account_balance_wallet_outlined,
-            ),
+            onPressed: openWallet,
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+          ),
+          IconButton(
+            onPressed: openHistory,
+            icon: const Icon(Icons.history),
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.language),
-            onSelected: widget.onLanguageChanged,
-            itemBuilder: (_) {
-              return languages
-                  .map(
-                    (language) => PopupMenuItem<String>(
-                      value: language,
-                      child: Text(language),
-                    ),
-                  )
-                  .toList();
-            },
-          ),
-          IconButton(
-            tooltip: 'History',
-            onPressed: showHistory,
-            icon: const Icon(Icons.history),
+            onSelected: widget.onLanguage,
+            itemBuilder: (_) => languages.map(
+              (e) => PopupMenuItem(
+                value: e,
+                child: Text(e),
+              ),
+            ).toList(),
           ),
         ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            16,
-            14,
-            16,
-            28,
-          ),
+          padding: const EdgeInsets.all(16),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _VipHeader(),
+              const VipHeader(),
               const SizedBox(height: 14),
 
-              // WALLET
-              InkWell(
-                onTap: showWallet,
-                borderRadius:
-                    BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    gradient:
-                        const LinearGradient(
-                      colors: [
-                        primaryRed,
-                        Color(0xFF9D181D),
-                      ],
-                    ),
-                    borderRadius:
-                        BorderRadius.circular(20),
-                    boxShadow: const [
-                      BoxShadow(
-                        blurRadius: 12,
-                        offset: Offset(0, 5),
-                        color: Color(0x30000000),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 27,
-                        backgroundColor:
-                            brightGold,
-                        child: Icon(
-                          Icons
-                              .account_balance_wallet,
-                          color: primaryRed,
-                          size: 28,
-                        ),
-                      ),
-                      SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'زما والټ',
-                              style: TextStyle(
-                                color:
-                                    Colors.white,
-                                fontSize: 16,
-                                fontWeight:
-                                    FontWeight.w700,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              '€24.50',
-                              style: TextStyle(
-                                color:
-                                    brightGold,
-                                fontSize: 25,
-                                fontWeight:
-                                    FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '2% بونس فعال',
-                            style: TextStyle(
-                              color:
-                                  brightGold,
-                              fontWeight:
-                                  FontWeight.w900,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'پیسې اضافه کړئ',
-                            style: TextStyle(
-                              color:
-                                  Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+              WalletCard(
+                balance: widget.wallet,
+                onTap: openWallet,
               ),
 
               const SizedBox(height: 22),
 
-              const _SectionTitle(
-                title: 'هیواد انتخاب کړئ',
-              ),
-
+              const SectionTitle('Select Country / هیواد انتخاب کړئ'),
               const SizedBox(height: 8),
 
               DropdownButtonFormField<String>(
                 value: country,
                 decoration: InputDecoration(
                   prefixIcon: Padding(
-                    padding:
-                        const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(12),
                     child: Text(
-                      countryFlag,
-                      style:
-                          const TextStyle(
-                        fontSize: 23,
-                      ),
+                      flag,
+                      style: const TextStyle(fontSize: 23),
                     ),
                   ),
                   labelText: 'Country',
                 ),
-                items: countries
-                    .map(
-                      (item) =>
-                          DropdownMenuItem<String>(
-                        value: item,
-                        child: Text(item),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) {
-                    return;
-                  }
-
+                items: countries.map(
+                  (e) => DropdownMenuItem(
+                    value: e,
+                    child: Text(e),
+                  ),
+                ).toList(),
+                onChanged: (v) {
+                  if (v == null) return;
                   setState(() {
-                    country = value;
-                    operator =
-                        'Auto Detect';
-                    selectedAmount = null;
-
-                    quotedPrice = null;
-                    quotedFee = null;
-                    quotedBonus = null;
-                    quotedTotal = null;
+                    country = v;
+                    operator = operators.first;
+                    amount = null;
                   });
                 },
               ),
 
               const SizedBox(height: 18),
 
-              const _SectionTitle(
-                title:
-                    'موبایل شمیره دننه کړئ',
-              ),
-
+              const SectionTitle('Phone Number / موبایل شمېره'),
               const SizedBox(height: 8),
 
               TextField(
-                controller:
-                    phoneController,
-                keyboardType:
-                    TextInputType.phone,
+                controller: phone,
+                keyboardType: TextInputType.phone,
                 inputFormatters: [
-                  FilteringTextInputFormatter
-                      .allow(
+                  FilteringTextInputFormatter.allow(
                     RegExp(r'[0-9+ ]'),
                   ),
                 ],
-                onChanged: (_) {
-                  setState(() {});
-                },
-                decoration:
-                    InputDecoration(
-                  prefixIcon:
-                      const Icon(
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(
                     Icons.phone_android,
                     color: primaryRed,
                   ),
-                  hintText:
-                      country ==
-                              'Afghanistan'
-                          ? '07xxxxxxxx'
-                          : 'Enter mobile number',
-                  suffixIcon:
-                      validPhone
-                          ? const Icon(
-                              Icons
-                                  .check_circle,
-                              color:
-                                  Colors.green,
-                            )
-                          : null,
+                  hintText: '07XXXXXXXX',
+                  suffixIcon: validPhone
+                      ? const Icon(
+                          Icons.check_circle,
+                          color: green,
+                        )
+                      : null,
                 ),
               ),
 
               const SizedBox(height: 18),
 
-              const _SectionTitle(
-                title: 'Operator',
-              ),
-
+              const SectionTitle('Operator'),
               const SizedBox(height: 8),
 
               DropdownButtonFormField<String>(
-                value:
-                    operators.contains(
-                  operator,
-                )
-                        ? operator
-                        : 'Auto Detect',
-                decoration:
-                    const InputDecoration(
-                  prefixIcon:
-                      Icon(
+                value: operators.contains(operator)
+                    ? operator
+                    : operators.first,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(
                     Icons.sim_card,
                     color: primaryRed,
                   ),
-                  labelText:
-                      'Operator',
+                  labelText: 'Operator',
                 ),
-                items: operators
-                    .map(
-                      (item) =>
-                          DropdownMenuItem<
-                              String>(
-                        value: item,
-                        child:
-                            Text(item),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) {
-                    return;
+                items: operators.map(
+                  (e) => DropdownMenuItem(
+                    value: e,
+                    child: Text(e),
+                  ),
+                ).toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => operator = v);
                   }
-
-                  setState(() {
-                    operator = value;
-                    quotedPrice = null;
-                    quotedFee = null;
-                    quotedBonus = null;
-                    quotedTotal = null;
-                  });
                 },
               ),
 
-              const SizedBox(height: 18),
-
-              const _SectionTitle(
-                title:
-                    'مقدار انتخاب کړئ',
-              ),
-
-              const SizedBox(height: 8),
+              const SizedBox(height: 20),
+                            const SectionTitle('Select Amount / مقدار انتخاب کړئ'),
+              const SizedBox(height: 10),
 
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
                 children: amounts.map(
-                  (amount) {
-                    final selected =
-                        selectedAmount ==
-                            amount;
+                  (value) {
+                    final selected = amount == value;
+                    final b = value == 100
+                        ? 10
+                        : value == 250
+                            ? 35
+                            : value == 500
+                                ? 80
+                                : 0;
 
-                    return ChoiceChip(
-                      selected: selected,
-                      label: Text(
-                        '$amount $currency',
-                        style: TextStyle(
-                          fontWeight:
-                              FontWeight.w800,
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => amount = value);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 155,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                          horizontal: 12,
+                        ),
+                        decoration: BoxDecoration(
                           color: selected
-                              ? Colors.white
-                              : primaryRed,
+                              ? primaryRed
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected
+                                ? primaryRed
+                                : gold,
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              '$value $currency',
+                              style: TextStyle(
+                                color: selected
+                                    ? Colors.white
+                                    : primaryRed,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            if (b > 0)
+                              Text(
+                                '+ $b Bonus',
+                                style: TextStyle(
+                                  color: selected
+                                      ? brightGold
+                                      : green,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      selectedColor:
-                          primaryRed,
-                      backgroundColor:
-                          Colors.white,
-                      side:
-                          const BorderSide(
-                        color: gold,
-                      ),
-                      onSelected:
-                          (value) async {
-                        if (!value) {
-                          return;
-                        }
-
-                        setState(() {
-                          selectedAmount =
-                              amount;
-                          quotedPrice =
-                              null;
-                          quotedFee =
-                              null;
-                          quotedBonus =
-                              null;
-                          quotedTotal =
-                              null;
-                        });
-
-                        await loadQuote();
-                      },
                     );
                   },
                 ).toList(),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
-              if (loadingQuote)
-                const Center(
-                  child:
-                      CircularProgressIndicator(
-                    color: primaryRed,
-                  ),
+              if (amount != null)
+                PriceCard(
+                  amount: amount!,
+                  currency: currency,
+                  price: productPrice,
+                  fee: fee,
+                  bonus: bonus,
+                  total: total,
                 ),
 
-              if (!loadingQuote &&
-                  selectedAmount != null &&
-                  quotedPrice != null)
-                Container(
-                  padding:
-                      const EdgeInsets.all(16),
-                  decoration:
-                      BoxDecoration(
+              const SizedBox(height: 16),
+
+              InkWell(
+                onTap: openReferral,
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius:
-                        BorderRadius.circular(
-                      18,
-                    ),
-                    border:
-                        Border.all(
-                      color: gold,
-                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: gold),
                   ),
-                  child: Column(
+                  child: const Row(
                     children: [
-                      _PriceRow(
-                        title:
-                            'Product Price',
-                        value:
-                            '€${quotedPrice!.toStringAsFixed(2)}',
+                      Icon(
+                        Icons.card_giftcard,
+                        color: primaryRed,
+                        size: 30,
                       ),
-                      const SizedBox(
-                        height: 8,
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Share & Get 50 AFN Bonus • Get €1.50',
+                          style: TextStyle(
+                            color: primaryRed,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                       ),
-                      _PriceRow(
-                        title:
-                            'Fee',
-                        value:
-                            '€${(quotedFee ?? 0).toStringAsFixed(2)}',
-                      ),
-                      const SizedBox(
-                        height: 8,
-                      ),
-                      _PriceRow(
-                        title:
-                            'Bonus',
-                        value:
-                            '${(quotedBonus ?? 0).toStringAsFixed(2)}',
-                      ),
-                      const Divider(
-                        height: 22,
-                      ),
-                      _PriceRow(
-                        title:
-                            'Total',
-                        value:
-                            '€${(quotedTotal ?? 0).toStringAsFixed(2)}',
-                        bold: true,
+                      Icon(
+                        Icons.chevron_right,
+                        color: primaryRed,
                       ),
                     ],
                   ),
                 ),
+              ),
 
-              const SizedBox(height: 22),
+              const SizedBox(height: 20),
 
-              // REFERRAL
-              OutlinedButton.icon(
-                onPressed: showReferral,
-                icon: const Icon(
-                  Icons.card_giftcard,
-                ),
+              FilledButton.icon(
+                onPressed: continueTopUp,
+                icon: const Icon(Icons.arrow_forward),
                 label: const Text(
-                  'شریک کړئ او 50 AFN بونس ترلاسه کړئ',
-                ),
-                style:
-                    OutlinedButton.styleFrom(
-                  foregroundColor:
-                      primaryRed,
-                  side:
-                      const BorderSide(
-                    color: gold,
+                  'Continue →',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
                   ),
-                  padding:
-                      const EdgeInsets.symmetric(
-                    vertical: 14,
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: primaryRed,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(58),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 24),
 
-              // CONTINUE
-              FilledButton.icon(
-                onPressed:
-                    loadingQuote
-                        ? null
-                        : continueTopUp,
-                icon: const Icon(
-                  Icons.arrow_forward,
-                ),
-                label: const Text(
-                  'ادامه ورکړئ',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight:
-                        FontWeight.w900,
-                  ),
-                ),
-                style:
-                    FilledButton.styleFrom(
-                  backgroundColor:
-                      primaryRed,
-                  foregroundColor:
-                      Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(
-                    vertical: 16,
-                  ),
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      15,
-                    ),
-                  ),
+              const Text(
+                'Fast • Secure • Reliable',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: primaryRed,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ],
@@ -1082,61 +533,48 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// ============================================================
-// VIP HEADER
-// ============================================================
-
-class _VipHeader extends StatelessWidget {
-  const _VipHeader();
+class VipHeader extends StatelessWidget {
+  const VipHeader({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding:
-          const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: beige,
-        borderRadius:
-            BorderRadius.circular(20),
-        border:
-            Border.all(color: gold),
+        gradient: const LinearGradient(
+          colors: [darkRed, primaryRed],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 15,
+            offset: Offset(0, 7),
+            color: Color(0x35000000),
+          ),
+        ],
       ),
-      child: const Row(
+      child: const Column(
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor:
-                primaryRed,
-            child: Icon(
-              Icons.bolt,
+          Icon(
+            Icons.public,
+            color: brightGold,
+            size: 50,
+          ),
+          SizedBox(height: 6),
+          Text(
+            'PGNT ASIAN TOPUP',
+            style: TextStyle(
               color: brightGold,
-              size: 30,
+              fontSize: 27,
+              fontWeight: FontWeight.w900,
             ),
           ),
-          SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'PGNT ASIAN TOP UP',
-                  style: TextStyle(
-                    color: primaryRed,
-                    fontSize: 20,
-                    fontWeight:
-                        FontWeight.w900,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Fast • Secure • VIP',
-                  style: TextStyle(
-                    fontWeight:
-                        FontWeight.w700,
-                  ),
-                ),
-              ],
+          SizedBox(height: 4),
+          Text(
+            'Fast • Secure • Reliable',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -1145,90 +583,201 @@ class _VipHeader extends StatelessWidget {
   }
 }
 
-// ============================================================
-// SECTION TITLE
-// ============================================================
+class WalletCard extends StatelessWidget {
+  final double balance;
+  final VoidCallback onTap;
 
-class _SectionTitle
-    extends StatelessWidget {
-  final String title;
-
-  const _SectionTitle({
-    required this.title,
+  const WalletCard({
+    super.key,
+    required this.balance,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: const TextStyle(
-        color: primaryRed,
-        fontSize: 17,
-        fontWeight: FontWeight.w900,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [primaryRed, Color(0xFF9D181D)],
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 28,
+              backgroundColor: brightGold,
+              child: Icon(
+                Icons.account_balance_wallet,
+                color: primaryRed,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Wallet Balance',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    '€${balance.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: brightGold,
+                      fontSize: 27,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '2% Bonus Active 🎁',
+                  style: TextStyle(
+                    color: brightGold,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  '+ Add Money',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ============================================================
-// PRICE ROW
-// ============================================================
+class SectionTitle extends StatelessWidget {
+  final String text;
 
-class _PriceRow
-    extends StatelessWidget {
-  final String title;
-  final String value;
-  final bool bold;
+  const SectionTitle(this.text, {super.key});
 
-  const _PriceRow({
-    required this.title,
-    required this.value,
-    this.bold = false,
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: primaryRed,
+        fontSize: 19,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+}
+class PriceCard extends StatelessWidget {
+  final int amount, bonus;
+  final String currency;
+  final double price, fee, total;
+
+  const PriceCard({
+    super.key,
+    required this.amount,
+    required this.currency,
+    required this.price,
+    required this.fee,
+    required this.bonus,
+    required this.total,
   });
 
   @override
   Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: bold ? 18 : 15,
-      fontWeight:
-          bold ? FontWeight.w900 : FontWeight.w600,
-      color:
-          bold ? primaryRed : Colors.black87,
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gold),
+      ),
+      child: Column(
+        children: [
+          _row('Amount', '$amount $currency'),
+          const Divider(),
+          _row(
+            'Bonus',
+            '+ $bonus $currency',
+            valueColor: green,
+          ),
+          _row(
+            'Product Price',
+            '€${price.toStringAsFixed(2)}',
+          ),
+          _row(
+            'Fee (2%)',
+            '€${fee.toStringAsFixed(2)}',
+          ),
+          const Divider(),
+          _row(
+            'Total',
+            '€${total.toStringAsFixed(2)}',
+            large: true,
+            valueColor: primaryRed,
+          ),
+        ],
+      ),
     );
+  }
 
-    return Row(
-      mainAxisAlignment:
-          MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: style,
-        ),
-        Text(
-          value,
-          style: style,
-        ),
-      ],
+  Widget _row(
+    String title,
+    String value, {
+    bool large = false,
+    Color? valueColor,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: large ? 18 : 15,
+                fontWeight:
+                    large ? FontWeight.w900 : FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: large ? 20 : 15,
+              fontWeight: FontWeight.w900,
+              color: valueColor ?? Colors.black87,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
-// ============================================================
-// CHECKOUT PAGE
-// ============================================================
 
 class CheckoutPage extends StatefulWidget {
-  final String country;
-  final String operator;
-  final String phone;
-  final int amount;
-  final String currency;
-
-  final double? quotedPrice;
-  final double? quotedFee;
-  final double? quotedBonus;
-  final double? quotedTotal;
-
-  final ValueChanged<TopUpRecord> onCompleted;
+  final String country, operator, phone, currency;
+  final int amount, bonus;
+  final double price, fee, total;
+  final ValueChanged<TopUpRecord> onHistory;
 
   const CheckoutPage({
     super.key,
@@ -1237,48 +786,35 @@ class CheckoutPage extends StatefulWidget {
     required this.phone,
     required this.amount,
     required this.currency,
-    required this.quotedPrice,
-    required this.quotedFee,
-    required this.quotedBonus,
-    required this.quotedTotal,
-    required this.onCompleted,
+    required this.price,
+    required this.fee,
+    required this.bonus,
+    required this.total,
+    required this.onHistory,
   });
 
   @override
-  State<CheckoutPage> createState() =>
-      _CheckoutPageState();
+  State<CheckoutPage> createState() => _CheckoutPageState();
 }
 
-class _CheckoutPageState
-    extends State<CheckoutPage> {
+class _CheckoutPageState extends State<CheckoutPage> {
   bool loading = false;
 
-  String? errorMessage;
+  Future<void> payWithStripe() async {
+    if (widget.total <= 0) {
+      _msg('د تادیې مقدار صحیح نه دی.');
+      return;
+    }
 
-  Future<void> startStripeCheckout() async {
-    if (loading) return;
-
-    setState(() {
-      loading = true;
-      errorMessage = null;
-    });
+    setState(() => loading = true);
 
     try {
-      /*
-       * IMPORTANT:
-       * The backend is responsible for the
-       * final price, fee and bonus.
-       *
-       * Flutter does NOT send a trusted price.
-       */
-
       final response = await http.post(
         Uri.parse(
           '$backendBaseUrl/api/payments/checkout',
         ),
         headers: {
-          'Content-Type':
-              'application/json',
+          'Content-Type': 'application/json',
         },
         body: jsonEncode({
           'country': widget.country,
@@ -1286,271 +822,140 @@ class _CheckoutPageState
           'phone': widget.phone,
           'amount': widget.amount,
           'currency': widget.currency,
+          'price': widget.price,
+          'fee': widget.fee,
+          'bonus': widget.bonus,
+          'total': widget.total,
         }),
       );
 
       if (response.statusCode < 200 ||
           response.statusCode >= 300) {
-        String message =
-            'Checkout جوړ نه شو.';
-
-        try {
-          final body =
-              jsonDecode(response.body);
-
-          if (body is Map &&
-              body['error'] != null) {
-            message =
-                body['error'].toString();
-          }
-        } catch (_) {}
-
-        throw Exception(message);
-      }
-
-      final data =
-          jsonDecode(response.body);
-
-      if (data is! Map) {
         throw Exception(
-          'د سرور ناسم ځواب.',
+          'Checkout failed: ${response.statusCode}',
         );
       }
 
-      /*
-       * Backend should return:
-       *
-       * {
-       *   "url": "https://checkout.stripe.com/..."
-       * }
-       */
+      final data = jsonDecode(response.body);
 
-      final checkoutUrl =
-          data['url']?.toString();
+      final url = data['url']?.toString();
 
-      if (checkoutUrl == null ||
-          checkoutUrl.isEmpty) {
+      if (url == null || url.isEmpty) {
         throw Exception(
-          'Stripe Checkout URL ترلاسه نه شو.',
+          'Stripe checkout URL not returned.',
         );
       }
 
-      final uri =
-          Uri.tryParse(checkoutUrl);
+      final uri = Uri.parse(url);
 
-      if (uri == null) {
-        throw Exception(
-          'Stripe URL ناسم دی.',
-        );
-      }
-
-      final opened =
-          await launchUrl(
+      if (!await launchUrl(
         uri,
-        mode:
-            LaunchMode.externalApplication,
-      );
-
-      if (!opened) {
+        mode: LaunchMode.externalApplication,
+      )) {
         throw Exception(
-          'Stripe Checkout پرانیستل نشو.',
+          'Could not open Stripe payment page.',
         );
       }
 
-      /*
-       * We do NOT mark the order as
-       * completed here.
-       *
-       * Stripe webhook on the backend
-       * confirms the actual payment.
-       */
-
-      if (mounted) {
-        _showInfo(
-          'Stripe Payment پاڼه پرانیستل شوه. د تادیې له بشپړېدو وروسته به سیستم ستاسې امر تایید کړي.',
-        );
-      }
-    } catch (err) {
-      if (mounted) {
-        setState(() {
-          errorMessage =
-              err.toString().replaceFirst(
-                    'Exception: ',
-                    '',
-                  );
-        });
-      }
+      widget.onHistory(
+        TopUpRecord(
+          country: widget.country,
+          operator: widget.operator,
+          phone: widget.phone,
+          status: 'Pending',
+          orderId: data['orderId']?.toString() ??
+              'PGNT-${DateTime.now().millisecondsSinceEpoch}',
+          amount: widget.amount,
+          bonus: widget.bonus,
+          price: widget.price,
+          fee: widget.fee,
+          total: widget.total,
+          date: DateTime.now(),
+        ),
+      );
+    } catch (e) {
+      _msg('Checkout ستونزه: $e');
     } finally {
       if (mounted) {
-        setState(() {
-          loading = false;
-        });
+        setState(() => loading = false);
       }
     }
   }
 
-  void _showInfo(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration:
-            const Duration(seconds: 5),
-      ),
+  void _msg(String text) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
     );
   }
-
-  double get displayPrice =>
-      widget.quotedPrice ?? 0;
-
-  double get displayFee =>
-      widget.quotedFee ?? 0;
-
-  double get displayBonus =>
-      widget.quotedBonus ?? 0;
-
-  double get displayTotal =>
-      widget.quotedTotal ??
-      (displayPrice + displayFee);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Checkout',
-          style: TextStyle(
-            fontWeight:
-                FontWeight.w900,
-          ),
+          'Confirm Top-Up',
+          style: TextStyle(fontWeight: FontWeight.w900),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding:
-              const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.stretch,
             children: [
               const Icon(
                 Icons.lock_outline,
-                size: 52,
                 color: primaryRed,
+                size: 76,
               ),
-
-              const SizedBox(height: 10),
-
+              const SizedBox(height: 8),
               const Text(
                 'خوندي Payment',
-                textAlign:
-                    TextAlign.center,
                 style: TextStyle(
                   color: primaryRed,
-                  fontSize: 24,
-                  fontWeight:
-                      FontWeight.w900,
+                  fontSize: 27,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
               Container(
-                padding:
-                    const EdgeInsets.all(18),
-                decoration:
-                    BoxDecoration(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius:
-                      BorderRadius.circular(
-                    18,
-                  ),
-                  border:
-                      Border.all(
-                    color: gold,
-                  ),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: gold),
                 ),
                 child: Column(
                   children: [
-                    _CheckoutRow(
-                      title: 'هیواد',
-                      value:
-                          widget.country,
+                    _info('Country', widget.country),
+                    _info('Operator', widget.operator),
+                    _info('Phone', widget.phone),
+                    _info(
+                      'Amount',
+                      '${widget.amount} ${widget.currency}',
                     ),
-
-                    const SizedBox(
-                      height: 10,
+                    const Divider(),
+                    _info(
+                      'Bonus',
+                      '+ ${widget.bonus} ${widget.currency}',
+                      color: green,
                     ),
-
-                    _CheckoutRow(
-                      title: 'Operator',
-                      value:
-                          widget.operator,
+                    _info(
+                      'Product Price',
+                      '€${widget.price.toStringAsFixed(2)}',
                     ),
-
-                    const SizedBox(
-                      height: 10,
+                    _info(
+                      'Fee (2%)',
+                      '€${widget.fee.toStringAsFixed(2)}',
                     ),
-
-                    _CheckoutRow(
-                      title: 'شمېره',
-                      value:
-                          widget.phone,
-                    ),
-
-                    const SizedBox(
-                      height: 10,
-                    ),
-
-                    _CheckoutRow(
-                      title: 'Amount',
-                      value:
-                          '${widget.amount} ${widget.currency}',
-                    ),
-
-                    const Divider(
-                      height: 26,
-                    ),
-
-                    _CheckoutRow(
-                      title:
-                          'Product Price',
-                      value:
-                          '€${displayPrice.toStringAsFixed(2)}',
-                    ),
-
-                    const SizedBox(
-                      height: 10,
-                    ),
-
-                    _CheckoutRow(
-                      title: 'Fee',
-                      value:
-                          '€${displayFee.toStringAsFixed(2)}',
-                    ),
-
-                    const SizedBox(
-                      height: 10,
-                    ),
-
-                    _CheckoutRow(
-                      title: 'Bonus',
-                      value:
-                          displayBonus
-                              .toStringAsFixed(2),
-                      valueColor:
-                          Colors.green,
-                    ),
-
-                    const Divider(
-                      height: 26,
-                    ),
-
-                    _CheckoutRow(
-                      title: 'Total',
-                      value:
-                          '€${displayTotal.toStringAsFixed(2)}',
-                      bold: true,
+                    const Divider(),
+                    _info(
+                      'Total',
+                      '€${widget.total.toStringAsFixed(2)}',
+                      large: true,
+                      color: primaryRed,
                     ),
                   ],
                 ),
@@ -1558,103 +963,59 @@ class _CheckoutPageState
 
               const SizedBox(height: 18),
 
-              if (errorMessage != null)
-                Container(
-                  padding:
-                      const EdgeInsets.all(
-                    14,
-                  ),
-                  decoration:
-                      BoxDecoration(
-                    color:
-                        const Color(
-                      0xFFFFE5E5,
-                    ),
-                    borderRadius:
-                        BorderRadius.circular(
-                      14,
-                    ),
-                    border:
-                        Border.all(
-                      color: Colors.red,
-                    ),
-                  ),
-                  child: Text(
-                    errorMessage!,
-                    style:
-                        const TextStyle(
-                      color: Colors.red,
-                      fontWeight:
-                          FontWeight.w700,
-                    ),
+              if (loading)
+                const Padding(
+                  padding: EdgeInsets.all(18),
+                  child: CircularProgressIndicator(
+                    color: primaryRed,
                   ),
                 ),
 
-              if (errorMessage != null)
-                const SizedBox(
-                  height: 14,
-                ),
-
-              FilledButton.icon(
-                onPressed:
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: loading
+                      ? null
+                      : payWithStripe,
+                  icon: const Icon(
+                    Icons.credit_card,
+                  ),
+                  label: Text(
                     loading
-                        ? null
-                        : startStripeCheckout,
-                icon: loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child:
-                            CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color:
-                              Colors.white,
-                        ),
-                      )
-                    : const Icon(
-                        Icons
-                            .credit_card,
-                      ),
-                label: Text(
-                  loading
-                      ? 'لږ انتظار...'
-                      : 'د Stripe له لارې تادیه',
-                  style:
-                      const TextStyle(
-                    fontSize: 17,
-                    fontWeight:
-                        FontWeight.w900,
-                  ),
-                ),
-                style:
-                    FilledButton.styleFrom(
-                  backgroundColor:
-                      primaryRed,
-                  foregroundColor:
-                      Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(
-                    vertical: 16,
-                  ),
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      15,
+                        ? 'Please wait...'
+                        : 'Pay €${widget.total.toStringAsFixed(2)} with Stripe →',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
                     ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: primaryRed,
+                    foregroundColor: Colors.white,
+                    minimumSize:
+                        const Size.fromHeight(60),
                   ),
                 ),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
 
               const Text(
-                'ستاسې کارت معلومات PGNT ASIAN ته نه ساتل کېږي؛ تادیه د Stripe خوندي پاڼې له لارې ترسره کېږي.',
-                textAlign:
-                    TextAlign.center,
+                'Secure payment by Stripe',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Colors.black54,
-                  fontSize: 12,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              const Text(
+                'Visa   •   Mastercard   •   Apple Pay   •   Google Pay',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -1663,75 +1024,44 @@ class _CheckoutPageState
       ),
     );
   }
-}
 
-// ============================================================
-// CHECKOUT ROW
-// ============================================================
-
-class _CheckoutRow
-    extends StatelessWidget {
-  final String title;
-  final String value;
-  final bool bold;
-  final Color? valueColor;
-
-  const _CheckoutRow({
-    required this.title,
-    required this.value,
-    this.bold = false,
-    this.valueColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: TextStyle(
-              fontWeight:
-                  bold
-                      ? FontWeight.w900
-                      : FontWeight.w600,
+  Widget _info(
+    String title,
+    String value, {
+    bool large = false,
+    Color? color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: large ? 18 : 15,
+                fontWeight:
+                    large ? FontWeight.w900 : FontWeight.w600,
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Flexible(
-          child: Text(
-            value,
-            textAlign:
-                TextAlign.end,
-            style: TextStyle(
-              color:
-                  valueColor ??
-                      (bold
-                          ? primaryRed
-                          : Colors.black87),
-              fontWeight:
-                  bold
-                      ? FontWeight.w900
-                      : FontWeight.w700,
-              fontSize:
-                  bold ? 18 : 14,
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: large ? 20 : 15,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
-
-// ============================================================
-// HISTORY PAGE
-// ============================================================
-
-class HistoryPage
-    extends StatelessWidget {
+class HistoryPage extends StatelessWidget {
   final List<TopUpRecord> records;
 
   const HistoryPage({
@@ -1739,220 +1069,92 @@ class HistoryPage
     required this.records,
   });
 
-  String formatDate(DateTime date) {
-    final day =
-        date.day.toString().padLeft(
-              2,
-              '0',
-            );
-
-    final month =
-        date.month.toString().padLeft(
-              2,
-              '0',
-            );
-
-    final year =
-        date.year.toString();
-
-    final hour =
-        date.hour.toString().padLeft(
-              2,
-              '0',
-            );
-
-    final minute =
-        date.minute.toString().padLeft(
-              2,
-              '0',
-            );
-
-    return '$day/$month/$year $hour:$minute';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Transaction History',
-          style: TextStyle(
-            fontWeight:
-                FontWeight.w900,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w900),
         ),
       ),
       body: records.isEmpty
           ? const Center(
-              child: Column(
-                mainAxisSize:
-                    MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.history,
-                    size: 60,
-                    color: gold,
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'تر اوسه کومه معامله نشته.',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight:
-                          FontWeight.w700,
-                    ),
-                  ),
-                ],
+              child: Text(
+                'No transactions yet.',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             )
           : ListView.builder(
-              padding:
-                  const EdgeInsets.all(
-                16,
-              ),
-              itemCount:
-                  records.length,
-              itemBuilder:
-                  (context, index) {
-                final record =
-                    records[index];
+              padding: const EdgeInsets.all(14),
+              itemCount: records.length,
+              itemBuilder: (_, index) {
+                final r = records[index];
 
                 return Card(
-                  margin:
-                      const EdgeInsets.only(
+                  color: Colors.white,
+                  margin: const EdgeInsets.only(
                     bottom: 12,
                   ),
-                  elevation: 0,
-                  shape:
-                      RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      16,
-                    ),
-                    side:
-                        const BorderSide(
-                      color: gold,
-                    ),
-                  ),
                   child: Padding(
-                    padding:
-                        const EdgeInsets.all(
-                      16,
-                    ),
+                    padding: const EdgeInsets.all(15),
                     child: Column(
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            const CircleAvatar(
-                              backgroundColor:
-                                  primaryRed,
-                              child: Icon(
-                                Icons
-                                    .phone_android,
-                                color:
-                                    Colors.white,
-                              ),
+                            const Icon(
+                              Icons.sim_card,
+                              color: primaryRed,
                             ),
-                            const SizedBox(
-                              width: 12,
-                            ),
+                            const SizedBox(width: 10),
                             Expanded(
-                              child:
-                                  Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment
-                                        .start,
-                                children: [
-                                  Text(
-                                    record
-                                        .country,
-                                    style:
-                                        const TextStyle(
-                                      fontWeight:
-                                          FontWeight.w900,
-                                    ),
-                                  ),
-                                  Text(
-                                    record
-                                        .phone,
-                                    style:
-                                        const TextStyle(
-                                      color:
-                                          Colors.black54,
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                '${r.amount} ${r.country == 'Afghanistan' ? 'AFN' : ''}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight:
+                                      FontWeight.w900,
+                                ),
                               ),
                             ),
-                            Text(
-                              '${record.amount}',
-                              style:
-                                  const TextStyle(
-                                color:
-                                    primaryRed,
-                                fontWeight:
-                                    FontWeight.w900,
-                              ),
-                            ),
+                            _status(r.status),
                           ],
                         ),
-
-                        const Divider(
-                          height: 22,
+                        const SizedBox(height: 10),
+                        Text(
+                          '${r.operator} • ${r.phone}',
                         ),
-
+                        const SizedBox(height: 5),
+                        Text(
+                          'Order ID: ${r.orderId}',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
                         Row(
                           mainAxisAlignment:
-                              MainAxisAlignment
-                                  .spaceBetween,
+                              MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              record
-                                  .operator,
-                            ),
-                            Text(
-                              record.status,
-                              style:
-                                  TextStyle(
-                                color:
-                                    record.status.toLowerCase() ==
-                                            'completed'
-                                        ? Colors
-                                            .green
-                                        : primaryRed,
+                              'Bonus: +${r.bonus}',
+                              style: const TextStyle(
+                                color: green,
                                 fontWeight:
                                     FontWeight.w800,
                               ),
                             ),
-                          ],
-                        ),
-
-                        const SizedBox(
-                          height: 8,
-                        ),
-
-                        Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment
-                                  .spaceBetween,
-                          children: [
                             Text(
-                              formatDate(
-                                record
-                                    .date,
-                              ),
-                              style:
-                                  const TextStyle(
-                                fontSize:
-                                    12,
-                                color:
-                                    Colors.black54,
-                              ),
-                            ),
-                            Text(
-                              '€${record.total.toStringAsFixed(2)}',
-                              style:
-                                  const TextStyle(
+                              '€${r.total.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: primaryRed,
+                                fontSize: 17,
                                 fontWeight:
                                     FontWeight.w900,
                               ),
@@ -1967,28 +1169,244 @@ class HistoryPage
             ),
     );
   }
-}
-// ============================================================
-// END OF MAIN.DART
-// ============================================================
-//
-// PGNT ASIAN TOP UP
-//
-// مهم:
-// - Stripe Secret Key په Flutter کې مه اچوئ.
-// - DT One API Key/Secret په Flutter کې مه اچوئ.
-// - قیمت، Fee او Bonus باید د Backend له Database څخه راشي.
-// - د Payment وروستی تایید باید د Stripe Webhook له لارې وشي.
-// - Flutter باید یوازې Checkout URL پرانیزي.
-//
-// ============================================================
 
-// دا برخه د main.dart پای دی.
-//
-// که د درېیمې برخې په پای کې لاندې کرښه موجوده وي:
-//
-// }
-//
-// نو نور کوډ مه ورزیاتوئ.
-//
-// ============================================================
+  Widget _status(String status) {
+    final pending = status == 'Pending';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 6,
+      ),
+      decoration: BoxDecoration(
+        color: pending
+            ? const Color(0xFFFFF0C2)
+            : const Color(0xFFD9F7E6),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: pending
+              ? Colors.orange.shade800
+              : green,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class WalletPage extends StatefulWidget {
+  final double balance;
+  final ValueChanged<double> onBalance;
+
+  const WalletPage({
+    super.key,
+    required this.balance,
+    required this.onBalance,
+  });
+
+  @override
+  State<WalletPage> createState() => _WalletPageState();
+}
+
+class _WalletPageState extends State<WalletPage> {
+  late double balance;
+
+  @override
+  void initState() {
+    super.initState();
+    balance = widget.balance;
+  }
+
+  void addMoney() {
+    setState(() {
+      balance += 20;
+    });
+
+    widget.onBalance(balance);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Wallet demo balance updated. '
+          'Real Wallet payment will use Stripe.',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Wallet',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(25),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [darkRed, primaryRed],
+                ),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    'Wallet Balance',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '€${balance.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: brightGold,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '2% Bonus Active 🎁',
+                    style: TextStyle(
+                      color: brightGold,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: addMoney,
+                icon: const Icon(Icons.add),
+                label: const Text(
+                  'Add Money',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: primaryRed,
+                  minimumSize:
+                      const Size.fromHeight(55),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {},
+                icon: const Icon(Icons.account_balance),
+                label: const Text(
+                  'Withdraw',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryRed,
+                  minimumSize:
+                      const Size.fromHeight(55),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ReferralPage extends StatelessWidget {
+  const ReferralPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    const referral =
+        'https://pgnt.asian/r/ABC123';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Referral',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            const Icon(
+              Icons.card_giftcard,
+              color: primaryRed,
+              size: 80,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Invite Friends',
+              style: TextStyle(
+                color: primaryRed,
+                fontSize: 27,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Share your link and get 50 AFN free. '
+              'Your friend also gets a bonus.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            SelectableText(
+              referral,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  final uri = Uri.parse(referral);
+                  await launchUrl(
+                    uri,
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                icon: const Icon(Icons.share),
+                label: const Text(
+                  'Share Now',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: primaryRed,
+                  minimumSize:
+                      const Size.fromHeight(55),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
