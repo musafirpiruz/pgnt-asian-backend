@@ -17,7 +17,7 @@ class AppConstants {
   // ===== ستاسو د بیک انډ URL =====
   // د ازموینې لپاره: http://localhost:3000
   // که خپور کړی وي: https://your-server.com
-  static const String backendUrl = 'http://localhost:3000';
+  static const String backendUrl = 'https://pgnt-asian-backend.onrender.com';
 
   // ===== تنظیمات =====
   static const double feePercentage = 0.02;
