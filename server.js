@@ -4205,3 +4205,40 @@ process.on(
     );
   }
 );
+// ===== HesabPay (Afghanistan) - Mock / Placeholder =====
+// ⚠️ دا یوازې د ازموینې لپاره دی. د ریښتیني تولید لپاره
+// باید د HesabPay رسمي API سره وصل شي.
+app.post('/api/payments/hesabpay', async (req, res) => {
+  try {
+    const { amount, currency, phoneNumber, orderId, countryCode, operator, operatorId } = req.body;
+
+    // اوس مهال د ازموینې لپاره یوازې بریالیتوب ورکوو.
+    // کله چې د HesabPay رسمي کیلي ترلاسه کړئ، دا کوډ د دوی د API سره بدل کړئ.
+    console.log('HesabPay request:', { amount, currency, phoneNumber, orderId, countryCode, operator, operatorId });
+
+    // دلته باید د HesabPay API ته غوښتنه واستوئ:
+    // const hesabRes = await fetch('https://api.hesab.com/v1/payment/create', {
+    //   method: 'POST',
+    //   headers: {
+    //     'Authorization': `Bearer ${process.env.HESABPAY_API_KEY}`,
+    //     'Content-Type': 'application/json',
+    //   },
+    //   body: JSON.stringify({
+    //     amount, currency, customer_phone: phoneNumber, description: 'PGNT Asian Topup',
+    //   }),
+    // });
+    // const hesabData = await hesabRes.json();
+
+    // د ازموینې لپاره، یوازې بریالیتوب ورکوو:
+    return res.json({
+      success: true,
+      message: 'HesabPay payment simulated (test mode)',
+      orderId,
+      amount,
+      currency,
+    });
+  } catch (err) {
+    console.error('HesabPay error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
