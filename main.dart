@@ -1839,4 +1839,3 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 }
-```
