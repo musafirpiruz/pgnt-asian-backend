@@ -1,519 +1,446 @@
+// PGNT ASIAN TOPUP - Premium Flutter App - Organized Code
+// Fee: €0.79 - Controllable | Bonus Controllable
+// Author: musafirpiruz
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
-// ===== PGNT CONFIG - برخه 1/3 =====
-class AppConfig {
-  static const double transferFee = 0.79;
-  static const String appName = 'PGNT';
-  static const String currency = 'AFN';
-  static const String supportPhone = '+93 79 000 0000';
-  static const String version = '1.0.3-fixed';
-  static const bool debug = false;
-}
-
-class AppColors {
-  static const primary = Color(0xFF1A0505);
-  static const gold = Color(0xFFD4AF37);
-  static const success = Color(0xFF10B981);
-  static const background = Color(0xFFFFFBEB);
-  static const cardBg = Color(0xFFFFFFFF);
-  static const textDark = Color(0xFF1F2937);
-  static const textLight = Color(0xFF6B7280);
-  static const error = Color(0xFFEF4444);
-}
+import 'package:url_launcher/url_launcher.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
   runApp(const PGNTApp());
 }
 
+// ==================== CONFIG - ستا په کنټرول کی ====================
+class AppConfig {
+  // فیس - ته یې کولای شې بدل کړې
+  static double fee = 0.79; // €0.79 - ستا فیس
+  
+  // بونس - هر مقدار لپاره بونس ستا په کنټرول کی
+  static Map<String, Map<int, int>> bonuses = {
+    'AFN': {100: 10, 250: 35, 500: 80, 1000: 150},
+    'PKR': {100: 5, 500: 25, 1000: 60},
+    'BDT': {100: 5, 500: 30, 1000: 70},
+    'INR': {100: 10, 500: 50, 1000: 110},
+  };
+  
+  // قیمتونه په یورو
+  static Map<String, Map<int, double>> prices = {
+    'AFN': {100: 1.64, 250: 4.10, 500: 8.20, 1000: 16.40},
+    'PKR': {100: 0.35, 500: 1.70, 1000: 3.40},
+    'BDT': {100: 0.85, 500: 4.20, 1000: 8.50},
+    'INR': {100: 1.10, 500: 5.50, 1000: 11.00},
+  };
+  
+  // Backend URL - کله چی Render کی Deploy کړې
+  static String backendUrl = 'https://pgnt-asian-backend.onrender.com';
+  
+  // که غواړې فیس فیصدي کړې (اوس ثابت €0.79 دی)
+  static bool feeIsPercentage = false; // false = ثابت €0.79, true = فیصدي
+  static double feePercentage = 2.0; // که فیصدي وي
+}
+
+// ==================== COLORS ====================
+class AppColors {
+  static const bg = Color(0xFF1A0505);
+  static const card = Color(0xFF2A0A0A);
+  static const gold = Color(0xFFD4AF37);
+  static const goldLight = Color(0xFFFFD700);
+  static const white = Colors.white;
+  static const grey = Color(0xFF8B7355);
+}
+
+// ==================== MAIN APP ====================
 class PGNTApp extends StatelessWidget {
   const PGNTApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
+      title: 'PGNT ASIAN TOPUP',
       theme: ThemeData(
-        primaryColor: AppColors.primary,
-        scaffoldBackgroundColor: AppColors.background,
-        fontFamily: 'Vazirmatn',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
+        scaffoldBackgroundColor: AppColors.bg,
+        fontFamily: 'Inter',
+        useMaterial3: true,
       ),
       home: const OnboardingScreen(),
     );
   }
 }
 
-// ===== ONBOARDING =====
-class OnboardingScreen extends StatefulWidget {
+// ==================== ONBOARDING ====================
+class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({super.key});
-
-  @override
-  State<OnboardingScreen> createState() => _OnboardingScreenState();
-}
-
-class _OnboardingScreenState extends State<OnboardingScreen> {
-  final PageController _controller = PageController();
-  int _current = 0;
-
-  final List<Map<String, String>> _pages = [
-    {
-      'title': 'PGNT ته ښه راغلاست',
-      'desc': 'چټک، خوندي او اسانه پیسو لیږد',
-      'icon': 'wallet',
-    },
-    {
-      'title': 'یوازې 0.79 فیس',
-      'desc': 'تر ټولو ټیټ فیس په ټول افغانستان کې',
-      'icon': 'fee',
-    },
-    {
-      'title': 'همدا اوس پیل وکړئ',
-      'desc': 'خپل حساب جوړ کړئ او لیږد پیل کړئ',
-      'icon': 'start',
-    },
-  ];
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.primary,
+      backgroundColor: AppColors.bg,
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: PageView.builder(
-                controller: _controller,
-                onPageChanged: (i) {
-                  setState(() {
-                    _current = i;
-                  });
-                },
-                itemCount: _pages.length,
-                itemBuilder: (context, index) {
-                  return _buildPage(_pages[index]);
-                },
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const Spacer(),
+              Container(
+                width: 100, height: 100,
+                decoration: BoxDecoration(
+                  color: AppColors.gold,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [BoxShadow(color: AppColors.gold.withOpacity(0.3), blurRadius: 20)],
+                ),
+                child: const Icon(Icons.phone_iphone, size: 50, color: AppColors.bg),
               ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_pages.length, (index) {
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  margin: const EdgeInsets.all(4),
-                  width: _current == index ? 28 : 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: _current == index ? AppColors.gold : Colors.white38,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                );
-              }),
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (_current < _pages.length - 1) {
-                      _controller.nextPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
-                    } else {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (context) => const MainScreen()),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.gold,
-                    foregroundColor: AppColors.primary,
-                  ),
-                  child: Text(
-                    _current == _pages.length - 1 ? 'پیل کول 🚀' : 'بل →',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+              const SizedBox(height: 24),
+              const Text('PGNT ASIAN', style: TextStyle(color: AppColors.white, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+              const Text('TOPUP', style: TextStyle(color: AppColors.gold, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+              const SizedBox(height: 12),
+              const Text('Fast & Secure Mobile Top-Up', style: TextStyle(color: AppColors.grey, fontSize: 16)),
+              const Text('Afghanistan • Pakistan • Bangladesh • India', style: TextStyle(color: AppColors.grey, fontSize: 12)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.gold.withOpacity(0.2))),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.verified, color: AppColors.gold, size: 20),
+                        const SizedBox(width: 8),
+                        const Text('Fee: €${AppConfig.fee}  •  Instant Bonus', style: TextStyle(color: AppColors.white, fontSize: 13)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('Controlled by you in AppConfig', style: TextStyle(color: AppColors.grey, fontSize: 11)),
+                  ],
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity, height: 56,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                  onPressed: ()=> Navigator.pushReplacement(context, MaterialPageRoute(builder: (_)=> const MainScreen())),
+                  child: const Text('Get Started', style: TextStyle(color: AppColors.bg, fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
-
-  Widget _buildPage(Map<String, String> data) {
-    return Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              color: AppColors.gold.withOpacity(0.15),
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.gold, width: 2),
-            ),
-            child: const Icon(Icons.account_balance_wallet, size: 60, color: AppColors.gold),
-          ),
-          const SizedBox(height: 32),
-          Text(
-            data['title']!,
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            data['desc']!,
-            style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.8)),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-// ===== MAIN SCREEN - START =====
+// ==================== MAIN SCREEN WITH BOTTOM NAV ====================
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
-
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0;
-
+  int _currentIndex = 0;
   final List<Widget> _screens = [
     const HomeScreen(),
     const HistoryScreen(),
     const WalletScreen(),
     const ProfileScreen(),
   ];
-  // ===== برخه 2/3 - دوام =====
-
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        selectedItemColor: AppColors.primary,
-        unselectedItemColor: AppColors.textLight,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'کور'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'تاریخچه'),
-          BottomNavigationBarItem(icon: Icon(Icons.wallet), label: 'بټوه'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'پروفایل'),
-        ],
+      body: _screens[_currentIndex],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          border: Border(top: BorderSide(color: AppColors.gold.withOpacity(0.2))),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: (i)=> setState(()=> _currentIndex = i),
+          backgroundColor: AppColors.card,
+          selectedItemColor: AppColors.gold,
+          unselectedItemColor: AppColors.grey,
+          type: BottomNavigationBarType.fixed,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
+            BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: 'Wallet'),
+            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ===== HOME SCREEN - اصلي پاڼه =====
+// ==================== HOME SCREEN ====================
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String _selectedCountry = 'افغانستان 🇦🇫';
-  String _selectedOperator = 'روشن';
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _amountController = TextEditingController();
-  double _amount = 0.0;
-
-  final List<String> _countries = ['افغانستان 🇦🇫', 'ایران 🇮🇷', 'پاکستان 🇵🇰', 'ترکیه 🇹🇷'];
-  final List<String> _operators = ['روشن', 'اتصالات', 'ام ټي ان', 'سلام'];
-
-  double get _fee => AppConfig.transferFee;
-  double get _total => _amount + _fee;
-
+  String selectedCountry = 'AFN';
+  String selectedOperator = 'Roshan';
+  int selectedAmount = 100;
+  String phone = '';
+  
+  final countries = [
+    {'code':'AFN', 'name':'Afghanistan', 'flag':'🇦🇫'},
+    {'code':'PKR', 'name':'Pakistan', 'flag':'🇵🇰'},
+    {'code':'BDT', 'name':'Bangladesh', 'flag':'🇧🇩'},
+    {'code':'INR', 'name':'India', 'flag':'🇮🇳'},
+  ];
+  
+  final operators = {
+    'AFN': ['Roshan', 'Etisalat', 'MTN', 'AWCC', 'Salaam'],
+    'PKR': ['Jazz', 'Telenor', 'Zong', 'Ufone'],
+    'BDT': ['Grameenphone', 'Robi', 'Banglalink'],
+    'INR': ['Jio', 'Airtel', 'Vi', 'BSNL'],
+  };
+  
+  final amounts = [100, 250, 500, 1000];
+  
+  double get price => AppConfig.prices[selectedCountry]?[selectedAmount] ?? 1.64;
+  int get bonus => AppConfig.bonuses[selectedCountry]?[selectedAmount] ?? 10;
+  double get fee => AppConfig.feeIsPercentage ? price * AppConfig.feePercentage / 100 : AppConfig.fee;
+  double get total => price + fee;
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
-        title: const Text('PGNT - پیسې واستوئ'),
-        centerTitle: true,
+        backgroundColor: AppColors.bg,
+        elevation: 0,
+        title: const Text('PGNT ASIAN TOPUP', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold)),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.gold.withOpacity(0.3))),
+            child: const Row(children: [
+              Icon(Icons.account_balance_wallet, color: AppColors.gold, size: 16),
+              SizedBox(width: 6),
+              Text('€24.50', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold)),
+            ]),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Balance Card
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.primary, Color(0xFF3A0A0A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('ستاسو بیلانس', style: TextStyle(color: Colors.white.withOpacity(0.8))),
-                      const Icon(Icons.visibility, color: AppColors.gold, size: 20),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '12,450.00 AFN',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  const SizedBox(height: 4),
-                  Text('+2.5% نن', style: TextStyle(color: AppColors.success.withOpacity(0.9))),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            _buildDropdown('هیواد انتخاب کړئ', _selectedCountry, _countries, (val) {
-              setState(() {
-                _selectedCountry = val!;
-              });
-            }),
-            const SizedBox(height: 16),
-
-            _buildTextField('د ترلاسه کوونکي شمیره', _phoneController, Icons.phone, '07XX XXX XXX'),
-            const SizedBox(height: 16),
-
-            _buildDropdown('شبکه / اپراتور', _selectedOperator, _operators, (val) {
-              setState(() {
-                _selectedOperator = val!;
-              });
-            }),
-            const SizedBox(height: 16),
-
-            _buildTextField('مقدار (AFN)', _amountController, Icons.attach_money, '0.00', onChanged: (v) {
-              setState(() {
-                _amount = double.tryParse(v) ?? 0.0;
-              });
-            }),
-            const SizedBox(height: 24),
-
-            // Fee Summary Card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('مقدار'),
-                      Text('${_amount.toStringAsFixed(2)} AFN', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('فیس'),
-                      Text('${_fee.toStringAsFixed(2)} AFN', style: const TextStyle(color: AppColors.success)),
-                    ],
-                  ),
-                  const Divider(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('ټولټال', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text('${_total.toStringAsFixed(2)} AFN', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.primary)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Continue Button - FIXED with () { }
+            // Country
+            const Text('Select Country', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 12),
             SizedBox(
-              height: 56,
-              child: ElevatedButton(
-                onPressed: () {
-                  if (_phoneController.text.isEmpty || _amount <= 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('لطفاً ټول معلومات ډک کړئ')),
-                    );
-                    return;
-                  }
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ConfirmScreen(
-                        phone: _phoneController.text,
-                        amount: _amount,
-                        operator: _selectedOperator,
-                        country: _selectedCountry,
+              height: 80,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: countries.length,
+                itemBuilder: (c,i){
+                  final country = countries[i];
+                  final isSel = selectedCountry == country['code'];
+                  return GestureDetector(
+                    onTap: ()=> setState((){
+                      selectedCountry = country['code'] as String;
+                      selectedOperator = operators[selectedCountry]![0];
+                      selectedAmount = 100;
+                    }),
+                    child: Container(
+                      width: 80, margin: const EdgeInsets.only(right: 12),
+                      decoration: BoxDecoration(
+                        color: isSel ? AppColors.gold : AppColors.card,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: isSel ? AppColors.gold : AppColors.gold.withOpacity(0.2)),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(country['flag'] as String, style: const TextStyle(fontSize: 28)),
+                          const SizedBox(height: 4),
+                          Text(country['code'] as String, style: TextStyle(color: isSel ? AppColors.bg : AppColors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                        ],
                       ),
                     ),
                   );
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('ادامه ورکړئ →', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               ),
             ),
+            const SizedBox(height: 20),
+            // Phone
+            const Text('Phone Number', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 8),
+            TextField(
+              style: const TextStyle(color: Colors.white),
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                hintText: '07XX XXX XXX',
+                hintStyle: const TextStyle(color: AppColors.grey),
+                prefixText: '+93 ',
+                prefixStyle: const TextStyle(color: AppColors.gold),
+                filled: true, fillColor: AppColors.card,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.gold.withOpacity(0.2))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.gold.withOpacity(0.2))),
+              ),
+              onChanged: (v)=> phone = v,
+            ),
+            const SizedBox(height: 20),
+            // Operator
+            const Text('Operator', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: operators[selectedCountry]!.map((op){
+                final isSel = selectedOperator == op;
+                return GestureDetector(
+                  onTap: ()=> setState(()=> selectedOperator = op),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSel ? AppColors.gold : AppColors.card,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: isSel ? AppColors.gold : AppColors.gold.withOpacity(0.2)),
+                    ),
+                    child: Text(op, style: TextStyle(color: isSel ? AppColors.bg : AppColors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+            // Amount
+            const Text('Select Amount', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 8),
+            GridView.builder(
+                           shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 1.6, crossAxisSpacing: 12, mainAxisSpacing: 12),
+              itemCount: amounts.length,
+              itemBuilder: (c,i){
+                final amt = amounts[i];
+                final isSel = selectedAmount == amt;
+                final b = AppConfig.bonuses[selectedCountry]?[amt] ?? 0;
+                return GestureDetector(
+                  onTap: ()=> setState(()=> selectedAmount = amt),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSel ? AppColors.gold : AppColors.card,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: isSel ? AppColors.gold : AppColors.gold.withOpacity(0.2)),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('$amt $selectedCountry', style: TextStyle(color: isSel ? AppColors.bg : AppColors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(color: isSel ? AppColors.bg : AppColors.gold.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+                          child: Text('+$b Bonus', style: TextStyle(color: isSel ? AppColors.gold : AppColors.gold, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            // Summary - Fee controllable
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.gold.withOpacity(0.3))),
+              child: Column(
+                children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Amount', style: TextStyle(color: AppColors.grey)), Text('€${price.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.white))]),
+                  const SizedBox(height: 8),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Fee (€${AppConfig.fee})', style: const TextStyle(color: AppColors.grey)), Text('€${fee.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.white))]),
+                  const Divider(color: Colors.white12, height: 20),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)), Text('€${total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold, fontSize: 18))]),
+                  const SizedBox(height: 4),
+                  Text('You get $selectedAmount + $bonus $selectedCountry', style: const TextStyle(color: AppColors.gold, fontSize: 12)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity, height: 56,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                onPressed: (){
+                  if(phone.isEmpty){ ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone number required'))); return; }
+                  Navigator.push(context, MaterialPageRoute(builder: (_)=> ConfirmScreen(
+                    country: selectedCountry, operator: selectedOperator, amount: selectedAmount,
+                    phone: phone, price: price, bonus: bonus, fee: fee, total: total,
+                  )));
+                },
+                child: Text('Continue - €${total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Center(child: Text('Fee controllable in AppConfig.fee = ${AppConfig.fee}', style: const TextStyle(color: AppColors.grey, fontSize: 10))),
           ],
         ),
       ),
     );
   }
-
-  Widget _buildDropdown(String label, String value, List<String> items, void Function(String?) onChanged) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade300),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isExpanded: true,
-              items: items.map((e) {
-                return DropdownMenuItem(value: e, child: Text(e));
-              }).toList(),
-              onChanged: onChanged,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextField(String label, TextEditingController controller, IconData icon, String hint, {void Function(String)? onChanged}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          keyboardType: label.contains('مقدار') ? TextInputType.number : TextInputType.phone,
-          onChanged: onChanged,
-          decoration: InputDecoration(
-            prefixIcon: Icon(icon),
-            hintText: hint,
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
-// ===== CONFIRM SCREEN =====
+// ==================== CONFIRM ====================
 class ConfirmScreen extends StatelessWidget {
-  final String phone;
-  final double amount;
-  final String operator;
-  final String country;
-
-  const ConfirmScreen({
-    super.key,
-    required this.phone,
-    required this.amount,
-    required this.operator,
-    required this.country,
-  });
-
+  final String country, operator, phone;
+  final int amount, bonus;
+  final double price, fee, total;
+  const ConfirmScreen({super.key, required this.country, required this.operator, required this.phone, required this.amount, required this.bonus, required this.price, required this.fee, required this.total});
+  
+  Future<void> _pay(BuildContext context) async {
+    // Stripe Checkout
+    try{
+      final url = Uri.parse('${AppConfig.backendUrl}/api/payments/checkout');
+      // For now show payment screen
+      Navigator.push(context, MaterialPageRoute(builder: (_)=> PaymentScreen(total: total, orderId: 'PGNT${DateTime.now().millisecondsSinceEpoch}', country: country, amount: amount, bonus: bonus, phone: phone, operator: operator)));
+    }catch(e){
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('تایید')),
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(backgroundColor: AppColors.bg, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: ()=> Navigator.pop(context)), title: const Text('Confirm', style: TextStyle(color: Colors.white))),
       body: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            const Icon(Icons.check_circle, size: 80, color: AppColors.success),
-            const SizedBox(height: 20),
-            const Text('معلومات تایید کړئ', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 32),
-            _row('هیواد', country),
-            _row('شمیره', phone),
-            _row('اپراتور', operator),
-            _row('مقدار', '${amount.toStringAsFixed(2)} AFN'),
-            _row('فیس', '${AppConfig.transferFee} AFN'),
-            const Divider(height: 32),
-            _row('ټولټال', '${(amount + AppConfig.transferFee).toStringAsFixed(2)} AFN', bold: true),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.gold.withOpacity(0.2))),
+              child: Column(
+                children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Country', style: TextStyle(color: AppColors.grey)), Text(country, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))]),
+                  const SizedBox(height: 12),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Operator', style: TextStyle(color: AppColors.grey)), Text(operator, style: const TextStyle(color: Colors.white))]),
+                  const SizedBox(height: 12),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Phone', style: TextStyle(color: AppColors.grey)), Text(phone, style: const TextStyle(color: Colors.white))]),
+                  const Divider(color: Colors.white12, height: 24),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Amount', style: TextStyle(color: AppColors.grey)), Text('$amount $country', style: const TextStyle(color: Colors.white))]),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Bonus', style: TextStyle(color: AppColors.grey)), Text('+$bonus $country', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold))]),
+                  const SizedBox(height: 12),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Fee (Your profit)', style: const TextStyle(color: AppColors.grey)), Text('€${fee.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white))]),
+                  const Divider(color: Colors.white12, height: 24),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)), Text('€${total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold, fontSize: 22))]),
+                ],
+              ),
+            ),
             const Spacer(),
             SizedBox(
-              width: double.infinity,
-              height: 56,
+              width: double.infinity, height: 56,
               child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => PaymentScreen(
-                        phone: phone,
-                        amount: amount,
-                        operator: operator,
-                      ),
-                    ),
-                  );
-                },
-                child: const Text('تایید او پیسې واستوئ', style: TextStyle(fontSize: 18)),
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                onPressed: ()=> _pay(context),
+                child: const Text('Pay with Stripe', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold, fontSize: 16)),
               ),
             ),
           ],
@@ -521,190 +448,111 @@ class ConfirmScreen extends StatelessWidget {
       ),
     );
   }
-
-  Widget _row(String label, String value, {bool bold = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: TextStyle(color: AppColors.textLight, fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
-          Text(value, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.w600, fontSize: bold ? 18 : 16)),
-        ],
-      ),
-    );
-  }
 }
-// ===== برخه 3/3 - پای =====
 
-// ===== PAYMENT SCREEN =====
+// ==================== PAYMENT ====================
 class PaymentScreen extends StatefulWidget {
-  final String phone;
-  final double amount;
-  final String operator;
-
-  const PaymentScreen({
-    super.key,
-    required this.phone,
-    required this.amount,
-    required this.operator,
-  });
-
+  final double total; final String orderId, country, phone, operator; final int amount, bonus;
+  const PaymentScreen({super.key, required this.total, required this.orderId, required this.country, required this.amount, required this.bonus, required this.phone, required this.operator});
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
-  bool _isProcessing = true;
-  bool _isSuccess = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // FIXED: use () {} not function()
-    Future.delayed(const Duration(seconds: 3), () {
-      setState(() {
-        _isProcessing = false;
-        _isSuccess = true;
-      });
-    });
+  bool loading = false;
+  
+  Future<void> _launchStripe() async {
+    setState(()=> loading = true);
+    // In production: call backend checkout and launch URL
+    // final res = await http.post(Uri.parse('${AppConfig.backendUrl}/api/payments/checkout'), body: {...})
+    // final checkoutUrl = res['checkoutUrl']
+    // await launchUrl(Uri.parse(checkoutUrl))
+    
+    // Mock success for now
+    await Future.delayed(const Duration(seconds: 2));
+    if(mounted){
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_)=> SuccessScreen(orderId: widget.orderId, amount: widget.amount, country: widget.country, bonus: widget.bonus, phone: widget.phone)));
+    }
   }
-
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('پرداخت')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_isProcessing) ...[
-                const CircularProgressIndicator(color: AppColors.primary, strokeWidth: 4),
-                const SizedBox(height: 24),
-                const Text('پرداخت روان دی...', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 12),
-                Text('لطفاً انتظار وکړئ', style: TextStyle(color: AppColors.textLight)),
-              ] else if (_isSuccess) ...[
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
-                  child: const Icon(Icons.check, size: 60, color: Colors.white),
-                ),
-                const SizedBox(height: 24),
-                const Text('پرداخت بریالی شو!', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pushAndRemoveUntil(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => SuccessScreen(amount: widget.amount, phone: widget.phone),
-                        ),
-                        (route) => false,
-                      );
-                    },
-                    child: const Text('ادامه →'),
-                  ),
-                ),
-              ],
-            ],
-          ),
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(backgroundColor: AppColors.bg, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: ()=> Navigator.pop(context)), title: const Text('Payment', style: TextStyle(color: Colors.white))),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(20)),
+              child: Column(
+                children: [
+                  const Icon(Icons.credit_card, color: AppColors.gold, size: 48),
+                  const SizedBox(height: 16),
+                  Text('€${widget.total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.gold, fontSize: 32, fontWeight: FontWeight.bold)),
+                  Text('Order ${widget.orderId}', style: const TextStyle(color: AppColors.grey, fontSize: 12)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.gold.withOpacity(0.2))),
+              child: const Column(
+                children: [
+                  Row(children: [Icon(Icons.lock, color: AppColors.gold, size: 16), SizedBox(width: 8), Text('Secure payment by Stripe', style: TextStyle(color: Colors.white, fontSize: 13))]),
+                  SizedBox(height: 8),
+                  Text('Your profit: €${AppConfig.fee} per transaction - controllable in AppConfig', style: TextStyle(color: AppColors.grey, fontSize: 11)),
+                ],
+              ),
+            ),
+            const Spacer(),
+            SizedBox(
+              width: double.infinity, height: 56,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                onPressed: loading ? null : _launchStripe,
+                child: loading ? const CircularProgressIndicator(color: AppColors.bg) : const Text('Pay Now', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ===== SUCCESS SCREEN =====
+// ==================== SUCCESS ====================
 class SuccessScreen extends StatelessWidget {
-  final double amount;
-  final String phone;
-
-  const SuccessScreen({super.key, required this.amount, required this.phone});
-
+  final String orderId, country, phone; final int amount, bonus;
+  const SuccessScreen({super.key, required this.orderId, required this.amount, required this.country, required this.bonus, required this.phone});
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.primary,
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
               const Spacer(),
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: AppColors.gold,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 4),
-                ),
-                child: const Icon(Icons.check, size: 70, color: AppColors.primary),
-              ),
-              const SizedBox(height: 32),
-              const Text(
-                'لیږد بریالی شو! 🎉',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                '${amount.toStringAsFixed(2)} AFN په بریالیتوب سره واستول شو',
-                style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.9)),
-                textAlign: TextAlign.center,
-              ),
+              Container(width: 100, height: 100, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(50)), child: const Icon(Icons.check, color: Colors.white, size: 60)),
+              const SizedBox(height: 24),
+              const Text('Top-Up Successful!', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              Text(
-                'ته: $phone',
-                style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.7)),
-              ),
-              const SizedBox(height: 32),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.gold.withOpacity(0.3)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('د تعقیب کوډ', style: TextStyle(color: Colors.white.withOpacity(0.8))),
-                    const Text('PGNT-2024-8871', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                  ],
-                ),
-              ),
+              Text('$amount + $bonus $country sent to $phone', style: const TextStyle(color: AppColors.grey), textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12)), child: Text('Order ID: $orderId', style: const TextStyle(color: AppColors.gold, fontSize: 12))),
               const Spacer(),
               SizedBox(
-                width: double.infinity,
-                height: 56,
+                width: double.infinity, height: 56,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (context) => const MainScreen()),
-                      (route) => false,
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, foregroundColor: AppColors.primary),
-                  child: const Text('کور ته لاړ شئ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                  onPressed: ()=> Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_)=> const MainScreen()), (r)=> false),
+                  child: const Text('New Top-Up', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold)),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('رسید ډاونلوډ شو')),
-                  );
-                },
-                child: Text('رسید ډاونلوډ 📥', style: TextStyle(color: Colors.white.withOpacity(0.8))),
               ),
             ],
           ),
@@ -714,210 +562,74 @@ class SuccessScreen extends StatelessWidget {
   }
 }
 
-// ===== HISTORY SCREEN =====
+// ==================== HISTORY, WALLET, PROFILE (Simplified) ====================
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> transactions = [
-      {'phone': '0799 123 456', 'amount': 500.0, 'status': 'بریالی', 'date': 'نن 14:30', 'op': 'روشن'},
-      {'phone': '0788 987 654', 'amount': 1200.0, 'status': 'بریالی', 'date': 'پرون', 'op': 'اتصالات'},
-      {'phone': '0744 555 222', 'amount': 250.0, 'status': 'په انتظار', 'date': '2 ورځې وړاندې', 'op': 'سلام'},
-    ];
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('تاریخچه')),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: transactions.length,
-        separatorBuilder: (context, index) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
-          final tx = transactions[index];
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.phone, color: AppColors.primary),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(tx['phone'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text('${tx['op']} • ${tx['date']}', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('${tx['amount']} AFN', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(color: tx['status'] == 'بریالی' ? AppColors.success.withOpacity(0.15) : Colors.orange.withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
-                      child: Text(tx['status'], style: TextStyle(fontSize: 10, color: tx['status'] == 'بریالی' ? AppColors.success : Colors.orange, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+    return Scaffold(backgroundColor: AppColors.bg, appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('History', style: TextStyle(color: Colors.white))), body: const Center(child: Text('No transactions yet', style: TextStyle(color: AppColors.grey))));
   }
 }
 
-// ===== WALLET SCREEN =====
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('زما بټوه')),
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Wallet', style: TextStyle(color: Colors.white))),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [AppColors.primary, Color(0xFF4A0A0A)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('ټول بیلانس', style: TextStyle(color: Colors.white.withOpacity(0.8))),
-                      Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), decoration: BoxDecoration(color: AppColors.gold, borderRadius: BorderRadius.circular(20)), child: const Text('VIP', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.primary))),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('12,450.00 AFN', style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.white)),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(child: _walletAction(Icons.add, 'اضافه')),
-                      const SizedBox(width: 12),
-                      Expanded(child: _walletAction(Icons.swap_horiz, 'تبادله')),
-                      const SizedBox(width: 12),
-                      Expanded(child: _walletAction(Icons.history, 'تاریخچه')),
-                    ],
-                  ),
-                ],
-              ),
+              width: double.infinity, padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(gradient: const LinearGradient(colors: [AppColors.gold, AppColors.goldLight]), borderRadius: BorderRadius.circular(20)),
+              child: Column(children: [
+                const Text('Balance', style: TextStyle(color: AppColors.bg)),
+                const Text('€24.50', style: TextStyle(color: AppColors.bg, fontSize: 36, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text('Fee profit: €${AppConfig.fee} per topup', style: const TextStyle(color: AppColors.bg, fontSize: 12)),
+              ]),
             ),
-            const SizedBox(height: 24),
-            _walletRow('د کارت سره اضافه کول', Icons.credit_card),
-            _walletRow('د بانک له لارې', Icons.account_balance),
-            _walletRow('حواله', Icons.receipt),
           ],
         ),
       ),
     );
   }
-
-  Widget _walletAction(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        children: [
-          Icon(icon, color: Colors.white, size: 24),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
-        ],
-      ),
-    );
-  }
-
-  Widget _walletRow(String title, IconData icon) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
-      child: Row(
-        children: [
-          Container(width: 40, height: 40, decoration: BoxDecoration(color: AppColors.gold.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: AppColors.primary)),
-          const SizedBox(width: 12),
-          Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600))),
-          const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textLight),
-        ],
-      ),
-    );
-  }
 }
 
-// ===== PROFILE SCREEN =====
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('پروفایل')),
-      body: SingleChildScrollView(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Profile', style: TextStyle(color: Colors.white))),
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.gold, width: 3), color: AppColors.primary.withOpacity(0.1)),
-              child: const Icon(Icons.person, size: 60, color: AppColors.primary),
-            ),
-            const SizedBox(height: 16),
-            const Text('احمد خان', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            Text('+93 79 000 0000', style: TextStyle(color: AppColors.textLight)),
-            const SizedBox(height: 24),
-            _profileItem(Icons.person_outline, 'شخصي معلومات'),
-            _profileItem(Icons.security, 'امنیت او پاسورډ'),
-            _profileItem(Icons.language, 'ژبه - پښتو'),
-            _profileItem(Icons.help_outline, 'مرسته او ملاتړ'),
-            _profileItem(Icons.info_outline, 'د اپلیکیشن په اړه'),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: OutlinedButton(
-                onPressed: () {},
-                style: OutlinedButton.styleFrom(foregroundColor: AppColors.error, side: const BorderSide(color: AppColors.error)),
-                child: const Text('وتل'),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('نسخه ${AppConfig.version} • فیس ${AppConfig.transferFee} AFN', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _profileItem(IconData icon, String title) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
-      child: Row(
         children: [
-          Icon(icon, color: AppColors.primary),
-          const SizedBox(width: 12),
-          Expanded(child: Text(title)),
-          const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textLight),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16)),
+            child: Column(
+              children: [
+                ListTile(leading: const Icon(Icons.settings, color: AppColors.gold), title: const Text('Fee Control', style: TextStyle(color: Colors.white)), subtitle: Text('Current: €${AppConfig.fee} - Edit in AppConfig.fee', style: const TextStyle(color: AppColors.grey, fontSize: 12))),
+                ListTile(leading: const Icon(Icons.card_giftcard, color: AppColors.gold), title: const Text('Bonus Control', style: TextStyle(color: Colors.white)), subtitle: const Text('Edit in AppConfig.bonuses', style: TextStyle(color: AppColors.grey, fontSize: 12))),
+                const Divider(color: Colors.white12),
+                const ListTile(leading: Icon(Icons.language, color: AppColors.gold), title: Text('Language', style: TextStyle(color: Colors.white)), subtitle: Text('6 languages', style: TextStyle(color: AppColors.grey))),
+                const ListTile(leading: Icon(Icons.share, color: AppColors.gold), title: Text('Referral', style: TextStyle(color: Colors.white)), subtitle: Text('Earn €1.50 per invite', style: TextStyle(color: AppColors.grey))),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppColors.gold.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.gold.withOpacity(0.3))),
+            child: const Text('💡 ستا په کنټرول کی: AppConfig.fee = 0.79 او AppConfig.bonuses - هر وخت بدلولی شې!', style: TextStyle(color: AppColors.gold, fontSize: 12), textAlign: TextAlign.center),
+          ),
         ],
       ),
     );
   }
-}
+} 
