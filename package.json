@@ -1,7 +1,7 @@
 {
   "name": "pgnt-asian-backend",
   "version": "1.0.0",
-  "description": "PGNT ASIAN TOPUP Backend - Stripe + DT One | Fee €0.79",
+  "description": "PGNT ASIAN TOPUP Backend - Stripe + DT One | Fee €0.79 Controllable",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
