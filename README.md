@@ -1,48 +1,51 @@
-# PGNT ASIAN Backend — Stripe + DT One foundation
+# PGNT ASIAN TOPUP — Premium Mobile Top-Up App
+## 🇦🇫 Afghanistan • 🇵🇰 Pakistan • 🇧🇩 Bangladesh • 🇮🇳 India
 
-This backend is the server-side foundation for the PGNT ASIAN mobile top-up app.
+> **Fee: €0.79 | Bonus & Fee Controllable by Owner**
+> **Backend: Stripe + DT One + HesabPay | Frontend: Flutter**
 
-## What it contains
+### Features
+- 4 Countries: AFN, PKR, BDT, INR with real operators
+- Premium UI: Burgundy + Gold, wallet €24.50
+- Fee Control: AppConfig.fee = 0.79 (changeable to 0.50, 1.00)
+- Bonus Control: AppConfig.bonuses map
+- 6 Languages
+- Real Payments: Stripe + DT One
 
-- `POST /api/payments/checkout` — creates a Stripe hosted Checkout Session.
-- `POST /api/stripe/webhook` — verifies Stripe webhook signatures and receives payment events.
-- `GET /api/payments/session/:id` — retrieves a Checkout Session.
-- `POST /api/dtone/topup` — server-side DT One transaction endpoint.
-- `GET /health` — health check.
+### App Screens
+Onboarding, Home, Confirm, Payment, Success, History, Wallet, Profile, Referral
+### Backend Endpoints
+| Method | Endpoint | Description |
+| POST | /api/payments/checkout | Stripe Checkout |
+| POST | /api/stripe/webhook | Verify webhook |
+| POST | /api/dtone/topup | Real top-up |
+| GET | /api/dtone/products | Discover product_id |
+| GET | /health | Health check |
 
-## Important production rules
+### Important Rules
+1. Never put secret keys in mobile code
+2. Never trust success redirect, use webhook
+3. Do not guess product_id
+4. Start with preprod
 
-1. Never put Stripe secret keys or DT One API secrets in Flutter/mobile code.
-2. Never treat the Stripe success redirect as proof of payment; use the verified webhook.
-3. Add a database and idempotency before automatically fulfilling paid orders.
-4. Do not guess DT One `product_id` values. Discover the correct products for your DT One account/environment.
-5. Start with DT One pre-production/sandbox before production.
-6. Configure DT One callback handling for final transaction statuses.
+### Deploy Mobile Only
+Step 1: GitHub Done
+Step 2: Render.com - New Web Service - npm install, npm start, Free, env vars, get URL, test /health
+Step 3: Stripe dashboard - API keys - Webhook
+Step 4: DT One sandbox - Basic Auth
+### Build APK Mobile Only
+Push to GitHub -> Actions -> Build Android APK -> Success -> Artifacts -> Download -> Install
 
-## Stripe
+### Profit Model
+Fee €0.79 per transaction, 100/day = €79/day, change fee in AppConfig.fee
 
-The Checkout Session is created server-side in `payment` mode. The returned `checkoutUrl` can be opened by the app.
+### Database Supabase
+SQL: create table orders (id text primary key, phone text...)
 
-## DT One
+### Project Structure
+main.dart, server.js, routes/, package.json
 
-DT One's API uses HTTP Basic authentication with API key as username and API secret as password. The example targets the pre-production DVS endpoint from the official documentation.
+### Links
+GitHub, Render, Stripe, DT One, Supabase
 
-## Run
-
-```bash
-npm install
-cp .env.example .env
-npm start
-```
-
-Then configure the `.env` values.
-
-## Next implementation step
-
-Connect the Flutter Checkout button to:
-
-`POST /api/payments/checkout`
-
-and open the returned `checkoutUrl`.
-
-After the Stripe webhook confirms `payment_status=paid`, create the DT One transaction and persist its status in a database.
+Built for mobile-only - No computer needed! Owner: musafirpiruz
