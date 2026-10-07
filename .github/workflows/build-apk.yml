@@ -34,16 +34,27 @@ jobs:
 
       - name: FORCE COPY PGNT APP (Fix Demo Issue)
         run: |
+          echo "=== BEFORE ==="
+          ls -la lib/ || true
+          head -20 lib/main.dart || true
           echo "=== COPYING YOUR PGNT APP ==="
+          # If you have main.dart in root, copy it to lib/
           if [ -f "main.dart" ]; then
             cp -f main.dart lib/main.dart
             echo "✅ Copied root main.dart -> lib/main.dart"
           fi
+          # If you have main_FIXED_FINAL.dart copy it
           if [ -f "main_FIXED_FINAL.dart" ]; then
             cp -f main_FIXED_FINAL.dart lib/main.dart
+            echo "✅ Copied main_FIXED_FINAL.dart"
           fi
+          echo "=== AFTER ==="
           wc -l lib/main.dart
           head -30 lib/main.dart
+          # Ensure pubspec.yaml exists
+          if [ ! -f "pubspec.yaml" ] && [ -f "pubspec.yaml.bak" ]; then
+            cp pubspec.yaml.bak pubspec.yaml
+          fi
 
       - name: Get dependencies
         run: flutter pub get
@@ -54,6 +65,7 @@ jobs:
           if [ -f "$MANIFEST" ]; then
             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
               sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET" \/>\n    <application/' "$MANIFEST"
+              echo "✅ Added INTERNET permission"
             fi
           fi
 
@@ -67,4 +79,3 @@ jobs:
           name: pgnt-asian-topup-apk-FIXED
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
-          
