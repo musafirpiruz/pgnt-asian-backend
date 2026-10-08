@@ -1,7 +1,3 @@
-// PGNT ASIAN TOPUP - Premium Flutter App - Organized Code
-// Fee: €0.79 - Controllable | Bonus Controllable
-// Author: musafirpiruz
-
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -9,36 +5,25 @@ void main() {
   runApp(const PGNTApp());
 }
 
-// ==================== CONFIG - ستا په کنټرول کی ====================
 class AppConfig {
-  // فیس - ته یې کولای شې بدل کړې
-  static double fee = 0.79; // €0.79 - ستا فیس
-  
-  // بونس - هر مقدار لپاره بونس ستا په کنټرول کی
+  static double fee = 0.79; // €0.79 - یورو
   static Map<String, Map<int, int>> bonuses = {
     'AFN': {100: 10, 250: 35, 500: 80, 1000: 150},
     'PKR': {100: 5, 500: 25, 1000: 60},
     'BDT': {100: 5, 500: 30, 1000: 70},
     'INR': {100: 10, 500: 50, 1000: 110},
   };
-  
-  // قیمتونه په یورو
   static Map<String, Map<int, double>> prices = {
     'AFN': {100: 1.64, 250: 4.10, 500: 8.20, 1000: 16.40},
     'PKR': {100: 0.35, 500: 1.70, 1000: 3.40},
     'BDT': {100: 0.85, 500: 4.20, 1000: 8.50},
     'INR': {100: 1.10, 500: 5.50, 1000: 11.00},
   };
-  
-  // Backend URL - کله چی Render کی Deploy کړې
   static String backendUrl = 'https://pgnt-asian-backend.onrender.com';
-  
-  // که غواړې فیس فیصدي کړې (اوس ثابت €0.79 دی)
-  static bool feeIsPercentage = false; // false = ثابت €0.79, true = فیصدي
-  static double feePercentage = 2.0; // که فیصدي وي
+  static bool feeIsPercentage = false;
+  static double feePercentage = 2.0;
 }
 
-// ==================== COLORS ====================
 class AppColors {
   static const bg = Color(0xFF1A0505);
   static const card = Color(0xFF2A0A0A);
@@ -48,7 +33,6 @@ class AppColors {
   static const grey = Color(0xFF8B7355);
 }
 
-// ==================== MAIN APP ====================
 class PGNTApp extends StatelessWidget {
   const PGNTApp({super.key});
   @override
@@ -65,8 +49,6 @@ class PGNTApp extends StatelessWidget {
     );
   }
 }
-
-// ==================== ONBOARDING ====================
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({super.key});
   @override
@@ -84,16 +66,14 @@ class OnboardingScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.gold,
                   borderRadius: BorderRadius.circular(24),
-                  boxShadow: [BoxShadow(color: AppColors.gold.withOpacity(0.3), blurRadius: 20)],
                 ),
                 child: const Icon(Icons.phone_iphone, size: 50, color: AppColors.bg),
               ),
               const SizedBox(height: 24),
-              const Text('PGNT ASIAN', style: TextStyle(color: AppColors.white, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-              const Text('TOPUP', style: TextStyle(color: AppColors.gold, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+              const Text('PGNT ASIAN', style: TextStyle(color: AppColors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+              const Text('TOPUP', style: TextStyle(color: AppColors.gold, fontSize: 32, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               const Text('Fast & Secure Mobile Top-Up', style: TextStyle(color: AppColors.grey, fontSize: 16)),
-              const Text('Afghanistan • Pakistan • Bangladesh • India', style: TextStyle(color: AppColors.grey, fontSize: 12)),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.all(16),
@@ -104,11 +84,9 @@ class OnboardingScreen extends StatelessWidget {
                       children: [
                         const Icon(Icons.verified, color: AppColors.gold, size: 20),
                         const SizedBox(width: 8),
-                        const Text('Fee: €${AppConfig.fee}  •  Instant Bonus', style: TextStyle(color: AppColors.white, fontSize: 13)),
+                        Text('Fee: €${AppConfig.fee}  •  Instant Bonus', style: TextStyle(color: AppColors.white, fontSize: 13)),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text('Controlled by you in AppConfig', style: TextStyle(color: AppColors.grey, fontSize: 11)),
                   ],
                 ),
               ),
@@ -129,7 +107,6 @@ class OnboardingScreen extends StatelessWidget {
   }
 }
 
-// ==================== MAIN SCREEN WITH BOTTOM NAV ====================
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
   @override
@@ -144,16 +121,12 @@ class _MainScreenState extends State<MainScreen> {
     const WalletScreen(),
     const ProfileScreen(),
   ];
-  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: _screens[_currentIndex],
       bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          border: Border(top: BorderSide(color: AppColors.gold.withOpacity(0.2))),
-        ),
+        decoration: BoxDecoration(color: AppColors.card, border: Border(top: BorderSide(color: AppColors.gold.withOpacity(0.2)))),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (i)=> setState(()=> _currentIndex = i),
@@ -172,8 +145,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 }
-
-// ==================== HOME SCREEN ====================
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -185,23 +156,19 @@ class _HomeScreenState extends State<HomeScreen> {
   String selectedOperator = 'Roshan';
   int selectedAmount = 100;
   String phone = '';
-  
   final countries = [
     {'code':'AFN', 'name':'Afghanistan', 'flag':'🇦🇫'},
     {'code':'PKR', 'name':'Pakistan', 'flag':'🇵🇰'},
     {'code':'BDT', 'name':'Bangladesh', 'flag':'🇧🇩'},
     {'code':'INR', 'name':'India', 'flag':'🇮🇳'},
   ];
-  
   final operators = {
     'AFN': ['Roshan', 'Etisalat', 'MTN', 'AWCC', 'Salaam'],
     'PKR': ['Jazz', 'Telenor', 'Zong', 'Ufone'],
     'BDT': ['Grameenphone', 'Robi', 'Banglalink'],
     'INR': ['Jio', 'Airtel', 'Vi', 'BSNL'],
   };
-  
   final amounts = [100, 250, 500, 1000];
-  
   double get price => AppConfig.prices[selectedCountry]?[selectedAmount] ?? 1.64;
   int get bonus => AppConfig.bonuses[selectedCountry]?[selectedAmount] ?? 10;
   double get fee => AppConfig.feeIsPercentage ? price * AppConfig.feePercentage / 100 : AppConfig.fee;
@@ -233,7 +200,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Country
             const Text('Select Country', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             SizedBox(
@@ -270,8 +236,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             ),
-            const SizedBox(height: 20),
-            // Phone
+                        const SizedBox(height: 20),
             const Text('Phone Number', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             TextField(
@@ -289,7 +254,6 @@ class _HomeScreenState extends State<HomeScreen> {
               onChanged: (v)=> phone = v,
             ),
             const SizedBox(height: 20),
-            // Operator
             const Text('Operator', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             Wrap(
@@ -311,11 +275,10 @@ class _HomeScreenState extends State<HomeScreen> {
               }).toList(),
             ),
             const SizedBox(height: 20),
-            // Amount
-            const Text('Select Amount', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('Select Amount - € Euro', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             GridView.builder(
-                           shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+              shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 1.6, crossAxisSpacing: 12, mainAxisSpacing: 12),
               itemCount: amounts.length,
               itemBuilder: (c,i){
@@ -347,7 +310,6 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             const SizedBox(height: 20),
-            // Summary - Fee controllable
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.gold.withOpacity(0.3))),
@@ -357,29 +319,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 8),
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Fee (€${AppConfig.fee})', style: const TextStyle(color: AppColors.grey)), Text('€${fee.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.white))]),
                   const Divider(color: Colors.white12, height: 20),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)), Text('€${total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold, fontSize: 18))]),
-                  const SizedBox(height: 4),
-                  Text('You get $selectedAmount + $bonus $selectedCountry', style: const TextStyle(color: AppColors.gold, fontSize: 12)),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total - € Euro', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 16)), Text('€${total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold, fontSize: 18))]),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+                        const SizedBox(height: 20),
             SizedBox(
               width: double.infinity, height: 56,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                 onPressed: (){
-                  if(phone.isEmpty){ ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone number required'))); return; }
-                  Navigator.push(context, MaterialPageRoute(builder: (_)=> ConfirmScreen(
-                    country: selectedCountry, operator: selectedOperator, amount: selectedAmount,
-                    phone: phone, price: price, bonus: bonus, fee: fee, total: total,
-                  )));
+                  if(phone.isEmpty){ ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone required'))); return; }
+                  Navigator.push(context, MaterialPageRoute(builder: (_)=> ConfirmScreen(country: selectedCountry, operator: selectedOperator, amount: selectedAmount, phone: phone, price: price, bonus: bonus, fee: fee, total: total)));
                 },
                 child: Text('Continue - €${total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold, fontSize: 16)),
               ),
             ),
             const SizedBox(height: 10),
-            Center(child: Text('Fee controllable in AppConfig.fee = ${AppConfig.fee}', style: const TextStyle(color: AppColors.grey, fontSize: 10))),
+            Center(child: Text('€ Euro - Fee = €${AppConfig.fee}', style: const TextStyle(color: AppColors.grey, fontSize: 10))),
           ],
         ),
       ),
@@ -387,29 +344,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ==================== CONFIRM ====================
 class ConfirmScreen extends StatelessWidget {
   final String country, operator, phone;
   final int amount, bonus;
   final double price, fee, total;
   const ConfirmScreen({super.key, required this.country, required this.operator, required this.phone, required this.amount, required this.bonus, required this.price, required this.fee, required this.total});
-  
-  Future<void> _pay(BuildContext context) async {
-    // Stripe Checkout
-    try{
-      final url = Uri.parse('${AppConfig.backendUrl}/api/payments/checkout');
-      // For now show payment screen
-      Navigator.push(context, MaterialPageRoute(builder: (_)=> PaymentScreen(total: total, orderId: 'PGNT${DateTime.now().millisecondsSinceEpoch}', country: country, amount: amount, bonus: bonus, phone: phone, operator: operator)));
-    }catch(e){
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-    }
-  }
-  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(backgroundColor: AppColors.bg, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: ()=> Navigator.pop(context)), title: const Text('Confirm', style: TextStyle(color: Colors.white))),
+      appBar: AppBar(backgroundColor: AppColors.bg, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: ()=> Navigator.pop(context)), title: const Text('Confirm - €', style: TextStyle(color: Colors.white))),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -425,12 +369,11 @@ class ConfirmScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Phone', style: TextStyle(color: AppColors.grey)), Text(phone, style: const TextStyle(color: Colors.white))]),
                   const Divider(color: Colors.white12, height: 24),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Amount', style: TextStyle(color: AppColors.grey)), Text('$amount $country', style: const TextStyle(color: Colors.white))]),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Bonus', style: TextStyle(color: AppColors.grey)), Text('+$bonus $country', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold))]),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Amount', style: TextStyle(color: AppColors.grey)), Text('€${price.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white))]),
                   const SizedBox(height: 12),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Fee (Your profit)', style: const TextStyle(color: AppColors.grey)), Text('€${fee.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white))]),
-                  const Divider(color: Colors.white12, height: 24),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total Pay', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)), Text('€${total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold, fontSize: 22))]),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Fee - Your profit €', style: TextStyle(color: AppColors.grey)), Text('€${fee.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white))]),
+                  const SizedBox(height: 12),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total Pay €', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)), Text('€${total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.bold, fontSize: 22))]),
                 ],
               ),
             ),
@@ -439,8 +382,8 @@ class ConfirmScreen extends StatelessWidget {
               width: double.infinity, height: 56,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                onPressed: ()=> _pay(context),
-                child: const Text('Pay with Stripe', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold, fontSize: 16)),
+                onPressed: ()=> Navigator.push(context, MaterialPageRoute(builder: (_)=> PaymentScreen(total: total, orderId: 'PGNT${DateTime.now().millisecondsSinceEpoch}', country: country, amount: amount, bonus: bonus, phone: phone, operator: operator))),
+                child: Text('Pay €${total.toStringAsFixed(2)} - Euro', style: const TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold, fontSize: 18)),
               ),
             ),
           ],
@@ -449,187 +392,47 @@ class ConfirmScreen extends StatelessWidget {
     );
   }
 }
-
-// ==================== PAYMENT ====================
 class PaymentScreen extends StatefulWidget {
   final double total; final String orderId, country, phone, operator; final int amount, bonus;
   const PaymentScreen({super.key, required this.total, required this.orderId, required this.country, required this.amount, required this.bonus, required this.phone, required this.operator});
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
-
 class _PaymentScreenState extends State<PaymentScreen> {
   bool loading = false;
-  
   Future<void> _launchStripe() async {
     setState(()=> loading = true);
-    // In production: call backend checkout and launch URL
-    // final res = await http.post(Uri.parse('${AppConfig.backendUrl}/api/payments/checkout'), body: {...})
-    // final checkoutUrl = res['checkoutUrl']
-    // await launchUrl(Uri.parse(checkoutUrl))
-    
-    // Mock success for now
-    await Future.delayed(const Duration(seconds: 2));
-    if(mounted){
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_)=> SuccessScreen(orderId: widget.orderId, amount: widget.amount, country: widget.country, bonus: widget.bonus, phone: widget.phone)));
-    }
+    try { await Future.delayed(const Duration(seconds: 1)); if(mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_)=> SuccessScreen(orderId: widget.orderId, amount: widget.amount, country: widget.country, bonus: widget.bonus, phone: widget.phone))); } catch(e){ ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'))); } finally { if(mounted) setState(()=> loading = false); }
   }
-  
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(backgroundColor: AppColors.bg, leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: ()=> Navigator.pop(context)), title: const Text('Payment', style: TextStyle(color: Colors.white))),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(20)),
-              child: Column(
-                children: [
-                  const Icon(Icons.credit_card, color: AppColors.gold, size: 48),
-                  const SizedBox(height: 16),
-                  Text('€${widget.total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.gold, fontSize: 32, fontWeight: FontWeight.bold)),
-                  Text('Order ${widget.orderId}', style: const TextStyle(color: AppColors.grey, fontSize: 12)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.gold.withOpacity(0.2))),
-              child: const Column(
-                children: [
-                  Row(children: [Icon(Icons.lock, color: AppColors.gold, size: 16), SizedBox(width: 8), Text('Secure payment by Stripe', style: TextStyle(color: Colors.white, fontSize: 13))]),
-                  SizedBox(height: 8),
-                  Text('Your profit: €${AppConfig.fee} per transaction - controllable in AppConfig', style: TextStyle(color: AppColors.grey, fontSize: 11)),
-                ],
-              ),
-            ),
-            const Spacer(),
-            SizedBox(
-              width: double.infinity, height: 56,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                onPressed: loading ? null : _launchStripe,
-                child: loading ? const CircularProgressIndicator(color: AppColors.bg) : const Text('Pay Now', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold, fontSize: 16)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    return Scaffold(backgroundColor: AppColors.bg, appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Payment - € Euro', style: TextStyle(color: Colors.white))), body: Padding(padding: const EdgeInsets.all(16), child: Column(children: [Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16)), child: Column(children: [const Icon(Icons.credit_card, color: AppColors.gold, size: 48), const SizedBox(height: 12), Text('Pay €${widget.total.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)), Text('For ${widget.amount} + ${widget.bonus} ${widget.country} - € Euro', style: const TextStyle(color: AppColors.grey))])), const Spacer(), SizedBox(width: double.infinity, height: 56, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))), onPressed: loading ? null : _launchStripe, child: loading ? const CircularProgressIndicator(color: AppColors.bg) : Text('Pay Now - €${widget.total.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold, fontSize: 16))))])) );
   }
 }
-
-// ==================== SUCCESS ====================
 class SuccessScreen extends StatelessWidget {
   final String orderId, country, phone; final int amount, bonus;
   const SuccessScreen({super.key, required this.orderId, required this.amount, required this.country, required this.bonus, required this.phone});
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const Spacer(),
-              Container(width: 100, height: 100, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(50)), child: const Icon(Icons.check, color: Colors.white, size: 60)),
-              const SizedBox(height: 24),
-              const Text('Top-Up Successful!', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text('$amount + $bonus $country sent to $phone', style: const TextStyle(color: AppColors.grey), textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12)), child: Text('Order ID: $orderId', style: const TextStyle(color: AppColors.gold, fontSize: 12))),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity, height: 56,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                  onPressed: ()=> Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_)=> const MainScreen()), (r)=> false),
-                  child: const Text('New Top-Up', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return Scaffold(backgroundColor: AppColors.bg, body: SafeArea(child: Padding(padding: const EdgeInsets.all(24), child: Column(children: [const Spacer(), Container(width: 100, height: 100, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(50)), child: const Icon(Icons.check, color: Colors.white, size: 60)), const SizedBox(height: 24), const Text('Top-Up Successful! €', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)), const SizedBox(height: 8), Text('$amount + $bonus $country sent to $phone', style: const TextStyle(color: AppColors.grey), textAlign: TextAlign.center), const SizedBox(height: 16), Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12)), child: Text('Order ID: $orderId - € Euro', style: const TextStyle(color: AppColors.gold, fontSize: 12))), const Spacer(), SizedBox(width: double.infinity, height: 56, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))), onPressed: ()=> Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_)=> const MainScreen()), (r)=> false), child: const Text('New Top-Up - €', style: TextStyle(color: AppColors.bg, fontWeight: FontWeight.bold))))]))));
   }
 }
-
-// ==================== HISTORY, WALLET, PROFILE (Simplified) ====================
 class HistoryScreen extends StatelessWidget {
   const HistoryScreen({super.key});
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(backgroundColor: AppColors.bg, appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('History', style: TextStyle(color: Colors.white))), body: const Center(child: Text('No transactions yet', style: TextStyle(color: AppColors.grey))));
-  }
+  Widget build(BuildContext context) { return Scaffold(backgroundColor: AppColors.bg, appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('History - €', style: TextStyle(color: Colors.white))), body: const Center(child: Text('No transactions yet - € Euro', style: TextStyle(color: AppColors.grey)))); }
 }
-
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Wallet', style: TextStyle(color: Colors.white))),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Container(
-              width: double.infinity, padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(gradient: const LinearGradient(colors: [AppColors.gold, AppColors.goldLight]), borderRadius: BorderRadius.circular(20)),
-              child: Column(children: [
-                const Text('Balance', style: TextStyle(color: AppColors.bg)),
-                const Text('€24.50', style: TextStyle(color: AppColors.bg, fontSize: 36, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Text('Fee profit: €${AppConfig.fee} per topup', style: const TextStyle(color: AppColors.bg, fontSize: 12)),
-              ]),
-            ),
-          ],
-        ),
-      ),
-    );
+    return Scaffold(backgroundColor: AppColors.bg, appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Wallet - €', style: TextStyle(color: Colors.white))), body: Padding(padding: const EdgeInsets.all(16), child: Column(children: [Container(width: double.infinity, padding: const EdgeInsets.all(24), decoration: BoxDecoration(gradient: const LinearGradient(colors: [AppColors.gold, AppColors.goldLight]), borderRadius: BorderRadius.circular(20)), child: Column(children: [const Text('Balance - € Euro', style: TextStyle(color: AppColors.bg)), const Text('€24.50', style: TextStyle(color: AppColors.bg, fontSize: 36, fontWeight: FontWeight.bold)), const SizedBox(height: 8), Text('Fee profit: €${AppConfig.fee} per topup - €', style: const TextStyle(color: AppColors.bg, fontSize: 12))]))])));
   }
 }
-
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Profile', style: TextStyle(color: Colors.white))),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16)),
-            child: Column(
-              children: [
-                ListTile(leading: const Icon(Icons.settings, color: AppColors.gold), title: const Text('Fee Control', style: TextStyle(color: Colors.white)), subtitle: Text('Current: €${AppConfig.fee} - Edit in AppConfig.fee', style: const TextStyle(color: AppColors.grey, fontSize: 12))),
-                ListTile(leading: const Icon(Icons.card_giftcard, color: AppColors.gold), title: const Text('Bonus Control', style: TextStyle(color: Colors.white)), subtitle: const Text('Edit in AppConfig.bonuses', style: TextStyle(color: AppColors.grey, fontSize: 12))),
-                const Divider(color: Colors.white12),
-                const ListTile(leading: Icon(Icons.language, color: AppColors.gold), title: Text('Language', style: TextStyle(color: Colors.white)), subtitle: Text('6 languages', style: TextStyle(color: AppColors.grey))),
-                const ListTile(leading: Icon(Icons.share, color: AppColors.gold), title: Text('Referral', style: TextStyle(color: Colors.white)), subtitle: Text('Earn €1.50 per invite', style: TextStyle(color: AppColors.grey))),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: AppColors.gold.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.gold.withOpacity(0.3))),
-            child: const Text('💡 ستا په کنټرول کی: AppConfig.fee = 0.79 او AppConfig.bonuses - هر وخت بدلولی شې!', style: TextStyle(color: AppColors.gold, fontSize: 12), textAlign: TextAlign.center),
-          ),
-        ],
-      ),
-    );
+    return Scaffold(backgroundColor: AppColors.bg, appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Profile - €', style: TextStyle(color: Colors.white))), body: ListView(padding: const EdgeInsets.all(16), children: [Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16)), child: Column(children: [ListTile(leading: const Icon(Icons.settings, color: AppColors.gold), title: Text('Fee Control - €${AppConfig.fee} Euro', style: TextStyle(color: Colors.white)), subtitle: const Text('Current: €0.79 - یورو - Edit in AppConfig.fee', style: TextStyle(color: AppColors.grey, fontSize: 12))), const Divider(color: Colors.white12), const ListTile(leading: Icon(Icons.share, color: AppColors.gold), title: Text('Referral - €1.50 Euro', style: TextStyle(color: Colors.white)), subtitle: Text('Earn €1.50 per invite - یورو', style: TextStyle(color: AppColors.grey)))])), const SizedBox(height: 16), Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: AppColors.gold.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.gold.withOpacity(0.3))), child: const Text('💶 ټول یورو € - ډالر نشته! AppConfig.fee = 0.79 €', style: TextStyle(color: AppColors.gold, fontSize: 12), textAlign: TextAlign.center))]));
   }
-} 
+}
