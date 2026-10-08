@@ -1,5 +1,5 @@
 name: pgnt_asian_topup
-description: PGNT ASIAN TOPUP - Premium Mobile Top-Up | Fee €0.79 Controllable | AF PK BD IN
+description: PGNT ASIAN TOPUP - Fee €0.79 - 2% Bonus - 5% Share
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -24,5 +24,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/images/pgnt_logo.png
