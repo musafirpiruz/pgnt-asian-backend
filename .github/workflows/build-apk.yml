@@ -8,6 +8,7 @@ on:
       - main
     paths:
       - 'main.dart'
+      - 'main_FIXED_FINAL.dart'
       - 'lib/**'
       - 'pubspec.yaml'
       - '.github/workflows/build-apk.yml'
@@ -24,25 +25,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Flutter source
-        run: |
-          set -e
-
-          if [ -f "main_FIXED_FINAL.dart" ]; then
-            cp main_FIXED_FINAL.dart lib/main.dart
-          elif [ -f "main.dart" ]; then
-            cp main.dart lib/main.dart
-          elif [ -f "lib/main.dart" ]; then
-            echo "Using lib/main.dart"
-          else
-            echo "ERROR: No main.dart file found"
-            exit 1
-          fi
-
-          echo "Selected app source:"
-          wc -l lib/main.dart
-          head -20 lib/main.dart
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -55,22 +37,48 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Verify project files
+      - name: Select Flutter source
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          mkdir -p lib
+
+          if [ -f "main_FIXED_FINAL.dart" ]; then
+            cp main_FIXED_FINAL.dart lib/main.dart
+          elif [ -f "main.dart" ]; then
+            cp main.dart lib/main.dart
+          elif [ -f "lib/main.dart" ]; then
+            echo "Using existing lib/main.dart"
+          else
+            echo "ERROR: No Dart entry file found"
+            exit 1
+          fi
+
+          test -s lib/main.dart
+          echo "Selected Flutter source:"
+          wc -l lib/main.dart
+
+      - name: Verify project
+        run: |
           test -f pubspec.yaml
           test -f lib/main.dart
+          test -d android
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Check Dart code
+      - name: Analyze Dart code
         run: dart analyze lib/main.dart
 
       - name: Build release APK
         run: |
           flutter build apk --release \
             --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
+
+      - name: Verify APK
+        run: |
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
