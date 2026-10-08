@@ -1,221 +1,100 @@
 
-# PGNT ASIAN TOPUP
+name: Build PGNT ASIAN TOPUP APK
 
-**Professional Mobile Recharge Platform**
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'main.dart'
+      - 'main_FIXED_FINAL.dart'
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/build-apk.yml'
 
-PGNT ASIAN TOPUP is a mobile recharge application designed to help customers purchase mobile top-ups for recipients in Afghanistan, Pakistan, India, and Bangladesh.
+permissions:
+  contents: read
 
-The project uses Flutter for the mobile application and a Node.js backend for payment processing and top-up integration.
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
 
----
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-## 🌍 Supported Countries
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-| Country | Code | Currency |
-|---|---|---|
-| Afghanistan | AF | AFN |
-| Pakistan | PK | PKR |
-| India | IN | INR |
-| Bangladesh | BD | BDT |
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
 
-## 🌐 Supported Languages
+      - name: Select Flutter source
+        shell: bash
+        run: |
+          set -euo pipefail
 
-- Pashto
-- Dari
-- English
-- Urdu
-- Hindi
-- Bengali
+          mkdir -p lib
 
-## ✨ Main Features
+          if [ -f "main_FIXED_FINAL.dart" ]; then
+            cp main_FIXED_FINAL.dart lib/main.dart
+            echo "Using main_FIXED_FINAL.dart"
+          elif [ -f "main.dart" ]; then
+            cp main.dart lib/main.dart
+            echo "Using root main.dart"
+          elif [ -f "lib/main.dart" ]; then
+            echo "Using existing lib/main.dart"
+          else
+            echo "ERROR: No Dart entry file found."
+            exit 1
+          fi
 
-- Country and mobile operator selection
-- Recipient phone number validation
-- Product catalog loaded from the backend
-- Server-controlled product pricing
-- Stripe Checkout integration
-- DT One top-up integration
-- Order status tracking
-- Transaction history
-- Wallet and referral reward interface
-- Customer support interface
-- Android APK build using GitHub Actions
+          echo "Selected source:"
+          wc -l lib/main.dart
+          head -20 lib/main.dart
 
-**Important:** Features that depend on database configuration, backend endpoints, provider credentials, and account authentication must be tested before production release.
+      - name: Verify project files
+        shell: bash
+        run: |
+          set -euo pipefail
 
----
+          test -f pubspec.yaml
+          test -f lib/main.dart
 
-## 🏗️ Technology Stack
+          if [ ! -d android ]; then
+            echo "ERROR: Android project folder is missing."
+            exit 1
+          fi
 
-### Mobile Application
-- Flutter
-- Dart
-- HTTP client
-- URL Launcher
+      - name: Install dependencies
+        run: flutter pub get
 
-### Backend
-- Node.js
-- Express
-- PostgreSQL
-- Stripe
-- DT One API
+      - name: Analyze Dart code
+        run: dart analyze lib/main.dart
 
-### Build and Deployment
-- GitHub Actions
-- Android release APK
-- Render hosting
+      - name: Build release APK
+        run: |
+          flutter build apk --release \
+            --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
 
----
+      - name: Verify APK
+        run: |
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
 
-## 📁 Project Structure
-
-```text
-pgnt-asian-backend/
-├── .github/
-│   └── workflows/
-│       └── build-apk.yml
-├── android/
-├── lib/
-│   └── main.dart
-├── main.dart
-├── server.js
-├── database.sql
-├── migrate.js
-├── package.json
-├── pubspec.yaml
-└── README.md
-```
-
-Some files or directories may differ depending on the current repository version.
-
----
-
-## 🔌 Backend Configuration
-
-The default backend URL is:
-
-```text
-https://pgnt-asian-backend.onrender.com
-```
-
-The mobile application can use a different backend URL through a Flutter build argument:
-
-```bash
-flutter build apk --release \
-  --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
-```
-
-The backend should provide the required catalog, checkout, order-status, payment-webhook, and DT One transaction endpoints.
-
----
-
-## 💳 Payment Security
-
-The application must follow these security requirements:
-
-1. Stripe secret keys must remain on the backend.
-2. DT One API credentials must remain on the backend.
-3. Stripe webhook signatures must be verified on the server.
-4. An order must not be fulfilled before its payment is verified.
-5. Payment and top-up requests must be protected against duplicate processing.
-6. Product prices, fees, and bonuses must be validated and calculated server-side.
-7. Order-status endpoints must verify that the requester is authorized to access the order.
-8. Refunds and wallet balance changes must be recorded securely.
-
-Never commit API secrets, passwords, private keys, database credentials, or webhook signing secrets to GitHub.
-
----
-
-## 🛠️ Local Development
-
-Install Flutter, Dart, Node.js, and PostgreSQL as required by the project.
-
-### Flutter
-
-```bash
-flutter pub get
-flutter analyze
-flutter build apk --release
-```
-
-### Backend
-
-```bash
-npm install
-npm start
-```
-
-The actual backend start command depends on the scripts defined in `package.json`.
-
-Configure the required environment variables in the hosting provider's secure environment settings before starting the backend.
-
----
-
-## 📦 Build an Android APK
-
-1. Open the repository on GitHub.
-2. Select **Actions**.
-3. Open the Android APK workflow.
-4. Select **Run workflow**, if available.
-5. Wait for the workflow to finish.
-6. Download the `pgnt-asian-topup-apk` artifact if the build succeeds.
-
-A successful APK build does not, by itself, confirm that Stripe payments, DT One fulfillment, refunds, or production security are working.
-
----
-
-## 🧪 Production Readiness Checklist
-
-- [ ] Confirm the correct Flutter source file is used by the build workflow.
-- [ ] Run Dart analysis and resolve compilation errors.
-- [ ] Verify backend health and database connectivity.
-- [ ] Resolve database schema and migration issues.
-- [ ] Load and verify real DT One products and product identifiers.
-- [ ] Test Stripe Checkout in test mode.
-- [ ] Verify Stripe webhook signatures.
-- [ ] Test successful payment followed by exactly one top-up.
-- [ ] Implement and test authenticated DT One callbacks.
-- [ ] Test failed top-ups, refunds, and manual review.
-- [ ] Verify server-side fee and bonus administration.
-- [ ] Implement secure user authentication and order ownership checks.
-- [ ] Complete wallet and referral reward backend logic.
-- [ ] Test all supported languages.
-- [ ] Configure release signing and review Google Play requirements.
-
-Do not enable real-money production fulfillment until the relevant tests have passed.
-
----
-
-## 🔐 Environment Variables
-
-Configure production values securely in the hosting provider.
-
-Typical variables may include:
-
-```text
-APP_BASE_URL
-DATABASE_URL
-STRIPE_SECRET_KEY
-STRIPE_WEBHOOK_SECRET
-DTONE_API_KEY
-DTONE_API_SECRET
-DTONE_BASE_URL
-DTONE_CALLBACK_URL
-ADMIN_API_KEY
-```
-
-Use the exact variable names expected by the current backend code.
-
-Do not put actual secret values in this README or in the Flutter application.
-
----
-
-## 📄 Project Status
-
-PGNT ASIAN TOPUP is under development and verification.
-
-The project aims to provide a secure, multilingual mobile top-up service. Production readiness must be established through integration tests, payment verification, database validation, and provider-specific testing.
-
-## 📜 License
-
-Add the appropriate license before distributing this project publicly.
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pgnt-asian-topup-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+          
