@@ -1,100 +1,100 @@
 
-name: Build PGNT ASIAN TOPUP APK
+# PGNT ASIAN TOPUP
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'main.dart'
-      - 'main_FIXED_FINAL.dart'
-      - 'lib/**'
-      - 'pubspec.yaml'
-      - '.github/workflows/build-apk.yml'
+**Professional Mobile Recharge Platform**
 
-permissions:
-  contents: read
+PGNT ASIAN TOPUP is a multilingual mobile recharge project designed for customers sending mobile top-ups to Afghanistan, Pakistan, India, and Bangladesh.
 
-jobs:
-  build:
-    name: Build Android APK
-    runs-on: ubuntu-latest
+## Supported Countries
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+| Country | Code | Currency |
+|---|---|---|
+| Afghanistan | AF | AFN |
+| Pakistan | PK | PKR |
+| India | IN | INR |
+| Bangladesh | BD | BDT |
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+## Supported Languages
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
+- Pashto
+- Dari
+- English
+- Urdu
+- Hindi
+- Bengali
 
-      - name: Select Flutter source
-        shell: bash
-        run: |
-          set -euo pipefail
+## Main Features
 
-          mkdir -p lib
+- Country and mobile operator selection
+- Mobile number entry and validation
+- Product catalog from the backend
+- Server-controlled prices, fees, and bonuses
+- Stripe Checkout integration
+- DT One top-up integration
+- Order status tracking
+- Wallet and referral features
+- Customer support interface
+- Android APK build through GitHub Actions
 
-          if [ -f "main_FIXED_FINAL.dart" ]; then
-            cp main_FIXED_FINAL.dart lib/main.dart
-            echo "Using main_FIXED_FINAL.dart"
-          elif [ -f "main.dart" ]; then
-            cp main.dart lib/main.dart
-            echo "Using root main.dart"
-          elif [ -f "lib/main.dart" ]; then
-            echo "Using existing lib/main.dart"
-          else
-            echo "ERROR: No Dart entry file found."
-            exit 1
-          fi
+Features must be tested against the actual backend before production use.
 
-          echo "Selected source:"
-          wc -l lib/main.dart
-          head -20 lib/main.dart
+## Technology
 
-      - name: Verify project files
-        shell: bash
-        run: |
-          set -euo pipefail
+- Flutter and Dart
+- Node.js and Express
+- PostgreSQL
+- Stripe
+- DT One API
+- GitHub Actions
+- Render hosting
 
-          test -f pubspec.yaml
-          test -f lib/main.dart
+## Backend
 
-          if [ ! -d android ]; then
-            echo "ERROR: Android project folder is missing."
-            exit 1
-          fi
+Default backend URL:
 
-      - name: Install dependencies
-        run: flutter pub get
+`https://pgnt-asian-backend.onrender.com`
 
-      - name: Analyze Dart code
-        run: dart analyze lib/main.dart
+The application must use the backend to retrieve products and create payment requests.
 
-      - name: Build release APK
-        run: |
-          flutter build apk --release \
-            --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
+## Build Android APK
 
-      - name: Verify APK
-        run: |
-          test -s build/app/outputs/flutter-apk/app-release.apk
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
+1. Open the repository on GitHub.
+2. Select **Actions**.
+3. Open the PGNT ASIAN TOPUP APK workflow.
+4. Select **Run workflow**, if available.
+5. Wait for the build to finish.
+6. Download the APK artifact if the build succeeds.
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: pgnt-asian-topup-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
-          retention-days: 14
-          
+## Security Requirements
+
+- Keep Stripe and DT One secrets on the backend.
+- Verify Stripe webhook signatures.
+- Do not fulfill orders before verified payment.
+- Prevent duplicate payment and top-up processing.
+- Calculate prices, fees, and bonuses on the server.
+- Protect order information with authentication and authorization.
+- Test failed transactions and refunds before production.
+
+Never commit passwords, API secrets, database credentials, or webhook signing secrets.
+
+## Production Checklist
+
+- [ ] Confirm the correct Flutter entry file.
+- [ ] Run Dart analysis and resolve errors.
+- [ ] Verify database schema and migrations.
+- [ ] Verify real DT One products and identifiers.
+- [ ] Test Stripe Checkout and webhook verification.
+- [ ] Test successful and failed top-ups.
+- [ ] Test refunds and duplicate-request protection.
+- [ ] Verify server-side price, fee, and bonus controls.
+- [ ] Test all supported languages.
+- [ ] Configure Android release signing.
+- [ ] Review Google Play requirements.
+
+## Project Status
+
+PGNT ASIAN TOPUP is under development and verification. A successful APK build alone does not guarantee that payment, top-up, wallet, or refund features are production-ready.
+
+## License
+
+Add an appropriate license before distributing this project publicly.
