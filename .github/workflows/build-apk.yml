@@ -37,32 +37,60 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Select Flutter source
+      - name: Check repository files
         shell: bash
         run: |
           set -euo pipefail
+          echo "Repository: $GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+          pwd
+          ls -la
+
+          if [ ! -f "$GITHUB_WORKSPACE/pubspec.yaml" ]; then
+            echo "ERROR: pubspec.yaml is missing from repository root."
+            exit 1
+          fi
+
+      - name: Prepare Flutter source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
           mkdir -p lib
 
           if [ -f "main_FIXED_FINAL.dart" ]; then
             cp main_FIXED_FINAL.dart lib/main.dart
+            echo "Using main_FIXED_FINAL.dart"
           elif [ -f "main.dart" ]; then
             cp main.dart lib/main.dart
-          elif [ -f "lib/main.dart" ]; then
+            echo "Using root main.dart"
+          elif [ -s "lib/main.dart" ]; then
             echo "Using existing lib/main.dart"
           else
-            echo "ERROR: No Dart entry file found"
+            echo "ERROR: No Dart entry file found."
             exit 1
           fi
 
           test -s lib/main.dart
-          echo "Selected Flutter source:"
+          echo "Flutter source prepared:"
           wc -l lib/main.dart
 
-      - name: Verify project
+      - name: Generate missing Android project files
+        shell: bash
         run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+
+          if [ ! -d android ]; then
+            flutter create \
+              --platforms=android \
+              --project-name=pgnt_asian_topup \
+              .
+          fi
+
+          test -d android
           test -f pubspec.yaml
           test -f lib/main.dart
-          test -d android
 
       - name: Install dependencies
         run: flutter pub get
@@ -76,9 +104,12 @@ jobs:
             --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
 
       - name: Verify APK
+        shell: bash
         run: |
-          test -s build/app/outputs/flutter-apk/app-release.apk
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$APK"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
