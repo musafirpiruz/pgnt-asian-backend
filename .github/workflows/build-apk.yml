@@ -1,81 +1,82 @@
-name: Build Android APK - PGNT FIXED
+
+name: Build PGNT ASIAN TOPUP APK
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'main.dart'
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Select Flutter source
+        run: |
+          set -e
+
+          if [ -f "main_FIXED_FINAL.dart" ]; then
+            cp main_FIXED_FINAL.dart lib/main.dart
+          elif [ -f "main.dart" ]; then
+            cp main.dart lib/main.dart
+          elif [ -f "lib/main.dart" ]; then
+            echo "Using lib/main.dart"
+          else
+            echo "ERROR: No main.dart file found"
+            exit 1
+          fi
+
+          echo "Selected app source:"
+          wc -l lib/main.dart
+          head -20 lib/main.dart
+
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: temurin
           java-version: '17'
 
-      - name: Setup Flutter
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
-          flutter-version: '3.22.3'
+          channel: stable
           cache: true
 
-      - name: Create Android project if missing
+      - name: Verify project files
         run: |
-          if [ ! -d "android" ]; then
-            flutter create --platforms=android --project-name pgnt_asian_topup .
-          fi
+          set -e
+          test -f pubspec.yaml
+          test -f lib/main.dart
 
-      - name: FORCE COPY PGNT APP (Fix Demo Issue)
-        run: |
-          echo "=== BEFORE ==="
-          ls -la lib/ || true
-          head -20 lib/main.dart || true
-          echo "=== COPYING YOUR PGNT APP ==="
-          # If you have main.dart in root, copy it to lib/
-          if [ -f "main.dart" ]; then
-            cp -f main.dart lib/main.dart
-            echo "✅ Copied root main.dart -> lib/main.dart"
-          fi
-          # If you have main_FIXED_FINAL.dart copy it
-          if [ -f "main_FIXED_FINAL.dart" ]; then
-            cp -f main_FIXED_FINAL.dart lib/main.dart
-            echo "✅ Copied main_FIXED_FINAL.dart"
-          fi
-          echo "=== AFTER ==="
-          wc -l lib/main.dart
-          head -30 lib/main.dart
-          # Ensure pubspec.yaml exists
-          if [ ! -f "pubspec.yaml" ] && [ -f "pubspec.yaml.bak" ]; then
-            cp pubspec.yaml.bak pubspec.yaml
-          fi
-
-      - name: Get dependencies
+      - name: Install dependencies
         run: flutter pub get
 
-      - name: Enable Internet permission
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET" \/>\n    <application/' "$MANIFEST"
-              echo "✅ Added INTERNET permission"
-            fi
-          fi
+      - name: Check Dart code
+        run: dart analyze lib/main.dart
 
-      - name: Build APK - PGNT ASIAN TOPUP
+      - name: Build release APK
         run: |
-          flutter build apk --release --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com --no-tree-shake-icons -v
+          flutter build apk --release \
+            --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: pgnt-asian-topup-apk-FIXED
+          name: pgnt-asian-topup-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
           retention-days: 14
+          
