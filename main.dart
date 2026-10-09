@@ -92,20 +92,28 @@ class MobileOperator {
 }
 
 const List<MobileOperator> operators = [
+  // Afghanistan
   MobileOperator('AF', 'Roshan', '📶'),
   MobileOperator('AF', 'Etisalat', '📱'),
-  MobileOperator('AF', 'AWCC', '📡'),
+  MobileOperator('AF', 'MTN', '📡'),
+  MobileOperator('AF', 'AWCC', '🛰️'),
   MobileOperator('AF', 'Salaam', '☎️'),
+
+  // Pakistan
   MobileOperator('PK', 'Jazz', '📶'),
   MobileOperator('PK', 'Zong', '📱'),
   MobileOperator('PK', 'Ufone', '📡'),
   MobileOperator('PK', 'Telenor', '☎️'),
+
+  // India
   MobileOperator('IN', 'Airtel', '📶'),
   MobileOperator('IN', 'Jio', '📱'),
   MobileOperator('IN', 'Vi', '📡'),
+
+  // Bangladesh
   MobileOperator('BD', 'Grameenphone', '📶'),
   MobileOperator('BD', 'Robi', '📱'),
-  MobileOperator('BD', 'Banglalink', '📡'),
+  MobileOperator('BD', 'Banglalink', '☎️'),
 ];
 
 const Map<String, List<int>> rechargeAmounts = {
