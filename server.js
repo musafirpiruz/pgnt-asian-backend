@@ -1666,6 +1666,230 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   }
 });
 
+// List orders requiring operator review. Admin-only.
+app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         order_id,
+         country,
+         operator,
+         phone,
+         amount,
+         currency,
+         charge_cents,
+         status,
+         stripe_payment_intent_id,
+         dtone_transaction_id,
+         dtone_status,
+         dtone_error,
+         created_at,
+         updated_at
+       FROM orders
+       WHERE status = 'topup_review'
+       ORDER BY updated_at ASC
+       LIMIT 100`
+    );
+
+    return res.json({
+      count: result.rowCount,
+      orders: result.rows,
+    });
+  } catch (error) {
+    console.error(
+      'Admin review queue failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not load review queue.',
+    });
+  }
+});
+
+// Full Stripe refund, initiated only by an authenticated admin.
+// Idempotency is enforced both by the refunds table's UNIQUE(order_id)
+// constraint and Stripe's idempotency key. This endpoint deliberately
+// does not refund orders that are already completed by DT One.
+app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({
+      error: 'Payment service is not configured.',
+    });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({
+      error: 'Invalid order ID.',
+    });
+  }
+
+  const reason = String(req.body?.reason || 'Top-up failed; admin reviewed')
+    .trim()
+    .slice(0, 500);
+
+  const client = await pool.connect();
+  let order;
+  let existingRefund;
+
+  try {
+    await client.query('BEGIN');
+
+    const orderResult = await client.query(
+      `SELECT order_id, status, charge_cents, stripe_payment_intent_id
+       FROM orders
+       WHERE order_id = $1
+       FOR UPDATE`,
+      [orderId]
+    );
+
+    if (orderResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    order = orderResult.rows[0];
+
+    if (order.status === 'completed') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Top-up is completed. Refund requires a separate manual investigation.',
+      });
+    }
+
+    if (!['topup_review', 'topup_submitted', 'processing_topup'].includes(order.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Only a paid order awaiting top-up review can be refunded.',
+      });
+    }
+
+    if (!order.stripe_payment_intent_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'The order has no verified Stripe PaymentIntent.',
+      });
+    }
+
+    const refundResult = await client.query(
+      `SELECT id, stripe_refund_id, amount_cents, status
+       FROM refunds
+       WHERE order_id = $1
+       FOR UPDATE`,
+      [orderId]
+    );
+
+    existingRefund = refundResult.rows[0] || null;
+
+    if (existingRefund && existingRefund.status === 'succeeded') {
+      await client.query('COMMIT');
+      return res.json({
+        orderId,
+        refundId: existingRefund.stripe_refund_id,
+        status: 'refunded',
+        duplicate: true,
+      });
+    }
+
+    if (!existingRefund) {
+      await client.query(
+        `INSERT INTO refunds (order_id, amount_cents, status, reason)
+         VALUES ($1, $2, 'pending', $3)`,
+        [orderId, Number(order.charge_cents), reason]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Refund preparation failed:', error.message);
+    return res.status(500).json({ error: 'Could not prepare refund.' });
+  } finally {
+    client.release();
+  }
+
+  try {
+    // A stable idempotency key makes a retried HTTP request safe
+    // even if Stripe succeeded but the app lost the response.
+    const refund = await stripe.refunds.create(
+      {
+        payment_intent: order.stripe_payment_intent_id,
+        reason: 'requested_by_customer',
+        metadata: { orderId, adminReason: reason },
+      },
+      { idempotencyKey: `pgnt-refund-${orderId}` }
+    );
+
+    await pool.query(
+      `UPDATE refunds
+       SET stripe_refund_id = $1,
+           amount_cents = $2,
+           status = $3,
+           reason = $4
+       WHERE order_id = $5`,
+      [
+        refund.id,
+        refund.amount,
+        refund.status,
+        reason,
+        orderId,
+      ]
+    );
+
+    if (refund.status === 'succeeded') {
+      await pool.query(
+        `UPDATE orders
+         SET status = 'refunded',
+             refunded_at = COALESCE(refunded_at, NOW()),
+             updated_at = NOW()
+         WHERE order_id = $1
+           AND status <> 'completed'`,
+        [orderId]
+      );
+    } else {
+      await pool.query(
+        `UPDATE orders
+         SET status = 'topup_review',
+             updated_at = NOW()
+         WHERE order_id = $1
+           AND status <> 'completed'`,
+        [orderId]
+      );
+    }
+
+    return res.status(200).json({
+      orderId,
+      refundId: refund.id,
+      status: refund.status,
+      amountCents: refund.amount,
+      currency: refund.currency,
+    });
+  } catch (error) {
+    console.error('Stripe refund request failed:', error.message);
+
+    await pool.query(
+      `UPDATE refunds
+       SET status = 'failed',
+           reason = $1
+       WHERE order_id = $2
+         AND status <> 'succeeded'`,
+      [`Refund request failed: ${error.message.slice(0, 400)}`, orderId]
+    );
+
+    return res.status(502).json({
+      error: 'Stripe refund could not be confirmed. Check Stripe Dashboard before retrying.',
+    });
+  }
+});
+
 // Basic order-status lookup.
 // In production, protect this endpoint with customer
 // authentication or a securely generated order-access token.
