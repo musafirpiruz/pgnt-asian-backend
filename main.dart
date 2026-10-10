@@ -1085,6 +1085,20 @@ class _PgntHomePageState extends State<PgntHomePage> {
             const SizedBox(width: 8),
             Text('$selectedAmount ${selectedCountry.currency}', style: const TextStyle(fontWeight: FontWeight.bold)),
           ]),
+          if (quote != null && selectedCountry.code == 'AF') ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              const Icon(Icons.currency_exchange, color: primaryRed),
+              const SizedBox(width: 10),
+              const Expanded(child: Text('د بازار اټکلي معادل')),
+              Text(quote['marketEquivalentEurFormatted'] is String ? quote['marketEquivalentEurFormatted'] as String : '—', style: const TextStyle(fontWeight: FontWeight.w600)),
+            ]),
+            Row(children: [
+              const SizedBox(width: 34),
+              const Expanded(child: Text('د تبادلې نرخ', style: TextStyle(fontSize: 12, color: Colors.black54))),
+              Text(quote['exchangeRateAfnPerEur'] is num ? '1 € = ${quote['exchangeRateAfnPerEur']} AFN' : '—', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            ]),
+          ],
           pgntGoldDivider(),
           Row(children: [const Icon(Icons.receipt_outlined, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('fee'))), Text(fee is String ? fee : '—')]),
           const SizedBox(height: 12),
