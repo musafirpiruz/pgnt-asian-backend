@@ -356,8 +356,10 @@ function validateCheckoutInput(body) {
   }
 
   // Reject USD, and any other non-EUR payment currency.
+  // The Flutter app's `currency` is the recipient currency (AFN/PKR/INR/BDT),
+  // not the Stripe payment currency. Customer payment is always EUR.
   const paymentCurrency = normalizePaymentCurrency(
-    body.paymentCurrency || body.currency
+    body.paymentCurrency || 'EUR'
   );
 
   const phoneResult = validatePhone(
@@ -369,22 +371,29 @@ function validateCheckoutInput(body) {
     throw new Error(phoneResult.error);
   }
 
-  const productId = String(
-    body.productId || ''
-  ).trim();
+  const rawProductId = String(body.productId || '').trim();
+  const productId = rawProductId || null;
+  const operator = String(body.operator || '').trim();
+  const amount = Number(body.amount);
 
-  if (
-    !productId ||
-    productId.length > 100 ||
-    !/^[a-zA-Z0-9_-]+$/.test(productId)
-  ) {
+  if (productId && !/^[1-9]\\d*$/.test(productId)) {
     throw new Error('Invalid product ID.');
+  }
+
+  // Current Flutter clients send operator + local amount, not a catalog ID.
+  if (!productId && (
+    !operator || operator.length > 120 ||
+    !Number.isSafeInteger(amount) || amount <= 0
+  )) {
+    throw new Error('Select a valid operator and top-up amount.');
   }
 
   return {
     country,
     phone: phoneResult.phone,
     productId,
+    operator,
+    amount,
     paymentCurrency,
     recipientCurrency: countryCurrency(country),
   };
@@ -488,7 +497,7 @@ async function getPricingSettings(client, country) {
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
-async function getProduct(client, productId) {
+async function getProduct(client, productId, country = null, operator = null, amount = null) {
   const result = await client.query(
     `SELECT
        id,
@@ -501,9 +510,13 @@ async function getProduct(client, productId) {
        price_eur_cents,
        active AS enabled
      FROM product_catalog
-     WHERE id = $1
+     WHERE (
+       ($1::bigint IS NOT NULL AND id = $1::bigint)
+       OR
+       ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
+     )
      LIMIT 1`,
-    [productId]
+    [productId, country, operator, amount]
   );
 
   if (result.rowCount !== 1) {
@@ -640,7 +653,8 @@ async function getProductQuote(productId, country) {
   try {
     const product = await getProduct(
       client,
-      productId
+      productId,
+      country
     );
 
     if (
@@ -728,7 +742,10 @@ app.post('/api/payments/checkout', async (req, res) => {
 
     const product = await getProduct(
       client,
-      input.productId
+      input.productId,
+      input.country,
+      input.operator,
+      input.amount
     );
 
     if (product.country !== input.country) {
