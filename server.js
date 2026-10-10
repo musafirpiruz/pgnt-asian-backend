@@ -679,6 +679,7 @@ async function getProductQuote(productId, country) {
   } finally {
     client.release();
   }
+}
 // =====================================================
 // PART 4/8 — EUR STRIPE CHECKOUT
 // Requires Parts 1, 2 and 3.
@@ -1481,6 +1482,7 @@ async function syncStripeRefundStatus(charge) {
       'Refund received but no eligible order was updated.'
     );
   }
+}
 // =====================================================
 // PART 8/8 — ADMIN SECURITY & SERVER STARTUP
 // PGNT ASIAN TOPUP
