@@ -694,6 +694,47 @@ async function getProductQuote(productId, country) {
     client.release();
   }
 }
+// Return a server-authoritative quote for the selected country/operator/amount.
+// Quotes are available only for enabled, database-mapped products.
+app.get('/api/pricing/quote', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Pricing service is not configured.' });
+  }
+  const country = normalizeCountry(req.query.country);
+  const operator = String(req.query.operator || '').trim();
+  const amount = Number(req.query.amount);
+  if (!isValidCountry(country) || !operator || operator.length > 120 || !Number.isSafeInteger(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Select a valid country, operator, and amount.' });
+  }
+  const client = await pool.connect();
+  try {
+    const product = await getProduct(client, null, country, operator, amount);
+    const pricing = await getPricingSettings(client, country);
+    const price = calculateFinalPrice(product, pricing);
+    return res.json({
+      productId: product.id,
+      country: product.country,
+      operator: product.name,
+      recipientCurrency: product.currency,
+      recipientAmount: product.localAmount,
+      paymentCurrency: 'EUR',
+      basePriceCents: price.basePriceCents,
+      feeCents: price.feeCents,
+      finalPriceCents: price.finalPriceCents,
+      formattedBasePrice: price.formattedBasePrice,
+      formattedFee: price.formattedFee,
+      formattedFinalPrice: price.formattedFinalPrice,
+      bonusPercent: price.bonusPercent,
+    });
+  } catch (error) {
+    const message = error.message === 'Product not found.' || error.message === 'This product is currently unavailable.' || error.message === 'DT One product mapping is missing.'
+      ? error.message : 'Could not calculate a verified price.';
+    return res.status(404).json({ error: message });
+  } finally {
+    client.release();
+  }
+});
+
 // =====================================================
 // PART 4/8 — EUR STRIPE CHECKOUT
 // Requires Parts 1, 2 and 3.
