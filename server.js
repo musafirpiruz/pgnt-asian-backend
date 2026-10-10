@@ -444,6 +444,7 @@ async function getPricingSettings(client, country) {
     `SELECT
        country,
        fee_eur_cents,
+       afn_per_eur,
        bonus_percent,
        active
      FROM pricing_settings
@@ -473,9 +474,18 @@ async function getPricingSettings(client, country) {
     'fee in EUR cents'
   );
 
+  const afnPerEur = Number(settings.afn_per_eur);
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0) {
+    throw new Error('Invalid AFN/EUR exchange rate.');
+  }
+
   const bonusPercent = Number(
     settings.bonus_percent
   );
+
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
+    return res.status(400).json({ error: 'afnPerEur must be a positive number.' });
+  }
 
   if (
     !Number.isFinite(bonusPercent) ||
@@ -491,6 +501,7 @@ async function getPricingSettings(client, country) {
     country: code,
     currency: 'EUR',
     feeCents,
+    afnPerEur,
     bonusPercent,
   };
 }
@@ -689,6 +700,9 @@ async function getProductQuote(productId, country) {
       formattedFee: price.formattedFee,
       formattedFinalPrice: price.formattedFinalPrice,
       bonusPercent: price.bonusPercent,
+      exchangeRateAfnPerEur: pricing.afnPerEur,
+      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
+      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
     };
   } finally {
     client.release();
@@ -725,6 +739,9 @@ app.get('/api/pricing/quote', async (req, res) => {
       formattedFee: price.formattedFee,
       formattedFinalPrice: price.formattedFinalPrice,
       bonusPercent: price.bonusPercent,
+      exchangeRateAfnPerEur: pricing.afnPerEur,
+      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
+      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
     });
   } catch (error) {
     const message = error.message === 'Product not found.' || error.message === 'This product is currently unavailable.' || error.message === 'DT One product mapping is missing.'
@@ -1715,6 +1732,7 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
 
   const body = req.body || {};
   const feeCents = Number(body.feeEurCents);
+  const afnPerEur = Number(body.afnPerEur);
   const bonusPercent = Number(body.bonusPercent);
 
   if (
@@ -1755,8 +1773,8 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
          bonus_percent = EXCLUDED.bonus_percent,
          active = EXCLUDED.active,
          updated_at = NOW()
-       RETURNING country, fee_eur_cents, bonus_percent, active, updated_at`,
-      [country, feeCents, bonusPercent, body.active]
+       RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at`,
+      [country, feeCents, afnPerEur, bonusPercent, body.active]
     );
 
     return res.json({
