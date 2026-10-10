@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - fix/schema-server-compatibility
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'

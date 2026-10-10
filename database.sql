@@ -10,8 +10,10 @@
 
 CREATE TABLE IF NOT EXISTS pricing_settings (
   country CHAR(2) PRIMARY KEY,
-  fee_eur_cents INTEGER NOT NULL DEFAULT 79
+  fee_eur_cents INTEGER NOT NULL DEFAULT 59
     CHECK (fee_eur_cents >= 0),
+  afn_per_eur NUMERIC(12,4)
+    CHECK (afn_per_eur IS NULL OR afn_per_eur > 0),
   bonus_percent NUMERIC(8,2) NOT NULL DEFAULT 0
     CHECK (bonus_percent >= 0 AND bonus_percent <= 100),
   active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -21,7 +23,10 @@ CREATE TABLE IF NOT EXISTS pricing_settings (
 -- Safety: if an older table already exists, make sure
 -- the required columns are present.
 ALTER TABLE pricing_settings
-  ADD COLUMN IF NOT EXISTS fee_eur_cents INTEGER NOT NULL DEFAULT 79;
+  ADD COLUMN IF NOT EXISTS fee_eur_cents INTEGER NOT NULL DEFAULT 59;
+
+ALTER TABLE pricing_settings
+  ADD COLUMN IF NOT EXISTS afn_per_eur NUMERIC(12,4);
 
 ALTER TABLE pricing_settings
   ADD COLUMN IF NOT EXISTS bonus_percent NUMERIC(8,2) NOT NULL DEFAULT 0;
@@ -231,6 +236,14 @@ ON orders (phone);
 
 CREATE INDEX IF NOT EXISTS idx_orders_created_at
 ON orders (created_at DESC);
+
+-- Existing databases may predate the order_id UNIQUE constraint.
+-- Refunds reference orders(order_id), so ensure PostgreSQL has a
+-- non-partial unique index before creating the refunds foreign key.
+-- If duplicate non-null order IDs exist, fail migration for review
+-- rather than silently changing or deleting financial records.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_order_id_unique
+ON orders (order_id);
 
 
 -- =========================================================
@@ -477,12 +490,12 @@ ON support_tickets (created_at DESC);
 -- =========================================================
 
 INSERT INTO pricing_settings
-  (country, fee_eur_cents, bonus_percent, active)
+  (country, fee_eur_cents, afn_per_eur, bonus_percent, active)
 VALUES
-  ('AF', 79, 2.00, TRUE),
-  ('PK', 79, 2.00, TRUE),
-  ('IN', 79, 2.00, TRUE),
-  ('BD', 79, 2.00, TRUE)
+  ('AF', 59, 72.9927, 2.00, TRUE),
+  ('PK', 59, NULL, 2.00, TRUE),
+  ('IN', 59, NULL, 2.00, TRUE),
+  ('BD', 59, NULL, 2.00, TRUE)
 ON CONFLICT (country) DO NOTHING;
 
 
@@ -558,7 +571,7 @@ ON orders (stripe_payment_intent_id);
 
 UPDATE pricing_settings
 SET
-  fee_eur_cents = COALESCE(fee_eur_cents, 79),
+  fee_eur_cents = COALESCE(fee_eur_cents, 59),
   bonus_percent = COALESCE(bonus_percent, 0),
   active = COALESCE(active, TRUE),
   updated_at = COALESCE(updated_at, NOW())

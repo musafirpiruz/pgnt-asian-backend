@@ -356,8 +356,10 @@ function validateCheckoutInput(body) {
   }
 
   // Reject USD, and any other non-EUR payment currency.
+  // The Flutter app's `currency` is the recipient currency (AFN/PKR/INR/BDT),
+  // not the Stripe payment currency. Customer payment is always EUR.
   const paymentCurrency = normalizePaymentCurrency(
-    body.paymentCurrency || body.currency
+    body.paymentCurrency || 'EUR'
   );
 
   const phoneResult = validatePhone(
@@ -369,22 +371,29 @@ function validateCheckoutInput(body) {
     throw new Error(phoneResult.error);
   }
 
-  const productId = String(
-    body.productId || ''
-  ).trim();
+  const rawProductId = String(body.productId || '').trim();
+  const productId = rawProductId || null;
+  const operator = String(body.operator || '').trim();
+  const amount = Number(body.amount);
 
-  if (
-    !productId ||
-    productId.length > 100 ||
-    !/^[a-zA-Z0-9_-]+$/.test(productId)
-  ) {
+  if (productId && !/^[1-9]\d*$/.test(productId)) {
     throw new Error('Invalid product ID.');
+  }
+
+  // Current Flutter clients send operator + local amount, not a catalog ID.
+  if (!productId && (
+    !operator || operator.length > 120 ||
+    !Number.isSafeInteger(amount) || amount <= 0
+  )) {
+    throw new Error('Select a valid operator and top-up amount.');
   }
 
   return {
     country,
     phone: phoneResult.phone,
     productId,
+    operator,
+    amount,
     paymentCurrency,
     recipientCurrency: countryCurrency(country),
   };
@@ -434,10 +443,10 @@ async function getPricingSettings(client, country) {
   const result = await client.query(
     `SELECT
        country,
-       currency,
        fee_eur_cents,
+       afn_per_eur,
        bonus_percent,
-       enabled
+       active
      FROM pricing_settings
      WHERE country = $1
      LIMIT 1`,
@@ -453,8 +462,7 @@ async function getPricingSettings(client, country) {
   const settings = result.rows[0];
 
   if (
-    settings.enabled !== true ||
-    settings.currency !== 'EUR'
+    settings.active !== true
   ) {
     throw new Error(
       'Pricing settings are disabled or invalid.'
@@ -465,6 +473,11 @@ async function getPricingSettings(client, country) {
     settings.fee_eur_cents,
     'fee in EUR cents'
   );
+
+  const afnPerEur = Number(settings.afn_per_eur);
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0) {
+    throw new Error('Invalid AFN/EUR exchange rate.');
+  }
 
   const bonusPercent = Number(
     settings.bonus_percent
@@ -484,28 +497,33 @@ async function getPricingSettings(client, country) {
     country: code,
     currency: 'EUR',
     feeCents,
+    afnPerEur,
     bonusPercent,
   };
 }
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
-async function getProduct(client, productId) {
+async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null) {
   const result = await client.query(
     `SELECT
        id,
        country,
        currency,
-       dtone_product_id,
-       name,
-       description,
-       local_amount,
+       product_id AS dtone_product_id,
+       operator AS name,
+       NULL::text AS description,
+       amount AS local_amount,
        price_eur_cents,
-       enabled
+       active AS enabled
      FROM product_catalog
-     WHERE id = $1
+     WHERE (
+       ($1::bigint IS NOT NULL AND id = $1::bigint)
+       OR
+       ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
+     )
      LIMIT 1`,
-    [productId]
+    [productId, requestedCountry, operator, amount]
   );
 
   if (result.rowCount !== 1) {
@@ -642,7 +660,8 @@ async function getProductQuote(productId, country) {
   try {
     const product = await getProduct(
       client,
-      productId
+      productId,
+      country
     );
 
     if (
@@ -677,11 +696,58 @@ async function getProductQuote(productId, country) {
       formattedFee: price.formattedFee,
       formattedFinalPrice: price.formattedFinalPrice,
       bonusPercent: price.bonusPercent,
+      exchangeRateAfnPerEur: pricing.afnPerEur,
+      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
+      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
     };
   } finally {
     client.release();
   }
-      }
+}
+// Return a server-authoritative quote for the selected country/operator/amount.
+// Quotes are available only for enabled, database-mapped products.
+app.get('/api/pricing/quote', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Pricing service is not configured.' });
+  }
+  const country = normalizeCountry(req.query.country);
+  const operator = String(req.query.operator || '').trim();
+  const amount = Number(req.query.amount);
+  if (!isValidCountry(country) || !operator || operator.length > 120 || !Number.isSafeInteger(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'Select a valid country, operator, and amount.' });
+  }
+  const client = await pool.connect();
+  try {
+    const product = await getProduct(client, null, country, operator, amount);
+    const pricing = await getPricingSettings(client, country);
+    const price = calculateFinalPrice(product, pricing);
+    return res.json({
+      productId: product.id,
+      country: product.country,
+      operator: product.name,
+      recipientCurrency: product.currency,
+      recipientAmount: product.localAmount,
+      paymentCurrency: 'EUR',
+      basePriceCents: price.basePriceCents,
+      feeCents: price.feeCents,
+      finalPriceCents: price.finalPriceCents,
+      formattedBasePrice: price.formattedBasePrice,
+      formattedFee: price.formattedFee,
+      formattedFinalPrice: price.formattedFinalPrice,
+      bonusPercent: price.bonusPercent,
+      exchangeRateAfnPerEur: pricing.afnPerEur,
+      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
+      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
+    });
+  } catch (error) {
+    const message = error.message === 'Product not found.' || error.message === 'This product is currently unavailable.' || error.message === 'DT One product mapping is missing.'
+      ? error.message : 'Could not calculate a verified price.';
+    return res.status(404).json({ error: message });
+  } finally {
+    client.release();
+  }
+});
+
 // =====================================================
 // PART 4/8 — EUR STRIPE CHECKOUT
 // Requires Parts 1, 2 and 3.
@@ -730,7 +796,10 @@ app.post('/api/payments/checkout', async (req, res) => {
 
     const product = await getProduct(
       client,
-      input.productId
+      input.productId,
+      input.country,
+      input.operator,
+      input.amount
     );
 
     if (product.country !== input.country) {
@@ -754,32 +823,17 @@ app.post('/api/payments/checkout', async (req, res) => {
     // Record the server-calculated price.
     await client.query(
       `INSERT INTO orders (
-         id,
-         country,
-         phone,
-         product_id,
-         currency,
-         base_price_eur_cents,
-         fee_eur_cents,
-         final_price_eur_cents,
-         status,
-         created_at,
-         updated_at
-       )
-       VALUES (
-         $1, $2, $3, $4, 'EUR',
-         $5, $6, $7,
-         'awaiting_payment',
-         NOW(), NOW()
+         order_id, country, operator, phone, product_id,
+         amount, currency, product_price_cents, fee_cents,
+         charge_cents, status, created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         'awaiting_payment', NOW(), NOW()
        )`,
       [
-        orderId,
-        input.country,
-        input.phone,
-        product.id,
-        price.basePriceCents,
-        price.feeCents,
-        price.finalPriceCents,
+        orderId, input.country, product.name, input.phone,
+        product.id, product.localAmount, product.currency,
+        price.basePriceCents, price.feeCents, price.finalPriceCents,
       ]
     );
 
@@ -834,7 +888,7 @@ app.post('/api/payments/checkout', async (req, res) => {
       `UPDATE orders
        SET stripe_session_id = $1,
            updated_at = NOW()
-       WHERE id = $2
+       WHERE order_id = $2
          AND status = 'awaiting_payment'`,
       [session.id, orderId]
     );
@@ -1046,7 +1100,7 @@ async function processPaidStripeSession(session) {
     const result = await client.query(
       `SELECT *
        FROM orders
-       WHERE id = $1
+       WHERE order_id = $1
        FOR UPDATE`,
       [orderId]
     );
@@ -1064,9 +1118,8 @@ async function processPaidStripeSession(session) {
     }
 
     if (
-      order.currency !== 'EUR' ||
-      Number(order.final_price_eur_cents) !==
-        session.amount_total
+      order.currency !== countryCurrency(order.country) ||
+      Number(order.charge_cents) !== session.amount_total
     ) {
       throw new Error('Stripe amount/currency mismatch.');
     }
@@ -1091,12 +1144,19 @@ async function processPaidStripeSession(session) {
       );
     }
 
+    const paymentIntentId =
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id || null;
+
     await client.query(
       `UPDATE orders
        SET status = 'processing_topup',
+           stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+           paid_at = COALESCE(paid_at, NOW()),
            updated_at = NOW()
-       WHERE id = $1`,
-      [orderId]
+       WHERE order_id = $1`,
+      [orderId, paymentIntentId]
     );
 
     await client.query('COMMIT');
@@ -1111,9 +1171,9 @@ async function processPaidStripeSession(session) {
 
   // Re-read trusted product information from the database.
   const product = await pool.query(
-    `SELECT dtone_product_id, country, currency
+    `SELECT product_id AS dtone_product_id, country, currency
      FROM product_catalog
-     WHERE id = $1 AND enabled = TRUE
+     WHERE id = $1 AND active = TRUE
      LIMIT 1`,
     [order.product_id]
   );
@@ -1128,7 +1188,7 @@ async function processPaidStripeSession(session) {
       `UPDATE orders
        SET status = 'topup_review',
            updated_at = NOW()
-       WHERE id = $1
+       WHERE order_id = $1
          AND status = 'processing_topup'`,
       [orderId]
     );
@@ -1171,7 +1231,7 @@ async function processPaidStripeSession(session) {
       `UPDATE orders
        SET status = 'topup_review',
            updated_at = NOW()
-       WHERE id = $1
+       WHERE order_id = $1
          AND status = 'processing_topup'`,
       [orderId]
     );
@@ -1197,7 +1257,7 @@ async function processPaidStripeSession(session) {
       `UPDATE orders
        SET status = 'topup_review',
            updated_at = NOW()
-       WHERE id = $1
+       WHERE order_id = $1
          AND status = 'processing_topup'`,
       [orderId]
     );
@@ -1213,10 +1273,11 @@ async function processPaidStripeSession(session) {
   // A successful HTTP response may mean "accepted",
   // not necessarily "delivered".
   // Save the provider reference for callback/status handling.
+  // Store only DT One's own transaction reference here.
+  // external_id is our order ID, not a provider transaction ID.
   const providerReference =
     data.id ||
     data.transaction_id ||
-    data.external_id ||
     null;
 
   await pool.query(
@@ -1224,7 +1285,7 @@ async function processPaidStripeSession(session) {
      SET status = 'topup_submitted',
          dtone_transaction_id = $1,
          updated_at = NOW()
-     WHERE id = $2
+     WHERE order_id = $2
        AND status = 'processing_topup'`,
     [providerReference, orderId]
   );
@@ -1344,7 +1405,7 @@ app.post('/api/dtone/callback', async (req, res) => {
     const result = await client.query(
       `SELECT *
        FROM orders
-       WHERE id = $1
+       WHERE order_id = $1
        FOR UPDATE`,
       [orderId]
     );
@@ -1395,8 +1456,8 @@ app.post('/api/dtone/callback', async (req, res) => {
       nextStatus = 'completed';
     } else if (providerStatus === 'failed') {
       // A provider failure is not itself a Stripe refund.
-      // Keep the order under review until the refund policy
-      // and final provider status have been checked.
+      // Keep the order under review until refund handling
+      // has been verified by an authorized operator.
       nextStatus = 'topup_review';
     } else {
       nextStatus = 'topup_submitted';
@@ -1406,11 +1467,24 @@ app.post('/api/dtone/callback', async (req, res) => {
       `UPDATE orders
        SET status = $1,
            dtone_transaction_id = $2,
+           dtone_status = $3,
+           dtone_callback_payload = $4::jsonb,
+           completed_at = CASE
+             WHEN $1 = 'completed' THEN COALESCE(completed_at, NOW())
+             ELSE completed_at
+           END,
+           failed_at = CASE
+             WHEN $5 = 'failed' THEN COALESCE(failed_at, NOW())
+             ELSE failed_at
+           END,
            updated_at = NOW()
-       WHERE id = $3`,
+       WHERE order_id = $6`,
       [
         nextStatus,
         providerTransactionId,
+        String(body.status || ''),
+        JSON.stringify(body),
+        providerStatus,
         orderId,
       ]
     );
@@ -1472,28 +1546,97 @@ async function syncStripeRefundStatus(charge) {
       ? charge.payment_intent
       : charge.payment_intent.id;
 
-  const result = await pool.query(
-    `UPDATE orders
-     SET status = CASE
-       WHEN $1 = TRUE THEN 'refunded'
-       ELSE 'topup_review'
-     END,
-     updated_at = NOW()
-     WHERE stripe_payment_intent_id = $2
-       AND status <> 'completed'
-     RETURNING id, status`,
-    [
-      charge.refunded === true,
-      paymentIntentId,
-    ]
-  );
+  const refundObject =
+    Array.isArray(charge.refunds?.data) &&
+    charge.refunds.data.length > 0
+      ? charge.refunds.data[charge.refunds.data.length - 1]
+      : null;
 
-  if (result.rowCount === 0) {
-    console.warn(
-      'Refund received but no eligible order was updated.'
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const orderResult = await client.query(
+      `SELECT order_id, status
+       FROM orders
+       WHERE stripe_payment_intent_id = $1
+       FOR UPDATE`,
+      [paymentIntentId]
     );
+
+    if (orderResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      console.warn(
+        'Refund received but no matching order was found.'
+      );
+      return;
+    }
+
+    const order = orderResult.rows[0];
+    const fullRefund = charge.refunded === true;
+    const refundStatus = fullRefund
+      ? 'succeeded'
+      : 'partial';
+
+    // Never overwrite a successful DT One fulfillment
+    // status automatically; route financial discrepancies for review.
+    if (order.status !== 'completed') {
+      await client.query(
+        `UPDATE orders
+         SET status = CASE
+           WHEN $1 = TRUE THEN 'refunded'
+           ELSE 'topup_review'
+         END,
+         refunded_at = CASE
+           WHEN $1 = TRUE THEN COALESCE(refunded_at, NOW())
+           ELSE refunded_at
+         END,
+         updated_at = NOW()
+         WHERE order_id = $2`,
+        [fullRefund, order.order_id]
+      );
+    } else {
+      console.warn(
+        'Stripe refund observed for a completed top-up; order retained for manual reconciliation.',
+        order.order_id
+      );
+    }
+
+    // Keep the refunds ledger in sync with Stripe webhook truth.
+    // A refund can have originated from the Stripe Dashboard.
+    await client.query(
+      `INSERT INTO refunds (
+         order_id, stripe_refund_id, amount_cents, status, reason
+       )
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (order_id)
+       DO UPDATE SET
+         stripe_refund_id = COALESCE(EXCLUDED.stripe_refund_id, refunds.stripe_refund_id),
+         amount_cents = EXCLUDED.amount_cents,
+         status = EXCLUDED.status,
+         reason = COALESCE(EXCLUDED.reason, refunds.reason)`,
+      [
+        order.order_id,
+        refundObject?.id || null,
+        Number(charge.amount_refunded || 0),
+        refundStatus,
+        fullRefund
+          ? 'Stripe webhook confirmed full refund'
+          : 'Stripe webhook reported partial refund; manual review required',
+      ]
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+    throw error;
+  } finally {
+    client.release();
   }
-      }
+}
 // =====================================================
 // PART 8/8 — ADMIN SECURITY & SERVER STARTUP
 // PGNT ASIAN TOPUP
@@ -1542,10 +1685,10 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
     const result = await pool.query(
       `SELECT
          country,
-         currency,
          fee_eur_cents,
+         afn_per_eur,
          bonus_percent,
-         enabled
+         active
        FROM pricing_settings
        ORDER BY country`
     );
@@ -1562,6 +1705,322 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
 
     return res.status(500).json({
       error: 'Could not load pricing settings.',
+    });
+  }
+});
+
+// Update country pricing controls from a trusted admin client.
+// Prices are stored in integer EUR cents; bonus is informational
+// until country/operator bonus fulfillment rules are verified.
+app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  const country = normalizeCountry(req.params.country);
+
+  if (!isValidCountry(country)) {
+    return res.status(400).json({
+      error: 'Unsupported country.',
+    });
+  }
+
+  const body = req.body || {};
+  const feeCents = Number(body.feeEurCents);
+  const afnPerEur = Number(body.afnPerEur);
+  const bonusPercent = Number(body.bonusPercent);
+
+  if (
+    !Number.isSafeInteger(feeCents) ||
+    feeCents < 0 ||
+    feeCents > 100000
+  ) {
+    return res.status(400).json({
+      error: 'feeEurCents must be an integer from 0 to 100000.',
+    });
+  }
+
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
+    return res.status(400).json({ error: 'afnPerEur must be a positive number no greater than 1000000.' });
+  }
+
+  if (
+    !Number.isFinite(bonusPercent) ||
+    bonusPercent < 0 ||
+    bonusPercent > 100
+  ) {
+    return res.status(400).json({
+      error: 'bonusPercent must be between 0 and 100.',
+    });
+  }
+
+  if (typeof body.active !== 'boolean') {
+    return res.status(400).json({
+      error: 'active must be true or false.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO pricing_settings (
+         country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (country)
+       DO UPDATE SET
+         fee_eur_cents = EXCLUDED.fee_eur_cents,
+         afn_per_eur = EXCLUDED.afn_per_eur,
+         bonus_percent = EXCLUDED.bonus_percent,
+         active = EXCLUDED.active,
+         updated_at = NOW()
+       RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at`,
+      [country, feeCents, afnPerEur, bonusPercent, body.active]
+    );
+
+    return res.json({
+      paymentCurrency: 'EUR',
+      pricing: result.rows[0],
+      note: 'Bonus percentage is saved as a setting; bonus delivery is not enabled by this endpoint.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin pricing update failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not update pricing settings.',
+    });
+  }
+});
+
+// List orders requiring operator review. Admin-only.
+app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         order_id,
+         country,
+         operator,
+         phone,
+         amount,
+         currency,
+         charge_cents,
+         status,
+         stripe_payment_intent_id,
+         dtone_transaction_id,
+         dtone_status,
+         dtone_error,
+         created_at,
+         updated_at
+       FROM orders
+       WHERE status = 'topup_review'
+       ORDER BY updated_at ASC
+       LIMIT 100`
+    );
+
+    return res.json({
+      count: result.rowCount,
+      orders: result.rows,
+    });
+  } catch (error) {
+    console.error(
+      'Admin review queue failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not load review queue.',
+    });
+  }
+});
+
+// Full Stripe refund, initiated only by an authenticated admin.
+// Idempotency is enforced both by the refunds table's UNIQUE(order_id)
+// constraint and Stripe's idempotency key. This endpoint deliberately
+// does not refund orders that are already completed by DT One.
+app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({
+      error: 'Payment service is not configured.',
+    });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({
+      error: 'Invalid order ID.',
+    });
+  }
+
+  const reason = String(req.body?.reason || 'Top-up failed; admin reviewed')
+    .trim()
+    .slice(0, 500);
+
+  const client = await pool.connect();
+  let order;
+  let existingRefund;
+
+  try {
+    await client.query('BEGIN');
+
+    const orderResult = await client.query(
+      `SELECT order_id, status, charge_cents, stripe_payment_intent_id, dtone_status
+       FROM orders
+       WHERE order_id = $1
+       FOR UPDATE`,
+      [orderId]
+    );
+
+    if (orderResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    order = orderResult.rows[0];
+
+    if (order.status === 'completed') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Top-up is completed. Refund requires a separate manual investigation.',
+      });
+    }
+
+    if (
+      order.status !== 'topup_review' ||
+      !['failed', 'rejected', 'cancelled'].includes(
+        String(order.dtone_status || '').trim().toLowerCase()
+      )
+    ) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Refund requires a final DT One failure status. Unknown or pending outcomes must be reconciled first.',
+      });
+    }
+
+    if (!order.stripe_payment_intent_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'The order has no verified Stripe PaymentIntent.',
+      });
+    }
+
+    const refundResult = await client.query(
+      `SELECT id, stripe_refund_id, amount_cents, status
+       FROM refunds
+       WHERE order_id = $1
+       FOR UPDATE`,
+      [orderId]
+    );
+
+    existingRefund = refundResult.rows[0] || null;
+
+    if (existingRefund && existingRefund.status === 'succeeded') {
+      await client.query('COMMIT');
+      return res.json({
+        orderId,
+        refundId: existingRefund.stripe_refund_id,
+        status: 'refunded',
+        duplicate: true,
+      });
+    }
+
+    if (!existingRefund) {
+      await client.query(
+        `INSERT INTO refunds (order_id, amount_cents, status, reason)
+         VALUES ($1, $2, 'pending', $3)`,
+        [orderId, Number(order.charge_cents), reason]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Refund preparation failed:', error.message);
+    return res.status(500).json({ error: 'Could not prepare refund.' });
+  } finally {
+    client.release();
+  }
+
+  try {
+    // A stable idempotency key makes a retried HTTP request safe
+    // even if Stripe succeeded but the app lost the response.
+    const refund = await stripe.refunds.create(
+      {
+        payment_intent: order.stripe_payment_intent_id,
+        reason: 'requested_by_customer',
+        metadata: { orderId, adminReason: reason },
+      },
+      { idempotencyKey: `pgnt-refund-${orderId}` }
+    );
+
+    await pool.query(
+      `UPDATE refunds
+       SET stripe_refund_id = $1,
+           amount_cents = $2,
+           status = $3,
+           reason = $4
+       WHERE order_id = $5`,
+      [
+        refund.id,
+        refund.amount,
+        refund.status,
+        reason,
+        orderId,
+      ]
+    );
+
+    if (refund.status === 'succeeded') {
+      await pool.query(
+        `UPDATE orders
+         SET status = 'refunded',
+             refunded_at = COALESCE(refunded_at, NOW()),
+             updated_at = NOW()
+         WHERE order_id = $1
+           AND status <> 'completed'`,
+        [orderId]
+      );
+    } else {
+      await pool.query(
+        `UPDATE orders
+         SET status = 'topup_review',
+             updated_at = NOW()
+         WHERE order_id = $1
+           AND status <> 'completed'`,
+        [orderId]
+      );
+    }
+
+    return res.status(200).json({
+      orderId,
+      refundId: refund.id,
+      status: refund.status,
+      amountCents: refund.amount,
+      currency: refund.currency,
+    });
+  } catch (error) {
+    console.error('Stripe refund request failed:', error.message);
+
+    await pool.query(
+      `UPDATE refunds
+       SET status = 'failed',
+           reason = $1
+       WHERE order_id = $2
+         AND status <> 'succeeded'`,
+      [`Refund request failed: ${error.message.slice(0, 400)}`, orderId]
+    );
+
+    return res.status(502).json({
+      error: 'Stripe refund could not be confirmed. Check Stripe Dashboard before retrying.',
     });
   }
 });
@@ -1591,15 +2050,15 @@ app.get('/api/orders/:orderId/status', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         id,
+         order_id,
          country,
          currency,
-         final_price_eur_cents,
+         charge_cents,
          status,
          created_at,
          updated_at
        FROM orders
-       WHERE id = $1
+       WHERE order_id = $1
        LIMIT 1`,
       [orderId]
     );
@@ -1613,15 +2072,11 @@ app.get('/api/orders/:orderId/status', async (req, res) => {
     const order = result.rows[0];
 
     return res.json({
-      orderId: order.id,
+      orderId: order.order_id,
       country: order.country,
       paymentCurrency: 'EUR',
-      amountCents: Number(
-        order.final_price_eur_cents
-      ),
-      amountFormatted: formatEuro(
-        Number(order.final_price_eur_cents)
-      ),
+      amountCents: Number(order.charge_cents),
+      amountFormatted: formatEuro(Number(order.charge_cents)),
       status: order.status,
       createdAt: order.created_at,
       updatedAt: order.updated_at,
