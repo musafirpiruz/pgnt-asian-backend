@@ -1492,26 +1492,95 @@ async function syncStripeRefundStatus(charge) {
       ? charge.payment_intent
       : charge.payment_intent.id;
 
-  const result = await pool.query(
-    `UPDATE orders
-     SET status = CASE
-       WHEN $1 = TRUE THEN 'refunded'
-       ELSE 'topup_review'
-     END,
-     updated_at = NOW()
-     WHERE stripe_payment_intent_id = $2
-       AND status <> 'completed'
-     RETURNING order_id, status`,
-    [
-      charge.refunded === true,
-      paymentIntentId,
-    ]
-  );
+  const refundObject =
+    Array.isArray(charge.refunds?.data) &&
+    charge.refunds.data.length > 0
+      ? charge.refunds.data[charge.refunds.data.length - 1]
+      : null;
 
-  if (result.rowCount === 0) {
-    console.warn(
-      'Refund received but no eligible order was updated.'
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const orderResult = await client.query(
+      `SELECT order_id, status
+       FROM orders
+       WHERE stripe_payment_intent_id = $1
+       FOR UPDATE`,
+      [paymentIntentId]
     );
+
+    if (orderResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      console.warn(
+        'Refund received but no matching order was found.'
+      );
+      return;
+    }
+
+    const order = orderResult.rows[0];
+    const fullRefund = charge.refunded === true;
+    const refundStatus = fullRefund
+      ? 'succeeded'
+      : 'partial';
+
+    // Never overwrite a successful DT One fulfillment
+    // status automatically; route financial discrepancies for review.
+    if (order.status !== 'completed') {
+      await client.query(
+        `UPDATE orders
+         SET status = CASE
+           WHEN $1 = TRUE THEN 'refunded'
+           ELSE 'topup_review'
+         END,
+         refunded_at = CASE
+           WHEN $1 = TRUE THEN COALESCE(refunded_at, NOW())
+           ELSE refunded_at
+         END,
+         updated_at = NOW()
+         WHERE order_id = $2`,
+        [fullRefund, order.order_id]
+      );
+    } else {
+      console.warn(
+        'Stripe refund observed for a completed top-up; order retained for manual reconciliation.',
+        order.order_id
+      );
+    }
+
+    // Keep the refunds ledger in sync with Stripe webhook truth.
+    // A refund can have originated from the Stripe Dashboard.
+    await client.query(
+      `INSERT INTO refunds (
+         order_id, stripe_refund_id, amount_cents, status, reason
+       )
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (order_id)
+       DO UPDATE SET
+         stripe_refund_id = COALESCE(EXCLUDED.stripe_refund_id, refunds.stripe_refund_id),
+         amount_cents = EXCLUDED.amount_cents,
+         status = EXCLUDED.status,
+         reason = COALESCE(EXCLUDED.reason, refunds.reason)`,
+      [
+        order.order_id,
+        refundObject?.id || null,
+        Number(charge.amount_refunded || 0),
+        refundStatus,
+        fullRefund
+          ? 'Stripe webhook confirmed full refund'
+          : 'Stripe webhook reported partial refund; manual review required',
+      ]
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
+    throw error;
+  } finally {
+    client.release();
   }
 }
 // =====================================================
