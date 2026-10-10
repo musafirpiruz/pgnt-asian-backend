@@ -1033,7 +1033,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
           children: [
             Row(
               children: [
-                const Icon(Icons.price_check, color: primaryRed),
+                const Text(
+                  '€',
+                  style: TextStyle(
+                    color: primaryRed,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Expanded(child: Text(t('price'))),
                 Text(
