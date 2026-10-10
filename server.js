@@ -1219,10 +1219,11 @@ async function processPaidStripeSession(session) {
   // A successful HTTP response may mean "accepted",
   // not necessarily "delivered".
   // Save the provider reference for callback/status handling.
+  // Store only DT One's own transaction reference here.
+  // external_id is our order ID, not a provider transaction ID.
   const providerReference =
     data.id ||
     data.transaction_id ||
-    data.external_id ||
     null;
 
   await pool.query(
@@ -1401,8 +1402,8 @@ app.post('/api/dtone/callback', async (req, res) => {
       nextStatus = 'completed';
     } else if (providerStatus === 'failed') {
       // A provider failure is not itself a Stripe refund.
-      // Keep the order under review until the refund policy
-      // and final provider status have been checked.
+      // Keep the order under review until refund handling
+      // has been verified by an authorized operator.
       nextStatus = 'topup_review';
     } else {
       nextStatus = 'topup_submitted';
@@ -1412,11 +1413,24 @@ app.post('/api/dtone/callback', async (req, res) => {
       `UPDATE orders
        SET status = $1,
            dtone_transaction_id = $2,
+           dtone_status = $3,
+           dtone_callback_payload = $4::jsonb,
+           completed_at = CASE
+             WHEN $1 = 'completed' THEN COALESCE(completed_at, NOW())
+             ELSE completed_at
+           END,
+           failed_at = CASE
+             WHEN $5 = 'failed' THEN COALESCE(failed_at, NOW())
+             ELSE failed_at
+           END,
            updated_at = NOW()
-       WHERE order_id = $3`,
+       WHERE order_id = $6`,
       [
         nextStatus,
         providerTransactionId,
+        String(body.status || ''),
+        JSON.stringify(body),
+        providerStatus,
         orderId,
       ]
     );
