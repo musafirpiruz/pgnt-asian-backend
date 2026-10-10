@@ -483,14 +483,6 @@ async function getPricingSettings(client, country) {
     settings.bonus_percent
   );
 
-  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
-    return res.status(400).json({ error: 'afnPerEur must be a positive number.' });
-  }
-
-  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
-    return res.status(400).json({ error: 'afnPerEur must be a positive number.' });
-  }
-
   if (
     !Number.isFinite(bonusPercent) ||
     bonusPercent < 0 ||
@@ -1750,6 +1742,10 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
     });
   }
 
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
+    return res.status(400).json({ error: 'afnPerEur must be a positive number no greater than 1000000.' });
+  }
+
   if (
     !Number.isFinite(bonusPercent) ||
     bonusPercent < 0 ||
@@ -1769,9 +1765,9 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO pricing_settings (
-         country, fee_eur_cents, bonus_percent, active, updated_at
+         country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at
        )
-       VALUES ($1, $2, $3, $4, NOW())
+       VALUES ($1, $2, $3, $4, $5, NOW())
        ON CONFLICT (country)
        DO UPDATE SET
          fee_eur_cents = EXCLUDED.fee_eur_cents,
