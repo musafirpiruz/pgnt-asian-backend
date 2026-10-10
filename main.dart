@@ -1102,7 +1102,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   Widget buildPaymentButton() {
     return ElevatedButton.icon(
-      onPressed: isLoading ? null : startPayment,
+      onPressed: (isLoading || priceQuote == null || isQuoteLoading) ? null : startPayment,
       icon: isLoading
           ? const SizedBox(
               height: 20,
