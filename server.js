@@ -1585,6 +1585,87 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
   }
 });
 
+// Update country pricing controls from a trusted admin client.
+// Prices are stored in integer EUR cents; bonus is informational
+// until country/operator bonus fulfillment rules are verified.
+app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  const country = normalizeCountry(req.params.country);
+
+  if (!isValidCountry(country)) {
+    return res.status(400).json({
+      error: 'Unsupported country.',
+    });
+  }
+
+  const body = req.body || {};
+  const feeCents = Number(body.feeEurCents);
+  const bonusPercent = Number(body.bonusPercent);
+
+  if (
+    !Number.isSafeInteger(feeCents) ||
+    feeCents < 0 ||
+    feeCents > 100000
+  ) {
+    return res.status(400).json({
+      error: 'feeEurCents must be an integer from 0 to 100000.',
+    });
+  }
+
+  if (
+    !Number.isFinite(bonusPercent) ||
+    bonusPercent < 0 ||
+    bonusPercent > 100
+  ) {
+    return res.status(400).json({
+      error: 'bonusPercent must be between 0 and 100.',
+    });
+  }
+
+  if (typeof body.active !== 'boolean') {
+    return res.status(400).json({
+      error: 'active must be true or false.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO pricing_settings (
+         country, fee_eur_cents, bonus_percent, active, updated_at
+       )
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (country)
+       DO UPDATE SET
+         fee_eur_cents = EXCLUDED.fee_eur_cents,
+         bonus_percent = EXCLUDED.bonus_percent,
+         active = EXCLUDED.active,
+         updated_at = NOW()
+       RETURNING country, fee_eur_cents, bonus_percent, active, updated_at`,
+      [country, feeCents, bonusPercent, body.active]
+    );
+
+    return res.json({
+      paymentCurrency: 'EUR',
+      pricing: result.rows[0],
+      note: 'Bonus percentage is saved as a setting; bonus delivery is not enabled by this endpoint.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin pricing update failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not update pricing settings.',
+    });
+  }
+});
+
 // Basic order-status lookup.
 // In production, protect this endpoint with customer
 // authentication or a securely generated order-access token.
