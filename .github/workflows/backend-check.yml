@@ -1,0 +1,33 @@
+name: Backend Syntax Check
+
+on:
+  pull_request:
+    paths:
+      - "server.js"
+      - "migrate.js"
+      - "package.json"
+      - ".github/workflows/backend-check.yml"
+  push:
+    branches:
+      - main
+      - "fix/schema-server-compatibility"
+    paths:
+      - "server.js"
+      - "migrate.js"
+      - "package.json"
+      - ".github/workflows/backend-check.yml"
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check migrate.js
