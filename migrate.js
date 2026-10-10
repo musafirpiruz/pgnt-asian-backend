@@ -50,6 +50,15 @@ async function runMigration() {
       "SELECT pg_advisory_lock(738291);"
     );
 
+    /*
+     * Use a new version for the schema reconciliation.
+     * Older installations may already have 001_initial
+     * recorded, but still need the compatibility ALTERs
+     * in database.sql. Never skip those changes merely
+     * because the original migration was applied.
+     */
+    const version = "002_schema_compatibility";
+
     const check =
       await client.query(
         `
@@ -58,12 +67,12 @@ async function runMigration() {
         WHERE version = $1
         LIMIT 1
         `,
-        ["001_initial"]
+        [version]
       );
 
     if (check.rows.length > 0) {
       console.log(
-        "Migration 001_initial is already applied."
+        "Migration 002_schema_compatibility is already applied."
       );
 
       return;
@@ -94,12 +103,13 @@ async function runMigration() {
     }
 
     console.log(
-      "Executing database.sql..."
+      "Executing idempotent database schema reconciliation..."
     );
 
     /*
-     * database.sql already contains
-     * its own transaction statements.
+     * database.sql contains idempotent CREATE IF NOT EXISTS,
+     * ADD COLUMN IF NOT EXISTS, and guarded seed statements.
+     * It also owns its transaction boundaries.
      */
     await client.query(sql);
 
@@ -112,11 +122,11 @@ async function runMigration() {
       ON CONFLICT (version)
       DO NOTHING
       `,
-      ["001_initial"]
+      [version]
     );
 
     console.log(
-      "Migration 001_initial completed successfully."
+      "Migration 002_schema_compatibility completed successfully."
     );
   } catch (error) {
     console.error(
