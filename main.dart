@@ -733,6 +733,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
   int selectedAmount = 100;
   int selectedTab = 0;
   bool isLoading = false;
+  bool isQuoteLoading = false;
+  Map<String, dynamic>? priceQuote;
+  String? priceQuoteError;
 
   final TextEditingController phoneController =
       TextEditingController();
@@ -754,6 +757,42 @@ class _PgntHomePageState extends State<PgntHomePage> {
     super.dispose();
   }
 
+  String formatEuroCents(dynamic value) {
+    final cents = value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+    return '€${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  Future<void> loadPriceQuote() async {
+    final operator = selectedOperator;
+    if (operator == null) {
+      if (mounted) setState(() { priceQuote = null; priceQuoteError = null; });
+      return;
+    }
+    final countryCode = selectedCountry.code;
+    final amount = selectedAmount;
+    setState(() { isQuoteLoading = true; priceQuoteError = null; });
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(queryParameters: {
+        'country': countryCode, 'operator': operator.name, 'amount': '$amount',
+      });
+      final response = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      final dynamic decoded = jsonDecode(response.body);
+      if (response.statusCode < 200 || response.statusCode >= 300 || decoded is! Map<String, dynamic>) {
+        final message = decoded is Map<String, dynamic> ? decoded['error'] : null;
+        throw Exception(message is String ? message : 'Verified price is not available yet.');
+      }
+      if (!mounted || countryCode != selectedCountry.code || amount != selectedAmount || operator.name != selectedOperator?.name) return;
+      setState(() { priceQuote = decoded; priceQuoteError = null; });
+    } catch (_) {
+      if (!mounted || countryCode != selectedCountry.code || amount != selectedAmount || operator.name != selectedOperator?.name) return;
+      setState(() { priceQuote = null; priceQuoteError = 'قیمت د سرور له خوا لا تایید شوی نه دی.'; });
+    } finally {
+      if (mounted && countryCode == selectedCountry.code && amount == selectedAmount && operator.name == selectedOperator?.name) {
+        setState(() => isQuoteLoading = false);
+      }
+    }
+  }
+
   void selectCountry(AppCountry? country) {
     if (country == null) return;
 
@@ -763,6 +802,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
       selectedAmount =
           (rechargeAmounts[country.currency] ?? [100]).first;
       phoneController.clear();
+      priceQuote = null;
+      priceQuoteError = null;
     });
   }
 
@@ -993,7 +1034,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
         );
       }).toList(),
       onChanged: (value) {
-        setState(() => selectedOperator = value);
+        setState(() { selectedOperator = value; priceQuote = null; priceQuoteError = null; });
+        loadPriceQuote();
       },
     );
   }
@@ -1018,7 +1060,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
             fontWeight: FontWeight.bold,
           ),
           onSelected: (_) {
-            setState(() => selectedAmount = amount);
+            setState(() { selectedAmount = amount; priceQuote = null; priceQuoteError = null; });
+            loadPriceQuote();
           },
         );
       }).toList(),
@@ -1026,57 +1069,33 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildPriceCard() {
+    final quote = priceQuote;
+    final basePrice = quote == null ? null : quote['formattedBasePrice'];
+    final fee = quote == null ? null : quote['formattedFee'];
+    final total = quote == null ? null : quote['formattedFinalPrice'];
+    final bonusPercent = quote == null ? null : quote['bonusPercent'];
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const Text(
-                  '€',
-                  style: TextStyle(
-                    color: primaryRed,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: Text(t('price'))),
-                Text(
-                  '$selectedAmount ${selectedCountry.currency}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
+        child: Column(children: [
+          Row(children: [
+            const Text('€', style: TextStyle(color: primaryRed, fontSize: 24, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 10), Expanded(child: Text(t('price'))),
+            Text(basePrice is String ? basePrice : '—', style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 8),
+            Text('\$selectedAmount \${selectedCountry.currency}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ]),
+          pgntGoldDivider(),
+          Row(children: [const Icon(Icons.receipt_outlined, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('fee'))), Text(fee is String ? fee : '—')]),
+          const SizedBox(height: 12),
+          Row(children: [const Icon(Icons.card_giftcard, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('bonus'))), Text(bonusPercent is num && bonusPercent > 0 ? '\${bonusPercent.toString()}%' : '—')]),
+          if (quote != null) ...[
             pgntGoldDivider(),
-            Row(
-              children: [
-                const Icon(Icons.receipt_outlined, color: primaryRed),
-                const SizedBox(width: 10),
-                Expanded(child: Text(t('fee'))),
-                const Text('—'),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.card_giftcard, color: primaryRed),
-                const SizedBox(width: 10),
-                Expanded(child: Text(t('bonus'))),
-                const Text('—'),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'بیه، فیس او بونس به له سرور څخه تایید شي.',
-              style: TextStyle(
-                color: Colors.black54,
-                fontSize: 12,
-              ),
-            ),
+            Row(children: [Expanded(child: Text('ټول تادیه', style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
           ],
-        ),
+          const SizedBox(height: 12),
+          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت او فیس د سرور له خوا تایید شوي؛ بونس د فیصدي په بڼه ښودل شوی.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
+        ]),
       ),
     );
   }
