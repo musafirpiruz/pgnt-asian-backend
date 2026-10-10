@@ -120,6 +120,29 @@ async function runMigration() {
       );
     }
 
+    // Version 004 applies the user's initial Afghanistan fee and comparison rate once.
+    // 100 AFN = EUR 1.37 => 1 EUR = 72.9927 AFN (rounded to 4 decimals).
+    const initialAfPricingVersion = "004_af_initial_pricing";
+    const initialAfPricingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [initialAfPricingVersion]
+    );
+    if (initialAfPricingCheck.rows.length === 0) {
+      await client.query(`
+        INSERT INTO pricing_settings
+          (country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at)
+        VALUES ('AF', 59, 72.9927, 2.00, TRUE, NOW())
+        ON CONFLICT (country) DO UPDATE SET
+          fee_eur_cents = 59,
+          afn_per_eur = 72.9927,
+          updated_at = NOW();
+        INSERT INTO schema_migrations (version)
+        VALUES ('004_af_initial_pricing')
+        ON CONFLICT (version) DO NOTHING;
+      `);
+      console.log("Migration 004_af_initial_pricing completed successfully.");
+    }
+
     console.log(
       "Executing idempotent database schema reconciliation..."
     );
