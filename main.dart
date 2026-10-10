@@ -783,9 +783,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
       }
       if (!mounted || countryCode != selectedCountry.code || amount != selectedAmount || operator.name != selectedOperator?.name) return;
       setState(() { priceQuote = decoded; priceQuoteError = null; });
-    } catch (_) {
+    } catch (error) {
       if (!mounted || countryCode != selectedCountry.code || amount != selectedAmount || operator.name != selectedOperator?.name) return;
-      setState(() { priceQuote = null; priceQuoteError = 'قیمت د سرور له خوا لا تایید شوی نه دی.'; });
+      final detail = error.toString().replaceFirst('Exception: ', '').trim();
+      final safeDetail = detail.isEmpty || detail.length > 140
+          ? 'محصول یا د تبادلې نرخ لا تنظیم شوی نه دی.'
+          : detail;
+      setState(() {
+        priceQuote = null;
+        priceQuoteError = 'قیمت لا تایید شوی نه دی: $safeDetail';
+      });
     } finally {
       if (mounted && countryCode == selectedCountry.code && amount == selectedAmount && operator.name == selectedOperator?.name) {
         setState(() => isQuoteLoading = false);
