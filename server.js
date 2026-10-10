@@ -1744,7 +1744,7 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
     await client.query('BEGIN');
 
     const orderResult = await client.query(
-      `SELECT order_id, status, charge_cents, stripe_payment_intent_id
+      `SELECT order_id, status, charge_cents, stripe_payment_intent_id, dtone_status
        FROM orders
        WHERE order_id = $1
        FOR UPDATE`,
@@ -1765,10 +1765,15 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
       });
     }
 
-    if (!['topup_review', 'topup_submitted', 'processing_topup'].includes(order.status)) {
+    if (
+      order.status !== 'topup_review' ||
+      !['failed', 'rejected', 'cancelled'].includes(
+        String(order.dtone_status || '').trim().toLowerCase()
+      )
+    ) {
       await client.query('ROLLBACK');
       return res.status(409).json({
-        error: 'Only a paid order awaiting top-up review can be refunded.',
+        error: 'Refund requires a final DT One failure status. Unknown or pending outcomes must be reconciled first.',
       });
     }
 
