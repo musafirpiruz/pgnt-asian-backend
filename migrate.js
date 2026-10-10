@@ -59,8 +59,8 @@ async function runMigration() {
     if (rateCheck.rows.length === 0) {
       await client.query(`
         ALTER TABLE pricing_settings
-          ADD COLUMN IF NOT EXISTS afn_per_eur NUMERIC(12,4) NOT NULL DEFAULT 75
-            CHECK (afn_per_eur > 0);
+          ADD COLUMN IF NOT EXISTS afn_per_eur NUMERIC(12,4)
+            CHECK (afn_per_eur IS NULL OR afn_per_eur > 0);
         INSERT INTO schema_migrations (version)
         VALUES ('003_afn_eur_rate')
         ON CONFLICT (version) DO NOTHING;
