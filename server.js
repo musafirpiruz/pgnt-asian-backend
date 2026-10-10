@@ -376,7 +376,7 @@ function validateCheckoutInput(body) {
   const operator = String(body.operator || '').trim();
   const amount = Number(body.amount);
 
-  if (productId && !/^[1-9]\\d*$/.test(productId)) {
+  if (productId && !/^[1-9]\d*$/.test(productId)) {
     throw new Error('Invalid product ID.');
   }
 
@@ -497,7 +497,7 @@ async function getPricingSettings(client, country) {
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
-async function getProduct(client, productId, country = null, operator = null, amount = null) {
+async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null) {
   const result = await client.query(
     `SELECT
        id,
@@ -516,7 +516,7 @@ async function getProduct(client, productId, country = null, operator = null, am
        ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
      )
      LIMIT 1`,
-    [productId, country, operator, amount]
+    [productId, requestedCountry, operator, amount]
   );
 
   if (result.rowCount !== 1) {
