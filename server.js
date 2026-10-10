@@ -437,7 +437,7 @@ async function getPricingSettings(client, country) {
        currency,
        fee_eur_cents,
        bonus_percent,
-       enabled
+       active
      FROM pricing_settings
      WHERE country = $1
      LIMIT 1`,
@@ -453,8 +453,7 @@ async function getPricingSettings(client, country) {
   const settings = result.rows[0];
 
   if (
-    settings.enabled !== true ||
-    settings.currency !== 'EUR'
+    settings.active !== true
   ) {
     throw new Error(
       'Pricing settings are disabled or invalid.'
@@ -496,12 +495,12 @@ async function getProduct(client, productId) {
        id,
        country,
        currency,
-       dtone_product_id,
-       name,
-       description,
-       local_amount,
+       product_id AS dtone_product_id,
+       operator AS name,
+       NULL::text AS description,
+       amount AS local_amount,
        price_eur_cents,
-       enabled
+       active AS enabled
      FROM product_catalog
      WHERE id = $1
      LIMIT 1`,
@@ -754,32 +753,17 @@ app.post('/api/payments/checkout', async (req, res) => {
     // Record the server-calculated price.
     await client.query(
       `INSERT INTO orders (
-         id,
-         country,
-         phone,
-         product_id,
-         currency,
-         base_price_eur_cents,
-         fee_eur_cents,
-         final_price_eur_cents,
-         status,
-         created_at,
-         updated_at
-       )
-       VALUES (
-         $1, $2, $3, $4, 'EUR',
-         $5, $6, $7,
-         'awaiting_payment',
-         NOW(), NOW()
+         order_id, country, operator, phone, product_id,
+         amount, currency, product_price_cents, fee_cents,
+         charge_cents, status, created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         'awaiting_payment', NOW(), NOW()
        )`,
       [
-        orderId,
-        input.country,
-        input.phone,
-        product.id,
-        price.basePriceCents,
-        price.feeCents,
-        price.finalPriceCents,
+        orderId, input.country, product.name, input.phone,
+        product.id, product.localAmount, product.currency,
+        price.basePriceCents, price.feeCents, price.finalPriceCents,
       ]
     );
 
@@ -834,7 +818,7 @@ app.post('/api/payments/checkout', async (req, res) => {
       `UPDATE orders
        SET stripe_session_id = $1,
            updated_at = NOW()
-       WHERE id = $2
+       WHERE order_id = $2
          AND status = 'awaiting_payment'`,
       [session.id, orderId]
     );
@@ -1046,7 +1030,7 @@ async function processPaidStripeSession(session) {
     const result = await client.query(
       `SELECT *
        FROM orders
-       WHERE id = $1
+       WHERE order_id = $1
        FOR UPDATE`,
       [orderId]
     );
@@ -1064,9 +1048,8 @@ async function processPaidStripeSession(session) {
     }
 
     if (
-      order.currency !== 'EUR' ||
-      Number(order.final_price_eur_cents) !==
-        session.amount_total
+      order.currency !== countryCurrency(order.country) ||
+      Number(order.charge_cents) !== session.amount_total
     ) {
       throw new Error('Stripe amount/currency mismatch.');
     }
@@ -1091,12 +1074,19 @@ async function processPaidStripeSession(session) {
       );
     }
 
+    const paymentIntentId =
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id || null;
+
     await client.query(
       `UPDATE orders
        SET status = 'processing_topup',
+           stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+           paid_at = COALESCE(paid_at, NOW()),
            updated_at = NOW()
-       WHERE id = $1`,
-      [orderId]
+       WHERE order_id = $1`,
+      [orderId, paymentIntentId]
     );
 
     await client.query('COMMIT');
@@ -1111,9 +1101,9 @@ async function processPaidStripeSession(session) {
 
   // Re-read trusted product information from the database.
   const product = await pool.query(
-    `SELECT dtone_product_id, country, currency
+    `SELECT product_id AS dtone_product_id, country, currency
      FROM product_catalog
-     WHERE id = $1 AND enabled = TRUE
+     WHERE id = $1 AND active = TRUE
      LIMIT 1`,
     [order.product_id]
   );
@@ -1128,7 +1118,7 @@ async function processPaidStripeSession(session) {
       `UPDATE orders
        SET status = 'topup_review',
            updated_at = NOW()
-       WHERE id = $1
+       WHERE order_id = $1
          AND status = 'processing_topup'`,
       [orderId]
     );
@@ -1171,7 +1161,7 @@ async function processPaidStripeSession(session) {
       `UPDATE orders
        SET status = 'topup_review',
            updated_at = NOW()
-       WHERE id = $1
+       WHERE order_id = $1
          AND status = 'processing_topup'`,
       [orderId]
     );
@@ -1197,7 +1187,7 @@ async function processPaidStripeSession(session) {
       `UPDATE orders
        SET status = 'topup_review',
            updated_at = NOW()
-       WHERE id = $1
+       WHERE order_id = $1
          AND status = 'processing_topup'`,
       [orderId]
     );
@@ -1224,7 +1214,7 @@ async function processPaidStripeSession(session) {
      SET status = 'topup_submitted',
          dtone_transaction_id = $1,
          updated_at = NOW()
-     WHERE id = $2
+     WHERE order_id = $2
        AND status = 'processing_topup'`,
     [providerReference, orderId]
   );
@@ -1344,7 +1334,7 @@ app.post('/api/dtone/callback', async (req, res) => {
     const result = await client.query(
       `SELECT *
        FROM orders
-       WHERE id = $1
+       WHERE order_id = $1
        FOR UPDATE`,
       [orderId]
     );
@@ -1407,7 +1397,7 @@ app.post('/api/dtone/callback', async (req, res) => {
        SET status = $1,
            dtone_transaction_id = $2,
            updated_at = NOW()
-       WHERE id = $3`,
+       WHERE order_id = $3`,
       [
         nextStatus,
         providerTransactionId,
@@ -1481,7 +1471,7 @@ async function syncStripeRefundStatus(charge) {
      updated_at = NOW()
      WHERE stripe_payment_intent_id = $2
        AND status <> 'completed'
-     RETURNING id, status`,
+     RETURNING order_id, status`,
     [
       charge.refunded === true,
       paymentIntentId,
@@ -1542,10 +1532,9 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
     const result = await pool.query(
       `SELECT
          country,
-         currency,
          fee_eur_cents,
          bonus_percent,
-         enabled
+         active
        FROM pricing_settings
        ORDER BY country`
     );
@@ -1591,15 +1580,15 @@ app.get('/api/orders/:orderId/status', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         id,
+         order_id,
          country,
          currency,
-         final_price_eur_cents,
+         charge_cents,
          status,
          created_at,
          updated_at
        FROM orders
-       WHERE id = $1
+       WHERE order_id = $1
        LIMIT 1`,
       [orderId]
     );
@@ -1613,15 +1602,11 @@ app.get('/api/orders/:orderId/status', async (req, res) => {
     const order = result.rows[0];
 
     return res.json({
-      orderId: order.id,
+      orderId: order.order_id,
       country: order.country,
       paymentCurrency: 'EUR',
-      amountCents: Number(
-        order.final_price_eur_cents
-      ),
-      amountFormatted: formatEuro(
-        Number(order.final_price_eur_cents)
-      ),
+      amountCents: Number(order.charge_cents),
+      amountFormatted: formatEuro(Number(order.charge_cents)),
       status: order.status,
       createdAt: order.created_at,
       updatedAt: order.updated_at,
