@@ -232,6 +232,14 @@ ON orders (phone);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at
 ON orders (created_at DESC);
 
+-- Existing databases may predate the order_id UNIQUE constraint.
+-- Refunds reference orders(order_id), so ensure PostgreSQL has a
+-- non-partial unique index before creating the refunds foreign key.
+-- If duplicate non-null order IDs exist, fail migration for review
+-- rather than silently changing or deleting financial records.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_order_id_unique
+ON orders (order_id);
+
 
 -- =========================================================
 -- 7. STRIPE / WEBHOOK EVENTS
