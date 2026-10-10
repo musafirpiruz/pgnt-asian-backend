@@ -487,6 +487,10 @@ async function getPricingSettings(client, country) {
     return res.status(400).json({ error: 'afnPerEur must be a positive number.' });
   }
 
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
+    return res.status(400).json({ error: 'afnPerEur must be a positive number.' });
+  }
+
   if (
     !Number.isFinite(bonusPercent) ||
     bonusPercent < 0 ||
@@ -1690,6 +1694,7 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
       `SELECT
          country,
          fee_eur_cents,
+         afn_per_eur,
          bonus_percent,
          active
        FROM pricing_settings
@@ -1770,6 +1775,7 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
        ON CONFLICT (country)
        DO UPDATE SET
          fee_eur_cents = EXCLUDED.fee_eur_cents,
+         afn_per_eur = EXCLUDED.afn_per_eur,
          bonus_percent = EXCLUDED.bonus_percent,
          active = EXCLUDED.active,
          updated_at = NOW()
