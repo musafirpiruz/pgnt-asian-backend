@@ -50,6 +50,24 @@ async function runMigration() {
       "SELECT pg_advisory_lock(738291);"
     );
 
+    // Version 003 adds the editable AFN-per-EUR comparison rate to existing databases.
+    const rateVersion = "003_afn_eur_rate";
+    const rateCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rateVersion]
+    );
+    if (rateCheck.rows.length === 0) {
+      await client.query(`
+        ALTER TABLE pricing_settings
+          ADD COLUMN IF NOT EXISTS afn_per_eur NUMERIC(12,4) NOT NULL DEFAULT 75
+            CHECK (afn_per_eur > 0);
+        INSERT INTO schema_migrations (version)
+        VALUES ('003_afn_eur_rate')
+        ON CONFLICT (version) DO NOTHING;
+      `);
+      console.log("Migration 003_afn_eur_rate completed successfully.");
+    }
+
     /*
      * Use a new version for the schema reconciliation.
      * Older installations may already have 001_initial
