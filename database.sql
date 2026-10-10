@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS pricing_settings (
   country CHAR(2) PRIMARY KEY,
   fee_eur_cents INTEGER NOT NULL DEFAULT 79
     CHECK (fee_eur_cents >= 0),
+  afn_per_eur NUMERIC(12,4) NOT NULL DEFAULT 75
+    CHECK (afn_per_eur > 0),
   bonus_percent NUMERIC(8,2) NOT NULL DEFAULT 0
     CHECK (bonus_percent >= 0 AND bonus_percent <= 100),
   active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -22,6 +24,9 @@ CREATE TABLE IF NOT EXISTS pricing_settings (
 -- the required columns are present.
 ALTER TABLE pricing_settings
   ADD COLUMN IF NOT EXISTS fee_eur_cents INTEGER NOT NULL DEFAULT 79;
+
+ALTER TABLE pricing_settings
+  ADD COLUMN IF NOT EXISTS afn_per_eur NUMERIC(12,4) NOT NULL DEFAULT 75;
 
 ALTER TABLE pricing_settings
   ADD COLUMN IF NOT EXISTS bonus_percent NUMERIC(8,2) NOT NULL DEFAULT 0;
