@@ -120,6 +120,17 @@ async function runMigration() {
       );
     }
 
+    console.log(
+      "Executing idempotent database schema reconciliation..."
+    );
+
+    /*
+     * database.sql contains idempotent CREATE IF NOT EXISTS,
+     * ADD COLUMN IF NOT EXISTS, and guarded seed statements.
+     * It also owns its transaction boundaries.
+     */
+    await client.query(sql);
+
     // Version 004 applies the user's initial Afghanistan fee and comparison rate once.
     // 100 AFN = EUR 1.37 => 1 EUR = 72.9927 AFN (rounded to 4 decimals).
     const initialAfPricingVersion = "004_af_initial_pricing";
@@ -143,16 +154,6 @@ async function runMigration() {
       console.log("Migration 004_af_initial_pricing completed successfully.");
     }
 
-    console.log(
-      "Executing idempotent database schema reconciliation..."
-    );
-
-    /*
-     * database.sql contains idempotent CREATE IF NOT EXISTS,
-     * ADD COLUMN IF NOT EXISTS, and guarded seed statements.
-     * It also owns its transaction boundaries.
-     */
-    await client.query(sql);
 
     await client.query(
       `
