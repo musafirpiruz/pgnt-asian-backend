@@ -2401,6 +2401,18 @@ app.get('/api/orders/:orderId/status', async (req, res) => {
   }
 });
 
+// Register the tightly restricted DT One pre-production test routes.
+require('./dtone-sandbox-test')({
+  app,
+  pool,
+  requireAdmin,
+  DTONE_API_KEY,
+  DTONE_API_SECRET,
+  DTONE_API_BASE_URL,
+  DTONE_CALLBACK_URL,
+  getDtOneAuthHeader,
+});
+
 // Start the server only after configuration checks.
 // Keep this block once, at the very end of server.js.
 async function startServer() {
