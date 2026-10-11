@@ -44,11 +44,18 @@ const DTONE_API_KEY =
 const DTONE_API_SECRET =
   process.env.DTONE_API_SECRET || '';
 
-const DTONE_API_BASE_URL = (
+const configuredDtOneBaseUrl = (
   process.env.DTONE_API_BASE_URL ||
   process.env.DTONE_BASE_URL ||
-  'https://preprod-api.dtone.com'
+  'https://preprod-dvs-api.dtone.com'
 ).replace(/\/+$/, '');
+
+// Normalize the legacy pre-production hostname to the current
+// DVS API hostname documented by DT One.
+const DTONE_API_BASE_URL = configuredDtOneBaseUrl.replace(
+  /^https:\/\/preprod-api\.dtone\.com$/i,
+  'https://preprod-dvs-api.dtone.com'
+);
 
 const DTONE_CALLBACK_URL =
   process.env.DTONE_CALLBACK_URL ||
@@ -397,8 +404,7 @@ function validateCheckoutInput(body) {
     amount,
     paymentCurrency,
     recipientCurrency: countryCurrency(country),
-  };
-}
+  };}
 // =====================================================
 // PART 3/8 — PRODUCTS, PRICING, FEES & BONUSES
 // All customer prices are stored in EUR cents.
@@ -797,8 +803,7 @@ app.post('/api/payments/checkout', async (req, res) => {
 
     const product = await getProduct(
       client,
-      input.productId,
-      input.country,
+      input.productId,      input.country,
       input.operator,
       input.amount
     );
@@ -1051,7 +1056,7 @@ app.use(express.json({ limit: '100kb' }));
 
 const DTONE_TRANSACTION_PATH =
   process.env.DTONE_TRANSACTION_PATH ||
-  '/v2/async/transactions';
+  '/v1/async/transactions';
 
 function getDtOneAuthHeader() {
   if (!DTONE_API_KEY || !DTONE_API_SECRET) {
@@ -1197,8 +1202,7 @@ async function processPaidStripeSession(session) {
     throw new Error('Product mapping requires review.');
   }
 
-  const phone = normalizePhone(
-    order.phone,
+  const phone = normalizePhone(    order.phone,
     order.country
   );
 
@@ -1220,9 +1224,11 @@ async function processPaidStripeSession(session) {
       signal: AbortSignal.timeout(20000),
       body: JSON.stringify({
         external_id: orderId,
-        product_id: product.rows[0].dtone_product_id,
-        account_number: phone,
-        callback_url: DTONE_CALLBACK_URL,
+        product_id: Number(product.rows[0].dtone_product_id),
+        credit_party_identifier: {
+          mobile_number: internationalPhone,
+        },
+        auto_confirm: true,
       }),
     });
   } catch (error) {
@@ -1597,8 +1603,7 @@ async function syncStripeRefundStatus(charge) {
          WHERE order_id = $2`,
         [fullRefund, order.order_id]
       );
-    } else {
-      console.warn(
+    } else {      console.warn(
         'Stripe refund observed for a completed top-up; order retained for manual reconciliation.',
         order.order_id
       );
@@ -1997,8 +2002,7 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
              updated_at = NOW()
          WHERE order_id = $1
            AND status <> 'completed'`,
-        [orderId]
-      );
+        [orderId]      );
     }
 
     return res.status(200).json({
