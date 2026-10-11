@@ -1788,8 +1788,13 @@ const orderId=document.getElementById('orderId');
 const checkSandboxStatus=document.getElementById('checkSandboxStatus');
 async function adminRequest(url,options={}){
  const response=await fetch(url,{...options,headers:{...(options.headers||{}),'x-admin-api-key':key.value},cache:'no-store'});
- const data=await response.json();
- if(!response.ok) throw new Error(JSON.stringify(data));
+ const raw=await response.text();
+ let data;
+ try{data=raw?JSON.parse(raw):{};}catch(_){
+  const preview=raw.replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim().slice(0,220);
+  throw new Error('Backend returned non-JSON response (HTTP '+response.status+'). '+(preview||'Empty response'));
+ }
+ if(!response.ok) throw new Error('HTTP '+response.status+': '+JSON.stringify(data));
  return data;
 }
 form.addEventListener('submit',async event=>{
