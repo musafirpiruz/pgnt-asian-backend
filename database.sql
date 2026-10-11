@@ -525,8 +525,16 @@ VALUES
   ('AF', 'Etisalat',   100,  'AFN', 900002, 164,  0, FALSE),
   ('PK', 'Jazz',       100,  'PKR', 900003, 250,  0, FALSE),
   ('IN', 'Airtel',    100,  'INR', 900004, 120,  0, FALSE)
-ON CONFLICT (country, operator, amount, currency)
-DO NOTHING;
+ON CONFLICT DO NOTHING;
+
+-- Verified DT One pre-production catalog mapping.
+-- Keep disabled until a controlled sandbox top-up and callback
+-- are successful; retail price is seeded as €2.10 (210 cents).
+INSERT INTO product_catalog
+  (country, operator, amount, currency, product_id, price_eur_cents, bonus_amount, active)
+VALUES
+  ('AF', 'ATOMA', 115, 'AFN', 7194, 210, 0, FALSE)
+ON CONFLICT DO NOTHING;
 
 
 -- =========================================================
