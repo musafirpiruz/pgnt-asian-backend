@@ -1707,13 +1707,14 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button>
+<button type="submit">Verify product 7194</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
 </form>
 <h2>Result</h2><pre id="result">Waiting for verification.</pre>
 <script>
 const form=document.getElementById('check');
 const key=document.getElementById('key');
 const result=document.getElementById('result');
+const discover=document.getElementById('discover');
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  result.textContent='Checking DT One pre-production…';
@@ -1724,6 +1725,16 @@ form.addEventListener('submit',async event=>{
  }catch(_){
   result.textContent='Could not contact the backend. Please try again later.';
  }
+ key.value='';
+});
+discover.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Searching DT One pre-production catalog…';
+ try{
+  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const data=await response.json();
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
  key.value='';
 });
 </script>
