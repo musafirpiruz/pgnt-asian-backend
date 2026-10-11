@@ -115,7 +115,7 @@ const List<MobileOperator> operators = [
   // Afghanistan
   MobileOperator('AF', 'Roshan', '📶'),
   MobileOperator('AF', 'Etisalat', '📱'),
-  MobileOperator('AF', 'MTN', '📡'),
+  MobileOperator('AF', 'ATOMA', '📡'),
   MobileOperator('AF', 'AWCC', '🛰️'),
   MobileOperator('AF', 'Salaam', '☎️'),
 
