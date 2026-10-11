@@ -194,6 +194,35 @@ async function runMigration() {
     }
 
 
+    // Version 006 adds the 115 AFN ATOMA product seen in DT Shop.
+    // Keep it disabled until the DT One pre-production product lookup
+    // and a safe sandbox transaction are verified.
+    const atoma115Version = "006_atoma_115_afn";
+    const atoma115Check = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [atoma115Version]
+    );
+    if (atoma115Check.rows.length === 0) {
+      await client.query(
+        `
+        INSERT INTO product_catalog
+          (country, operator, amount, currency, product_id, price_eur_cents, bonus_amount, active, updated_at)
+        VALUES ('AF', 'ATOMA', 115, 'AFN', 7194, 189, 0, FALSE, NOW())
+        ON CONFLICT (country, operator, amount, currency)
+        DO UPDATE SET
+          product_id = EXCLUDED.product_id,
+          price_eur_cents = EXCLUDED.price_eur_cents,
+          active = FALSE,
+          updated_at = NOW();
+        INSERT INTO schema_migrations (version)
+        VALUES ('006_atoma_115_afn')
+        ON CONFLICT (version) DO NOTHING;
+        `
+      );
+      console.log("Migration 006_atoma_115_afn completed successfully (product remains disabled).");
+    }
+
+
 
   } catch (error) {
     console.error(
