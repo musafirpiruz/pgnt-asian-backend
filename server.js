@@ -1764,6 +1764,16 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
 <button type="submit">Verify product 7194</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<hr>
+<h2>Sandbox transaction test</h2>
+<p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
+<label for="scenario">Test result</label>
+<select id="scenario" style="width:100%;padding:12px;font:inherit"><option value="completed">Successful scenario (test number ending 100)</option><option value="declined">Declined scenario (test number ending 106)</option></select>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmSandbox" type="checkbox" style="width:auto"> I confirm this is a DT One SANDBOX test</label>
+<button type="button" id="runSandbox">Run sandbox transaction</button>
+<label for="orderId">Sandbox test order ID (for status lookup)</label>
+<input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
+<button type="button" id="checkSandboxStatus">Check saved order status</button>
 </form>
 <h2>Result</h2><pre id="result">Waiting for verification.</pre>
 <script>
@@ -1771,6 +1781,17 @@ const form=document.getElementById('check');
 const key=document.getElementById('key');
 const result=document.getElementById('result');
 const discover=document.getElementById('discover');
+const scenario=document.getElementById('scenario');
+const confirmSandbox=document.getElementById('confirmSandbox');
+const runSandbox=document.getElementById('runSandbox');
+const orderId=document.getElementById('orderId');
+const checkSandboxStatus=document.getElementById('checkSandboxStatus');
+async function adminRequest(url,options={}){
+ const response=await fetch(url,{...options,headers:{...(options.headers||{}),'x-admin-api-key':key.value},cache:'no-store'});
+ const data=await response.json();
+ if(!response.ok) throw new Error(JSON.stringify(data));
+ return data;
+}
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  result.textContent='Checking DT One pre-production…';
@@ -1792,6 +1813,27 @@ discover.addEventListener('click',async()=>{
   result.textContent=JSON.stringify(data,null,2);
  }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
  key.value='';
+});
+runSandbox.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!confirmSandbox.checked){result.textContent='Tick the sandbox confirmation box first.';return;}
+ if(!confirm('Submit one transaction to DT One PRE-PRODUCTION? No Stripe payment is created.'))return;
+ result.textContent='Submitting one sandbox transaction. Do not press again while waiting…';
+ runSandbox.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/sandbox-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmSandbox:true,scenario:scenario.value})});
+  if(data.orderId)orderId.value=data.orderId;
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Sandbox test did not confirm success. Details: '+error.message;}
+ finally{key.value='';runSandbox.disabled=false;confirmSandbox.checked=false;}
+});
+checkSandboxStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!orderId.value.trim()){result.textContent='Enter the sandbox order ID first.';return;}
+ result.textContent='Loading saved sandbox order status…';
+ try{const data=await adminRequest('/api/admin/dtone/sandbox-test/'+encodeURIComponent(orderId.value.trim()));result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not verify saved status: '+error.message;}
+ finally{key.value='';}
 });
 </script>
 </body>
