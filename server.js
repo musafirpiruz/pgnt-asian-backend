@@ -1730,7 +1730,7 @@ discover.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  result.textContent='Searching DT One pre-production catalog…';
  try{
-  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG&operator=ATOMA&amount=115',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
   const data=await response.json();
   result.textContent=JSON.stringify(data,null,2);
  }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
