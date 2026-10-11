@@ -1812,80 +1812,108 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
   }
 
   const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
+  const operatorQuery = String(req.query.operator || '').trim().toUpperCase();
+  const amountQuery = Number(req.query.amount || 115);
   if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
     return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
   }
+  if (!Number.isFinite(amountQuery) || amountQuery <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number.' });
+  }
 
   try {
-    const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
-    url.searchParams.set('country_iso_code', countryIsoCode);
-    url.searchParams.set('per_page', '100');
-    url.searchParams.set('page', '1');
+    const matchesById = new Map();
+    let providerPagesChecked = 0;
+    let totalSeen = 0;
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: getDtOneAuthHeader(),
-        Accept: 'application/json',
-      },
-      signal: AbortSignal.timeout(20000),
-    });
+    // Check a bounded number of pages to avoid unbounded provider requests.
+    for (let page = 1; page <= 5; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+      url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
 
-    const responseText = await response.text();
-    let data = null;
-    try {
-      data = responseText ? JSON.parse(responseText) : null;
-    } catch (_) {
-      data = null;
-    }
-
-    if (!response.ok) {
-      // Log only a bounded provider response body to diagnose endpoint/account
-      // issues. Never log request headers or credentials.
-      const providerBody = String(responseText || '').slice(0, 1000);
-      console.warn('DT One product discovery failed', JSON.stringify({
-        status: response.status,
-        baseUrl: DTONE_API_BASE_URL,
-        responseBody: providerBody,
-      }));
-      return res.status(502).json({
-        verified: false,
-        providerStatus: response.status,
-        configuredBaseUrl: DTONE_API_BASE_URL,
-        providerMessage: providerBody || null,
-        error: 'DT One product discovery failed for the configured environment. Check providerMessage and the configured API environment.',
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(20000),
       });
+
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch (_) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const providerBody = String(responseText || '').slice(0, 1000);
+        console.warn('DT One product discovery failed', JSON.stringify({
+          status: response.status,
+          page,
+          baseUrl: DTONE_API_BASE_URL,
+          responseBody: providerBody,
+        }));
+        return res.status(502).json({
+          verified: false,
+          providerStatus: response.status,
+          configuredBaseUrl: DTONE_API_BASE_URL,
+          providerMessage: providerBody || null,
+          pagesChecked: providerPagesChecked,
+          error: 'DT One product discovery failed. Check providerMessage and the configured API environment.',
+        });
+      }
+
+      const products = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      providerPagesChecked += 1;
+      totalSeen += products.length;
+
+      for (const product of products) {
+        const operatorName = String(product?.operator?.name || '').toUpperCase();
+        const countryCode = String(product?.operator?.country?.iso_code || '').toUpperCase();
+        const name = String(product?.name || '');
+        const benefitAmounts = Array.isArray(product?.benefits)
+          ? product.benefits.map((benefit) => Number(benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base))
+          : [];
+        const productAmounts = [
+          product?.destination?.amount,
+          product?.amount?.base,
+          typeof product?.amount === 'number' ? product.amount : NaN,
+        ].map(Number);
+        const mentionsAmount = benefitAmounts.includes(amountQuery)
+          || productAmounts.includes(amountQuery)
+          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
+        const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
+        const isLikelyRelevant = operatorQuery
+          ? isRequestedOperator
+          : (operatorName.includes('ATOMA') || mentionsAmount);
+        if (countryCode === countryIsoCode && isLikelyRelevant) {
+          const id = product?.id;
+          if (id !== undefined && id !== null) matchesById.set(String(id), product);
+        }
+      }
+
+      if (products.length < 100) break;
     }
 
-    const products = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
-    const matches = products.filter((product) => {
-      const operatorName = String(product?.operator?.name || '').toUpperCase();
-      const countryCode = String(product?.operator?.country?.iso_code || '').toUpperCase();
-      const benefitAmounts = Array.isArray(product?.benefits)
-        ? product.benefits.map((benefit) => Number(benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base))
-        : [];
-      const productAmounts = [
-        product?.destination?.amount,
-        product?.destination?.unit,
-        product?.amount?.base,
-        product?.amount,
-      ].map(Number);
-      const isAfghanistan = countryCode === countryIsoCode;
-      const isAtoma = operatorName.includes('ATOMA');
-      const mentions115 = benefitAmounts.includes(115) || productAmounts.includes(115)
-        || /115\s*AFN|AFN\s*115/i.test(String(product?.name || '') + ' ' + String(product?.description || ''));
-      return isAfghanistan && (isAtoma || mentions115);
-    });
-
+    const products = [...matchesById.values()];
     return res.json({
       verified: true,
       environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
       countryIsoCode,
-      resultCount: matches.length,
-      products: matches,
+      requestedOperator: operatorQuery || null,
+      requestedAmount: amountQuery,
+      providerPagesChecked,
+      providerProductsSeen: totalSeen,
+      resultCount: products.length,
+      products,
       catalogActivation: 'unchanged',
       transactionCreated: false,
-      note: 'Only matching products from the first page are shown. If no match appears, further pages or DT One support may be needed.',
+      note: 'Read-only search across up to five pages. Results are candidates; confirm operator, denomination, and pre-production availability before mapping.',
     });
   } catch (error) {
     console.error('DT One product discovery failed:', error.message);
