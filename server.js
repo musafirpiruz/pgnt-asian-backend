@@ -1679,6 +1679,58 @@ function requireAdmin(req, res, next) {
 }
 
 
+
+// Small browser page for the owner to run the read-only product check
+// without installing an API client. The admin key is entered by the owner
+// in their browser and is never stored by this page.
+app.get('/admin-dtone-check', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  return res.status(200).send(`<!doctype html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PGNT ASIAN — DT One product check</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:620px;margin:32px auto;padding:0 16px;color:#222}
+h1{font-size:1.35rem}label{display:block;margin:18px 0 6px}
+input,button{box-sizing:border-box;width:100%;padding:12px;font:inherit}
+button{margin-top:14px;background:#7a0c10;color:white;border:0;border-radius:6px}
+small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:12px;border-radius:6px}
+</style>
+</head>
+<body>
+<h1>PGNT ASIAN TOPUP</h1>
+<p>Read-only DT One check for Afghanistan ATOMA, product 7194 (115 AFN). This does not create a top-up or enable the product.</p>
+<form id="check">
+<label for="key">Admin API key</label>
+<input id="key" type="password" autocomplete="off" required>
+<small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
+<button type="submit">Verify product 7194</button>
+</form>
+<h2>Result</h2><pre id="result">Waiting for verification.</pre>
+<script>
+const form=document.getElementById('check');
+const key=document.getElementById('key');
+const result=document.getElementById('result');
+form.addEventListener('submit',async event=>{
+ event.preventDefault();
+ result.textContent='Checking DT One pre-production…';
+ try{
+  const response=await fetch('/api/admin/dtone/products/7194',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const data=await response.json();
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(_){
+  result.textContent='Could not contact the backend. Please try again later.';
+ }
+ key.value='';
+});
+</script>
+</body>
+</html>`);
+});
+
 // Read-only DT One product verification. This never enables a catalog entry
 // and never creates a transaction. Keep the endpoint admin-authenticated.
 app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) => {
