@@ -1357,8 +1357,8 @@ function normalizeDtOneStatus(value) {
     return 'pending';
   }
 
-  // Reversed is a distinct post-completion state and must not be
-  // silently treated as a successful delivery.
+  // REVERSED is a distinct post-completion status. Treat it as a
+  // failure requiring review/refund assessment, never as delivered.
   if (status === 'reversed') {
     return 'failed';
   }
