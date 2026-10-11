@@ -1246,6 +1246,7 @@ async function processPaidStripeSession(session) {
           mobile_number: internationalPhone,
         },
         auto_confirm: true,
+        callback_url: DTONE_CALLBACK_URL,
       }),
     });
   } catch (error) {
@@ -1333,7 +1334,14 @@ const DTONE_CALLBACK_SECRET =
 // Normalize only recognized provider status values.
 // Confirm the exact values used by your DT One API.
 function normalizeDtOneStatus(value) {
-  const status = String(value || '')
+  // DT One DVS callbacks commonly provide status as an object:
+  // { id: 7, message: "COMPLETED", class: { ... } }.
+  // Also accept a plain string for compatible API versions.
+  const rawStatus =
+    value && typeof value === 'object'
+      ? (value.message || value.status || '')
+      : value;
+  const status = String(rawStatus || '')
     .trim()
     .toLowerCase();
 
@@ -1341,12 +1349,18 @@ function normalizeDtOneStatus(value) {
     return 'completed';
   }
 
-  if (['failed', 'rejected', 'cancelled'].includes(status)) {
+  if (['rejected', 'cancelled', 'canceled', 'declined', 'failed'].includes(status)) {
     return 'failed';
   }
 
-  if (['pending', 'processing', 'accepted'].includes(status)) {
+  if (['pending', 'processing', 'accepted', 'created', 'confirmed', 'submitted'].includes(status)) {
     return 'pending';
+  }
+
+  // Reversed is a distinct post-completion state and must not be
+  // silently treated as a successful delivery.
+  if (status === 'reversed') {
+    return 'failed';
   }
 
   return 'unknown';
