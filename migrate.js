@@ -162,6 +162,38 @@ async function runMigration() {
     }
 
 
+    // Version 005 records the ATOMA Afghanistan products from the user's DT Shop CSV.
+    // They remain disabled until DT One pre-production fulfillment is verified.
+    const atomaCatalogVersion = "005_atoma_af_catalog";
+    const atomaCatalogCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [atomaCatalogVersion]
+    );
+    if (atomaCatalogCheck.rows.length === 0) {
+      await client.query(
+        `
+        INSERT INTO product_catalog
+          (country, operator, amount, currency, product_id, price_eur_cents, bonus_amount, active, updated_at)
+        VALUES
+          ('AF', 'ATOMA', 100,  'AFN', 7191, 165, 0, FALSE, NOW()),
+          ('AF', 'ATOMA', 250,  'AFN', 7203, 411, 0, FALSE, NOW()),
+          ('AF', 'ATOMA', 500,  'AFN', 7213, 821, 0, FALSE, NOW()),
+          ('AF', 'ATOMA', 1000, 'AFN', 7233, 1641, 0, FALSE, NOW())
+        ON CONFLICT (country, operator, amount, currency)
+        DO UPDATE SET
+          product_id = EXCLUDED.product_id,
+          price_eur_cents = EXCLUDED.price_eur_cents,
+          active = FALSE,
+          updated_at = NOW();
+        INSERT INTO schema_migrations (version)
+        VALUES ('005_atoma_af_catalog')
+        ON CONFLICT (version) DO NOTHING;
+        `
+      );
+      console.log("Migration 005_atoma_af_catalog completed successfully (products remain disabled).");
+    }
+
+
 
   } catch (error) {
     console.error(
