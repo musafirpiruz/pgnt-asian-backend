@@ -139,7 +139,7 @@ const List<MobileOperator> operators = [
 // Suggested recharge amounts.
 // Actual products and prices must be confirmed by the backend.
 const Map<String, List<int>> rechargeAmounts = {
-  'AFN': [100, 250, 500, 1000],
+  'AFN': [100, 115, 250, 500, 1000],
   'PKR': [500, 1000, 2000, 5000],
   'INR': [200, 500, 1000, 2000],
   'BDT': [200, 500, 1000, 2000],
