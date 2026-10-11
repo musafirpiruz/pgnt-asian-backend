@@ -1793,6 +1793,90 @@ app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) =
   }
 });
 
+
+// Read-only product discovery in the configured DT One environment.
+// Used to find the correct pre-production product ID; never creates transactions.
+app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
+    return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
+  }
+
+  try {
+    const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+    url.searchParams.set('country_iso_code', countryIsoCode);
+    url.searchParams.set('per_page', '100');
+    url.searchParams.set('page', '1');
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: getDtOneAuthHeader(),
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+
+    const responseText = await response.text();
+    let data = null;
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch (_) {
+      data = null;
+    }
+
+    if (!response.ok) {
+      console.warn('DT One product discovery returned HTTP', response.status);
+      return res.status(502).json({
+        verified: false,
+        providerStatus: response.status,
+        error: 'DT One product discovery failed for the configured environment.',
+      });
+    }
+
+    const products = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+    const matches = products.filter((product) => {
+      const operatorName = String(product?.operator?.name || '').toUpperCase();
+      const countryCode = String(product?.operator?.country?.iso_code || '').toUpperCase();
+      const benefitAmounts = Array.isArray(product?.benefits)
+        ? product.benefits.map((benefit) => Number(benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base))
+        : [];
+      const productAmounts = [
+        product?.destination?.amount,
+        product?.destination?.unit,
+        product?.amount?.base,
+        product?.amount,
+      ].map(Number);
+      const isAfghanistan = countryCode === countryIsoCode;
+      const isAtoma = operatorName.includes('ATOMA');
+      const mentions115 = benefitAmounts.includes(115) || productAmounts.includes(115)
+        || /115\s*AFN|AFN\s*115/i.test(String(product?.name || '') + ' ' + String(product?.description || ''));
+      return isAfghanistan && (isAtoma || mentions115);
+    });
+
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      countryIsoCode,
+      resultCount: matches.length,
+      products: matches,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+      note: 'Only matching products from the first page are shown. If no match appears, further pages or DT One support may be needed.',
+    });
+  } catch (error) {
+    console.error('DT One product discovery failed:', error.message);
+    return res.status(502).json({
+      verified: false,
+      error: 'Could not reach DT One product discovery endpoint.',
+    });
+  }
+});
+
 // Admin pricing overview.
 // Prices and fees are returned in EUR cents.
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
