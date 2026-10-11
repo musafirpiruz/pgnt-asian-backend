@@ -1201,9 +1201,27 @@ async function processPaidStripeSession(session) {
     throw new Error('Product mapping requires review.');
   }
 
-  const phone = normalizePhone(    order.phone,
+  const phone = normalizePhone(
+    order.phone,
     order.country
   );
+
+  // DT One expects the recipient number in international format.
+  // Build it from the validated local number and this country's
+  // configured calling code; never rely on an undeclared variable.
+  const countryConfig = SUPPORTED_COUNTRIES[order.country];
+  if (!countryConfig || !countryConfig.callingCode) {
+    await pool.query(
+      `UPDATE orders
+       SET status = 'topup_review',
+           updated_at = NOW()
+       WHERE order_id = $1
+         AND status = 'processing_topup'`,
+      [orderId]
+    );
+    throw new Error('Recipient calling code is not configured.');
+  }
+  const internationalPhone = `${countryConfig.callingCode}${phone}`;
 
   // Configure this endpoint and payload to match the
   // exact DT One API version enabled for your account.
