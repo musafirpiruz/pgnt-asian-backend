@@ -1841,11 +1841,20 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
     }
 
     if (!response.ok) {
-      console.warn('DT One product discovery returned HTTP', response.status);
+      // Log only a bounded provider response body to diagnose endpoint/account
+      // issues. Never log request headers or credentials.
+      const providerBody = String(responseText || '').slice(0, 1000);
+      console.warn('DT One product discovery failed', JSON.stringify({
+        status: response.status,
+        baseUrl: DTONE_API_BASE_URL,
+        responseBody: providerBody,
+      }));
       return res.status(502).json({
         verified: false,
         providerStatus: response.status,
-        error: 'DT One product discovery failed for the configured environment.',
+        configuredBaseUrl: DTONE_API_BASE_URL,
+        providerMessage: providerBody || null,
+        error: 'DT One product discovery failed for the configured environment. Check providerMessage and the configured API environment.',
       });
     }
 
