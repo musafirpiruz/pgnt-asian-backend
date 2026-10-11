@@ -1246,6 +1246,7 @@ async function processPaidStripeSession(session) {
           mobile_number: internationalPhone,
         },
         auto_confirm: true,
+        callback_url: DTONE_CALLBACK_URL,
       }),
     });
   } catch (error) {
@@ -1325,15 +1326,28 @@ async function processPaidStripeSession(session) {
 // Customer payment currency: EUR
 // =====================================================
 
-// Configure the exact callback authentication mechanism
-// supported by your DT One account before enabling this route.
+// DT One Shop provides callback credentials (username/password) for
+// authenticating status callbacks. Configure these in Render from the
+// PRE-PRODUCTION callback credentials. Keep the legacy shared-header
+// secret only as an explicitly configured fallback.
+const DTONE_CALLBACK_USERNAME =
+  process.env.DTONE_CALLBACK_USERNAME || '';
+const DTONE_CALLBACK_PASSWORD =
+  process.env.DTONE_CALLBACK_PASSWORD || '';
 const DTONE_CALLBACK_SECRET =
   process.env.DTONE_CALLBACK_SECRET || '';
 
 // Normalize only recognized provider status values.
 // Confirm the exact values used by your DT One API.
 function normalizeDtOneStatus(value) {
-  const status = String(value || '')
+  // DT One DVS callbacks commonly provide status as an object:
+  // { id: 7, message: "COMPLETED", class: { ... } }.
+  // Also accept a plain string for compatible API versions.
+  const rawStatus =
+    value && typeof value === 'object'
+      ? (value.message || value.status || '')
+      : value;
+  const status = String(rawStatus || '')
     .trim()
     .toLowerCase();
 
@@ -1341,42 +1355,67 @@ function normalizeDtOneStatus(value) {
     return 'completed';
   }
 
-  if (['failed', 'rejected', 'cancelled'].includes(status)) {
+  if (['rejected', 'cancelled', 'canceled', 'declined', 'failed'].includes(status)) {
     return 'failed';
   }
 
-  if (['pending', 'processing', 'accepted'].includes(status)) {
+  if (['pending', 'processing', 'accepted', 'created', 'confirmed', 'submitted'].includes(status)) {
     return 'pending';
+  }
+
+  // REVERSED is a distinct post-completion status. Treat it as a
+  // failure requiring review/refund assessment, never as delivered.
+  if (status === 'reversed') {
+    return 'failed';
   }
 
   return 'unknown';
 }
 
-// Callback authentication is deliberately fail-closed.
-// Replace this adapter with the authentication method
-// documented for your DT One account.
+// Callback authentication fails closed. Prefer HTTP Basic credentials
+// configured in DT Shop; retain the legacy shared-header adapter only
+// for accounts explicitly configured to send that header.
+function constantTimeEqual(supplied, expected) {
+  const suppliedBuffer = Buffer.from(String(supplied || ''));
+  const expectedBuffer = Buffer.from(String(expected || ''));
+  return (
+    expectedBuffer.length > 0 &&
+    expectedBuffer.length === suppliedBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, suppliedBuffer)
+  );
+}
+
 function verifyDtOneCallback(req) {
-  if (!DTONE_CALLBACK_SECRET) {
-    return false;
+  const authorization = String(req.headers.authorization || '');
+  if (
+    DTONE_CALLBACK_USERNAME &&
+    DTONE_CALLBACK_PASSWORD &&
+    authorization.startsWith('Basic ')
+  ) {
+    let decoded = '';
+    try {
+      decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
+    } catch (_) {
+      return false;
+    }
+    const separator = decoded.indexOf(':');
+    if (separator < 0) return false;
+    const suppliedUsername = decoded.slice(0, separator);
+    const suppliedPassword = decoded.slice(separator + 1);
+    return (
+      constantTimeEqual(suppliedUsername, DTONE_CALLBACK_USERNAME) &&
+      constantTimeEqual(suppliedPassword, DTONE_CALLBACK_PASSWORD)
+    );
   }
 
-  const supplied = String(
-    req.headers['x-pgnt-callback-secret'] || ''
-  );
+  if (DTONE_CALLBACK_SECRET) {
+    return constantTimeEqual(
+      req.headers['x-pgnt-callback-secret'],
+      DTONE_CALLBACK_SECRET
+    );
+  }
 
-  const expectedBuffer = Buffer.from(
-    DTONE_CALLBACK_SECRET
-  );
-
-  const suppliedBuffer = Buffer.from(supplied);
-
-  return (
-    expectedBuffer.length === suppliedBuffer.length &&
-    crypto.timingSafeEqual(
-      expectedBuffer,
-      suppliedBuffer
-    )
-  );
+  return false;
 }
 
 // DT One transaction callback.
