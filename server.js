@@ -52,10 +52,9 @@ const configuredDtOneBaseUrl = (
 
 // Normalize the legacy pre-production hostname to the current
 // DVS API hostname documented by DT One.
-const DTONE_API_BASE_URL = configuredDtOneBaseUrl.replace(
-  /^https:\/\/preprod-api\.dtone\.com$/i,
-  'https://preprod-dvs-api.dtone.com'
-);
+const DTONE_API_BASE_URL = configuredDtOneBaseUrl
+  .replace(/^https:\/\/preprod-api\.dtone\.com$/i, 'https://preprod-dvs-api.dtone.com')
+  .replace(/\/v1$/i, '');
 
 const DTONE_CALLBACK_URL =
   process.env.DTONE_CALLBACK_URL ||
