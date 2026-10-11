@@ -46,6 +46,7 @@ const DTONE_API_SECRET =
 
 const DTONE_API_BASE_URL = (
   process.env.DTONE_API_BASE_URL ||
+  process.env.DTONE_BASE_URL ||
   'https://preprod-api.dtone.com'
 ).replace(/\/+$/, '');
 
