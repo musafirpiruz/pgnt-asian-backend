@@ -1678,6 +1678,69 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+
+// Read-only DT One product verification. This never enables a catalog entry
+// and never creates a transaction. Keep the endpoint admin-authenticated.
+app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) => {
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  try {
+    const response = await fetch(
+      `${DTONE_API_BASE_URL}/v1/products/${productId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+
+    const responseText = await response.text();
+    let data = null;
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch (_) {
+      data = null;
+    }
+
+    if (!response.ok) {
+      console.warn('DT One product verification returned HTTP', response.status);
+      return res.status(response.status === 404 ? 404 : 502).json({
+        verified: false,
+        productId,
+        providerStatus: response.status,
+        error: response.status === 404
+          ? 'Product ID was not found in the configured DT One environment.'
+          : 'DT One could not verify this product. Check the provider response in DT One support or dashboard.',
+      });
+    }
+
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      product: data,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+    });
+  } catch (error) {
+    console.error('DT One product verification failed:', error.message);
+    return res.status(502).json({
+      verified: false,
+      productId,
+      error: 'Could not reach DT One to verify this product.',
+    });
+  }
+});
+
 // Admin pricing overview.
 // Prices and fees are returned in EUR cents.
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
