@@ -92,44 +92,51 @@ async function runMigration() {
       console.log(
         "Migration 002_schema_compatibility is already applied."
       );
+    } else {
+      const sqlPath =
+        path.join(
+          __dirname,
+          "database.sql"
+        );
 
-      return;
+      if (!fs.existsSync(sqlPath)) {
+        throw new Error(
+          "database.sql was not found."
+        );
+      }
+
+      const sql =
+        fs.readFileSync(
+          sqlPath,
+          "utf8"
+        );
+
+      if (!sql.trim()) {
+        throw new Error(
+          "database.sql is empty."
+        );
+      }
+
+      console.log(
+        "Executing idempotent database schema reconciliation..."
+      );
+
+      /*
+       * database.sql contains idempotent CREATE IF NOT EXISTS,
+       * ADD COLUMN IF NOT EXISTS, and guarded seed statements.
+       * It also owns its transaction boundaries.
+       */
+      await client.query(sql);
+
+      await client.query(
+        "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+        [version]
+      );
+
+      console.log(
+        "Migration 002_schema_compatibility completed successfully."
+      );
     }
-
-    const sqlPath =
-      path.join(
-        __dirname,
-        "database.sql"
-      );
-
-    if (!fs.existsSync(sqlPath)) {
-      throw new Error(
-        "database.sql was not found."
-      );
-    }
-
-    const sql =
-      fs.readFileSync(
-        sqlPath,
-        "utf8"
-      );
-
-    if (!sql.trim()) {
-      throw new Error(
-        "database.sql is empty."
-      );
-    }
-
-    console.log(
-      "Executing idempotent database schema reconciliation..."
-    );
-
-    /*
-     * database.sql contains idempotent CREATE IF NOT EXISTS,
-     * ADD COLUMN IF NOT EXISTS, and guarded seed statements.
-     * It also owns its transaction boundaries.
-     */
-    await client.query(sql);
 
     // Version 004 applies the user's initial Afghanistan fee and comparison rate once.
     // 100 AFN = EUR 1.37 => 1 EUR = 72.9927 AFN (rounded to 4 decimals).
@@ -155,21 +162,7 @@ async function runMigration() {
     }
 
 
-    await client.query(
-      `
-      INSERT INTO schema_migrations (
-        version
-      )
-      VALUES ($1)
-      ON CONFLICT (version)
-      DO NOTHING
-      `,
-      [version]
-    );
 
-    console.log(
-      "Migration 002_schema_compatibility completed successfully."
-    );
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
