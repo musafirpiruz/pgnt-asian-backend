@@ -2298,7 +2298,7 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
     }
 
     if (order.status !== 'topup_review' ||
-        !['failed', 'rejected', 'cancelled'].includes(String(order.dtone_status || '').trim().toLowerCase())) {
+        !['failed', 'rejected', 'cancelled', 'canceled', 'declined'].includes(String(order.dtone_status || '').trim().toLowerCase())) {
       await client.query('ROLLBACK');
       transactionOpen = false;
       return res.status(409).json({
