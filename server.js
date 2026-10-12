@@ -2162,8 +2162,36 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
       [product.country]
     );
     const pricing = pricingResult.rows[0] || null;
+    let customerPricePreview = null;
+    if (product.wholesale_price_eur_cents != null && pricing !== null) {
+      try {
+        const preview = calculateFinalPrice(
+          {
+            wholesalePriceCents: Number(product.wholesale_price_eur_cents),
+          },
+          {
+            feeCents: Number(pricing.fee_eur_cents),
+            bonusPercent: Number(pricing.bonus_percent),
+            stripeFeePercent: Number(pricing.stripe_fee_percent),
+            stripeFixedFeeCents: Number(pricing.stripe_fixed_fee_cents),
+          }
+        );
+        customerPricePreview = {
+          currency: 'EUR',
+          estimatedCustomerPriceEur: Number((preview.finalPriceCents / 100).toFixed(2)),
+          estimatedCustomerPriceCents: preview.finalPriceCents,
+          wholesaleCostEur: Number((preview.basePriceCents / 100).toFixed(2)),
+          appFeeEur: Number((preview.feeCents / 100).toFixed(2)),
+          estimatedStripeFeeEur: Number((preview.estimatedStripeFeeCents / 100).toFixed(2)),
+          note: 'Preview only. Actual Stripe fees may differ; this does not enable the product or perform a payment.',
+        };
+      } catch (previewError) {
+        customerPricePreview = { error: 'Could not calculate customer price preview from the saved settings.' };
+      }
+    }
     return res.json({
       readOnly: true,
+      customerPricePreview,
       paymentCurrency: 'EUR',
       product: {
         ...product,
