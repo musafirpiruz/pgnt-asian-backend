@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS pricing_settings (
     CHECK (afn_per_eur IS NULL OR afn_per_eur > 0),
   bonus_percent NUMERIC(8,2) NOT NULL DEFAULT 0
     CHECK (bonus_percent >= 0 AND bonus_percent <= 100),
+  stripe_fee_percent NUMERIC(6,3) NOT NULL DEFAULT 1.500
+    CHECK (stripe_fee_percent >= 0 AND stripe_fee_percent < 100),
+  stripe_fixed_fee_cents INTEGER NOT NULL DEFAULT 25
+    CHECK (stripe_fixed_fee_cents >= 0),
   active BOOLEAN NOT NULL DEFAULT TRUE,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -30,6 +34,12 @@ ALTER TABLE pricing_settings
 
 ALTER TABLE pricing_settings
   ADD COLUMN IF NOT EXISTS bonus_percent NUMERIC(8,2) NOT NULL DEFAULT 0;
+
+ALTER TABLE pricing_settings
+  ADD COLUMN IF NOT EXISTS stripe_fee_percent NUMERIC(6,3) NOT NULL DEFAULT 1.500;
+
+ALTER TABLE pricing_settings
+  ADD COLUMN IF NOT EXISTS stripe_fixed_fee_cents INTEGER NOT NULL DEFAULT 25;
 
 ALTER TABLE pricing_settings
   ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
@@ -52,6 +62,8 @@ CREATE TABLE IF NOT EXISTS product_catalog (
   product_id BIGINT NOT NULL UNIQUE,
   price_eur_cents INTEGER NOT NULL
     CHECK (price_eur_cents > 0),
+  wholesale_price_eur_cents INTEGER
+    CHECK (wholesale_price_eur_cents IS NULL OR wholesale_price_eur_cents > 0),
   bonus_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
   active BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -76,6 +88,9 @@ ALTER TABLE product_catalog
 
 ALTER TABLE product_catalog
   ADD COLUMN IF NOT EXISTS price_eur_cents INTEGER;
+
+ALTER TABLE product_catalog
+  ADD COLUMN IF NOT EXISTS wholesale_price_eur_cents INTEGER;
 
 ALTER TABLE product_catalog
   ADD COLUMN IF NOT EXISTS bonus_amount NUMERIC(18,2) DEFAULT 0;
