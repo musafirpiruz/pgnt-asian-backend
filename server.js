@@ -101,12 +101,30 @@ const EUR_CURRENCY = 'EUR';
 
 // Basic CORS configuration.
 // Set CORS_ORIGIN in Render to your trusted app/web origins.
-const allowedOrigins = (
+const configuredCorsOrigins = (
   process.env.CORS_ORIGIN || ''
 )
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+// Always allow the backend's own configured public origin so
+// its same-origin admin pages can call authenticated API routes.
+// Keep all other browser origins explicitly allowlisted.
+const ownServiceOrigins = [
+  process.env.APP_BASE_URL,
+  'https://pgnt-asian-backend.onrender.com',
+]
+  .filter(Boolean)
+  .map((value) => {
+    try { return new URL(value).origin; } catch (_) { return null; }
+  })
+  .filter(Boolean);
+
+const allowedOrigins = [...new Set([
+  ...configuredCorsOrigins,
+  ...ownServiceOrigins,
+])];
 
 app.use(
   cors({
