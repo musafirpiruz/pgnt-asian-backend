@@ -208,9 +208,38 @@ module.exports = function registerDtOneSandboxTest({
         return res.status(404).json({ error: 'Sandbox test order not found.' });
       }
 
+      const order = result.rows[0];
+
+      // Repair legacy sandbox rows created before callback status serialization
+      // was fixed. This only touches the isolated ATOMA-SANDBOX-TEST record.
+      if (order.dtone_status === '[object Object]' &&
+          order.dtone_callback_payload &&
+          Object.prototype.hasOwnProperty.call(order.dtone_callback_payload, 'status')) {
+        const rawStatus = order.dtone_callback_payload.status;
+        const serializedStatus = typeof rawStatus === 'string'
+          ? rawStatus
+          : JSON.stringify(rawStatus ?? 'unknown');
+
+        const repaired = await pool.query(
+          `UPDATE orders
+           SET dtone_status = $1, updated_at = NOW()
+           WHERE order_id = $2
+             AND operator = 'ATOMA-SANDBOX-TEST'
+             AND dtone_status = '[object Object]'
+           RETURNING order_id, operator, amount, currency, status,
+                     dtone_transaction_id, dtone_status, dtone_error,
+                     dtone_callback_payload, created_at, updated_at`,
+          [String(serializedStatus).slice(0, 500), orderId]
+        );
+
+        if (repaired.rowCount === 1) {
+          return res.json({ sandboxOnly: true, repairedLegacyStatus: true, order: repaired.rows[0] });
+        }
+      }
+
       return res.json({
         sandboxOnly: true,
-        order: result.rows[0],
+        order,
       });
     } catch (error) {
       console.error('DT One sandbox test status lookup failed:', error.message);
