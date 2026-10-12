@@ -1824,6 +1824,16 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
 <button type="button" id="checkSandboxStatus">Check saved order status</button>
 </form>
+<hr>
+<h2>Admin pricing controls</h2>
+<p>Load the saved Afghanistan settings, then change the app fee or bonus. Changes are saved to the backend database. Keep the ATOMA product disabled until sandbox checkout and fulfilment checks pass.</p>
+<button type="button" id="loadPricing">Load saved Afghanistan settings</button>
+<label for="feeEur">App fee (EUR)</label><input id="feeEur" type="number" min="0" max="1000" step="0.01" value="0.79">
+<label for="afnRate">AFN per EUR exchange rate</label><input id="afnRate" type="number" min="0.01" step="0.0001" value="70">
+<label for="bonusPercent">Bonus percent</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="2">
+<label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Afghanistan pricing settings active</label>
+<button type="button" id="savePricing">Save Afghanistan pricing settings</button>
+<small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
 <h2>Result</h2><pre id="result">Waiting for verification.</pre>
 <script>
 const form=document.getElementById('check');
@@ -1836,6 +1846,14 @@ const confirmSandbox=document.getElementById('confirmSandbox');
 const runSandbox=document.getElementById('runSandbox');
 const orderId=document.getElementById('orderId');
 const checkSandboxStatus=document.getElementById('checkSandboxStatus');
+const loadPricing=document.getElementById('loadPricing');
+const savePricing=document.getElementById('savePricing');
+const feeEur=document.getElementById('feeEur');
+const afnRate=document.getElementById('afnRate');
+const bonusPercent=document.getElementById('bonusPercent');
+const pricingActive=document.getElementById('pricingActive');
+let loadedAfghanistanPricing=null;
+
 async function adminRequest(url,options={}){
  const response=await fetch(url,{...options,headers:{...(options.headers||{}),'x-admin-api-key':key.value},cache:'no-store'});
  const raw=await response.text();
@@ -1858,6 +1876,35 @@ form.addEventListener('submit',async event=>{
   result.textContent='Could not contact the backend. Please try again later.';
  }
  key.value='';
+});
+loadPricing.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Loading saved Afghanistan pricing settings…';
+ try{
+  const data=await adminRequest('/api/admin/pricing');
+  const saved=(data.pricing||[]).find(item=>item.country==='AF');
+  if(!saved)throw new Error('No Afghanistan pricing settings found.');
+  loadedAfghanistanPricing=saved;
+  feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
+  afnRate.value=Number(saved.afn_per_eur);
+  bonusPercent.value=Number(saved.bonus_percent);
+  pricingActive.checked=saved.active===true;
+  result.textContent=JSON.stringify({loaded:true,country:saved.country,appFeeEur:Number(saved.fee_eur_cents)/100,afnPerEur:Number(saved.afn_per_eur),bonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
+ }catch(error){result.textContent='Could not load pricing: '+error.message;}
+});
+savePricing.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!loadedAfghanistanPricing){result.textContent='First load the saved settings and review them.';return;}
+ const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value);
+ if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100){result.textContent='Check the fee, exchange rate, and bonus values.';return;}
+ if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', bonus: '+bonus+'%. This will not activate the ATOMA product.'))return;
+ result.textContent='Saving Afghanistan pricing settings…';
+ try{
+  const data=await adminRequest('/api/admin/pricing/AF',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:bonus,active:pricingActive.checked})});
+  loadedAfghanistanPricing=data.pricing;
+  result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
+ }catch(error){result.textContent='Could not save pricing: '+error.message;}
+ finally{key.value='';}
 });
 checkDatabase.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
