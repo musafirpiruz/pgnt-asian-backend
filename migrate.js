@@ -223,6 +223,63 @@ async function runMigration() {
     }
 
 
+    // Version 007 adds wholesale and Stripe-fee fields required by server-side pricing.
+    // Keep the verified ATOMA sandbox product disabled until checkout is retested.
+    const wholesalePricingVersion = "007_wholesale_stripe_pricing";
+    const wholesalePricingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [wholesalePricingVersion]
+    );
+
+    if (wholesalePricingCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE pricing_settings
+            ADD COLUMN IF NOT EXISTS stripe_fee_percent NUMERIC(6,3) NOT NULL DEFAULT 1.500
+              CHECK (stripe_fee_percent >= 0 AND stripe_fee_percent < 100);
+          ALTER TABLE pricing_settings
+            ADD COLUMN IF NOT EXISTS stripe_fixed_fee_cents INTEGER NOT NULL DEFAULT 25
+              CHECK (stripe_fixed_fee_cents >= 0);
+          ALTER TABLE product_catalog
+            ADD COLUMN IF NOT EXISTS wholesale_price_eur_cents INTEGER
+              CHECK (wholesale_price_eur_cents IS NULL OR wholesale_price_eur_cents > 0);
+        `);
+
+        // Confirmed DT One pre-production values for product 7194:
+        // retail €2.10, wholesale €1.89. Never enable it automatically.
+        await client.query(`
+          INSERT INTO product_catalog
+            (country, operator, amount, currency, product_id,
+             price_eur_cents, wholesale_price_eur_cents, bonus_amount, active, updated_at)
+          VALUES ('AF', 'ATOMA', 115, 'AFN', 7194, 210, 189, 0, FALSE, NOW())
+          ON CONFLICT (country, operator, amount, currency)
+          DO UPDATE SET
+            product_id = EXCLUDED.product_id,
+            price_eur_cents = EXCLUDED.price_eur_cents,
+            wholesale_price_eur_cents = COALESCE(
+              product_catalog.wholesale_price_eur_cents,
+              EXCLUDED.wholesale_price_eur_cents
+            ),
+            active = FALSE,
+            updated_at = NOW();
+        `);
+
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [wholesalePricingVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 007_wholesale_stripe_pricing completed; ATOMA product remains disabled.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 007_wholesale_stripe_pricing is already applied.");
+    }
+
+
 
   } catch (error) {
     console.error(
