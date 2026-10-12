@@ -470,6 +470,8 @@ async function getPricingSettings(client, country) {
        fee_eur_cents,
        afn_per_eur,
        bonus_percent,
+       stripe_fee_percent,
+       stripe_fixed_fee_cents,
        active
      FROM pricing_settings
      WHERE country = $1
@@ -503,18 +505,18 @@ async function getPricingSettings(client, country) {
     throw new Error('Invalid AFN/EUR exchange rate.');
   }
 
-  const bonusPercent = Number(
-    settings.bonus_percent
-  );
+  const bonusPercent = Number(settings.bonus_percent);
+  if (!Number.isFinite(bonusPercent) || bonusPercent < 0 || bonusPercent > 100) {
+    throw new Error('Invalid bonus percentage.');
+  }
 
-  if (
-    !Number.isFinite(bonusPercent) ||
-    bonusPercent < 0 ||
-    bonusPercent > 100
-  ) {
-    throw new Error(
-      'Invalid bonus percentage.'
-    );
+  const stripeFeePercent = Number(settings.stripe_fee_percent);
+  const stripeFixedFeeCents = requireNonNegativeInteger(
+    settings.stripe_fixed_fee_cents,
+    'Stripe fixed fee in EUR cents'
+  );
+  if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
+    throw new Error('Invalid Stripe fee percentage.');
   }
 
   return {
@@ -523,6 +525,8 @@ async function getPricingSettings(client, country) {
     feeCents,
     afnPerEur,
     bonusPercent,
+    stripeFeePercent,
+    stripeFixedFeeCents,
   };
 }
 
@@ -539,6 +543,7 @@ async function getProduct(client, productId, requestedCountry = null, operator =
        NULL::text AS description,
        amount AS local_amount,
        price_eur_cents,
+       wholesale_price_eur_cents,
        active AS enabled
      FROM product_catalog
      WHERE (
@@ -612,15 +617,20 @@ async function getProduct(client, productId, requestedCountry = null, operator =
     ),
     localAmount,
     priceCents,
+    wholesalePriceCents: product.wholesale_price_eur_cents == null
+      ? null
+      : requirePositiveInteger(product.wholesale_price_eur_cents, 'DT One wholesale price in EUR cents'),
   };
 }
 
 // Calculate the final customer price.
 // The price and fee are both in EUR cents.
 function calculateFinalPrice(product, pricing) {
+  // An enabled production product must have a verified DT One wholesale
+  // cost. Never silently treat an old retail/display price as wholesale.
   const basePriceCents = requirePositiveInteger(
-    product.priceCents,
-    'base price'
+    product.wholesalePriceCents,
+    'verified DT One wholesale price in EUR cents'
   );
 
   const feeCents = requireNonNegativeInteger(
@@ -642,13 +652,18 @@ function calculateFinalPrice(product, pricing) {
     );
   }
 
-  const finalPriceCents =
-    basePriceCents + feeCents;
+  // Gross up the customer charge so that the estimated Stripe percentage
+  // and fixed fee are covered while preserving the configured app fee.
+  const targetNetCents = basePriceCents + feeCents;
+  const stripeRate = pricing.stripeFeePercent / 100;
+  const finalPriceCents = Math.ceil(
+    (targetNetCents + pricing.stripeFixedFeeCents) / (1 - stripeRate)
+  );
+  const estimatedStripeFeeCents =
+    Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents;
 
-  if (!Number.isSafeInteger(finalPriceCents)) {
-    throw new Error(
-      'Final price is outside the supported range.'
-    );
+  if (!Number.isSafeInteger(finalPriceCents) || finalPriceCents <= 0) {
+    throw new Error('Final price is outside the supported range.');
   }
 
   // Bonus is informational until its business rules
@@ -658,6 +673,9 @@ function calculateFinalPrice(product, pricing) {
     currency: 'EUR',
     basePriceCents,
     feeCents,
+    estimatedStripeFeeCents,
+    stripeFeePercent: pricing.stripeFeePercent,
+    stripeFixedFeeCents: pricing.stripeFixedFeeCents,
     finalPriceCents,
     bonusPercent,
     formattedBasePrice: formatEuro(
@@ -714,7 +732,11 @@ async function getProductQuote(productId, country) {
       recipientAmount: product.localAmount,
       paymentCurrency: 'EUR',
       basePriceCents: price.basePriceCents,
+      wholesaleCostConfigured: product.wholesalePriceCents !== null,
       feeCents: price.feeCents,
+      estimatedStripeFeeCents: price.estimatedStripeFeeCents,
+      stripeFeePercent: price.stripeFeePercent,
+      stripeFixedFeeCents: price.stripeFixedFeeCents,
       finalPriceCents: price.finalPriceCents,
       formattedBasePrice: price.formattedBasePrice,
       formattedFee: price.formattedFee,
@@ -2071,6 +2093,8 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
          fee_eur_cents,
          afn_per_eur,
          bonus_percent,
+         stripe_fee_percent,
+         stripe_fixed_fee_cents,
          active
        FROM pricing_settings
        ORDER BY country`
@@ -2079,6 +2103,7 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
     return res.json({
       paymentCurrency: 'EUR',
       pricing: result.rows,
+      stripeFeeNote: 'Stripe fee is an estimate; actual fees vary by card and payment method.',
     });
   } catch (error) {
     console.error(
