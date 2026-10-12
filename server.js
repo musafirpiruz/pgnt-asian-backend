@@ -1812,7 +1812,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -1830,6 +1830,7 @@ const form=document.getElementById('check');
 const key=document.getElementById('key');
 const result=document.getElementById('result');
 const discover=document.getElementById('discover');
+const checkDatabase=document.getElementById('checkDatabase');
 const scenario=document.getElementById('scenario');
 const confirmSandbox=document.getElementById('confirmSandbox');
 const runSandbox=document.getElementById('runSandbox');
@@ -1857,6 +1858,13 @@ form.addEventListener('submit',async event=>{
   result.textContent='Could not contact the backend. Please try again later.';
  }
  key.value='';
+});
+checkDatabase.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Reading saved product and pricing settings…';
+ try{const data=await adminRequest('/api/admin/catalog/7194/pricing');result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not verify database pricing: '+error.message;}
+ finally{key.value='';}
 });
 discover.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
@@ -2074,6 +2082,65 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       verified: false,
       error: 'Could not reach DT One product discovery endpoint.',
     });
+  }
+});
+
+// Read-only verification of a catalog product and its country pricing settings.
+// Does not change product activation, prices, orders, or payments.
+app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+  try {
+    const productResult = await pool.query(
+      `SELECT product_id, country, operator, amount, currency,
+              price_eur_cents, wholesale_price_eur_cents, bonus_amount, active
+       FROM product_catalog
+       WHERE product_id = $1
+       LIMIT 1`,
+      [productId]
+    );
+    if (productResult.rowCount !== 1) {
+      return res.status(404).json({ error: 'Product was not found in product_catalog.', productId });
+    }
+    const product = productResult.rows[0];
+    const pricingResult = await pool.query(
+      `SELECT country, fee_eur_cents, bonus_percent, stripe_fee_percent,
+              stripe_fixed_fee_cents, active
+       FROM pricing_settings
+       WHERE country = $1
+       LIMIT 1`,
+      [product.country]
+    );
+    const pricing = pricingResult.rows[0] || null;
+    return res.json({
+      readOnly: true,
+      paymentCurrency: 'EUR',
+      product: {
+        ...product,
+        retailPriceEur: Number(product.price_eur_cents) / 100,
+        wholesalePriceEur: product.wholesale_price_eur_cents == null
+          ? null : Number(product.wholesale_price_eur_cents) / 100,
+        active: product.active === true
+      },
+      pricing: pricing ? {
+        ...pricing,
+        appFeeEur: Number(pricing.fee_eur_cents) / 100,
+        stripeFeeNote: 'Stripe fee is an estimate; actual fees depend on the Stripe account, card and payment method.'
+      } : null,
+      checks: {
+        wholesalePriceConfigured: product.wholesale_price_eur_cents != null,
+        pricingSettingsConfigured: pricing !== null,
+        productEnabled: product.active === true,
+        safeForRealCheckout: product.wholesale_price_eur_cents != null && pricing !== null && pricing.active === true && product.active === true
+      },
+      note: 'Read-only verification only. No product, order, payment, or setting was changed.'
+    });
+  } catch (error) {
+    console.error('Admin catalog pricing verification failed:', error.message);
+    return res.status(500).json({ error: 'Could not verify catalog pricing.' });
   }
 });
 
