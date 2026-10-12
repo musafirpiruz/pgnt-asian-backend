@@ -1836,6 +1836,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="orderId">Sandbox test order ID (for status lookup)</label>
 <input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
 <button type="button" id="checkSandboxStatus">Check saved order status</button>
+<button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
 </form>
 <hr>
 <h2>Admin pricing controls</h2>
@@ -1859,6 +1860,7 @@ const confirmSandbox=document.getElementById('confirmSandbox');
 const runSandbox=document.getElementById('runSandbox');
 const orderId=document.getElementById('orderId');
 const checkSandboxStatus=document.getElementById('checkSandboxStatus');
+const loadReviewQueue=document.getElementById('loadReviewQueue');
 const loadPricing=document.getElementById('loadPricing');
 const savePricing=document.getElementById('savePricing');
 const feeEur=document.getElementById('feeEur');
@@ -1948,6 +1950,31 @@ runSandbox.addEventListener('click',async()=>{
   result.textContent=JSON.stringify(data,null,2);
  }catch(error){result.textContent='Sandbox test did not confirm success. Details: '+error.message;}
  finally{key.value='';runSandbox.disabled=false;confirmSandbox.checked=false;}
+});
+loadReviewQueue.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Loading orders that need review…';
+ try{
+  const data=await adminRequest('/api/admin/orders/review');
+  result.textContent=JSON.stringify({
+   count:data.count,
+   thresholds:data.thresholds,
+   automaticRetry:data.automaticRetry,
+   orders:(data.orders||[]).map(order=>({
+    order_id:order.order_id,
+    operator:order.operator,
+    amount:order.amount,
+    currency:order.currency,
+    status:order.status,
+    dtone_transaction_id:order.dtone_transaction_id,
+    dtone_status:order.dtone_status,
+    review_reason:order.review_reason,
+    updated_at:order.updated_at
+   })),
+   note:data.note
+  },null,2);
+ }catch(error){result.textContent='Could not load review queue: '+error.message;}
+ finally{key.value='';}
 });
 checkSandboxStatus.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
