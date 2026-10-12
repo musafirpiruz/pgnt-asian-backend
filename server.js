@@ -2256,59 +2256,51 @@ app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
 // does not refund orders that are already completed by DT One.
 app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => {
   if (!pool || !stripe) {
-    return res.status(503).json({
-      error: 'Payment service is not configured.',
-    });
+    return res.status(503).json({ error: 'Payment service is not configured.' });
   }
 
   const orderId = String(req.params.orderId || '').trim();
-
   if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
-    return res.status(400).json({
-      error: 'Invalid order ID.',
-    });
+    return res.status(400).json({ error: 'Invalid order ID.' });
   }
 
   const reason = String(req.body?.reason || 'Top-up failed; admin reviewed')
     .trim()
     .slice(0, 500);
-
   const client = await pool.connect();
-  let order;
-  let existingRefund;
+  let transactionOpen = false;
 
   try {
+    // Keep the order lock until Stripe has returned and both database
+    // records have been updated. A DT One callback cannot change the order
+    // to completed between our eligibility check and refund finalization.
     await client.query('BEGIN');
+    transactionOpen = true;
 
     const orderResult = await client.query(
       `SELECT order_id, status, charge_cents, stripe_payment_intent_id, dtone_status
-       FROM orders
-       WHERE order_id = $1
-       FOR UPDATE`,
+       FROM orders WHERE order_id = $1 FOR UPDATE`,
       [orderId]
     );
-
     if (orderResult.rowCount !== 1) {
       await client.query('ROLLBACK');
+      transactionOpen = false;
       return res.status(404).json({ error: 'Order not found.' });
     }
 
-    order = orderResult.rows[0];
-
-    if (order.status === 'completed') {
+    const order = orderResult.rows[0];
+    if (order.status === 'completed' || order.status === 'refunded') {
       await client.query('ROLLBACK');
+      transactionOpen = false;
       return res.status(409).json({
-        error: 'Top-up is completed. Refund requires a separate manual investigation.',
+        error: 'Order is already completed or refunded; no refund was started.',
       });
     }
 
-    if (
-      order.status !== 'topup_review' ||
-      !['failed', 'rejected', 'cancelled'].includes(
-        String(order.dtone_status || '').trim().toLowerCase()
-      )
-    ) {
+    if (order.status !== 'topup_review' ||
+        !['failed', 'rejected', 'cancelled'].includes(String(order.dtone_status || '').trim().toLowerCase())) {
       await client.query('ROLLBACK');
+      transactionOpen = false;
       return res.status(409).json({
         error: 'Refund requires a final DT One failure status. Unknown or pending outcomes must be reconciled first.',
       });
@@ -2316,118 +2308,104 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
 
     if (!order.stripe_payment_intent_id) {
       await client.query('ROLLBACK');
-      return res.status(409).json({
-        error: 'The order has no verified Stripe PaymentIntent.',
-      });
+      transactionOpen = false;
+      return res.status(409).json({ error: 'The order has no verified Stripe PaymentIntent.' });
     }
 
     const refundResult = await client.query(
       `SELECT id, stripe_refund_id, amount_cents, status
-       FROM refunds
-       WHERE order_id = $1
-       FOR UPDATE`,
+       FROM refunds WHERE order_id = $1 FOR UPDATE`,
       [orderId]
     );
+    const existingRefund = refundResult.rows[0] || null;
 
-    existingRefund = refundResult.rows[0] || null;
-
-    if (existingRefund && existingRefund.status === 'succeeded') {
+    if (existingRefund?.status === 'succeeded') {
       await client.query('COMMIT');
+      transactionOpen = false;
       return res.json({
-        orderId,
-        refundId: existingRefund.stripe_refund_id,
-        status: 'refunded',
-        duplicate: true,
+        orderId, refundId: existingRefund.stripe_refund_id,
+        status: 'refunded', duplicate: true,
       });
     }
 
-    if (!existingRefund) {
+    // Do not race two administrators or retry an ambiguous Stripe request.
+    // A pending/failed row must be reconciled against Stripe before retrying.
+    if (existingRefund) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'A refund record already exists. Reconcile it in Stripe Dashboard before retrying.',
+        refundStatus: existingRefund.status,
+        refundId: existingRefund.stripe_refund_id || null,
+      });
+    }
+
+    await client.query(
+      `INSERT INTO refunds (order_id, amount_cents, status, reason)
+       VALUES ($1, $2, 'pending', $3)`,
+      [orderId, Number(order.charge_cents), reason]
+    );
+
+    let refund;
+    try {
+      // Stable idempotency key plus the open row lock prevents concurrent
+      // admin requests and callback status changes during this operation.
+      refund = await stripe.refunds.create(
+        {
+          payment_intent: order.stripe_payment_intent_id,
+          reason: 'requested_by_customer',
+          metadata: { orderId, adminReason: reason },
+        },
+        { idempotencyKey: `pgnt-refund-${orderId}` }
+      );
+    } catch (stripeError) {
       await client.query(
-        `INSERT INTO refunds (order_id, amount_cents, status, reason)
-         VALUES ($1, $2, 'pending', $3)`,
-        [orderId, Number(order.charge_cents), reason]
+        `UPDATE refunds SET status = 'pending', reason = $1 WHERE order_id = $2`,
+        [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
+      );
+      await client.query('COMMIT');
+      transactionOpen = false;
+      console.error('Stripe refund outcome requires reconciliation:', stripeError.message);
+      return res.status(502).json({
+        error: 'Stripe refund outcome is not confirmed. Check Stripe Dashboard before any retry.',
+      });
+    }
+
+    await client.query(
+      `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
+         status = $3, reason = $4 WHERE order_id = $5`,
+      [refund.id, refund.amount, refund.status, reason, orderId]
+    );
+
+    if (refund.status === 'succeeded') {
+      await client.query(
+        `UPDATE orders SET status = 'refunded',
+           refunded_at = COALESCE(refunded_at, NOW()), updated_at = NOW()
+         WHERE order_id = $1 AND status = 'topup_review'`,
+        [orderId]
+      );
+    } else {
+      await client.query(
+        `UPDATE orders SET status = 'topup_review', updated_at = NOW()
+         WHERE order_id = $1 AND status = 'topup_review'`,
+        [orderId]
       );
     }
 
     await client.query('COMMIT');
+    transactionOpen = false;
+    return res.status(200).json({
+      orderId, refundId: refund.id, status: refund.status,
+      amountCents: refund.amount, currency: refund.currency,
+    });
   } catch (error) {
-    try { await client.query('ROLLBACK'); } catch (_) {}
-    console.error('Refund preparation failed:', error.message);
-    return res.status(500).json({ error: 'Could not prepare refund.' });
+    if (transactionOpen) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Admin refund processing failed:', error.message);
+    return res.status(500).json({ error: 'Refund processing failed; reconcile Stripe Dashboard before retrying.' });
   } finally {
     client.release();
-  }
-
-  try {
-    // A stable idempotency key makes a retried HTTP request safe
-    // even if Stripe succeeded but the app lost the response.
-    const refund = await stripe.refunds.create(
-      {
-        payment_intent: order.stripe_payment_intent_id,
-        reason: 'requested_by_customer',
-        metadata: { orderId, adminReason: reason },
-      },
-      { idempotencyKey: `pgnt-refund-${orderId}` }
-    );
-
-    await pool.query(
-      `UPDATE refunds
-       SET stripe_refund_id = $1,
-           amount_cents = $2,
-           status = $3,
-           reason = $4
-       WHERE order_id = $5`,
-      [
-        refund.id,
-        refund.amount,
-        refund.status,
-        reason,
-        orderId,
-      ]
-    );
-
-    if (refund.status === 'succeeded') {
-      await pool.query(
-        `UPDATE orders
-         SET status = 'refunded',
-             refunded_at = COALESCE(refunded_at, NOW()),
-             updated_at = NOW()
-         WHERE order_id = $1
-           AND status <> 'completed'`,
-        [orderId]
-      );
-    } else {
-      await pool.query(
-        `UPDATE orders
-         SET status = 'topup_review',
-             updated_at = NOW()
-         WHERE order_id = $1
-           AND status <> 'completed'`,
-        [orderId]      );
-    }
-
-    return res.status(200).json({
-      orderId,
-      refundId: refund.id,
-      status: refund.status,
-      amountCents: refund.amount,
-      currency: refund.currency,
-    });
-  } catch (error) {
-    console.error('Stripe refund request failed:', error.message);
-
-    await pool.query(
-      `UPDATE refunds
-       SET status = 'failed',
-           reason = $1
-       WHERE order_id = $2
-         AND status <> 'succeeded'`,
-      [`Refund request failed: ${error.message.slice(0, 400)}`, orderId]
-    );
-
-    return res.status(502).json({
-      error: 'Stripe refund could not be confirmed. Check Stripe Dashboard before retrying.',
-    });
   }
 });
 
