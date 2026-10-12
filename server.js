@@ -2179,7 +2179,8 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   }
 });
 
-// List orders requiring operator review. Admin-only.
+// List orders requiring operator review, including stale in-flight
+// states after a server restart. This is read-only: it never retries DT One.
 app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({
@@ -2203,9 +2204,26 @@ app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
          dtone_status,
          dtone_error,
          created_at,
-         updated_at
+         updated_at,
+         CASE
+           WHEN status = 'topup_review'
+             THEN 'manual_review_required'
+           WHEN status = 'processing_topup'
+             THEN 'stale_processing_topup'
+           WHEN status = 'topup_submitted'
+             THEN 'stale_provider_status'
+           ELSE 'review_required'
+         END AS review_reason
        FROM orders
        WHERE status = 'topup_review'
+          OR (
+            status = 'processing_topup'
+            AND updated_at < NOW() - INTERVAL '5 minutes'
+          )
+          OR (
+            status = 'topup_submitted'
+            AND updated_at < NOW() - INTERVAL '15 minutes'
+          )
        ORDER BY updated_at ASC
        LIMIT 100`
     );
@@ -2213,6 +2231,12 @@ app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
     return res.json({
       count: result.rowCount,
       orders: result.rows,
+      thresholds: {
+        processingTopupMinutes: 5,
+        topupSubmittedMinutes: 15,
+      },
+      automaticRetry: false,
+      note: 'Stale orders are surfaced for authenticated admin review only. Check the provider transaction/status before any manual action; do not blindly resubmit.',
     });
   } catch (error) {
     console.error(
