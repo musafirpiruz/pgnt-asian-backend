@@ -1532,6 +1532,33 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     const order = result.rows[0];
 
+    // If an existing provider reference is stored,
+    // it must match the callback reference.
+    if (
+      order.dtone_transaction_id &&
+      String(order.dtone_transaction_id) !==
+        providerTransactionId
+    ) {
+      await client.query('ROLLBACK');
+
+      return res.status(409).json({
+        error: 'Transaction reference mismatch.',
+      });
+    }
+
+    // DT One may retry a callback if the earlier HTTP response was lost.
+    // A repeat notification for an already completed matching transaction
+    // is safe to acknowledge with HTTP 200 without changing the order.
+    if (order.status === 'completed') {
+      await client.query('COMMIT');
+      return res.status(200).json({
+        received: true,
+        orderId,
+        status: 'completed',
+        duplicate: true,
+      });
+    }
+
     // Never allow a callback to change an order
     // that was not submitted to DT One.
     if (
@@ -1545,20 +1572,6 @@ app.post('/api/dtone/callback', async (req, res) => {
 
       return res.status(409).json({
         error: 'Order is not awaiting DT One status.',
-      });
-    }
-
-    // If an existing provider reference is stored,
-    // it must match the callback reference.
-    if (
-      order.dtone_transaction_id &&
-      String(order.dtone_transaction_id) !==
-        providerTransactionId
-    ) {
-      await client.query('ROLLBACK');
-
-      return res.status(409).json({
-        error: 'Transaction reference mismatch.',
       });
     }
 
