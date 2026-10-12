@@ -1465,10 +1465,15 @@ app.post('/api/dtone/callback', async (req, res) => {
   const providerStatus = normalizeDtOneStatus(
     body.status
   );
-  // DT One may send status as an object; never store "[object Object]".
+  // Store a compact provider status label in VARCHAR(80).
+  // Preserve the complete provider payload separately as JSONB.
   const storedProviderStatus = typeof body.status === 'string'
     ? body.status
-    : JSON.stringify(body.status ?? 'unknown');
+    : String(
+        body.status?.message ||
+        body.status?.status ||
+        JSON.stringify(body.status ?? 'unknown')
+      ).slice(0, 80);
 
   if (!orderId || !providerTransactionId) {
     return res.status(400).json({
@@ -1567,7 +1572,7 @@ app.post('/api/dtone/callback', async (req, res) => {
       [
         nextStatus,
         providerTransactionId,
-        storedProviderStatus.slice(0, 500),
+        storedProviderStatus.slice(0, 80),
         JSON.stringify(body),
         providerStatus,
         orderId,
