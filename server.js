@@ -1376,7 +1376,8 @@ async function processPaidStripeSession(session) {
     product.rowCount !== 1 ||
     product.rows[0].country !== order.country ||
     product.rows[0].currency !==
-      countryCurrency(order.country)
+      countryCurrency(order.country) ||
+    (isSandboxOrder && Number(product.rows[0].dtone_product_id) !== 7194)
   ) {
     await pool.query(
       `UPDATE orders
