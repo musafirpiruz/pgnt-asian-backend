@@ -998,6 +998,106 @@ app.post('/api/payments/checkout', async (req, res) => {
     client.release();
   }
 });
+// Dedicated Stripe + DT One end-to-end test.
+// Admin-only; uses a fixed DT One pre-production test number and the
+// Stripe test key. It never activates the catalog product.
+app.post('/api/admin/stripe-dtone/sandbox-checkout', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+  if (!STRIPE_SECRET_KEY.startsWith('sk_test_') || !isDtOnePreproductionConfigured()) {
+    return res.status(403).json({
+      error: 'Sandbox checkout is allowed only with a Stripe test key and the exact DT One pre-production host.',
+    });
+  }
+  if (req.body?.confirmSandbox !== true) {
+    return res.status(400).json({ error: 'Explicit sandbox confirmation is required.' });
+  }
+
+  const client = await pool.connect();
+  let orderId = null;
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    const catalog = await client.query(
+      `SELECT id, product_id, country, operator, amount, currency,
+              wholesale_price_eur_cents
+       FROM product_catalog
+       WHERE product_id = 7194 AND country = 'AF'
+         AND operator = 'ATOMA' AND amount = 115 AND currency = 'AFN'
+       LIMIT 1`
+    );
+    if (catalog.rowCount !== 1 || catalog.rows[0].wholesale_price_eur_cents == null) {
+      throw new Error('Expected ATOMA 115 AFN sandbox product with wholesale price was not found.');
+    }
+    const product = catalog.rows[0];
+    const pricing = await getPricingSettings(client, 'AF');
+    const price = calculateFinalPrice({
+      wholesalePriceCents: Number(product.wholesale_price_eur_cents),
+    }, pricing);
+
+    orderId = createOrderId();
+    await client.query(
+      `INSERT INTO orders (
+         order_id, country, operator, phone, product_id, amount, currency,
+         product_price_cents, fee_cents, charge_cents, status, created_at, updated_at
+       ) VALUES ($1, 'AF', 'ATOMA-SANDBOX-TEST', '+93700100100', $2, 115, 'AFN',
+                 $3, $4, $5, 'awaiting_payment', NOW(), NOW())`,
+      [orderId, String(product.id), price.basePriceCents, price.feeCents, price.finalPriceCents]
+    );
+    await client.query('COMMIT');
+    transactionOpen = false;
+
+    const urls = getCheckoutUrls();
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      client_reference_id: orderId,
+      line_items: [{
+        price_data: {
+          currency: 'eur',
+          product_data: {
+            name: 'PGNT ASIAN TOPUP — ATOMA sandbox test',
+            description: 'Test only. Fixed DT One pre-production recipient.',
+          },
+          unit_amount: price.finalPriceCents,
+        },
+        quantity: 1,
+      }],
+      metadata: { orderId, country: 'AF', productId: String(product.id), sandboxTest: 'true' },
+      payment_intent_data: { metadata: { orderId, sandboxTest: 'true' } },
+      success_url: urls.successUrl,
+      cancel_url: urls.cancelUrl,
+    }, { idempotencyKey: `stripe-dtone-sandbox-${orderId}` });
+
+    await pool.query(
+      `UPDATE orders SET stripe_session_id = $1, updated_at = NOW()
+       WHERE order_id = $2 AND status = 'awaiting_payment'`,
+      [session.id, orderId]
+    );
+    return res.status(201).json({
+      sandboxOnly: true,
+      orderId,
+      checkoutUrl: session.url,
+      paymentCurrency: 'EUR',
+      amountCents: price.finalPriceCents,
+      amountFormatted: formatEuro(price.finalPriceCents),
+      recipient: 'fixed DT One pre-production test number ending 100',
+      productRemainsInactive: true,
+      note: 'Use Stripe test card details only. Successful payment will submit one DT One pre-production sandbox transaction; do not run twice for the same test.',
+    });
+  } catch (error) {
+    if (transactionOpen) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Stripe/DT One sandbox checkout setup failed:', error.message);
+    return res.status(500).json({ error: 'Could not create sandbox checkout. No product activation was performed.' });
+  } finally {
+    client.release();
+  }
+});
+
 // =====================================================
 // PART 5/8 — STRIPE WEBHOOK
 // MUST be registered BEFORE express.json()
@@ -1241,20 +1341,43 @@ async function processPaidStripeSession(session) {
     client.release();
   }
 
+  // Sandbox Stripe orders may use the fixed pre-production product while
+  // it remains inactive in the customer catalog. This exception is restricted
+  // to an authenticated admin-created test order, Stripe test mode, and the
+  // exact DT One pre-production host.
+  const isSandboxOrder = order.operator === 'ATOMA-SANDBOX-TEST';
+  const sandboxOrderIsSafe =
+    isSandboxOrder &&
+    STRIPE_SECRET_KEY.startsWith('sk_test_') &&
+    isDtOnePreproductionConfigured() &&
+    order.country === 'AF' &&
+    String(order.phone) === '+93700100100' &&
+    Number(order.amount) === 115;
+
+  if (isSandboxOrder && !sandboxOrderIsSafe) {
+    await pool.query(
+      `UPDATE orders SET status = 'topup_review', updated_at = NOW()
+       WHERE order_id = $1 AND status = 'processing_topup'`,
+      [orderId]
+    );
+    throw new Error('Sandbox order failed strict environment/recipient checks.');
+  }
+
   // Re-read trusted product information from the database.
   const product = await pool.query(
     `SELECT product_id AS dtone_product_id, country, currency
      FROM product_catalog
-     WHERE id = $1 AND active = TRUE
+     WHERE id = $1 AND (active = TRUE OR $2::boolean = TRUE)
      LIMIT 1`,
-    [order.product_id]
+    [order.product_id, sandboxOrderIsSafe]
   );
 
   if (
     product.rowCount !== 1 ||
     product.rows[0].country !== order.country ||
     product.rows[0].currency !==
-      countryCurrency(order.country)
+      countryCurrency(order.country) ||
+    (isSandboxOrder && Number(product.rows[0].dtone_product_id) !== 7194)
   ) {
     await pool.query(
       `UPDATE orders
@@ -1866,6 +1989,10 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
 </form>
 <hr>
+<h2>Stripe + DT One end-to-end sandbox</h2>
+<p>Admin-only test. Uses Stripe test mode and DT One pre-production with a fixed test recipient. A successful test payment submits one sandbox top-up. It does not activate the ATOMA catalog product. Do not use real card details.</p>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
+<button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
 <h2>Admin pricing controls</h2>
 <p>Load the saved Afghanistan settings, then change the app fee or bonus. Changes are saved to the backend database. Keep the ATOMA product disabled until sandbox checkout and fulfilment checks pass.</p>
 <button type="button" id="loadPricing">Load saved Afghanistan settings</button>
@@ -1890,6 +2017,8 @@ const checkSandboxStatus=document.getElementById('checkSandboxStatus');
 const loadReviewQueue=document.getElementById('loadReviewQueue');
 const loadPricing=document.getElementById('loadPricing');
 const savePricing=document.getElementById('savePricing');
+const confirmStripeDtoneSandbox=document.getElementById('confirmStripeDtoneSandbox');
+const runStripeDtoneSandbox=document.getElementById('runStripeDtoneSandbox');
 const feeEur=document.getElementById('feeEur');
 const afnRate=document.getElementById('afnRate');
 const bonusPercent=document.getElementById('bonusPercent');
@@ -2002,6 +2131,22 @@ loadReviewQueue.addEventListener('click',async()=>{
   },null,2);
  }catch(error){result.textContent='Could not load review queue: '+error.message;}
  finally{key.value='';}
+});
+runStripeDtoneSandbox.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!confirmStripeDtoneSandbox.checked){result.textContent='Tick the Stripe TEST + DT One PRE-PRODUCTION confirmation first.';return;}
+ if(!confirm('Create a Stripe TEST checkout? If you complete it with a test card, one DT One PRE-PRODUCTION sandbox transaction will be submitted. No real card charge or catalog activation occurs.'))return;
+ result.textContent='Creating one sandbox checkout…';
+ runStripeDtoneSandbox.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/stripe-dtone/sandbox-checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmSandbox:true})});
+  result.textContent=JSON.stringify(data,null,2);
+  if(data.checkoutUrl){
+   const open=confirm('Test checkout created for '+data.amountFormatted+'. Open Stripe checkout now?');
+   if(open)window.location.href=data.checkoutUrl;
+  }
+ }catch(error){result.textContent='Could not create sandbox checkout: '+error.message;}
+ finally{key.value='';runStripeDtoneSandbox.disabled=false;confirmStripeDtoneSandbox.checked=false;}
 });
 checkSandboxStatus.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
