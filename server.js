@@ -64,6 +64,26 @@ const DTONE_CALLBACK_URL =
 const ADMIN_API_KEY =
   process.env.ADMIN_API_KEY || '';
 
+// Fail closed when Stripe mode and DT One environment do not match.
+// Test Stripe keys may only be paired with the exact DT One pre-production host;
+// live Stripe keys must not be paired with DT One pre-production.
+function isDtOnePreproductionConfigured() {
+  try {
+    const url = new URL(DTONE_API_BASE_URL);
+    return url.protocol === 'https:' &&
+      url.hostname === 'preprod-dvs-api.dtone.com' &&
+      (url.pathname === '' || url.pathname === '/');
+  } catch (_) {
+    return false;
+  }
+}
+
+function arePaymentAndFulfillmentEnvironmentsCompatible() {
+  const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
+  const dtOneIsPreproduction = isDtOnePreproductionConfigured();
+  return stripeIsTest === dtOneIsPreproduction;
+}
+
 // Initialize Stripe only when configured
 const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY)
@@ -816,6 +836,13 @@ function getCheckoutUrls() {
 // Create a checkout session and store its order.
 // IMPORTANT: register this route AFTER express.json().
 app.post('/api/payments/checkout', async (req, res) => {
+  if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
+    console.error('Checkout blocked: Stripe mode and DT One environment do not match.');
+    return res.status(503).json({
+      error: 'Checkout is temporarily unavailable because payment and top-up environments are not safely matched.',
+    });
+  }
+
   if (!pool || !stripe) {
     return res.status(503).json({
       error: 'Payment service is not configured.',
