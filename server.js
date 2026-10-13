@@ -233,6 +233,51 @@ app.get('/health', async (req, res) => {
     ),
   });
 });
+// Customer-facing Stripe return pages.
+// These pages do not fulfill orders; fulfillment remains webhook-controlled.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[char]));
+}
+
+app.get('/payment-success', async (req, res) => {
+  const sessionId = String(req.query.session_id || '');
+  if (!sessionId.startsWith('cs_test_') && !sessionId.startsWith('cs_live_')) {
+    return res.status(400).type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment status</title><h1>Payment status unavailable</h1><p>The Stripe checkout session ID is missing or invalid. Please return to PGNT ASIAN TOPUP support.</p></html>');
+  }
+  if (!stripe || !pool) {
+    return res.status(503).type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment status</title><h1>Payment status unavailable</h1><p>Please contact PGNT ASIAN TOPUP support.</p></html>');
+  }
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const orderResult = await pool.query(
+      'SELECT order_id, status FROM orders WHERE stripe_session_id = $1 LIMIT 1',
+      [session.id]
+    );
+    const paid = session.payment_status === 'paid';
+    const orderStatus = orderResult.rowCount ? orderResult.rows[0].status : 'processing';
+    const heading = paid ? 'Payment received' : 'Payment not confirmed';
+    const message = paid
+      ? (orderStatus === 'completed'
+        ? 'Your payment and top-up are complete.'
+        : orderStatus === 'topup_review'
+          ? 'Your payment was received, but the top-up needs review. Please do not pay again.'
+          : 'Your payment was received. The top-up status is being confirmed. Please do not pay again.')
+      : 'Stripe has not confirmed a successful payment. No top-up completion is confirmed.';
+    return res.status(200).type('html').send(
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PGNT ASIAN TOPUP — Payment status</title><style>body{font-family:system-ui,sans-serif;max-width:620px;margin:10vh auto;padding:24px;line-height:1.5;color:#222}h1{color:#7A0C10}section{border:1px solid #ddd;border-radius:12px;padding:20px}small{color:#666}</style></head><body><h1>PGNT ASIAN TOPUP</h1><section><h2>' + escapeHtml(heading) + '</h2><p>' + escapeHtml(message) + '</p><p><strong>Order status:</strong> ' + escapeHtml(orderStatus) + '</p><small>Keep this page for reference. Do not submit another payment for the same order.</small></section></body></html>'
+    );
+  } catch (error) {
+    console.error('Stripe payment-success lookup failed:', error.message);
+    return res.status(502).type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment status</title><h1>Payment status could not be checked</h1><p>Please do not pay again. Contact PGNT ASIAN TOPUP support to verify your order.</p></html>');
+  }
+});
+
+app.get('/payment-cancelled', (req, res) => {
+  return res.status(200).type('html').send('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PGNT ASIAN TOPUP — Payment cancelled</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:620px;margin:10vh auto;padding:24px;line-height:1.5;color:#222}h1{color:#7A0C10}</style></head><body><h1>PGNT ASIAN TOPUP</h1><h2>Checkout cancelled</h2><p>The checkout was cancelled. A successful payment has not been confirmed and no top-up completion is confirmed.</p><p>If you believe you completed a payment, contact support before trying again.</p></body></html>');
+});
+
 // =====================================================
 // PART 2/8 — COUNTRIES, CURRENCIES & VALIDATION
 // PGNT ASIAN TOPUP
