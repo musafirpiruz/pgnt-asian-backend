@@ -1001,7 +1001,7 @@ app.post('/api/payments/checkout', async (req, res) => {
 // Dedicated Stripe + DT One end-to-end test.
 // Admin-only; uses a fixed DT One pre-production test number and the
 // Stripe test key. It never activates the catalog product.
-app.post('/api/admin/stripe-dtone/sandbox-checkout', requireAdmin, async (req, res) => {
+app.post('/api/admin/stripe-dtone/sandbox-checkout', express.json(), requireAdmin, async (req, res) => {
   if (!pool || !stripe) {
     return res.status(503).json({ error: 'Payment service is not configured.' });
   }
