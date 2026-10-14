@@ -2808,6 +2808,85 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
 
 // List orders requiring operator review, including stale in-flight
 // states after a server restart. This is read-only: it never retries DT One.
+// Read-only Stripe reconciliation for a single order. Does not create payments,
+// retry a top-up, or issue a refund.
+app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT order_id, status, charge_cents, currency,
+              stripe_session_id, stripe_payment_intent_id
+       FROM orders
+       WHERE order_id = $1
+       LIMIT 1`,
+      [orderId]
+    );
+
+    if (result.rowCount !== 1) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = result.rows[0];
+    let session = null;
+    let paymentIntent = null;
+
+    if (order.stripe_session_id) {
+      session = await stripe.checkout.sessions.retrieve(
+        order.stripe_session_id,
+        { expand: ['payment_intent'] }
+      );
+      if (session.payment_intent && typeof session.payment_intent === 'object') {
+        paymentIntent = session.payment_intent;
+      }
+    }
+
+    if (!paymentIntent && order.stripe_payment_intent_id) {
+      paymentIntent = await stripe.paymentIntents.retrieve(
+        order.stripe_payment_intent_id
+      );
+    }
+
+    const sessionOrderId = session?.metadata?.orderId || session?.client_reference_id || null;
+    const intentOrderId = paymentIntent?.metadata?.orderId || null;
+    const associationVerified =
+      (!session || sessionOrderId === orderId) &&
+      (!paymentIntent || !intentOrderId || intentOrderId === orderId);
+
+    return res.status(200).json({
+      lookup: 'read_only',
+      orderId,
+      localOrderStatus: order.status,
+      chargeCents: Number(order.charge_cents),
+      currency: order.currency,
+      stripeSessionFound: Boolean(session),
+      stripeSessionId: session?.id || order.stripe_session_id || null,
+      stripeSessionStatus: session?.status || null,
+      stripePaymentStatus: session?.payment_status || null,
+      stripePaymentIntentId: paymentIntent?.id || order.stripe_payment_intent_id || null,
+      stripePaymentIntentStatus: paymentIntent?.status || null,
+      amountTotal: session?.amount_total ?? null,
+      amountReceived: paymentIntent?.amount_received ?? null,
+      stripeCurrency: session?.currency || paymentIntent?.currency || null,
+      livemode: session?.livemode ?? paymentIntent?.livemode ?? null,
+      associationVerified,
+      note: 'Read-only reconciliation only. No payment, top-up, or refund was created.',
+    });
+  } catch (error) {
+    console.error('Admin Stripe payment-status lookup failed:', error.message);
+    return res.status(502).json({
+      error: 'Could not verify Stripe payment status. Reconcile the order in Stripe Dashboard.',
+    });
+  }
+});
+
 app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({
