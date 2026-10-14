@@ -168,6 +168,7 @@ app.use(
       'Content-Type',
       'Authorization',
       'x-admin-api-key',
+      'x-order-access-token',
     ],
   })
 );
