@@ -121,6 +121,23 @@ async function runMigration() {
     }
 
 
+    // Version 008 adds per-order status access-token hashes.
+    const orderTokenVersion = "008_order_access_token";
+    const orderTokenCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [orderTokenVersion]
+    );
+    if (orderTokenCheck.rows.length === 0) {
+      await client.query(`
+        ALTER TABLE orders
+          ADD COLUMN IF NOT EXISTS order_access_token_hash TEXT;
+        INSERT INTO schema_migrations (version)
+        VALUES ('008_order_access_token')
+        ON CONFLICT (version) DO NOTHING;
+      `);
+      console.log("Migration 008_order_access_token completed successfully.");
+    }
+
     // Version 003 adds the editable AFN-per-EUR comparison rate to existing databases.
     const rateVersion = "003_afn_eur_rate";
     const rateCheck = await client.query(
