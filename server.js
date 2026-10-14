@@ -1718,6 +1718,86 @@ function verifyDtOneCallback(req) {
 // DT One transaction callback.
 // Do not expose this route until the callback
 // authentication adapter matches DT One's real protocol.
+// Read-only DT One status lookup for diagnosis. Does not create, retry, or modify a top-up.
+app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Database is not configured.' });
+  }
+
+  const externalId = String(req.query.external_id || '').trim();
+  if (!externalId || externalId.length > 40 || /\\s/.test(externalId)) {
+    return res.status(400).json({ error: 'A valid external_id is required.' });
+  }
+
+  try {
+    const local = await pool.query(
+      `SELECT order_id, status, dtone_transaction_id, updated_at
+       FROM orders
+       WHERE order_id::text = $1
+       LIMIT 1`,
+      [externalId]
+    );
+
+    const endpoint = `${DTONE_API_BASE_URL}/v1/transactions?external_id=${encodeURIComponent(externalId)}`;
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        Authorization: getDtOneAuthHeader(),
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    const responseText = await response.text();
+    let data;
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch (_) {
+      return res.status(502).json({ error: 'DT One returned a non-JSON response.', providerHttpStatus: response.status });
+    }
+
+    if (!response.ok) {
+      console.warn('DT One read-only status lookup failed.', { providerHttpStatus: response.status });
+      return res.status(502).json({
+        error: 'DT One status lookup failed.',
+        providerHttpStatus: response.status,
+      });
+    }
+
+    const transactions = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data?.transactions)
+          ? data.transactions
+          : data && typeof data === 'object' && data.id
+            ? [data]
+            : [];
+
+    const safeTransactions = transactions.map((tx) => ({
+      id: tx.id ?? null,
+      external_id: tx.external_id ?? null,
+      status: tx.status?.message || tx.status?.status || tx.status || null,
+      status_class: tx.status?.class?.message || null,
+      creation_date: tx.creation_date ?? null,
+      confirmation_date: tx.confirmation_date ?? null,
+    }));
+
+    return res.status(200).json({
+      lookup: 'read_only',
+      providerHttpStatus: response.status,
+      localOrder: local.rows[0] || null,
+      transactionCount: safeTransactions.length,
+      transactions: safeTransactions,
+    });
+  } catch (error) {
+    console.error('DT One read-only status lookup error.', {
+      errorName: error?.name || 'Error',
+    });
+    return res.status(502).json({ error: 'Could not complete DT One status lookup.' });
+  }
+});
+
 app.post('/api/dtone/callback', async (req, res) => {
   // Safe receipt telemetry: no credentials, phone numbers, order IDs, or payloads.
   console.info('DT One callback received.', {
