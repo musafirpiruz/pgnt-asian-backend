@@ -1726,6 +1726,15 @@ app.post('/api/dtone/callback', async (req, res) => {
   }
 
   if (!verifyDtOneCallback(req)) {
+    // Log only safe diagnostic metadata; never log credentials or callback payloads.
+    console.warn('DT One callback authentication rejected.', {
+      authorizationScheme: String(req.headers.authorization || '').split(/\\s+/, 1)[0] || 'missing',
+      basicUsernameConfigured: Boolean(DTONE_CALLBACK_USERNAME),
+      basicPasswordConfigured: Boolean(DTONE_CALLBACK_PASSWORD),
+      sharedHeaderSecretConfigured: Boolean(DTONE_CALLBACK_SECRET),
+      hasSharedSecretHeader: Boolean(req.headers['x-pgnt-callback-secret']),
+      userAgent: String(req.headers['user-agent'] || '').slice(0, 120),
+    });
     return res.status(401).json({
       error: 'Callback authentication failed.',
     });
