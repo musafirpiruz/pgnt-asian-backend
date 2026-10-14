@@ -1719,6 +1719,14 @@ function verifyDtOneCallback(req) {
 // Do not expose this route until the callback
 // authentication adapter matches DT One's real protocol.
 app.post('/api/dtone/callback', async (req, res) => {
+  // Safe receipt telemetry: no credentials, phone numbers, order IDs, or payloads.
+  console.info('DT One callback received.', {
+    method: req.method,
+    contentType: String(req.headers['content-type'] || '').slice(0, 80),
+    authorizationScheme: String(req.headers.authorization || '').split(/\s+/, 1)[0] || 'missing',
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 120),
+  });
+
   if (!pool) {
     return res.status(503).json({
       error: 'Database is not configured.',
@@ -1753,6 +1761,12 @@ app.post('/api/dtone/callback', async (req, res) => {
   const providerStatus = normalizeDtOneStatus(
     body.status
   );
+
+  console.info('DT One callback authenticated.', {
+    hasOrderId: Boolean(orderId),
+    hasProviderTransactionId: Boolean(providerTransactionId),
+    normalizedStatus: providerStatus,
+  });
   // Store a compact provider status label in VARCHAR(80).
   // Preserve the complete provider payload separately as JSONB.
   const storedProviderStatus = typeof body.status === 'string'
