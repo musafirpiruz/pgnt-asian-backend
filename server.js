@@ -2200,7 +2200,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <button type="button" id="runSandbox">Run sandbox transaction</button>
 <label for="orderId">Sandbox test order ID (for status lookup)</label>
 <input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
-<button type="button" id="checkSandboxStatus">Check saved order status</button>
+<button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
 <button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
 </form>
 <hr>
@@ -2229,6 +2229,7 @@ const confirmSandbox=document.getElementById('confirmSandbox');
 const runSandbox=document.getElementById('runSandbox');
 const orderId=document.getElementById('orderId');
 const checkSandboxStatus=document.getElementById('checkSandboxStatus');
+const checkLiveDtOneStatus=document.getElementById('checkLiveDtOneStatus');
 const loadReviewQueue=document.getElementById('loadReviewQueue');
 const loadPricing=document.getElementById('loadPricing');
 const savePricing=document.getElementById('savePricing');
@@ -2370,6 +2371,18 @@ checkSandboxStatus.addEventListener('click',async()=>{
  try{const data=await adminRequest('/api/admin/dtone/sandbox-test/'+encodeURIComponent(orderId.value.trim()));result.textContent=JSON.stringify(data,null,2);}
  catch(error){result.textContent='Could not verify saved status: '+error.message;}
  finally{key.value='';}
+});
+checkLiveDtOneStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const externalId=orderId.value.trim();
+ if(!externalId){result.textContent='Enter the existing order ID first.';return;}
+ result.textContent='Querying DT One directly (read-only)…';
+ checkLiveDtOneStatus.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/transaction-status?external_id='+encodeURIComponent(externalId));
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not query DT One live status: '+error.message;}
+ finally{key.value='';checkLiveDtOneStatus.disabled=false;}
 });
 </script>
 </body>
