@@ -1818,7 +1818,12 @@ app.post('/api/dtone/callback', async (req, res) => {
       // has been verified by an authorized operator.
       nextStatus = 'topup_review';
     } else {
-      nextStatus = 'topup_submitted';
+      // A delayed "pending" callback must not downgrade an order
+      // already escalated to review because its outcome is ambiguous.
+      // Keep it in review until a final provider status is received.
+      nextStatus = order.status === 'topup_review'
+        ? 'topup_review'
+        : 'topup_submitted';
     }
 
     await client.query(
