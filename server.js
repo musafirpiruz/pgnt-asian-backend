@@ -936,21 +936,24 @@ app.post('/api/payments/checkout', async (req, res) => {
     );
 
     orderId = createOrderId();
+    const orderAccessToken = crypto.randomBytes(32).toString('hex');
+    const orderAccessTokenHash = crypto.createHash('sha256').update(orderAccessToken, 'utf8').digest('hex');
 
-    // Record the server-calculated price.
+    // Store only a hash of the secret used to authorize order-status access.
     await client.query(
       `INSERT INTO orders (
          order_id, country, operator, phone, product_id,
          amount, currency, product_price_cents, fee_cents,
-         charge_cents, status, created_at, updated_at
+         charge_cents, status, order_access_token_hash, created_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         'awaiting_payment', NOW(), NOW()
+         'awaiting_payment', $11, NOW(), NOW()
        )`,
       [
         orderId, input.country, product.name, input.phone,
         product.id, product.localAmount, product.currency,
         price.basePriceCents, price.feeCents, price.finalPriceCents,
+        orderAccessTokenHash,
       ]
     );
 
@@ -1012,12 +1015,11 @@ app.post('/api/payments/checkout', async (req, res) => {
 
     return res.status(201).json({
       orderId,
+      orderAccessToken,
       checkoutUrl: session.url,
       paymentCurrency: 'EUR',
       amountCents: price.finalPriceCents,
-      amountFormatted: formatEuro(
-        price.finalPriceCents
-      ),
+      amountFormatted: formatEuro(price.finalPriceCents),
     });
   } catch (error) {
     if (transactionOpen) {
@@ -2869,9 +2871,9 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
   }
 });
 
-// Basic order-status lookup.
-// In production, protect this endpoint with customer
-// authentication or a securely generated order-access token.
+// Order-status lookup protected by a per-order access token.
+// The token is returned only in the initial checkout response and stored
+// as a SHA-256 hash. Orders without a token fail closed.
 app.get('/api/orders/:orderId/status', async (req, res) => {
   if (!pool) {
     return res.status(503).json({
@@ -2892,28 +2894,28 @@ app.get('/api/orders/:orderId/status', async (req, res) => {
   }
 
   try {
+    const accessToken = String(req.get('x-order-access-token') || '').trim();
+    if (!/^[a-f0-9]{64}$/i.test(accessToken)) {
+      return res.status(401).json({ error: 'A valid order access token is required.' });
+    }
+
     const result = await pool.query(
-      `SELECT
-         order_id,
-         country,
-         currency,
-         charge_cents,
-         status,
-         created_at,
-         updated_at
-       FROM orders
-       WHERE order_id = $1
-       LIMIT 1`,
+      `SELECT order_id, country, currency, charge_cents, status,
+              created_at, updated_at, order_access_token_hash
+       FROM orders WHERE order_id = $1 LIMIT 1`,
       [orderId]
     );
 
     if (result.rowCount !== 1) {
-      return res.status(404).json({
-        error: 'Order not found.',
-      });
+      return res.status(404).json({ error: 'Order not found.' });
     }
 
     const order = result.rows[0];
+    const suppliedTokenHash = crypto.createHash('sha256').update(accessToken, 'utf8').digest('hex');
+    if (!order.order_access_token_hash ||
+        !constantTimeEqual(suppliedTokenHash, order.order_access_token_hash)) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
 
     return res.json({
       orderId: order.order_id,
