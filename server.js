@@ -1739,7 +1739,7 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
     );
 
     const endpoint = `${DTONE_API_BASE_URL}/v1/transactions?external_id=${encodeURIComponent(externalId)}`;
-    const response = await fetch(endpoint, {
+    let response = await fetch(endpoint, {
       method: 'GET',
       headers: {
         Authorization: getDtOneAuthHeader(),
@@ -1747,6 +1747,26 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
       },
       signal: AbortSignal.timeout(15000),
     });
+
+    // DT One may return 404 for an external_id query even when the local
+    // order already stores the provider transaction ID. In that case, retry
+    // the read-only lookup by DT One's transaction ID; never create/resubmit.
+    if (response.status === 404 && local.rows[0]?.dtone_transaction_id) {
+      const providerTransactionId = String(local.rows[0].dtone_transaction_id);
+      if (/^\\d+$/.test(providerTransactionId)) {
+        response = await fetch(
+          `${DTONE_API_BASE_URL}/v1/transactions/${encodeURIComponent(providerTransactionId)}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: getDtOneAuthHeader(),
+              Accept: 'application/json',
+            },
+            signal: AbortSignal.timeout(15000),
+          }
+        );
+      }
+    }
 
     const responseText = await response.text();
     let data;
