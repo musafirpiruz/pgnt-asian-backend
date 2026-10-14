@@ -1188,7 +1188,27 @@ app.post(
       );
     }
 
+    // Persist the Stripe event before processing it. A duplicate event is
+    // acknowledged without repeating side effects. If processing fails, remove
+    // the claim so Stripe's retry can attempt the event again.
+    let webhookEventClaimed = false;
     try {
+      const eventClaim = await pool.query(
+        `INSERT INTO webhook_events (provider, event_id, payload)
+         VALUES ('stripe', $1, $2::jsonb)
+         ON CONFLICT (provider, event_id) DO NOTHING
+         RETURNING id`,
+        [event.id, JSON.stringify(event)]
+      );
+
+      if (eventClaim.rowCount === 0) {
+        return res.status(200).json({
+          received: true,
+          duplicate: true,
+        });
+      }
+      webhookEventClaimed = true;
+
       switch (event.type) {
         case 'checkout.session.completed': {
           const session = event.data.object;
@@ -1245,8 +1265,24 @@ app.post(
         error.message
       );
 
-      // Stripe can retry after a server error.
-      // Database processing must be idempotent.
+      // Release the event claim only after a failed processing attempt,
+      // allowing Stripe to retry safely. Order-level locks and status checks
+      // remain the final guard against duplicate fulfillment.
+      if (webhookEventClaimed) {
+        try {
+          await pool.query(
+            "DELETE FROM webhook_events WHERE provider = 'stripe' AND event_id = $1",
+            [event.id]
+          );
+        } catch (cleanupError) {
+          console.error(
+            'Stripe webhook event claim cleanup failed:',
+            event.id,
+            cleanupError.message
+          );
+        }
+      }
+
       return res.status(500).json({
         error: 'Webhook processing failed.',
       });
