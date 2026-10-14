@@ -1660,19 +1660,40 @@ function constantTimeEqual(supplied, expected) {
 
 function verifyDtOneCallback(req) {
   const authorization = String(req.headers.authorization || '');
-  if (
-    DTONE_CALLBACK_USERNAME &&
-    DTONE_CALLBACK_PASSWORD &&
-    authorization.startsWith('Basic ')
-  ) {
+
+  // When Basic callback credentials are configured, use them exclusively.
+  // Do not fall back to the legacy shared-header secret when a caller sends
+  // missing, malformed, or incorrect Basic credentials.
+  if (DTONE_CALLBACK_USERNAME || DTONE_CALLBACK_PASSWORD) {
+    if (
+      !DTONE_CALLBACK_USERNAME ||
+      !DTONE_CALLBACK_PASSWORD ||
+      !authorization.startsWith('Basic ')
+    ) {
+      return false;
+    }
+
+    const encodedCredentials = authorization.slice(6).trim();
+    if (!encodedCredentials || !/^[A-Za-z0-9+/]+={0,2}$/.test(encodedCredentials)) {
+      return false;
+    }
+
     let decoded = '';
     try {
-      decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
+      decoded = Buffer.from(encodedCredentials, 'base64').toString('utf8');
     } catch (_) {
       return false;
     }
+
+    // Reject malformed/non-canonical base64 rather than accepting Node's
+    // permissive decoder behavior.
+    if (Buffer.from(decoded, 'utf8').toString('base64') !== encodedCredentials) {
+      return false;
+    }
+
     const separator = decoded.indexOf(':');
     if (separator < 0) return false;
+
     const suppliedUsername = decoded.slice(0, separator);
     const suppliedPassword = decoded.slice(separator + 1);
     return (
@@ -1681,6 +1702,8 @@ function verifyDtOneCallback(req) {
     );
   }
 
+  // Legacy shared-header auth is used only when Basic credentials are not
+  // configured at all, and only when its own secret is configured.
   if (DTONE_CALLBACK_SECRET) {
     return constantTimeEqual(
       req.headers['x-pgnt-callback-secret'],
