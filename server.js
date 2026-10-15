@@ -2220,7 +2220,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <button type="button" id="runSandbox">Run sandbox transaction</button>
 <label for="orderId">Sandbox test order ID (for status lookup)</label>
 <input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
-<button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
+<button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
 <button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
 </form>
 <hr>
@@ -2249,6 +2249,7 @@ const confirmSandbox=document.getElementById('confirmSandbox');
 const runSandbox=document.getElementById('runSandbox');
 const orderId=document.getElementById('orderId');
 const checkSandboxStatus=document.getElementById('checkSandboxStatus');
+const checkStripePaymentStatus=document.getElementById('checkStripePaymentStatus');
 const checkLiveDtOneStatus=document.getElementById('checkLiveDtOneStatus');
 const loadReviewQueue=document.getElementById('loadReviewQueue');
 const loadPricing=document.getElementById('loadPricing');
@@ -2383,6 +2384,19 @@ runStripeDtoneSandbox.addEventListener('click',async()=>{
   }
  }catch(error){result.textContent='Could not create sandbox checkout: '+error.message;}
  finally{key.value='';runStripeDtoneSandbox.disabled=false;confirmStripeDtoneSandbox.checked=false;}
+});
+checkStripePaymentStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const id=orderId.value.trim();
+ if(!id){result.textContent='Enter the existing order ID first.';return;}
+ if(!/^[0-9a-f-]{36}$/i.test(id)){result.textContent='Enter a valid order UUID.';return;}
+ result.textContent='Checking Stripe payment status (read-only)…';
+ checkStripePaymentStatus.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/orders/'+encodeURIComponent(id)+'/payment-status');
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not verify Stripe payment status: '+error.message;}
+ finally{key.value='';checkStripePaymentStatus.disabled=false;}
 });
 checkSandboxStatus.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
