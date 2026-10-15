@@ -1327,14 +1327,36 @@ async function processPaidStripeSession(session) {
     throw new Error('Payment services are not configured.');
   }
 
+  // Treat the webhook as a trigger, not the final payment record.
+  // Re-fetch the Checkout Session from Stripe before any fulfillment so
+  // amount, currency, payment intent, metadata, and livemode are canonical.
+  if (!session || typeof session.id !== 'string' || !session.id) {
+    throw new Error('Stripe webhook session ID is missing.');
+  }
+
+  const eventSessionId = session.id;
+  session = await stripe.checkout.sessions.retrieve(eventSessionId, {
+    expand: ['payment_intent'],
+  });
+
+  const paymentIntent = session.payment_intent &&
+    typeof session.payment_intent === 'object'
+      ? session.payment_intent
+      : null;
+  const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
+
   if (
-    !session ||
+    session.id !== eventSessionId ||
     session.payment_status !== 'paid' ||
     session.currency !== 'eur' ||
     !Number.isSafeInteger(session.amount_total) ||
-    !session.id
+    !paymentIntent ||
+    paymentIntent.status !== 'succeeded' ||
+    paymentIntent.currency !== 'eur' ||
+    paymentIntent.amount_received !== session.amount_total ||
+    session.livemode === stripeIsTest
   ) {
-    throw new Error('Invalid or unpaid Stripe session.');
+    throw new Error('Canonical Stripe payment verification failed.');
   }
 
   const orderId = String(
