@@ -3058,6 +3058,37 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
       return res.status(409).json({ error: 'The order has no verified Stripe PaymentIntent.' });
     }
 
+    // Verify the actual Stripe PaymentIntent before creating any refund record
+    // or sending a refund request. The order's charge_cents is EUR, while
+    // order.currency is the destination top-up currency (e.g. AFN).
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.retrieve(
+        order.stripe_payment_intent_id
+      );
+    } catch (lookupError) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(502).json({
+        error: 'Could not verify the Stripe payment. No refund was started.',
+      });
+    }
+
+    const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
+    if (
+      paymentIntent.id !== order.stripe_payment_intent_id ||
+      paymentIntent.status !== 'succeeded' ||
+      paymentIntent.currency !== 'eur' ||
+      paymentIntent.amount_received !== Number(order.charge_cents) ||
+      paymentIntent.livemode === stripeIsTest
+    ) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Stripe payment verification did not match this order. No refund was started.',
+      });
+    }
+
     const refundResult = await client.query(
       `SELECT id, stripe_refund_id, amount_cents, status
        FROM refunds WHERE order_id = $1 FOR UPDATE`,
