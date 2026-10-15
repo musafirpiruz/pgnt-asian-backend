@@ -2900,7 +2900,11 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
       lookup: 'read_only',
       orderId,
       localOrderStatus: order.status,
+      // The order's currency is the recipient top-up currency (e.g. AFN),
+      // while charge_cents is the EUR amount charged by Stripe.
       chargeCents: Number(order.charge_cents),
+      paymentCurrency: 'EUR',
+      topupCurrency: order.currency,
       currency: order.currency,
       stripeSessionFound: Boolean(session),
       stripeSessionId: session?.id || order.stripe_session_id || null,
