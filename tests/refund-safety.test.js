@@ -26,7 +26,7 @@ test('refund route requires a reviewed order and final DT One failure', () => {
 test('refund route verifies the canonical Stripe PaymentIntent before refunding', () => {
   assert.match(route, /paymentIntents\.retrieve/);
   assert.match(route, /paymentIntent\.status\s*!==\s*['\"]succeeded['\"]/);
-  assert.match(route, /currency\s*===?\s*['"]eur['"]/);
+  assert.match(route, /paymentIntent\.currency\s*!==\s*['\"]eur['\"]/);
   assert.match(route, /amount_received/);
   assert.match(route, /livemode/);
 });
