@@ -46,3 +46,15 @@ test('refund guard is source-only: this test file never invokes external service
   assert.match(server, /requireAdmin/);
   assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /stripe\.refunds\.create|dtoneFetch\(/);
 });
+
+const paymentStatusStart = server.indexOf("app.get('/api/admin/orders/:orderId/payment-status'");
+const paymentStatusEnd = server.indexOf("app.get('/api/admin/orders/review'", paymentStatusStart);
+const paymentStatusRoute = paymentStatusStart >= 0 && paymentStatusEnd > paymentStatusStart
+  ? server.slice(paymentStatusStart, paymentStatusEnd)
+  : '';
+
+test('read-only payment status does not verify association when Stripe objects are missing', () => {
+  assert.notEqual(paymentStatusStart, -1, 'payment-status route must exist');
+  assert.match(paymentStatusRoute, /Boolean\(session \|\| paymentIntent\)/);
+  assert.match(paymentStatusRoute, /const associationVerified/);
+});
