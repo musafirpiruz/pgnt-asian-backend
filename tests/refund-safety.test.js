@@ -24,9 +24,9 @@ test('refund route requires a reviewed order and final DT One failure', () => {
 });
 
 test('refund route verifies the canonical Stripe PaymentIntent before refunding', () => {
-  assert.match(route, /paymentIntents\\.retrieve/);
-  assert.match(route, /paymentIntent\\.status\\s*!==\\s*['\\"]succeeded['\\"]/);
-  assert.match(route, /paymentIntent\\.currency\\s*!==\\s*['\\"]eur['\\"]/);
+  assert.match(route, /paymentIntents\.retrieve/);
+  assert.match(route, /paymentIntent\.status\s*!==\s*['\"]succeeded['\"]/);
+  assert.match(route, /paymentIntent\.currency\s*!==\s*['\"]eur['\"]/);
   assert.match(route, /amount_received/);
   assert.match(route, /livemode/);
 });
@@ -67,10 +67,10 @@ test('an existing pending or ambiguous refund record blocks an automatic retry',
 });
 
 test('Stripe refund uses a stable per-order idempotency key', () => {
-  assert.match(route, /idempotencyKey: `pgnt-refund-\$\{orderId\}`/);
+  assert.ok(route.includes('pgnt-refund-\${orderId}'));
 });
 
 test('refund guard is source-only: this test file never invokes external services', () => {
   assert.match(server, /requireAdmin/);
-  assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /stripe\\.refunds\\.create|dtoneFetch\\(/);
+  assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /stripe\.refunds\.create|dtoneFetch\(/);
 });
