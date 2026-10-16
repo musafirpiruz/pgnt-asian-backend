@@ -1,6 +1,5 @@
 // Safety regression checks for the admin refund route.
 // These tests inspect the route source without calling Stripe, DT One, or the database.
-// Run with: node --test tests/refund-safety.test.js
 'use strict';
 
 const test = require('node:test');
@@ -9,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-const routeStart = server.indexOf('app.post("/api/admin/orders/:orderId/refund"');
+const routeStart = server.indexOf("app.post('/api/admin/orders/:orderId/refund'");
 const route = routeStart >= 0 ? server.slice(routeStart) : '';
 
 test('admin refund route exists and is admin-protected', () => {
@@ -26,8 +25,8 @@ test('refund route requires a reviewed order and final DT One failure', () => {
 
 test('refund route verifies the canonical Stripe PaymentIntent before refunding', () => {
   assert.match(route, /paymentIntents\.retrieve/);
-  assert.match(route, /status\s*===?\s*['"]succeeded['"]/);
-  assert.match(route, /currency\s*===?\s*['"]eur['"]/);
+  assert.match(route, /paymentIntent\.status\s*!==\s*['\"]succeeded['\"]/);
+  assert.match(route, /paymentIntent\.currency\s*!==\s*['\"]eur['\"]/);
   assert.match(route, /amount_received/);
   assert.match(route, /livemode/);
 });

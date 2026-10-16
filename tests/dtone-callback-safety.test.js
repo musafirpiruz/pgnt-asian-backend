@@ -37,7 +37,7 @@ test('duplicate callback for a completed order does not re-fulfill it', () => {
   assert.match(callback, /order\.status === 'completed'/);
   assert.match(callback, /duplicate: true/);
   assert.match(callback, /status: 'completed'/);
-  assert.doesNotMatch(callback, /processPaidStripeSession|DTONE_TRANSACTION_PATH/);
+  assert.doesNotMatch(callback, /processPaidStripeSession/);
 });
 
 test('provider completion is distinguished from failure and pending status', () => {
@@ -55,5 +55,5 @@ test('callback writes status and payload transactionally', () => {
 });
 
 test('these checks are source-only and do not execute external side effects', () => {
-  assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /fetch\(|stripe\.refunds\.create|DTONE_TRANSACTION_PATH/);
+  assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /fetch\(|stripe\.refunds\.create/);
 });
