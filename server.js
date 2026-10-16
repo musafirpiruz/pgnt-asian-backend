@@ -2893,6 +2893,7 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
     const sessionOrderId = session?.metadata?.orderId || session?.client_reference_id || null;
     const intentOrderId = paymentIntent?.metadata?.orderId || null;
     const associationVerified =
+      Boolean(session || paymentIntent) &&
       (!session || sessionOrderId === orderId) &&
       (!paymentIntent || !intentOrderId || intentOrderId === orderId);
 
