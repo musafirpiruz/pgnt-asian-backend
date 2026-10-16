@@ -55,6 +55,6 @@ const paymentStatusRoute = paymentStatusStart >= 0 && paymentStatusEnd > payment
 
 test('read-only payment status does not verify association when Stripe objects are missing', () => {
   assert.notEqual(paymentStatusStart, -1, 'payment-status route must exist');
-  assert.match(paymentStatusRoute, /Boolean\\(session \\|\\| paymentIntent\\)/);
+  assert.match(paymentStatusRoute, /Boolean\(session \|\| paymentIntent\)/);
   assert.match(paymentStatusRoute, /const associationVerified/);
 });
