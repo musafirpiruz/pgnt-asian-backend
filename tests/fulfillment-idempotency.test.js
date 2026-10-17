@@ -9,7 +9,7 @@ const path = require('node:path');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const start = server.indexOf('async function processPaidStripeSession');
-const end = server.indexOf("app.post('/api/stripe/webhook'", start);
+const end = server.indexOf("// Register the tightly restricted DT One pre-production test routes.", start);
 const fulfillment = start >= 0 && end > start ? server.slice(start, end) : '';
 
 test('Stripe fulfillment re-fetches canonical Checkout Session before fulfillment', () => {
