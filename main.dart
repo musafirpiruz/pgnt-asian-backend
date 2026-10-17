@@ -204,6 +204,43 @@ String normalizePhone(String value) {
   );
 }
 
+// Detect an Afghan operator from the assigned mobile prefix.
+// This is a best-effort suggestion: number portability can make prefixes
+// differ from the current serving network, so the user can still change it.
+String? detectAfghanOperator(String value) {
+  var digits = value.replaceAll(RegExp(r'\D'), '');
+  if (digits.startsWith('0093')) {
+    digits = digits.substring(4);
+  } else if (digits.startsWith('93') && digits.length >= 11) {
+    digits = digits.substring(2);
+  }
+  if (digits.startsWith('0')) {
+    digits = digits.substring(1);
+  }
+  if (digits.length < 2) return null;
+
+  final prefix = digits.substring(0, 2);
+  switch (prefix) {
+    case '72':
+    case '79':
+      return 'Roshan';
+    case '70':
+    case '71':
+      return 'AWCC';
+    case '73':
+    case '78':
+      return 'Etisalat';
+    case '76':
+    case '77':
+      return 'ATOMA';
+    case '74':
+    case '75':
+      return 'Salaam';
+    default:
+      return null;
+  }
+}
+
 // Basic phone validation.
 // Final validation must also happen on the server.
 bool isValidPhone(
@@ -814,6 +851,32 @@ class _PgntHomePageState extends State<PgntHomePage> {
     });
   }
 
+  void handlePhoneChanged(String value) {
+    if (selectedCountry.code != 'AF') return;
+    final detectedName = detectAfghanOperator(value);
+    if (detectedName == null) return;
+
+    MobileOperator? detected;
+    for (final operator in countryOperators) {
+      if (operator.name.toLowerCase() == detectedName.toLowerCase()) {
+        detected = operator;
+        break;
+      }
+    }
+    if (detected == null ||
+        (selectedOperator?.name == detected.name &&
+            selectedOperator?.countryCode == detected.countryCode)) {
+      return;
+    }
+
+    setState(() {
+      selectedOperator = detected;
+      priceQuote = null;
+      priceQuoteError = null;
+    });
+    loadPriceQuote();
+  }
+
   void showMessage(String message) {
     if (!mounted) return;
 
@@ -1056,6 +1119,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       controller: phoneController,
       keyboardType: TextInputType.phone,
       maxLength: 16,
+      onChanged: handlePhoneChanged,
       decoration: InputDecoration(
         hintText: phoneHint,
         helperText: 'Enter the recipient number for ${selectedCountry.name}',
