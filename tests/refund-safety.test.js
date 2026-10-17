@@ -67,12 +67,12 @@ test('an existing pending or ambiguous refund record blocks an automatic retry',
 });
 
 test('Stripe refund uses a stable per-order idempotency key', () => {
-  assert.ok(route.includes('pgnt-refund-\\${orderId}'));
+  assert.ok(route.includes('pgnt-refund-${orderId}'));
 });
 
 test('refund guard is source-only: this test file never invokes external services', () => {
   assert.match(server, /requireAdmin/);
   const testSource = fs.readFileSync(__filename, 'utf8');
-  assert.match(testSource, /fs\\.readFileSync/);
-  assert.doesNotMatch(testSource, /require\\(['\"]stripe['\"]\\)/);
+  assert.ok(testSource.includes('fs.readFileSync'));
+  assert.equal(testSource.includes("require('stripe')"), false);
 });
