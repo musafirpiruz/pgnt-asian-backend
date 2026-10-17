@@ -2905,6 +2905,15 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
     const order = result.rows[0];
     let session = null;
     let paymentIntent = null;
+    const stripeLookupDiagnostics = {
+      mode: STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' :
+        STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'live' : 'unknown',
+      sessionPagesScanned: 0,
+      sessionsScanned: 0,
+      sessionSearchHasMore: false,
+      paymentIntentSearchCount: 0,
+      orderCreatedAt: order.created_at,
+    };
 
     if (order.stripe_session_id) {
       session = await stripe.checkout.sessions.retrieve(
@@ -2938,6 +2947,9 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
           ...(startingAfter ? { starting_after: startingAfter } : {}),
         };
         const sessions = await stripe.checkout.sessions.list(params);
+        stripeLookupDiagnostics.sessionPagesScanned += 1;
+        stripeLookupDiagnostics.sessionsScanned += sessions.data.length;
+        stripeLookupDiagnostics.sessionSearchHasMore = sessions.has_more;
         const match = sessions.data.find((candidate) =>
           candidate.client_reference_id === orderId ||
           candidate.metadata?.orderId === orderId
@@ -2964,6 +2976,7 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
         query: `metadata['orderId']:'${orderId}'`,
         limit: 10,
       });
+      stripeLookupDiagnostics.paymentIntentSearchCount = found.data.length;
       const match = found.data.find((candidate) =>
         candidate.metadata?.orderId === orderId
       );
@@ -2998,6 +3011,7 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
       stripeCurrency: session?.currency || paymentIntent?.currency || null,
       livemode: session?.livemode ?? paymentIntent?.livemode ?? null,
       associationVerified,
+      stripeLookupDiagnostics,
       note: 'Read-only reconciliation only. No payment, top-up, or refund was created.',
     });
   } catch (error) {
