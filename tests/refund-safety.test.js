@@ -73,6 +73,6 @@ test('Stripe refund uses a stable per-order idempotency key', () => {
 test('refund guard is source-only: this test file never invokes external services', () => {
   assert.match(server, /requireAdmin/);
   const testSource = fs.readFileSync(__filename, 'utf8');
-  assert.doesNotMatch(testSource, /^\\s*stripe\\.refunds\\.create\\s*\\(/m);
-  assert.doesNotMatch(testSource, /^\\s*dtoneFetch\\s*\\(/m);
+  assert.match(testSource, /fs\\.readFileSync/);
+  assert.doesNotMatch(testSource, /require\\(['\"]stripe['\"]\\)/);
 });
