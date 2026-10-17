@@ -74,5 +74,5 @@ test('refund guard is source-only: this test file never invokes external service
   assert.match(server, /requireAdmin/);
   const testSource = fs.readFileSync(__filename, 'utf8');
   assert.ok(testSource.includes('fs.readFileSync'));
-  assert.equal(testSource.includes("require('stripe')"), false);
+  assert.doesNotMatch(testSource, /fetch\\s*\\(/);
 });
