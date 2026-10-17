@@ -60,6 +60,20 @@ const DTONE_CALLBACK_URL =
   process.env.DTONE_CALLBACK_URL ||
   `${APP_BASE_URL}/api/dtone/callback`;
 
+// Safe startup diagnostics: report only the public callback host and path,
+// never credentials, query strings, or transaction/customer details.
+try {
+  const callbackUrl = new URL(DTONE_CALLBACK_URL);
+  console.info('DT One callback URL configured.', {
+    protocol: callbackUrl.protocol,
+    hostname: callbackUrl.hostname,
+    pathname: callbackUrl.pathname,
+    https: callbackUrl.protocol === 'https:',
+  });
+} catch (_) {
+  console.error('DT One callback URL is invalid.');
+}
+
 // Admin API configuration
 const ADMIN_API_KEY =
   process.env.ADMIN_API_KEY || '';
