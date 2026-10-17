@@ -2891,7 +2891,7 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
   try {
     const result = await pool.query(
       `SELECT order_id, status, charge_cents, currency,
-              stripe_session_id, stripe_payment_intent_id
+              stripe_session_id, stripe_payment_intent_id, created_at
        FROM orders
        WHERE order_id = $1
        LIMIT 1`,
@@ -2920,6 +2920,54 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
       paymentIntent = await stripe.paymentIntents.retrieve(
         order.stripe_payment_intent_id
       );
+    }
+
+    // Recovery lookup for legacy orders whose Stripe IDs were not saved locally.
+    // Search only sessions created around/after this order, and accept a match
+    // only when Stripe's client_reference_id or metadata.orderId equals orderId.
+    if (!session) {
+      const orderCreatedSeconds = Math.max(
+        0,
+        Math.floor(new Date(order.created_at).getTime() / 1000) - 300
+      );
+      let startingAfter;
+      for (let page = 0; page < 5; page += 1) {
+        const params = {
+          limit: 100,
+          created: { gte: orderCreatedSeconds },
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        };
+        const sessions = await stripe.checkout.sessions.list(params);
+        const match = sessions.data.find((candidate) =>
+          candidate.client_reference_id === orderId ||
+          candidate.metadata?.orderId === orderId
+        );
+        if (match) {
+          session = await stripe.checkout.sessions.retrieve(
+            match.id,
+            { expand: ['payment_intent'] }
+          );
+          if (session.payment_intent && typeof session.payment_intent === 'object') {
+            paymentIntent = session.payment_intent;
+          }
+          break;
+        }
+        if (!sessions.has_more || sessions.data.length === 0) break;
+        startingAfter = sessions.data[sessions.data.length - 1].id;
+      }
+    }
+
+    // Last read-only fallback: exact metadata match on PaymentIntent.
+    // Never associate a payment solely by amount, currency, or timestamp.
+    if (!paymentIntent && typeof stripe.paymentIntents.search === 'function') {
+      const found = await stripe.paymentIntents.search({
+        query: `metadata['orderId']:'${orderId}'`,
+        limit: 10,
+      });
+      const match = found.data.find((candidate) =>
+        candidate.metadata?.orderId === orderId
+      );
+      if (match) paymentIntent = match;
     }
 
     const sessionOrderId = session?.metadata?.orderId || session?.client_reference_id || null;
