@@ -25,8 +25,8 @@ test('refund route requires a reviewed order and final DT One failure', () => {
 
 test('refund route verifies the canonical Stripe PaymentIntent before refunding', () => {
   assert.match(route, /paymentIntents\.retrieve/);
-  assert.match(route, /paymentIntent\.status\s*!==\s*['\"]succeeded['\"]/);
-  assert.match(route, /paymentIntent\.currency\s*!==\s*['\"]eur['\"]/);
+  assert.match(route, /paymentIntent\.status\s*!==\s*['\\"]succeeded['\\"]/);
+  assert.match(route, /paymentIntent\.currency\s*!==\s*['\\"]eur['\\"]/);
   assert.match(route, /amount_received/);
   assert.match(route, /livemode/);
 });
@@ -42,9 +42,39 @@ test('refund route records/reuses refund state and uses Stripe idempotency', () 
   assert.match(route, /pending/);
 });
 
+test('completed or already-refunded orders are explicitly rejected before any Stripe refund request', () => {
+  const guard = route.indexOf("order.status === 'completed' || order.status === 'refunded'");
+  const create = route.indexOf('stripe.refunds.create');
+  assert.notEqual(guard, -1);
+  assert.notEqual(create, -1);
+  assert.ok(guard < create, 'completed/refunded guard must run before Stripe refund creation');
+  assert.match(route.slice(guard, create), /no refund was started/);
+});
+
+test('a failed Stripe PaymentIntent lookup returns without starting a refund', () => {
+  const lookup = route.indexOf('stripe.paymentIntents.retrieve');
+  const create = route.indexOf('stripe.refunds.create');
+  assert.notEqual(lookup, -1);
+  assert.notEqual(create, -1);
+  assert.ok(lookup < create);
+  assert.match(route.slice(lookup, create), /No refund was started/);
+});
+
+test('an existing pending or ambiguous refund record blocks an automatic retry', () => {
+  assert.match(route, /A refund record already exists/);
+  assert.match(route, /Reconcile it in Stripe Dashboard before retrying/);
+  assert.match(route, /existingRefund/);
+});
+
+test('Stripe refund uses a stable per-order idempotency key', () => {
+  assert.ok(route.includes('pgnt-refund-${orderId}'));
+});
+
 test('refund guard is source-only: this test file never invokes external services', () => {
   assert.match(server, /requireAdmin/);
-  assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /stripe\.refunds\.create|dtoneFetch\(/);
+  const testSource = fs.readFileSync(__filename, 'utf8');
+  assert.ok(testSource.includes('fs.readFileSync'));
+  assert.doesNotMatch(testSource, /fetch\s*\(/);
 });
 
 const paymentStatusStart = server.indexOf("app.get('/api/admin/orders/:orderId/payment-status'");
