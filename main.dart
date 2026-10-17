@@ -649,7 +649,7 @@ class PgntBrandHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const PgntLogo(size: 68),
+          const PgntLogo(size: 44),
           const SizedBox(width: 14),
           const Expanded(
             child: Column(
@@ -978,38 +978,87 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildCountrySelector() {
-    return Wrap(
-      spacing: 9,
-      runSpacing: 9,
-      children: countries.map((country) {
-        final selected = country.code == selectedCountry.code;
-
-        return ChoiceChip(
-          avatar: Text(country.flag),
-          label: Text(country.name),
-          selected: selected,
-          selectedColor: gold,
-          backgroundColor: Colors.white,
-          side: BorderSide(
-            color: selected ? primaryRed : gold,
-          ),
-          labelStyle: TextStyle(
-            color: selected ? primaryRed : Colors.black87,
-            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-          ),
-          onSelected: (_) => selectCountry(country),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth - 12) / 2;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: countries.map((country) {
+            final selected = country.code == selectedCountry.code;
+            return InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => selectCountry(country),
+              child: Container(
+                width: cardWidth,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFFFF1F0) : cardWhite,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: selected ? primaryRed : const Color(0xFFE7DED2),
+                    width: selected ? 1.7 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(country.flag, style: const TextStyle(fontSize: 27)),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            country.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: selected ? primaryRed : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            country.currency,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (selected)
+                      const Icon(Icons.check_circle, color: primaryRed, size: 18),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 
   Widget buildPhoneField() {
+    final phoneHint = switch (selectedCountry.code) {
+      'AF' => '07X XXX XXXX',
+      'PK' => '03XX XXXXXXX',
+      'IN' => '10-digit mobile number',
+      'BD' => '01XXXXXXXXX',
+      _ => 'Mobile number',
+    };
     return TextField(
       controller: phoneController,
       keyboardType: TextInputType.phone,
       maxLength: 16,
       decoration: InputDecoration(
-        hintText: '07XXXXXXXX',
+        hintText: phoneHint,
+        helperText: 'Enter the recipient number for ${selectedCountry.name}',
         counterText: '',
         prefixIcon: const Icon(
           Icons.phone_android,
@@ -1024,25 +1073,83 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildOperatorSelector() {
-    return DropdownButtonFormField<MobileOperator>(
-      value: selectedOperator,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        prefixIcon: Icon(
-          Icons.sim_card_outlined,
-          color: primaryRed,
-        ),
-      ),
-      hint: Text(t('selectOperator')),
-      items: countryOperators.map((item) {
-        return DropdownMenuItem<MobileOperator>(
-          value: item,
-          child: Text('${item.icon}  ${item.name}'),
+    if (countryOperators.isEmpty) {
+      return Text(t('selectOperator'));
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth < 360 ? 2 : 3;
+        final spacing = 9.0;
+        final cardWidth =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: countryOperators.map((item) {
+            final selected = selectedOperator?.name == item.name &&
+                selectedOperator?.countryCode == item.countryCode;
+            return InkWell(
+              borderRadius: BorderRadius.circular(13),
+              onTap: () {
+                setState(() {
+                  selectedOperator = item;
+                  priceQuote = null;
+                  priceQuoteError = null;
+                });
+                loadPriceQuote();
+              },
+              child: Container(
+                width: cardWidth,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFFFF1F0) : cardWhite,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: selected ? primaryRed : const Color(0xFFE7DED2),
+                    width: selected ? 1.6 : 1,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircleAvatar(
+                      radius: 19,
+                      backgroundColor: selected ? primaryRed : cream,
+                      child: Text(
+                        item.icon,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      item.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? primaryRed : Colors.black87,
+                      ),
+                    ),
+                    if (selected)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Icon(
+                          Icons.check_circle,
+                          color: primaryRed,
+                          size: 15,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
         );
-      }).toList(),
-      onChanged: (value) {
-        setState(() { selectedOperator = value; priceQuote = null; priceQuoteError = null; });
-        loadPriceQuote();
       },
     );
   }
