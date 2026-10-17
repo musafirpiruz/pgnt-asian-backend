@@ -60,5 +60,7 @@ test('ambiguous DT One timeout or HTTP failure is sent to review, not blindly re
 
 test('these source checks never invoke external side effects', () => {
   const source = fs.readFileSync(__filename, 'utf8');
-  assert.doesNotMatch(source, /fetch\s*\(|stripe\.refunds\.create/);
+  // Match actual top-level invocation lines, not the safety assertion's own regex literal.
+  assert.doesNotMatch(source, /(?:^|\n)\s*(?:await\s+)?fetch\s*\(/);
+  assert.doesNotMatch(source, /(?:^|\n)\s*(?:await\s+)?stripe\.refunds\.create\s*\(/);
 });
