@@ -24,9 +24,9 @@ test('refund route requires a reviewed order and final DT One failure', () => {
 });
 
 test('refund route verifies the canonical Stripe PaymentIntent before refunding', () => {
-  assert.match(route, /paymentIntents\\.retrieve/);
-  assert.match(route, /paymentIntent\\.status\\s*!==\\s*['\\\"]succeeded['\\\"]/);
-  assert.match(route, /paymentIntent\\.currency\\s*!==\\s*['\\\"]eur['\\\"]/);
+  assert.match(route, /paymentIntents\.retrieve/);
+  assert.match(route, /paymentIntent\.status\s*!==\s*['\\"]succeeded['\\"]/);
+  assert.match(route, /paymentIntent\.currency\s*!==\s*['\\"]eur['\\"]/);
   assert.match(route, /amount_received/);
   assert.match(route, /livemode/);
 });
@@ -74,5 +74,5 @@ test('refund guard is source-only: this test file never invokes external service
   assert.match(server, /requireAdmin/);
   const testSource = fs.readFileSync(__filename, 'utf8');
   assert.ok(testSource.includes('fs.readFileSync'));
-  assert.doesNotMatch(testSource, /fetch\\s*\\(/);
+  assert.doesNotMatch(testSource, /fetch\s*\(/);
 });
