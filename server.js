@@ -1940,6 +1940,10 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     if (result.rowCount !== 1) {
       await client.query('ROLLBACK');
+      console.warn('DT One callback order not found.', {
+        hasOrderId: Boolean(orderId),
+        hasProviderTransactionId: Boolean(providerTransactionId),
+      });
 
       return res.status(404).json({
         error: 'Order not found.',
@@ -1956,6 +1960,10 @@ app.post('/api/dtone/callback', async (req, res) => {
         providerTransactionId
     ) {
       await client.query('ROLLBACK');
+      console.warn('DT One callback transaction reference mismatch.', {
+        orderHasProviderReference: Boolean(order.dtone_transaction_id),
+        callbackHasProviderReference: Boolean(providerTransactionId),
+      });
 
       return res.status(409).json({
         error: 'Transaction reference mismatch.',
@@ -1985,6 +1993,10 @@ app.post('/api/dtone/callback', async (req, res) => {
       ].includes(order.status)
     ) {
       await client.query('ROLLBACK');
+      console.warn('DT One callback order is not awaiting provider status.', {
+        currentOrderStatus: String(order.status || 'unknown'),
+        normalizedProviderStatus: providerStatus,
+      });
 
       return res.status(409).json({
         error: 'Order is not awaiting DT One status.',
@@ -2036,6 +2048,12 @@ app.post('/api/dtone/callback', async (req, res) => {
     );
 
     await client.query('COMMIT');
+    console.info('DT One callback order updated.', {
+      previousOrderStatus: String(order.status || 'unknown'),
+      nextOrderStatus: nextStatus,
+      normalizedProviderStatus: providerStatus,
+      hasProviderTransactionId: Boolean(providerTransactionId),
+    });
 
     return res.status(200).json({
       received: true,
