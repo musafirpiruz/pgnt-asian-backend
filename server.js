@@ -2289,13 +2289,52 @@ app.get('/api/admin/referrals', requireAdmin, async (req, res) => {
 
 app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+
   const code = String(req.params.code || '').trim().toUpperCase();
   const body = req.body || {};
   const fields = [];
   const values = [code];
-  if (typeof body.active === 'boolean') { values.push(body.active); fields.push('active = 
-// without installing an API client. The admin key is entered by the owner
-// in their browser and is never stored by this page.
+
+  if (typeof body.active === 'boolean') {
+    values.push(body.active);
+    fields.push(`active = $${values.length}`);
+  }
+
+  if (body.rewardEurCents !== undefined) {
+    const reward = Number(body.rewardEurCents);
+    if (!Number.isSafeInteger(reward) || reward < 0 || reward > 10000) {
+      return res.status(400).json({ error: 'rewardEurCents must be 0-10000.' });
+    }
+    values.push(reward);
+    fields.push(`reward_eur_cents = $${values.length}`);
+  }
+
+  if (body.maxRewards !== undefined) {
+    const max = body.maxRewards === null || body.maxRewards === '' ? null : Number(body.maxRewards);
+    if (max !== null && (!Number.isSafeInteger(max) || max < 0)) {
+      return res.status(400).json({ error: 'maxRewards must be a non-negative integer or null.' });
+    }
+    values.push(max);
+    fields.push(`max_rewards = $${values.length}`);
+  }
+
+  if (fields.length === 0) {
+    return res.status(400).json({ error: 'Provide active, rewardEurCents, or maxRewards.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE referral_codes SET ${fields.join(', ')} WHERE code = $1
+       RETURNING code, owner_name, owner_contact, reward_eur_cents, max_rewards, active, created_at`,
+      values
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Referral code not found.' });
+    return res.json({ referral: result.rows[0] });
+  } catch (error) {
+    console.error('Referral code update failed:', error.message);
+    return res.status(500).json({ error: 'Could not update referral code.' });
+  }
+});
 
 app.get('/admin-dtone-check', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
