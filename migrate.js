@@ -298,6 +298,57 @@ async function runMigration() {
     }
 
 
+    // Version 008: referral links and first-successful-top-up rewards.
+    // All reward grants are unique per referred customer and referral code.
+    const referralVersion = '008_referral_rewards';
+    const referralCheck = await client.query(
+      'SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1',
+      [referralVersion]
+    );
+    if (referralCheck.rows.length === 0) {
+      await client.query('BEGIN');
+      try {
+        await client.query(`
+          ALTER TABLE orders ADD COLUMN IF NOT EXISTS referral_code VARCHAR(40);
+          ALTER TABLE orders ADD COLUMN IF NOT EXISTS referral_install_id VARCHAR(128);
+          CREATE TABLE IF NOT EXISTS referral_codes (
+            id BIGSERIAL PRIMARY KEY,
+            code VARCHAR(40) NOT NULL UNIQUE,
+            owner_name VARCHAR(120) NOT NULL,
+            owner_contact VARCHAR(160),
+            reward_eur_cents INTEGER NOT NULL DEFAULT 7 CHECK (reward_eur_cents >= 0 AND reward_eur_cents <= 10000),
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            max_rewards INTEGER CHECK (max_rewards IS NULL OR max_rewards >= 0),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS referral_attributions (
+            id BIGSERIAL PRIMARY KEY,
+            install_id_hash CHAR(64) NOT NULL UNIQUE,
+            referral_code VARCHAR(40) NOT NULL REFERENCES referral_codes(code),
+            first_order_id VARCHAR(80),
+            first_paid_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS referral_ledger (
+            id BIGSERIAL PRIMARY KEY,
+            referral_code VARCHAR(40) NOT NULL REFERENCES referral_codes(code),
+            install_id_hash CHAR(64) NOT NULL UNIQUE,
+            order_id VARCHAR(80) NOT NULL UNIQUE,
+            reward_eur_cents INTEGER NOT NULL CHECK (reward_eur_cents > 0),
+            status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','paid','reversed')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_referral_ledger_code_status ON referral_ledger(referral_code, status);
+          INSERT INTO schema_migrations (version) VALUES ('008_referral_rewards') ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query('COMMIT');
+        console.log('Migration 008_referral_rewards completed; referral codes remain disabled by default.');
+      } catch (error) { await client.query('ROLLBACK'); throw error; }
+    }
+
+
 
   } catch (error) {
     console.error(
