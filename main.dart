@@ -111,6 +111,124 @@ class MobileOperator {
   );
 }
 
+// Brand-inspired compact marks keep operator cards recognizable without
+// relying on emoji artwork. Official image assets can replace these later.
+class OperatorBrandMark extends StatelessWidget {
+  final MobileOperator operator;
+  final double size;
+
+  const OperatorBrandMark({
+    super.key,
+    required this.operator,
+    this.size = 42,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final key = operator.name.toLowerCase();
+    final Color brandColor;
+    final String mark;
+    switch (key) {
+      case 'roshan':
+        brandColor = const Color(0xFFE36B24);
+        mark = 'R';
+        break;
+      case 'etisalat':
+        brandColor = const Color(0xFF65A832);
+        mark = 'e';
+        break;
+      case 'atoma':
+        brandColor = const Color(0xFF512B82);
+        mark = 'A';
+        break;
+      case 'awcc':
+        brandColor = const Color(0xFF1769AA);
+        mark = 'AW';
+        break;
+      case 'salaam':
+        brandColor = const Color(0xFF168447);
+        mark = 'S';
+        break;
+      case 'jazz':
+        brandColor = const Color(0xFFED1C24);
+        mark = 'J';
+        break;
+      case 'zong':
+        brandColor = const Color(0xFF008C45);
+        mark = 'Z';
+        break;
+      case 'ufone':
+        brandColor = const Color(0xFF7A1FA2);
+        mark = 'U';
+        break;
+      case 'telenor':
+        brandColor = const Color(0xFF00A5DF);
+        mark = 'T';
+        break;
+      case 'airtel':
+        brandColor = const Color(0xFFE40000);
+        mark = 'air';
+        break;
+      case 'jio':
+        brandColor = const Color(0xFF0866C6);
+        mark = 'Jio';
+        break;
+      case 'vi':
+        brandColor = const Color(0xFF6B238E);
+        mark = 'Vi';
+        break;
+      case 'grameenphone':
+        brandColor = const Color(0xFF0078BF);
+        mark = 'GP';
+        break;
+      case 'robi':
+        brandColor = const Color(0xFFE32636);
+        mark = 'robi';
+        break;
+      case 'banglalink':
+        brandColor = const Color(0xFFF58220);
+        mark = 'bl';
+        break;
+      default:
+        brandColor = primaryRed;
+        mark = operator.name.isEmpty ? '?' : operator.name[0].toUpperCase();
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: brandColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: brandColor.withOpacity(0.18), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: brandColor.withOpacity(0.16),
+            blurRadius: 7,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            mark,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: size * 0.36,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 const List<MobileOperator> operators = [
   // Afghanistan
   MobileOperator('AF', 'Roshan', '📶'),
@@ -202,43 +320,6 @@ String normalizePhone(String value) {
     RegExp(r'[\s\-()]'),
     '',
   );
-}
-
-// Detect an Afghan operator from the assigned mobile prefix.
-// This is a best-effort suggestion: number portability can make prefixes
-// differ from the current serving network, so the user can still change it.
-String? detectAfghanOperator(String value) {
-  var digits = value.replaceAll(RegExp(r'\D'), '');
-  if (digits.startsWith('0093')) {
-    digits = digits.substring(4);
-  } else if (digits.startsWith('93') && digits.length >= 11) {
-    digits = digits.substring(2);
-  }
-  if (digits.startsWith('0')) {
-    digits = digits.substring(1);
-  }
-  if (digits.length < 2) return null;
-
-  final prefix = digits.substring(0, 2);
-  switch (prefix) {
-    case '72':
-    case '79':
-      return 'Roshan';
-    case '70':
-    case '71':
-      return 'AWCC';
-    case '73':
-    case '78':
-      return 'Etisalat';
-    case '76':
-    case '77':
-      return 'ATOMA';
-    case '74':
-    case '75':
-      return 'Salaam';
-    default:
-      return null;
-  }
 }
 
 // Basic phone validation.
@@ -851,32 +932,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
     });
   }
 
-  void handlePhoneChanged(String value) {
-    if (selectedCountry.code != 'AF') return;
-    final detectedName = detectAfghanOperator(value);
-    if (detectedName == null) return;
-
-    MobileOperator? detected;
-    for (final operator in countryOperators) {
-      if (operator.name.toLowerCase() == detectedName.toLowerCase()) {
-        detected = operator;
-        break;
-      }
-    }
-    if (detected == null ||
-        (selectedOperator?.name == detected.name &&
-            selectedOperator?.countryCode == detected.countryCode)) {
-      return;
-    }
-
-    setState(() {
-      selectedOperator = detected;
-      priceQuote = null;
-      priceQuoteError = null;
-    });
-    loadPriceQuote();
-  }
-
   void showMessage(String message) {
     if (!mounted) return;
 
@@ -922,7 +977,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       bottomNavigationBar: NavigationBar(
         backgroundColor: cream,
         indicatorColor: gold.withValues(alpha: 0.35),
-        selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
+        selectedIndex: selectedTab,
         onDestinationSelected: (index) {
           setState(() => selectedTab = index);
         },
@@ -946,6 +1001,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
             icon: const Icon(Icons.support_agent_outlined),
             selectedIcon: const Icon(Icons.support_agent),
             label: t('support'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: t('profile'),
           ),
         ],
       ),
@@ -1114,7 +1174,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
       controller: phoneController,
       keyboardType: TextInputType.phone,
       maxLength: 16,
-      onChanged: handlePhoneChanged,
       decoration: InputDecoration(
         hintText: phoneHint,
         helperText: 'Enter the recipient number for ${selectedCountry.name}',
@@ -1137,8 +1196,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth < 360 ? 2 : 3;
-        final spacing = 9.0;
+        final columns = 2;
+        final spacing = 8.0;
         final cardWidth =
             (constraints.maxWidth - spacing * (columns - 1)) / columns;
         return Wrap(
@@ -1161,7 +1220,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 width: cardWidth,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 6,
-                  vertical: 12,
+                  vertical: 10,
                 ),
                 decoration: BoxDecoration(
                   color: selected ? const Color(0xFFFFF1F0) : cardWhite,
@@ -1174,13 +1233,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircleAvatar(
-                      radius: 19,
-                      backgroundColor: selected ? primaryRed : cream,
-                      child: Text(
-                        item.icon,
-                        style: const TextStyle(fontSize: 18),
-                      ),
+                    OperatorBrandMark(
+                      operator: item,
+                      size: 30,
                     ),
                     const SizedBox(height: 7),
                     Text(
@@ -1753,23 +1808,19 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final faqs = <Map<String, String>>[
       {
         'q': 'How can I check my top-up?',
-        'a': 'Open History and review the order status. Keep your transaction ID when asking for help.',
+        'a': 'Open History and check the transaction status or receipt.',
       },
       {
-        'q': 'What should I do if a top-up is delayed?',
-        'a': 'Do not pay again immediately. Check the order status first; some operator confirmations take additional time.',
+        'q': 'What if my top-up fails?',
+        'a': 'Keep your transaction ID and contact support for review.',
       },
       {
-        'q': 'What happens if a top-up fails?',
-        'a': 'Keep the transaction ID and payment receipt. A refund or review must be confirmed by the payment and order records.',
+        'q': 'When will my payment be confirmed?',
+        'a': 'Payment confirmation depends on the verified payment status.',
       },
       {
-        'q': 'Is payment confirmation the same as top-up completion?',
-        'a': 'No. A successful payment does not by itself mean the mobile operator has completed the top-up.',
-      },
-      {
-        'q': 'What information should I never share?',
-        'a': 'Never share your password, full card details, card PIN, one-time security code, or payment-provider secret keys.',
+        'q': 'Is my payment secure?',
+        'a': 'Never share your password, card PIN, or security codes.',
       },
     ];
 
@@ -1777,141 +1828,67 @@ class _PgntHomePageState extends State<PgntHomePage> {
       padding: const EdgeInsets.all(16),
       children: [
         const PgntBrandHeader(),
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
         pgntSectionTitle(
           t('support'),
           Icons.support_agent_rounded,
         ),
         const SizedBox(height: 12),
         Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
               colors: [primaryRed, darkRed],
             ),
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: primaryRed.withValues(alpha: 0.18),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: gold.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: gold.withValues(alpha: 0.55)),
-                    ),
-                    child: const Icon(
-                      Icons.support_agent_rounded,
-                      color: gold,
-                      size: 30,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'VIP Assistance',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(height: 5),
-                        Text(
-                          'FREE • 24/7 help centre',
-                          style: TextStyle(
-                            color: gold,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              const Icon(
+                Icons.headset_mic_rounded,
+                color: gold,
+                size: 38,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
+              Text(
+                t('getHelp'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
               const Text(
-                'Find guidance for payments, mobile top-ups and order problems.',
-                style: TextStyle(color: Colors.white, height: 1.45),
+                'Find answers about payments, top-ups and transactions.',
+                style: TextStyle(color: Colors.white70),
               ),
               const SizedBox(height: 14),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _supportFeatureChip(Icons.question_answer_outlined, 'FAQs'),
-                  _supportFeatureChip(Icons.receipt_long_outlined, 'Order guidance'),
-                  _supportFeatureChip(Icons.lock_outline, 'Payment safety'),
-                ],
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Automated help is available at any time. Live-agent response depends on support availability.',
-                style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    showMessage(
+                      'Support contact is not connected yet. '
+                      'Configure a real support email or support API.',
+                    );
+                  },
+                  icon: const Icon(Icons.mail_outline),
+                  label: Text(t('contactSupport')),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: gold,
+                    side: const BorderSide(color: gold),
+                  ),
+                ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        pgntSectionTitle(
-          'Quick help',
-          Icons.flash_on_outlined,
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: ListTile(
-            leading: const CircleAvatar(
-              backgroundColor: Color(0x147A0C10),
-              child: Icon(Icons.history_rounded, color: primaryRed),
-            ),
-            title: const Text(
-              'Check an order',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            subtitle: const Text(
-              'Open your history to see the latest available status.',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => setState(() => selectedTab = 1),
-          ),
-        ),
-        Card(
-          child: ListTile(
-            leading: const CircleAvatar(
-              backgroundColor: Color(0x147A0C10),
-              child: Icon(Icons.account_balance_wallet_outlined, color: primaryRed),
-            ),
-            title: const Text(
-              'Payment and wallet',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            subtitle: const Text(
-              'Review wallet information and payment guidance.',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => setState(() => selectedTab = 2),
-          ),
-        ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 22),
         pgntSectionTitle(
           t('faq'),
-          Icons.quiz_outlined,
+          Icons.question_answer_outlined,
         ),
         const SizedBox(height: 8),
         ...faqs.map(
@@ -1919,79 +1896,35 @@ class _PgntHomePageState extends State<PgntHomePage> {
             margin: const EdgeInsets.only(bottom: 8),
             child: ExpansionTile(
               leading: const Icon(
-                Icons.help_outline_rounded,
+                Icons.help_outline,
                 color: primaryRed,
               ),
               title: Text(
                 faq['q']!,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              childrenPadding: const EdgeInsets.fromLTRB(
+                16, 0, 16, 16,
+              ),
               children: [
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    faq['a']!,
-                    style: const TextStyle(height: 1.45),
-                  ),
+                  child: Text(faq['a']!),
                 ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: primaryRed.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: primaryRed.withValues(alpha: 0.12)),
-          ),
-          child: const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.info_outline, color: primaryRed),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'For a failed or delayed order, save the transaction ID and receipt. Direct ticket submission and automatic refund review still require a connected support service.',
-                  style: TextStyle(height: 1.4),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
         const Center(
           child: Text(
-            'PGNT ASIAN TOPUP • VIP Assistance',
+            'PGNT ASIAN TOPUP • Support',
             style: TextStyle(color: Colors.grey),
           ),
         ),
-        const SizedBox(height: 8),
       ],
-    );
-  }
-
-  Widget _supportFeatureChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: gold, size: 16),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2173,19 +2106,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       icon: const Icon(Icons.close),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.person_outline, color: primaryRed),
-                    title: const Text('Profile (optional)'),
-                    subtitle: const Text('Add your details only if you want to.'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      setState(() => selectedTab = 4);
-                      Navigator.pop(sheetContext);
-                    },
-                  ),
                 ),
                 const SizedBox(height: 8),
                 ...languages.map(
