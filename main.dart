@@ -148,7 +148,7 @@ String operatorInitials(String name) {
     case 'Etisalat':
       return 'e';
     default:
-      final parts = name.trim().split(RegExp(r'\\s+'));
+      final parts = name.trim().split(RegExp(r'\s+'));
       if (parts.length > 1) {
         return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
       }
@@ -1332,7 +1332,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Row(children: [Expanded(child: Text('ټول تادیه', style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
           ],
           const SizedBox(height: 12),
-          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت د سرور له خوا تایید شوی؛ فیس €0.59 دی او بونس د فیصدي په بڼه ښودل کېږي.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
+          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
         ]),
       ),
     );
@@ -1410,6 +1410,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'operator': selectedOperator!.name,
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
+              'productId': priceQuote?['productId'],
             }),
           )
           .timeout(const Duration(seconds: 30));
