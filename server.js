@@ -585,7 +585,8 @@ async function getPricingSettings(client, country) {
     throw new Error('Invalid AFN/EUR exchange rate.');
   }
 
-  const bonusPercent = Number(settings.bonus_percent);
+  // General bonuses are disabled; only private, individually issued codes may grant benefits.
+  const bonusPercent = 0;
   if (!Number.isFinite(bonusPercent) || bonusPercent < 0 || bonusPercent > 100) {
     throw new Error('Invalid bonus percentage.');
   }
@@ -718,9 +719,8 @@ function calculateFinalPrice(product, pricing) {
     'fee'
   );
 
-  const bonusPercent = Number(
-    pricing.bonusPercent
-  );
+  // Never grant general/global bonuses from country pricing settings.
+  const bonusPercent = 0;
 
   if (
     !Number.isFinite(bonusPercent) ||
@@ -2746,6 +2746,62 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
     return res.status(500).json({ error: 'Could not verify catalog pricing.' });
   }
 });
+
+
+ // Admin-only management for individually assigned benefit codes.
+ // Redemption remains disabled until customer identity verification is implemented.
+ app.get('/api/admin/benefit-codes', requireAdmin, async (req, res) => {
+   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+   try {
+     const result = await pool.query("SELECT id, code, target_email, target_phone, reward_type, reward_value, max_redemptions, redemption_count, expires_at, active, created_at FROM private_benefit_codes ORDER BY created_at DESC LIMIT 200");
+     return res.json({ codes: result.rows, redemptionEnabled: false, note: 'Codes are not redeemable until verified customer identity and benefit application are connected.' });
+   } catch (error) {
+     console.error('Private benefit-code list failed:', error.message);
+     return res.status(500).json({ error: 'Could not load benefit codes.' });
+   }
+ });
+
+ app.post('/api/admin/benefit-codes', requireAdmin, async (req, res) => {
+   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+   const body = req.body || {};
+   const targetEmail = String(body.targetEmail || '').trim().toLowerCase();
+   const targetPhone = String(body.targetPhone || '').trim();
+   const rewardType = String(body.rewardType || '');
+   const rewardValue = Number(body.rewardValue);
+   const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+   if (!targetEmail && !targetPhone) return res.status(400).json({ error: 'Specify recipient email or phone.' });
+   if (targetEmail && (targetEmail.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(targetEmail))) return res.status(400).json({ error: 'Enter a valid recipient email.' });
+   if (targetPhone && (targetPhone.length > 40 || !/^\\+?[0-9 ()-]{7,40}$/.test(targetPhone))) return res.status(400).json({ error: 'Enter a valid recipient phone.' });
+   if (!['first_topup_discount_percent', 'wallet_credit_eur_cents'].includes(rewardType)) return res.status(400).json({ error: 'Unsupported reward type.' });
+   const maxAllowed = rewardType === 'first_topup_discount_percent' ? 50 : 10000;
+   if (!Number.isInteger(rewardValue) || rewardValue <= 0 || rewardValue > maxAllowed) return res.status(400).json({ error: 'Reward value is outside the allowed range.' });
+   if (expiresAt && (!Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date())) return res.status(400).json({ error: 'Expiry must be a valid future date.' });
+   const code = 'PGNT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+   try {
+     const result = await pool.query(
+       "INSERT INTO private_benefit_codes (code, target_email, target_phone, reward_type, reward_value, max_redemptions, expires_at, active) VALUES ($1,$2,$3,$4,$5,1,$6,TRUE) RETURNING id, code, target_email, target_phone, reward_type, reward_value, max_redemptions, redemption_count, expires_at, active, created_at",
+       [code, targetEmail || null, targetPhone || null, rewardType, rewardValue, expiresAt]
+     );
+     return res.status(201).json({ code: result.rows[0], redemptionEnabled: false, note: 'Code created for this recipient. Do not promise or apply a benefit yet; redemption requires verified customer identity.' });
+   } catch (error) {
+     console.error('Private benefit-code creation failed:', error.message);
+     return res.status(500).json({ error: 'Could not create benefit code.' });
+   }
+ });
+
+ app.patch('/api/admin/benefit-codes/:id/revoke', requireAdmin, async (req, res) => {
+   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+   const id = Number(req.params.id);
+   if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid benefit-code ID.' });
+   try {
+     const result = await pool.query("UPDATE private_benefit_codes SET active = FALSE WHERE id = $1 RETURNING id, code, target_email, target_phone, reward_type, reward_value, max_redemptions, redemption_count, expires_at, active, created_at", [id]);
+     if (!result.rowCount) return res.status(404).json({ error: 'Benefit code not found.' });
+     return res.json({ code: result.rows[0], revoked: true });
+   } catch (error) {
+     console.error('Private benefit-code revocation failed:', error.message);
+     return res.status(500).json({ error: 'Could not revoke benefit code.' });
+   }
+ });
 
 // Admin pricing overview.
 // Prices and fees are returned in EUR cents.
