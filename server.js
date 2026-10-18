@@ -2770,8 +2770,8 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
    const rewardValue = Number(body.rewardValue);
    const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
    if (!targetEmail && !targetPhone) return res.status(400).json({ error: 'Specify recipient email or phone.' });
-   if (targetEmail && (targetEmail.length > 254 || !/^[^\s@]+@[^\s@]+\\.[^\s@]+$/.test(targetEmail))) return res.status(400).json({ error: 'Enter a valid recipient email.' });
-   if (targetPhone && (targetPhone.length > 40 || !/^\\+?[0-9 ()-]{7,40}$/.test(targetPhone))) return res.status(400).json({ error: 'Enter a valid recipient phone.' });
+    if (targetEmail && (targetEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail))) return res.status(400).json({ error: 'Enter a valid recipient email.' });
+    if (targetPhone && (targetPhone.length > 40 || !/^\+?[0-9 ()-]{7,40}$/.test(targetPhone))) return res.status(400).json({ error: 'Enter a valid recipient phone.' });
    if (!['first_topup_discount_percent', 'wallet_credit_eur_cents'].includes(rewardType)) return res.status(400).json({ error: 'Unsupported reward type.' });
    const maxAllowed = rewardType === 'first_topup_discount_percent' ? 50 : 10000;
    if (!Number.isInteger(rewardValue) || rewardValue <= 0 || rewardValue > maxAllowed) return res.status(400).json({ error: 'Reward value is outside the allowed range.' });
@@ -2880,14 +2880,8 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'afnPerEur must be a positive number no greater than 1000000.' });
   }
 
-  if (
-    !Number.isFinite(bonusPercent) ||
-    bonusPercent < 0 ||
-    bonusPercent > 100
-  ) {
-    return res.status(400).json({
-      error: 'bonusPercent must be between 0 and 100.',
-    });
+  if (!Number.isFinite(bonusPercent) || bonusPercent !== 0) {
+    return res.status(400).json({ error: 'General bonuses are disabled; bonusPercent must be 0.' });
   }
 
   if (typeof body.active !== 'boolean') {
