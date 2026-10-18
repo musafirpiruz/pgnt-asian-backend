@@ -1952,6 +1952,20 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     const order = result.rows[0];
 
+    // A provider callback must never move an order unless the Stripe
+    // fulfillment path has already verified payment and saved its evidence.
+    // This also protects legacy/review orders with missing payment linkage.
+    if (!order.paid_at || !order.stripe_payment_intent_id) {
+      await client.query('ROLLBACK');
+      console.warn('DT One callback rejected: verified Stripe payment evidence is missing.', {
+        hasPaidAt: Boolean(order.paid_at),
+        hasStripePaymentIntentId: Boolean(order.stripe_payment_intent_id),
+      });
+      return res.status(409).json({
+        error: 'Order has no verified Stripe payment evidence.',
+      });
+    }
+
     // If an existing provider reference is stored,
     // it must match the callback reference.
     if (
