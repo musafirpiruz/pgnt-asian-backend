@@ -1761,7 +1761,7 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
   }
 
   const externalId = String(req.query.external_id || '').trim();
-  if (!externalId || externalId.length > 40 || /\\s/.test(externalId)) {
+  if (!externalId || externalId.length > 40 || /\s/.test(externalId)) {
     return res.status(400).json({ error: 'A valid external_id is required.' });
   }
 
@@ -2283,11 +2283,11 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
 <button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
 <h2>Admin pricing controls</h2>
-<p>Load the saved Afghanistan settings, then change the app fee or bonus. Changes are saved to the backend database. Keep the ATOMA product disabled until sandbox checkout and fulfilment checks pass.</p>
+<p>Load the saved Afghanistan settings and change the app fee or exchange rate. General bonuses are disabled; private recipient benefits are not redeemable until verified identity and benefit application are implemented.</p>
 <button type="button" id="loadPricing">Load saved Afghanistan settings</button>
 <label for="feeEur">App fee (EUR)</label><input id="feeEur" type="number" min="0" max="1000" step="0.01" value="0.79">
 <label for="afnRate">AFN per EUR exchange rate</label><input id="afnRate" type="number" min="0.01" step="0.0001" value="70">
-<label for="bonusPercent">Bonus percent</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="2">
+<label for="bonusPercent">General bonus percent (disabled)</label><input id="bonusPercent" type="number" min="0" max="0" step="0.01" value="0" disabled>
 <label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Afghanistan pricing settings active</label>
 <button type="button" id="savePricing">Save Afghanistan pricing settings</button>
 <small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
@@ -2321,7 +2321,7 @@ async function adminRequest(url,options={}){
  const raw=await response.text();
  let data;
  try{data=raw?JSON.parse(raw):{};}catch(_){
-  const preview=raw.replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim().slice(0,220);
+  const preview=raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,220);
   throw new Error('Backend returned non-JSON response (HTTP '+response.status+'). '+(preview||'Empty response'));
  }
  if(!response.ok) throw new Error('HTTP '+response.status+': '+JSON.stringify(data));
@@ -2349,17 +2349,17 @@ loadPricing.addEventListener('click',async()=>{
   loadedAfghanistanPricing=saved;
   feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
   afnRate.value=Number(saved.afn_per_eur);
-  bonusPercent.value=Number(saved.bonus_percent);
+  bonusPercent.value=0;
   pricingActive.checked=saved.active===true;
-  result.textContent=JSON.stringify({loaded:true,country:saved.country,appFeeEur:Number(saved.fee_eur_cents)/100,afnPerEur:Number(saved.afn_per_eur),bonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
+  result.textContent=JSON.stringify({loaded:true,country:saved.country,appFeeEur:Number(saved.fee_eur_cents)/100,afnPerEur:Number(saved.afn_per_eur),bonusPercent:0,active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
  }catch(error){result.textContent='Could not load pricing: '+error.message;}
 });
 savePricing.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  if(!loadedAfghanistanPricing){result.textContent='First load the saved settings and review them.';return;}
- const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value);
+ const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=0;
  if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100){result.textContent='Check the fee, exchange rate, and bonus values.';return;}
- if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', bonus: '+bonus+'%. This will not activate the ATOMA product.'))return;
+ if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', general bonus disabled (0%). This will not activate the ATOMA product.'))return;
  result.textContent='Saving Afghanistan pricing settings…';
  try{
   const data=await adminRequest('/api/admin/pricing/AF',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:bonus,active:pricingActive.checked})});
@@ -2622,7 +2622,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
         ].map(Number);
         const mentionsAmount = benefitAmounts.includes(amountQuery)
           || productAmounts.includes(amountQuery)
-          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
+          || new RegExp(`\\b${amountQuery}\s*AFN\\b|\\bAFN\s*${amountQuery}\\b`, 'i').test(name);
         const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
         const isLikelyRelevant = operatorQuery
           ? isRequestedOperator
@@ -2770,7 +2770,7 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
    const rewardValue = Number(body.rewardValue);
    const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
    if (!targetEmail && !targetPhone) return res.status(400).json({ error: 'Specify recipient email or phone.' });
-   if (targetEmail && (targetEmail.length > 254 || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(targetEmail))) return res.status(400).json({ error: 'Enter a valid recipient email.' });
+   if (targetEmail && (targetEmail.length > 254 || !/^[^\s@]+@[^\s@]+\\.[^\s@]+$/.test(targetEmail))) return res.status(400).json({ error: 'Enter a valid recipient email.' });
    if (targetPhone && (targetPhone.length > 40 || !/^\\+?[0-9 ()-]{7,40}$/.test(targetPhone))) return res.status(400).json({ error: 'Enter a valid recipient phone.' });
    if (!['first_topup_discount_percent', 'wallet_credit_eur_cents'].includes(rewardType)) return res.status(400).json({ error: 'Unsupported reward type.' });
    const maxAllowed = rewardType === 'first_topup_discount_percent' ? 50 : 10000;
@@ -2910,13 +2910,13 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
          active = EXCLUDED.active,
          updated_at = NOW()
        RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at`,
-      [country, feeCents, afnPerEur, bonusPercent, body.active]
+      [country, feeCents, afnPerEur, 0, body.active]
     );
 
     return res.json({
       paymentCurrency: 'EUR',
       pricing: result.rows[0],
-      note: 'Bonus percentage is saved as a setting; bonus delivery is not enabled by this endpoint.',
+      note: 'General bonuses are disabled and saved as 0. Private benefits are not redeemable until verified customer identity and benefit application are implemented.',
     });
   } catch (error) {
     console.error(
