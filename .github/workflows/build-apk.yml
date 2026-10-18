@@ -9,6 +9,7 @@ on:
       - fix/schema-server-compatibility
       - ui/homepage-redesign
       - feature/vip-support-screen
+      - ui/optional-profile-in-settings
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
