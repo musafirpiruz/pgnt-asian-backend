@@ -825,6 +825,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   final TextEditingController phoneController =
       TextEditingController();
+  final TextEditingController supportSubjectController =
+      TextEditingController();
+  final TextEditingController supportMessageController =
+      TextEditingController();
+  String? selectedSupportOrderId;
+  String supportCategory = 'topup';
+  bool isSubmittingSupport = false;
 
   final List<TopUpTransaction> transactions = [];
   final Map<String, String> _orderAccessTokens = {};
@@ -926,6 +933,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void dispose() {
     phoneController.dispose();
+    supportSubjectController.dispose();
+    supportMessageController.dispose();
     super.dispose();
   }
 
@@ -1916,7 +1925,58 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
   
+  Future<void> submitSupportTicket() async {
+    final orderId = selectedSupportOrderId;
+    final subject = supportSubjectController.text.trim();
+    final message = supportMessageController.text.trim();
+    if (orderId == null || !_orderAccessTokens.containsKey(orderId)) {
+      showMessage('لومړی له تاریخچې څخه خپله معامله انتخاب کړئ.');
+      return;
+    }
+    if (subject.length < 4 || message.length < 10) {
+      showMessage('موضوع او د ستونزې تشریح بشپړه ولیکئ.');
+      return;
+    }
+
+    setState(() => isSubmittingSupport = true);
+    try {
+      final response = await http.post(
+        Uri.parse('$backendBaseUrl/api/support/tickets'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'x-order-access-token': _orderAccessTokens[orderId]!,
+        },
+        body: jsonEncode({
+          'orderId': orderId,
+          'subject': subject,
+          'message': message,
+          'category': supportCategory,
+        }),
+      ).timeout(const Duration(seconds: 20));
+
+      final dynamic decoded = jsonDecode(response.body);
+      if (response.statusCode != 201 || decoded is! Map<String, dynamic>) {
+        final detail = decoded is Map<String, dynamic> ? decoded['error'] : null;
+        throw Exception(detail is String ? detail : 'Support request failed.');
+      }
+      if (!mounted) return;
+      supportSubjectController.clear();
+      supportMessageController.clear();
+      showMessage('ستاسو د مرستې غوښتنه ثبت شوه. د ټکټ شمېره: ${(decoded['ticket'] as Map<String, dynamic>)['id']}');
+    } catch (error) {
+      if (!mounted) return;
+      final detail = error.toString().replaceFirst('Exception: ', '').trim();
+      showMessage(detail.isEmpty ? 'د مرستې غوښتنه ثبت نه شوه؛ بیا هڅه وکړئ.' : detail);
+    } finally {
+      if (mounted) setState(() => isSubmittingSupport = false);
+    }
+  }
+
   Widget buildSupport() {
+    final supportOrders = transactions
+        .where((item) => item.orderId != null && _orderAccessTokens.containsKey(item.orderId))
+        .toList();
     final faqs = <Map<String, String>>[
       {
         'q': 'How can I check my top-up?',
@@ -2035,6 +2095,92 @@ class _PgntHomePageState extends State<PgntHomePage> {
             ],
           ),
         ),
+        const SizedBox(height: 20),
+        pgntSectionTitle(
+          'د مرستې غوښتنه ثبت کړئ',
+          Icons.mark_email_unread_outlined,
+        ),
+        if (supportOrders.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'د ټکټ ثبتولو لپاره باید لومړی یوه معامله پیل شوې وي. بیا د معاملې له تاریخچې څخه هماغه معامله انتخاب کړئ.',
+                style: TextStyle(height: 1.45),
+              ),
+            ),
+          )
+        else ...[
+          DropdownButtonFormField<String>(
+            value: supportOrders.any((item) => item.orderId == selectedSupportOrderId)
+                ? selectedSupportOrderId
+                : supportOrders.first.orderId,
+            decoration: const InputDecoration(
+              labelText: 'د معاملې نمبر',
+              prefixIcon: Icon(Icons.receipt_long_outlined),
+            ),
+            items: supportOrders.map((item) {
+              final id = item.orderId!;
+              return DropdownMenuItem<String>(
+                value: id,
+                child: Text('${id.substring(0, 8)} • ${item.operatorName}', overflow: TextOverflow.ellipsis),
+              );
+            }).toList(),
+            onChanged: (value) => setState(() => selectedSupportOrderId = value),
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            value: supportCategory,
+            decoration: const InputDecoration(
+              labelText: 'د ستونزې ډول',
+              prefixIcon: Icon(Icons.category_outlined),
+            ),
+            items: const [
+              DropdownMenuItem(value: 'payment', child: Text('تادیه')),
+              DropdownMenuItem(value: 'topup', child: Text('موبایل چارج')),
+              DropdownMenuItem(value: 'refund', child: Text('بېرته پیسې')),
+              DropdownMenuItem(value: 'wallet', child: Text('والټ')),
+              DropdownMenuItem(value: 'account', child: Text('حساب')),
+              DropdownMenuItem(value: 'other', child: Text('نور')),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => supportCategory = value);
+            },
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: supportSubjectController,
+            maxLength: 160,
+            decoration: const InputDecoration(
+              labelText: 'د موضوع لنډ عنوان',
+              prefixIcon: Icon(Icons.short_text_rounded),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: supportMessageController,
+            minLines: 3,
+            maxLines: 6,
+            maxLength: 4000,
+            decoration: const InputDecoration(
+              labelText: 'ستونزه په تفصیل ولیکئ',
+              alignLabelWithHint: true,
+              prefixIcon: Icon(Icons.message_outlined),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ElevatedButton.icon(
+            onPressed: isSubmittingSupport ? null : submitSupportTicket,
+            icon: isSubmittingSupport
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: brightGold),
+                  )
+                : const Icon(Icons.send_rounded),
+            label: Text(isSubmittingSupport ? 'ثبتېږي...' : 'د مرستې غوښتنه ولېږئ'),
+          ),
+        ],
         const SizedBox(height: 20),
         pgntSectionTitle(
           'Quick help',
