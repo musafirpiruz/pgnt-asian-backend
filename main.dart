@@ -2,7 +2,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const String appName = 'PGNT ASIAN TOPUP';
@@ -243,6 +245,42 @@ class TopUpTransaction {
     required this.createdAt,
     this.orderId,
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'phone': phone,
+        'countryCode': countryCode,
+        'operatorName': operatorName,
+        'amount': amount,
+        'currency': currency,
+        'fee': fee,
+        'bonus': bonus,
+        'status': status.name,
+        'createdAt': createdAt.toIso8601String(),
+        'orderId': orderId,
+      };
+
+  factory TopUpTransaction.fromJson(Map<String, dynamic> json) {
+    final rawStatus = json['status']?.toString();
+    final status = TransactionStatus.values.firstWhere(
+      (value) => value.name == rawStatus,
+      orElse: () => TransactionStatus.pending,
+    );
+    return TopUpTransaction(
+      id: json['id']?.toString() ?? json['orderId']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      countryCode: json['countryCode']?.toString() ?? '',
+      operatorName: json['operatorName']?.toString() ?? '',
+      amount: (json['amount'] as num?)?.toInt() ?? 0,
+      currency: json['currency']?.toString() ?? '',
+      fee: (json['fee'] as num?)?.toDouble() ?? 0,
+      bonus: (json['bonus'] as num?)?.toDouble() ?? 0,
+      status: status,
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
+      orderId: json['orderId']?.toString(),
+    );
+  }
 }
 
 // Safe phone formatting helper
@@ -833,9 +871,107 @@ class _PgntHomePageState extends State<PgntHomePage> {
   String supportCategory = 'topup';
   bool isSubmittingSupport = false;
 
+  static const String _historyStorageKey = 'pgnt_transaction_history_v1';
+  static const String _tokensStorageKey = 'pgnt_order_access_tokens_v1';
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   final List<TopUpTransaction> transactions = [];
   final Map<String, String> _orderAccessTokens = {};
   final Set<String> _ordersBeingChecked = {};
+  Future<void>? _restoreFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreFuture = _restoreLocalData();
+  }
+
+  Future<void> _restoreLocalData() async {
+    final restoredTransactions = <TopUpTransaction>[];
+    final restoredTokens = <String, String>{};
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final rawHistory = preferences.getString(_historyStorageKey);
+      if (rawHistory != null) {
+        final decoded = jsonDecode(rawHistory);
+        if (decoded is List) {
+          for (final entry in decoded) {
+            if (entry is Map<String, dynamic>) {
+              try {
+                final transaction = TopUpTransaction.fromJson(entry);
+                if (transaction.id.isNotEmpty) restoredTransactions.add(transaction);
+              } catch (_) {
+                // Skip a damaged history entry without losing other entries.
+              }
+            } else if (entry is Map) {
+              try {
+                final transaction = TopUpTransaction.fromJson(Map<String, dynamic>.from(entry));
+                if (transaction.id.isNotEmpty) restoredTransactions.add(transaction);
+              } catch (_) {
+                // Skip a damaged history entry without losing other entries.
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Keep the app usable if local history cannot be read.
+    }
+
+    try {
+      final rawTokens = await _secureStorage.read(key: _tokensStorageKey);
+      if (rawTokens != null) {
+        final decoded = jsonDecode(rawTokens);
+        if (decoded is Map) {
+          for (final entry in decoded.entries) {
+            final orderId = entry.key.toString();
+            final token = entry.value?.toString() ?? '';
+            if (RegExp(r'^[0-9a-f-]{36}$', caseSensitive: false).hasMatch(orderId) &&
+                RegExp(r'^[a-f0-9]{64}$', caseSensitive: false).hasMatch(token)) {
+              restoredTokens[orderId] = token;
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Never expose tokens by falling back to plain-text preferences.
+    }
+
+    if (!mounted) return;
+    setState(() {
+      transactions
+        ..clear()
+        ..addAll(restoredTransactions);
+      _orderAccessTokens
+        ..clear()
+        ..addAll(restoredTokens);
+      selectedSupportOrderId ??= transactions
+          .map((item) => item.orderId)
+          .whereType<String>()
+          .firstWhere(
+            (orderId) => _orderAccessTokens.containsKey(orderId),
+            orElse: () => '',
+          );
+      if (selectedSupportOrderId == '') selectedSupportOrderId = null;
+    });
+    await refreshAllOrderStatuses();
+  }
+
+  Future<void> _persistTransactions() async {
+    final preferences = await SharedPreferences.getInstance();
+    final saved = await preferences.setString(
+      _historyStorageKey,
+      jsonEncode(transactions.map((item) => item.toJson()).toList()),
+    );
+    if (!saved) throw StateError('Could not save transaction history on this device.');
+  }
+
+  Future<void> _persistAccessTokens() async {
+    await _secureStorage.write(
+      key: _tokensStorageKey,
+      value: jsonEncode(_orderAccessTokens),
+    );
+  }
 
   String t(String key) => tr(languageCode, key);
 
@@ -889,6 +1025,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
             orderId: current.orderId,
           );
         });
+        try {
+          await _persistTransactions();
+        } catch (_) {
+          // Keep the latest in-memory status if local storage is unavailable.
+        }
       }
     } catch (_) {
       // Preserve the last known state when the network is temporarily unavailable.
@@ -1473,6 +1614,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
   
   Future<void> startPayment() async {
+    await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
     if (!isValidPhone(selectedCountry.code, phone)) {
@@ -1545,20 +1687,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
         throw Exception('Invalid payment URL');
       }
 
-      final opened = await launchUrl(
-        paymentUri,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!opened) {
-        throw Exception('Could not open payment page');
-      }
-
       if (!mounted) return;
 
+      // Save the order and its access token before opening the external
+      // payment app, so closing or backgrounding the app does not lose them.
       _orderAccessTokens[orderId] = accessToken;
       setState(() {
         selectedSupportOrderId ??= orderId;
+        transactions.removeWhere((item) => item.orderId == orderId);
         transactions.insert(
           0,
           TopUpTransaction(
@@ -1576,6 +1712,18 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ),
         );
       });
+      await _persistAccessTokens();
+      await _persistTransactions();
+
+      final opened = await launchUrl(
+        paymentUri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!opened) {
+        throw Exception('Could not open payment page');
+      }
+
       await refreshOrderStatus(orderId);
       _pollOrderStatus(orderId);
 
