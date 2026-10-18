@@ -10,6 +10,7 @@ on:
       - ui/homepage-redesign
       - feature/vip-support-screen
       - ui/optional-profile-in-settings
+      - fix/persist-order-history-secure-tokens
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
