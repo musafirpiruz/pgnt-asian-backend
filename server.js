@@ -2240,6 +2240,102 @@ function requireAdmin(req, res, next) {
 // Small browser page for the owner to run the read-only product check
 // without installing an API client. The admin key is entered by the owner
 // in their browser and is never stored by this page.
+// REFERRAL REWARDS V1 — ADMIN CONTROL + SERVER-SIDE ATTRIBUTION
+// All new referral codes are disabled until explicitly activated by admin.
+// =====================================================
+app.post('/api/admin/referrals/codes', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const body = req.body || {};
+  const code = String(body.code || '').trim().toUpperCase();
+  const ownerName = String(body.ownerName || '').trim();
+  const ownerContact = String(body.ownerContact || '').trim() || null;
+  const rewardEurCents = body.rewardEurCents === undefined ? 7 : Number(body.rewardEurCents);
+  const maxRewards = body.maxRewards === undefined || body.maxRewards === null || body.maxRewards === '' ? null : Number(body.maxRewards);
+  if (!/^[A-Z0-9_-]{4,40}$/.test(code)) return res.status(400).json({ error: 'Code must be 4-40 characters: letters, numbers, _ or -.' });
+  if (!ownerName || ownerName.length > 120) return res.status(400).json({ error: 'A valid ownerName is required.' });
+  if (!Number.isSafeInteger(rewardEurCents) || rewardEurCents < 0 || rewardEurCents > 10000) return res.status(400).json({ error: 'rewardEurCents must be 0-10000.' });
+  if (maxRewards !== null && (!Number.isSafeInteger(maxRewards) || maxRewards < 0)) return res.status(400).json({ error: 'maxRewards must be a non-negative integer.' });
+  try {
+    const result = await pool.query(
+      `INSERT INTO referral_codes (code, owner_name, owner_contact, reward_eur_cents, max_rewards, active)
+       VALUES ($1,$2,$3,$4,$5,FALSE)
+       RETURNING code, owner_name, owner_contact, reward_eur_cents, max_rewards, active, created_at`,
+      [code, ownerName, ownerContact, rewardEurCents, maxRewards]
+    );
+    return res.status(201).json({ referral: result.rows[0], activationRequired: true });
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'Referral code already exists.' });
+    console.error('Referral code creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create referral code.' });
+  }
+});
+
+app.get('/api/admin/referrals', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(`
+      SELECT c.code, c.owner_name, c.owner_contact, c.reward_eur_cents, c.max_rewards, c.active, c.created_at,
+        (SELECT COUNT(*) FROM referral_attributions a WHERE a.referral_code=c.code) AS attributed_installs,
+        (SELECT COUNT(*) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status IN ('pending','approved','paid')) AS reward_eligible,
+        (SELECT COALESCE(SUM(l.reward_eur_cents),0) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status IN ('pending','approved','paid')) AS reward_total_eur_cents,
+        (SELECT COUNT(*) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status='paid') AS rewards_paid
+      FROM referral_codes c ORDER BY c.created_at DESC`);
+    return res.json({ referrals: result.rows, rewardRule: '€0.07 after the referred user completes their first successful top-up; reward entries remain pending until admin approval.' });
+  } catch (error) {
+    console.error('Referral report failed:', error.message);
+    return res.status(500).json({ error: 'Could not load referral report.' });
+  }
+});
+
+app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+
+  const code = String(req.params.code || '').trim().toUpperCase();
+  const body = req.body || {};
+  const fields = [];
+  const values = [code];
+
+  if (typeof body.active === 'boolean') {
+    values.push(body.active);
+    fields.push(`active = $${values.length}`);
+  }
+
+  if (body.rewardEurCents !== undefined) {
+    const reward = Number(body.rewardEurCents);
+    if (!Number.isSafeInteger(reward) || reward < 0 || reward > 10000) {
+      return res.status(400).json({ error: 'rewardEurCents must be 0-10000.' });
+    }
+    values.push(reward);
+    fields.push(`reward_eur_cents = $${values.length}`);
+  }
+
+  if (body.maxRewards !== undefined) {
+    const max = body.maxRewards === null || body.maxRewards === '' ? null : Number(body.maxRewards);
+    if (max !== null && (!Number.isSafeInteger(max) || max < 0)) {
+      return res.status(400).json({ error: 'maxRewards must be a non-negative integer or null.' });
+    }
+    values.push(max);
+    fields.push(`max_rewards = $${values.length}`);
+  }
+
+  if (fields.length === 0) {
+    return res.status(400).json({ error: 'Provide active, rewardEurCents, or maxRewards.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE referral_codes SET ${fields.join(', ')} WHERE code = $1
+       RETURNING code, owner_name, owner_contact, reward_eur_cents, max_rewards, active, created_at`,
+      values
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Referral code not found.' });
+    return res.json({ referral: result.rows[0] });
+  } catch (error) {
+    console.error('Referral code update failed:', error.message);
+    return res.status(500).json({ error: 'Could not update referral code.' });
+  }
+});
+
 app.get('/admin-dtone-check', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -3363,6 +3459,23 @@ require('./dtone-sandbox-test')({
 
 // Start the server only after configuration checks.
 // Keep this block once, at the very end of server.js.
+app.get('/api/referrals/validate/:code', async (req, res) => {
+  if (!pool) return res.status(503).json({ valid: false, error: 'Service unavailable.' });
+  const code = String(req.params.code || '').trim().toUpperCase();
+  try {
+    const result = await pool.query('SELECT code, owner_name FROM referral_codes WHERE code=$1 AND active=TRUE LIMIT 1', [code]);
+    if (!result.rowCount) return res.status(404).json({ valid: false, error: 'Referral code is not active.' });
+    return res.json({ valid: true, code: result.rows[0].code, ownerName: result.rows[0].owner_name });
+  } catch (error) {
+    console.error('Referral validation failed:', error.message);
+    return res.status(500).json({ valid: false, error: 'Could not validate referral code.' });
+  }
+});
+
+// Small browser page for the owner to run the read-only product check
+// without installing an API client. The admin key is entered by the owner
+// in their browser and is never stored by this page.
+
 async function startServer() {
   if (!pool) {
     console.error(
