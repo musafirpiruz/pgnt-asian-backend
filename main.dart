@@ -1558,6 +1558,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
       _orderAccessTokens[orderId] = accessToken;
       setState(() {
+        selectedSupportOrderId ??= orderId;
         transactions.insert(
           0,
           TopUpTransaction(
