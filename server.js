@@ -2237,6 +2237,3590 @@ function requireAdmin(req, res, next) {
 
 
 
+
+
+// =====================================================
+// REFERRAL REWARDS V1 — ADMIN CONTROL + SERVER-SIDE ATTRIBUTION
+// All new referral codes are disabled until explicitly activated by admin.
+// =====================================================
+app.post('/api/admin/referrals/codes', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const body = req.body || {};
+  const code = String(body.code || '').trim().toUpperCase();
+  const ownerName = String(body.ownerName || '').trim();
+  const ownerContact = String(body.ownerContact || '').trim() || null;
+  const rewardEurCents = body.rewardEurCents === undefined ? 7 : Number(body.rewardEurCents);
+  const maxRewards = body.maxRewards === undefined || body.maxRewards === null || body.maxRewards === '' ? null : Number(body.maxRewards);
+  if (!/^[A-Z0-9_-]{4,40}$/.test(code)) return res.status(400).json({ error: 'Code must be 4-40 characters: letters, numbers, _ or -.' });
+  if (!ownerName || ownerName.length > 120) return res.status(400).json({ error: 'A valid ownerName is required.' });
+  if (!Number.isSafeInteger(rewardEurCents) || rewardEurCents < 0 || rewardEurCents > 10000) return res.status(400).json({ error: 'rewardEurCents must be 0-10000.' });
+  if (maxRewards !== null && (!Number.isSafeInteger(maxRewards) || maxRewards < 0)) return res.status(400).json({ error: 'maxRewards must be a non-negative integer.' });
+  try {
+    const result = await pool.query(
+      `INSERT INTO referral_codes (code, owner_name, owner_contact, reward_eur_cents, max_rewards, active)
+       VALUES ($1,$2,$3,$4,$5,FALSE)
+       RETURNING code, owner_name, owner_contact, reward_eur_cents, max_rewards, active, created_at`,
+      [code, ownerName, ownerContact, rewardEurCents, maxRewards]
+    );
+    return res.status(201).json({ referral: result.rows[0], activationRequired: true });
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'Referral code already exists.' });
+    console.error('Referral code creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create referral code.' });
+  }
+});
+
+app.get('/api/admin/referrals', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(`
+      SELECT c.code, c.owner_name, c.owner_contact, c.reward_eur_cents, c.max_rewards, c.active, c.created_at,
+        (SELECT COUNT(*) FROM referral_attributions a WHERE a.referral_code=c.code) AS attributed_installs,
+        (SELECT COUNT(*) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status IN ('pending','approved','paid')) AS reward_eligible,
+        (SELECT COALESCE(SUM(l.reward_eur_cents),0) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status IN ('pending','approved','paid')) AS reward_total_eur_cents,
+        (SELECT COUNT(*) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status='paid') AS rewards_paid
+      FROM referral_codes c ORDER BY c.created_at DESC`);
+    return res.json({ referrals: result.rows, rewardRule: '€0.07 after the referred user completes their first successful top-up; reward entries remain pending until admin approval.' });
+  } catch (error) {
+    console.error('Referral report failed:', error.message);
+    return res.status(500).json({ error: 'Could not load referral report.' });
+  }
+});
+
+app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.code || '').trim().toUpperCase();
+  const body = req.body || {};
+  const fields = [];
+  const values = [code];
+  if (typeof body.active === 'boolean') { values.push(body.active); fields.push('active = 
+// without installing an API client. The admin key is entered by the owner
+// in their browser and is never stored by this page.
+app.get('/admin-dtone-check', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  return res.status(200).send(`<!doctype html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PGNT ASIAN — DT One product check</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:620px;margin:32px auto;padding:0 16px;color:#222}
+h1{font-size:1.35rem}label{display:block;margin:18px 0 6px}
+input,button{box-sizing:border-box;width:100%;padding:12px;font:inherit}
+button{margin-top:14px;background:#7a0c10;color:white;border:0;border-radius:6px}
+small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:12px;border-radius:6px}
+</style>
+</head>
+<body>
+<h1>PGNT ASIAN TOPUP</h1>
+<p>Read-only DT One check for Afghanistan ATOMA, product 7194 (115 AFN). This does not create a top-up or enable the product.</p>
+<form id="check">
+<label for="key">Admin API key</label>
+<input id="key" type="password" autocomplete="off" required>
+<small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<hr>
+<h2>Sandbox transaction test</h2>
+<p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
+<label for="scenario">Test result</label>
+<select id="scenario" style="width:100%;padding:12px;font:inherit"><option value="completed">Successful scenario (test number ending 100)</option><option value="declined">Declined scenario (test number ending 106)</option></select>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmSandbox" type="checkbox" style="width:auto"> I confirm this is a DT One SANDBOX test</label>
+<button type="button" id="runSandbox">Run sandbox transaction</button>
+<label for="orderId">Sandbox test order ID (for status lookup)</label>
+<input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
+<button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
+<button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
+</form>
+<hr>
+<h2>Stripe + DT One end-to-end sandbox</h2>
+<p>Admin-only test. Uses Stripe test mode and DT One pre-production with a fixed test recipient. A successful test payment submits one sandbox top-up. It does not activate the ATOMA catalog product. Do not use real card details.</p>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
+<button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
+<h2>Admin pricing controls</h2>
+<p>Load the saved Afghanistan settings, then change the app fee or bonus. Changes are saved to the backend database. Keep the ATOMA product disabled until sandbox checkout and fulfilment checks pass.</p>
+<button type="button" id="loadPricing">Load saved Afghanistan settings</button>
+<label for="feeEur">App fee (EUR)</label><input id="feeEur" type="number" min="0" max="1000" step="0.01" value="0.79">
+<label for="afnRate">AFN per EUR exchange rate</label><input id="afnRate" type="number" min="0.01" step="0.0001" value="70">
+<label for="bonusPercent">Bonus percent</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="2">
+<label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Afghanistan pricing settings active</label>
+<button type="button" id="savePricing">Save Afghanistan pricing settings</button>
+<small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
+<h2>Result</h2><pre id="result">Waiting for verification.</pre>
+<script>
+const form=document.getElementById('check');
+const key=document.getElementById('key');
+const result=document.getElementById('result');
+const discover=document.getElementById('discover');
+const checkDatabase=document.getElementById('checkDatabase');
+const scenario=document.getElementById('scenario');
+const confirmSandbox=document.getElementById('confirmSandbox');
+const runSandbox=document.getElementById('runSandbox');
+const orderId=document.getElementById('orderId');
+const checkSandboxStatus=document.getElementById('checkSandboxStatus');
+const checkStripePaymentStatus=document.getElementById('checkStripePaymentStatus');
+const checkLiveDtOneStatus=document.getElementById('checkLiveDtOneStatus');
+const loadReviewQueue=document.getElementById('loadReviewQueue');
+const loadPricing=document.getElementById('loadPricing');
+const savePricing=document.getElementById('savePricing');
+const confirmStripeDtoneSandbox=document.getElementById('confirmStripeDtoneSandbox');
+const runStripeDtoneSandbox=document.getElementById('runStripeDtoneSandbox');
+const feeEur=document.getElementById('feeEur');
+const afnRate=document.getElementById('afnRate');
+const bonusPercent=document.getElementById('bonusPercent');
+const pricingActive=document.getElementById('pricingActive');
+let loadedAfghanistanPricing=null;
+
+async function adminRequest(url,options={}){
+ const response=await fetch(url,{...options,headers:{...(options.headers||{}),'x-admin-api-key':key.value},cache:'no-store'});
+ const raw=await response.text();
+ let data;
+ try{data=raw?JSON.parse(raw):{};}catch(_){
+  const preview=raw.replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim().slice(0,220);
+  throw new Error('Backend returned non-JSON response (HTTP '+response.status+'). '+(preview||'Empty response'));
+ }
+ if(!response.ok) throw new Error('HTTP '+response.status+': '+JSON.stringify(data));
+ return data;
+}
+form.addEventListener('submit',async event=>{
+ event.preventDefault();
+ result.textContent='Checking DT One pre-production…';
+ try{
+  const response=await fetch('/api/admin/dtone/products/7194',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const data=await response.json();
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(_){
+  result.textContent='Could not contact the backend. Please try again later.';
+ }
+ key.value='';
+});
+loadPricing.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Loading saved Afghanistan pricing settings…';
+ try{
+  const data=await adminRequest('/api/admin/pricing');
+  const saved=(data.pricing||[]).find(item=>item.country==='AF');
+  if(!saved)throw new Error('No Afghanistan pricing settings found.');
+  loadedAfghanistanPricing=saved;
+  feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
+  afnRate.value=Number(saved.afn_per_eur);
+  bonusPercent.value=Number(saved.bonus_percent);
+  pricingActive.checked=saved.active===true;
+  result.textContent=JSON.stringify({loaded:true,country:saved.country,appFeeEur:Number(saved.fee_eur_cents)/100,afnPerEur:Number(saved.afn_per_eur),bonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
+ }catch(error){result.textContent='Could not load pricing: '+error.message;}
+});
+savePricing.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!loadedAfghanistanPricing){result.textContent='First load the saved settings and review them.';return;}
+ const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value);
+ if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100){result.textContent='Check the fee, exchange rate, and bonus values.';return;}
+ if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', bonus: '+bonus+'%. This will not activate the ATOMA product.'))return;
+ result.textContent='Saving Afghanistan pricing settings…';
+ try{
+  const data=await adminRequest('/api/admin/pricing/AF',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:bonus,active:pricingActive.checked})});
+  loadedAfghanistanPricing=data.pricing;
+  result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
+ }catch(error){result.textContent='Could not save pricing: '+error.message;}
+ finally{key.value='';}
+});
+checkDatabase.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Reading saved product and pricing settings…';
+ try{const data=await adminRequest('/api/admin/catalog/7194/pricing');result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not verify database pricing: '+error.message;}
+ finally{key.value='';}
+});
+discover.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Searching DT One pre-production catalog…';
+ try{
+  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG&operator=ATOMA&amount=115',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const data=await response.json();
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
+ key.value='';
+});
+runSandbox.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!confirmSandbox.checked){result.textContent='Tick the sandbox confirmation box first.';return;}
+ if(!confirm('Submit one transaction to DT One PRE-PRODUCTION? No Stripe payment is created.'))return;
+ result.textContent='Submitting one sandbox transaction. Do not press again while waiting…';
+ runSandbox.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/sandbox-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmSandbox:true,scenario:scenario.value})});
+  if(data.orderId)orderId.value=data.orderId;
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Sandbox test did not confirm success. Details: '+error.message;}
+ finally{key.value='';runSandbox.disabled=false;confirmSandbox.checked=false;}
+});
+loadReviewQueue.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Loading orders that need review…';
+ try{
+  const data=await adminRequest('/api/admin/orders/review');
+  result.textContent=JSON.stringify({
+   count:data.count,
+   thresholds:data.thresholds,
+   automaticRetry:data.automaticRetry,
+   orders:(data.orders||[]).map(order=>({
+    order_id:order.order_id,
+    operator:order.operator,
+    amount:order.amount,
+    currency:order.currency,
+    status:order.status,
+    dtone_transaction_id:order.dtone_transaction_id,
+    dtone_status:order.dtone_status,
+    review_reason:order.review_reason,
+    updated_at:order.updated_at
+   })),
+   note:data.note
+  },null,2);
+ }catch(error){result.textContent='Could not load review queue: '+error.message;}
+ finally{key.value='';}
+});
+runStripeDtoneSandbox.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!confirmStripeDtoneSandbox.checked){result.textContent='Tick the Stripe TEST + DT One PRE-PRODUCTION confirmation first.';return;}
+ if(!confirm('Create a Stripe TEST checkout? If you complete it with a test card, one DT One PRE-PRODUCTION sandbox transaction will be submitted. No real card charge or catalog activation occurs.'))return;
+ result.textContent='Creating one sandbox checkout…';
+ runStripeDtoneSandbox.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/stripe-dtone/sandbox-checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmSandbox:true})});
+  result.textContent=JSON.stringify(data,null,2);
+  if(data.checkoutUrl){
+   const open=confirm('Test checkout created for '+data.amountFormatted+'. Open Stripe checkout now?');
+   if(open)window.location.href=data.checkoutUrl;
+  }
+ }catch(error){result.textContent='Could not create sandbox checkout: '+error.message;}
+ finally{key.value='';runStripeDtoneSandbox.disabled=false;confirmStripeDtoneSandbox.checked=false;}
+});
+checkStripePaymentStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const id=orderId.value.trim();
+ if(!id){result.textContent='Enter the existing order ID first.';return;}
+ if(!/^[0-9a-f-]{36}$/i.test(id)){result.textContent='Enter a valid order UUID.';return;}
+ result.textContent='Checking Stripe payment status (read-only)…';
+ checkStripePaymentStatus.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/orders/'+encodeURIComponent(id)+'/payment-status');
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not verify Stripe payment status: '+error.message;}
+ finally{key.value='';checkStripePaymentStatus.disabled=false;}
+});
+checkSandboxStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!orderId.value.trim()){result.textContent='Enter the sandbox order ID first.';return;}
+ result.textContent='Loading saved sandbox order status…';
+ try{const data=await adminRequest('/api/admin/dtone/sandbox-test/'+encodeURIComponent(orderId.value.trim()));result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not verify saved status: '+error.message;}
+ finally{key.value='';}
+});
+checkLiveDtOneStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const externalId=orderId.value.trim();
+ if(!externalId){result.textContent='Enter the existing order ID first.';return;}
+ result.textContent='Querying DT One directly (read-only)…';
+ checkLiveDtOneStatus.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/transaction-status?external_id='+encodeURIComponent(externalId));
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not query DT One live status: '+error.message;}
+ finally{key.value='';checkLiveDtOneStatus.disabled=false;}
+});
+</script>
+</body>
+</html>`);
+});
+
+// Read-only DT One product verification. This never enables a catalog entry
+// and never creates a transaction. Keep the endpoint admin-authenticated.
+app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) => {
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  try {
+    const response = await fetch(
+      `${DTONE_API_BASE_URL}/v1/products/${productId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+
+    const responseText = await response.text();
+    let data = null;
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch (_) {
+      data = null;
+    }
+
+    if (!response.ok) {
+      console.warn('DT One product verification returned HTTP', response.status);
+      return res.status(response.status === 404 ? 404 : 502).json({
+        verified: false,
+        productId,
+        providerStatus: response.status,
+        error: response.status === 404
+          ? 'Product ID was not found in the configured DT One environment.'
+          : 'DT One could not verify this product. Check the provider response in DT One support or dashboard.',
+      });
+    }
+
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      product: data,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+    });
+  } catch (error) {
+    console.error('DT One product verification failed:', error.message);
+    return res.status(502).json({
+      verified: false,
+      productId,
+      error: 'Could not reach DT One to verify this product.',
+    });
+  }
+});
+
+
+// Read-only product discovery in the configured DT One environment.
+// Used to find the correct pre-production product ID; never creates transactions.
+app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
+  const operatorQuery = String(req.query.operator || '').trim().toUpperCase();
+  const amountQuery = Number(req.query.amount || 115);
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
+    return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
+  }
+  if (!Number.isFinite(amountQuery) || amountQuery <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number.' });
+  }
+
+  try {
+    const matchesById = new Map();
+    let providerPagesChecked = 0;
+    let totalSeen = 0;
+
+    // Check a bounded number of pages to avoid unbounded provider requests.
+    for (let page = 1; page <= 5; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+      url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(20000),
+      });
+
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch (_) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const providerBody = String(responseText || '').slice(0, 1000);
+        console.warn('DT One product discovery failed', JSON.stringify({
+          status: response.status,
+          page,
+          baseUrl: DTONE_API_BASE_URL,
+          responseBody: providerBody,
+        }));
+        return res.status(502).json({
+          verified: false,
+          providerStatus: response.status,
+          configuredBaseUrl: DTONE_API_BASE_URL,
+          providerMessage: providerBody || null,
+          pagesChecked: providerPagesChecked,
+          error: 'DT One product discovery failed. Check providerMessage and the configured API environment.',
+        });
+      }
+
+      const products = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      providerPagesChecked += 1;
+      totalSeen += products.length;
+
+      for (const product of products) {
+        const operatorName = String(product?.operator?.name || '').toUpperCase();
+        const countryCode = String(product?.operator?.country?.iso_code || '').toUpperCase();
+        const name = String(product?.name || '');
+        const benefitAmounts = Array.isArray(product?.benefits)
+          ? product.benefits.map((benefit) => Number(benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base))
+          : [];
+        const productAmounts = [
+          product?.destination?.amount,
+          product?.amount?.base,
+          typeof product?.amount === 'number' ? product.amount : NaN,
+        ].map(Number);
+        const mentionsAmount = benefitAmounts.includes(amountQuery)
+          || productAmounts.includes(amountQuery)
+          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
+        const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
+        const isLikelyRelevant = operatorQuery
+          ? isRequestedOperator
+          : (operatorName.includes('ATOMA') || mentionsAmount);
+        if (countryCode === countryIsoCode && isLikelyRelevant) {
+          const id = product?.id;
+          if (id !== undefined && id !== null) matchesById.set(String(id), product);
+        }
+      }
+
+      if (products.length < 100) break;
+    }
+
+    const products = [...matchesById.values()];
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      countryIsoCode,
+      requestedOperator: operatorQuery || null,
+      requestedAmount: amountQuery,
+      providerPagesChecked,
+      providerProductsSeen: totalSeen,
+      resultCount: products.length,
+      products,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+      note: 'Read-only search across up to five pages. Results are candidates; confirm operator, denomination, and pre-production availability before mapping.',
+    });
+  } catch (error) {
+    console.error('DT One product discovery failed:', error.message);
+    return res.status(502).json({
+      verified: false,
+      error: 'Could not reach DT One product discovery endpoint.',
+    });
+  }
+});
+
+// Read-only verification of a catalog product and its country pricing settings.
+// Does not change product activation, prices, orders, or payments.
+app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+  try {
+    const productResult = await pool.query(
+      `SELECT product_id, country, operator, amount, currency,
+              price_eur_cents, wholesale_price_eur_cents, bonus_amount, active
+       FROM product_catalog
+       WHERE product_id = $1
+       LIMIT 1`,
+      [productId]
+    );
+    if (productResult.rowCount !== 1) {
+      return res.status(404).json({ error: 'Product was not found in product_catalog.', productId });
+    }
+    const product = productResult.rows[0];
+    const pricingResult = await pool.query(
+      `SELECT country, fee_eur_cents, bonus_percent, stripe_fee_percent,
+              stripe_fixed_fee_cents, active
+       FROM pricing_settings
+       WHERE country = $1
+       LIMIT 1`,
+      [product.country]
+    );
+    const pricing = pricingResult.rows[0] || null;
+    let customerPricePreview = null;
+    if (product.wholesale_price_eur_cents != null && pricing !== null) {
+      try {
+        const preview = calculateFinalPrice(
+          {
+            wholesalePriceCents: Number(product.wholesale_price_eur_cents),
+          },
+          {
+            feeCents: Number(pricing.fee_eur_cents),
+            bonusPercent: Number(pricing.bonus_percent),
+            stripeFeePercent: Number(pricing.stripe_fee_percent),
+            stripeFixedFeeCents: Number(pricing.stripe_fixed_fee_cents),
+          }
+        );
+        customerPricePreview = {
+          currency: 'EUR',
+          estimatedCustomerPriceEur: Number((preview.finalPriceCents / 100).toFixed(2)),
+          estimatedCustomerPriceCents: preview.finalPriceCents,
+          wholesaleCostEur: Number((preview.basePriceCents / 100).toFixed(2)),
+          appFeeEur: Number((preview.feeCents / 100).toFixed(2)),
+          estimatedStripeFeeEur: Number((preview.estimatedStripeFeeCents / 100).toFixed(2)),
+          note: 'Preview only. Actual Stripe fees may differ; this does not enable the product or perform a payment.',
+        };
+      } catch (previewError) {
+        customerPricePreview = { error: 'Could not calculate customer price preview from the saved settings.' };
+      }
+    }
+    return res.json({
+      readOnly: true,
+      customerPricePreview,
+      paymentCurrency: 'EUR',
+      product: {
+        ...product,
+        retailPriceEur: Number(product.price_eur_cents) / 100,
+        wholesalePriceEur: product.wholesale_price_eur_cents == null
+          ? null : Number(product.wholesale_price_eur_cents) / 100,
+        active: product.active === true
+      },
+      pricing: pricing ? {
+        ...pricing,
+        appFeeEur: Number(pricing.fee_eur_cents) / 100,
+        stripeFeeNote: 'Stripe fee is an estimate; actual fees depend on the Stripe account, card and payment method.'
+      } : null,
+      checks: {
+        wholesalePriceConfigured: product.wholesale_price_eur_cents != null,
+        pricingSettingsConfigured: pricing !== null,
+        productEnabled: product.active === true,
+        safeForRealCheckout: product.wholesale_price_eur_cents != null && pricing !== null && pricing.active === true && product.active === true
+      },
+      note: 'Read-only verification only. No product, order, payment, or setting was changed.'
+    });
+  } catch (error) {
+    console.error('Admin catalog pricing verification failed:', error.message);
+    return res.status(500).json({ error: 'Could not verify catalog pricing.' });
+  }
+});
+
+// Admin pricing overview.
+// Prices and fees are returned in EUR cents.
+app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         country,
+         fee_eur_cents,
+         afn_per_eur,
+         bonus_percent,
+         stripe_fee_percent,
+         stripe_fixed_fee_cents,
+         active
+       FROM pricing_settings
+       ORDER BY country`
+    );
+
+    return res.json({
+      paymentCurrency: 'EUR',
+      pricing: result.rows,
+      stripeFeeNote: 'Stripe fee is an estimate; actual fees vary by card and payment method.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin pricing query failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not load pricing settings.',
+    });
+  }
+});
+
+// Update country pricing controls from a trusted admin client.
+// Prices are stored in integer EUR cents; bonus is informational
+// until country/operator bonus fulfillment rules are verified.
+app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  const country = normalizeCountry(req.params.country);
+
+  if (!isValidCountry(country)) {
+    return res.status(400).json({
+      error: 'Unsupported country.',
+    });
+  }
+
+  const body = req.body || {};
+  const feeCents = Number(body.feeEurCents);
+  const afnPerEur = Number(body.afnPerEur);
+  const bonusPercent = Number(body.bonusPercent);
+
+  if (
+    !Number.isSafeInteger(feeCents) ||
+    feeCents < 0 ||
+    feeCents > 100000
+  ) {
+    return res.status(400).json({
+      error: 'feeEurCents must be an integer from 0 to 100000.',
+    });
+  }
+
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
+    return res.status(400).json({ error: 'afnPerEur must be a positive number no greater than 1000000.' });
+  }
+
+  if (
+    !Number.isFinite(bonusPercent) ||
+    bonusPercent < 0 ||
+    bonusPercent > 100
+  ) {
+    return res.status(400).json({
+      error: 'bonusPercent must be between 0 and 100.',
+    });
+  }
+
+  if (typeof body.active !== 'boolean') {
+    return res.status(400).json({
+      error: 'active must be true or false.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO pricing_settings (
+         country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (country)
+       DO UPDATE SET
+         fee_eur_cents = EXCLUDED.fee_eur_cents,
+         afn_per_eur = EXCLUDED.afn_per_eur,
+         bonus_percent = EXCLUDED.bonus_percent,
+         active = EXCLUDED.active,
+         updated_at = NOW()
+       RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at`,
+      [country, feeCents, afnPerEur, bonusPercent, body.active]
+    );
+
+    return res.json({
+      paymentCurrency: 'EUR',
+      pricing: result.rows[0],
+      note: 'Bonus percentage is saved as a setting; bonus delivery is not enabled by this endpoint.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin pricing update failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not update pricing settings.',
+    });
+  }
+});
+
+// List orders requiring operator review, including stale in-flight
+// states after a server restart. This is read-only: it never retries DT One.
+// Read-only Stripe reconciliation for a single order. Does not create payments,
+// retry a top-up, or issue a refund.
+app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT order_id, status, charge_cents, currency,
+              stripe_session_id, stripe_payment_intent_id, created_at
+       FROM orders
+       WHERE order_id = $1
+       LIMIT 1`,
+      [orderId]
+    );
+
+    if (result.rowCount !== 1) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = result.rows[0];
+    let session = null;
+    let paymentIntent = null;
+    const stripeLookupDiagnostics = {
+      mode: STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' :
+        STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'live' : 'unknown',
+      sessionPagesScanned: 0,
+      sessionsScanned: 0,
+      sessionSearchHasMore: false,
+      paymentIntentSearchCount: 0,
+      orderCreatedAt: order.created_at,
+    };
+
+    if (order.stripe_session_id) {
+      session = await stripe.checkout.sessions.retrieve(
+        order.stripe_session_id,
+        { expand: ['payment_intent'] }
+      );
+      if (session.payment_intent && typeof session.payment_intent === 'object') {
+        paymentIntent = session.payment_intent;
+      }
+    }
+
+    if (!paymentIntent && order.stripe_payment_intent_id) {
+      paymentIntent = await stripe.paymentIntents.retrieve(
+        order.stripe_payment_intent_id
+      );
+    }
+
+    // Recovery lookup for legacy orders whose Stripe IDs were not saved locally.
+    // Search only sessions created around/after this order, and accept a match
+    // only when Stripe's client_reference_id or metadata.orderId equals orderId.
+    if (!session) {
+      const orderCreatedSeconds = Math.max(
+        0,
+        Math.floor(new Date(order.created_at).getTime() / 1000) - 300
+      );
+      let startingAfter;
+      for (let page = 0; page < 5; page += 1) {
+        const params = {
+          limit: 100,
+          created: { gte: orderCreatedSeconds },
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        };
+        const sessions = await stripe.checkout.sessions.list(params);
+        stripeLookupDiagnostics.sessionPagesScanned += 1;
+        stripeLookupDiagnostics.sessionsScanned += sessions.data.length;
+        stripeLookupDiagnostics.sessionSearchHasMore = sessions.has_more;
+        const match = sessions.data.find((candidate) =>
+          candidate.client_reference_id === orderId ||
+          candidate.metadata?.orderId === orderId
+        );
+        if (match) {
+          session = await stripe.checkout.sessions.retrieve(
+            match.id,
+            { expand: ['payment_intent'] }
+          );
+          if (session.payment_intent && typeof session.payment_intent === 'object') {
+            paymentIntent = session.payment_intent;
+          }
+          break;
+        }
+        if (!sessions.has_more || sessions.data.length === 0) break;
+        startingAfter = sessions.data[sessions.data.length - 1].id;
+      }
+    }
+
+    // Last read-only fallback: exact metadata match on PaymentIntent.
+    // Never associate a payment solely by amount, currency, or timestamp.
+    if (!paymentIntent && typeof stripe.paymentIntents.search === 'function') {
+      const found = await stripe.paymentIntents.search({
+        query: `metadata['orderId']:'${orderId}'`,
+        limit: 10,
+      });
+      stripeLookupDiagnostics.paymentIntentSearchCount = found.data.length;
+      const match = found.data.find((candidate) =>
+        candidate.metadata?.orderId === orderId
+      );
+      if (match) paymentIntent = match;
+    }
+
+    const sessionOrderId = session?.metadata?.orderId || session?.client_reference_id || null;
+    const intentOrderId = paymentIntent?.metadata?.orderId || null;
+    const associationVerified =
+      Boolean(session || paymentIntent) &&
+      (!session || sessionOrderId === orderId) &&
+      (!paymentIntent || !intentOrderId || intentOrderId === orderId);
+
+    return res.status(200).json({
+      lookup: 'read_only',
+      orderId,
+      localOrderStatus: order.status,
+      // The order's currency is the recipient top-up currency (e.g. AFN),
+      // while charge_cents is the EUR amount charged by Stripe.
+      chargeCents: Number(order.charge_cents),
+      paymentCurrency: 'EUR',
+      topupCurrency: order.currency,
+      currency: order.currency,
+      stripeSessionFound: Boolean(session),
+      stripeSessionId: session?.id || order.stripe_session_id || null,
+      stripeSessionStatus: session?.status || null,
+      stripePaymentStatus: session?.payment_status || null,
+      stripePaymentIntentId: paymentIntent?.id || order.stripe_payment_intent_id || null,
+      stripePaymentIntentStatus: paymentIntent?.status || null,
+      amountTotal: session?.amount_total ?? null,
+      amountReceived: paymentIntent?.amount_received ?? null,
+      stripeCurrency: session?.currency || paymentIntent?.currency || null,
+      livemode: session?.livemode ?? paymentIntent?.livemode ?? null,
+      associationVerified,
+      stripeLookupDiagnostics,
+      note: 'Read-only reconciliation only. No payment, top-up, or refund was created.',
+    });
+  } catch (error) {
+    console.error('Admin Stripe payment-status lookup failed:', error.message);
+    return res.status(502).json({
+      error: 'Could not verify Stripe payment status. Reconcile the order in Stripe Dashboard.',
+    });
+  }
+});
+
+app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         order_id,
+         country,
+         operator,
+         phone,
+         amount,
+         currency,
+         charge_cents,
+         status,
+         stripe_payment_intent_id,
+         dtone_transaction_id,
+         dtone_status,
+         dtone_error,
+         created_at,
+         updated_at,
+         CASE
+           WHEN status = 'topup_review'
+             THEN 'manual_review_required'
+           WHEN status = 'processing_topup'
+             THEN 'stale_processing_topup'
+           WHEN status = 'topup_submitted'
+             THEN 'stale_provider_status'
+           ELSE 'review_required'
+         END AS review_reason
+       FROM orders
+       WHERE status = 'topup_review'
+          OR (
+            status = 'processing_topup'
+            AND updated_at < NOW() - INTERVAL '5 minutes'
+          )
+          OR (
+            status = 'topup_submitted'
+            AND updated_at < NOW() - INTERVAL '15 minutes'
+          )
+       ORDER BY updated_at ASC
+       LIMIT 100`
+    );
+
+    return res.json({
+      count: result.rowCount,
+      orders: result.rows,
+      thresholds: {
+        processingTopupMinutes: 5,
+        topupSubmittedMinutes: 15,
+      },
+      automaticRetry: false,
+      note: 'Stale orders are surfaced for authenticated admin review only. Check the provider transaction/status before any manual action; do not blindly resubmit.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin review queue failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not load review queue.',
+    });
+  }
+});
+
+// Full Stripe refund, initiated only by an authenticated admin.
+// Idempotency is enforced both by the refunds table's UNIQUE(order_id)
+// constraint and Stripe's idempotency key. This endpoint deliberately
+// does not refund orders that are already completed by DT One.
+app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+
+  const reason = String(req.body?.reason || 'Top-up failed; admin reviewed')
+    .trim()
+    .slice(0, 500);
+  const client = await pool.connect();
+  let transactionOpen = false;
+
+  try {
+    // Keep the order lock until Stripe has returned and both database
+    // records have been updated. A DT One callback cannot change the order
+    // to completed between our eligibility check and refund finalization.
+    await client.query('BEGIN');
+    transactionOpen = true;
+
+    const orderResult = await client.query(
+      `SELECT order_id, status, charge_cents, stripe_payment_intent_id, dtone_status
+       FROM orders WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    if (orderResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = orderResult.rows[0];
+    if (order.status === 'completed' || order.status === 'refunded') {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Order is already completed or refunded; no refund was started.',
+      });
+    }
+
+    if (order.status !== 'topup_review' ||
+        !['failed', 'rejected', 'cancelled', 'canceled', 'declined'].includes(String(order.dtone_status || '').trim().toLowerCase())) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Refund requires a final DT One failure status. Unknown or pending outcomes must be reconciled first.',
+      });
+    }
+
+    if (!order.stripe_payment_intent_id) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({ error: 'The order has no verified Stripe PaymentIntent.' });
+    }
+
+    // Verify the actual Stripe PaymentIntent before creating any refund record
+    // or sending a refund request. The order's charge_cents is EUR, while
+    // order.currency is the destination top-up currency (e.g. AFN).
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.retrieve(
+        order.stripe_payment_intent_id
+      );
+    } catch (lookupError) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(502).json({
+        error: 'Could not verify the Stripe payment. No refund was started.',
+      });
+    }
+
+    const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
+    if (
+      paymentIntent.id !== order.stripe_payment_intent_id ||
+      paymentIntent.status !== 'succeeded' ||
+      paymentIntent.currency !== 'eur' ||
+      paymentIntent.amount_received !== Number(order.charge_cents) ||
+      paymentIntent.livemode === stripeIsTest
+    ) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Stripe payment verification did not match this order. No refund was started.',
+      });
+    }
+
+    const refundResult = await client.query(
+      `SELECT id, stripe_refund_id, amount_cents, status
+       FROM refunds WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    const existingRefund = refundResult.rows[0] || null;
+
+    if (existingRefund?.status === 'succeeded') {
+      await client.query('COMMIT');
+      transactionOpen = false;
+      return res.json({
+        orderId, refundId: existingRefund.stripe_refund_id,
+        status: 'refunded', duplicate: true,
+      });
+    }
+
+    // Do not race two administrators or retry an ambiguous Stripe request.
+    // A pending/failed row must be reconciled against Stripe before retrying.
+    if (existingRefund) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'A refund record already exists. Reconcile it in Stripe Dashboard before retrying.',
+        refundStatus: existingRefund.status,
+        refundId: existingRefund.stripe_refund_id || null,
+      });
+    }
+
+    await client.query(
+      `INSERT INTO refunds (order_id, amount_cents, status, reason)
+       VALUES ($1, $2, 'pending', $3)`,
+      [orderId, Number(order.charge_cents), reason]
+    );
+
+    let refund;
+    try {
+      // Stable idempotency key plus the open row lock prevents concurrent
+      // admin requests and callback status changes during this operation.
+      refund = await stripe.refunds.create(
+        {
+          payment_intent: order.stripe_payment_intent_id,
+          reason: 'requested_by_customer',
+          metadata: { orderId, adminReason: reason },
+        },
+        { idempotencyKey: `pgnt-refund-${orderId}` }
+      );
+    } catch (stripeError) {
+      await client.query(
+        `UPDATE refunds SET status = 'pending', reason = $1 WHERE order_id = $2`,
+        [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
+      );
+      await client.query('COMMIT');
+      transactionOpen = false;
+      console.error('Stripe refund outcome requires reconciliation:', stripeError.message);
+      return res.status(502).json({
+        error: 'Stripe refund outcome is not confirmed. Check Stripe Dashboard before any retry.',
+      });
+    }
+
+    await client.query(
+      `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
+         status = $3, reason = $4 WHERE order_id = $5`,
+      [refund.id, refund.amount, refund.status, reason, orderId]
+    );
+
+    if (refund.status === 'succeeded') {
+      await client.query(
+        `UPDATE orders SET status = 'refunded',
+           refunded_at = COALESCE(refunded_at, NOW()), updated_at = NOW()
+         WHERE order_id = $1 AND status = 'topup_review'`,
+        [orderId]
+      );
+    } else {
+      await client.query(
+        `UPDATE orders SET status = 'topup_review', updated_at = NOW()
+         WHERE order_id = $1 AND status = 'topup_review'`,
+        [orderId]
+      );
+    }
+
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.status(200).json({
+      orderId, refundId: refund.id, status: refund.status,
+      amountCents: refund.amount, currency: refund.currency,
+    });
+  } catch (error) {
+    if (transactionOpen) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Admin refund processing failed:', error.message);
+    return res.status(500).json({ error: 'Refund processing failed; reconcile Stripe Dashboard before retrying.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Order-status lookup protected by a per-order access token.
+// The token is returned only in the initial checkout response and stored
+// as a SHA-256 hash. Orders without a token fail closed.
+app.get('/api/orders/:orderId/status', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  const orderId = String(
+    req.params.orderId || ''
+  ).trim();
+
+  if (
+    !/^[0-9a-f-]{36}$/i.test(orderId)
+  ) {
+    return res.status(400).json({
+      error: 'Invalid order ID.',
+    });
+  }
+
+  try {
+    const accessToken = String(req.get('x-order-access-token') || '').trim();
+    if (!/^[a-f0-9]{64}$/i.test(accessToken)) {
+      return res.status(401).json({ error: 'A valid order access token is required.' });
+    }
+
+    const result = await pool.query(
+      `SELECT order_id, country, currency, charge_cents, status,
+              created_at, updated_at, order_access_token_hash
+       FROM orders WHERE order_id = $1 LIMIT 1`,
+      [orderId]
+    );
+
+    if (result.rowCount !== 1) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = result.rows[0];
+    const suppliedTokenHash = crypto.createHash('sha256').update(accessToken, 'utf8').digest('hex');
+    if (!order.order_access_token_hash ||
+        !constantTimeEqual(suppliedTokenHash, order.order_access_token_hash)) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    return res.json({
+      orderId: order.order_id,
+      country: order.country,
+      paymentCurrency: 'EUR',
+      amountCents: Number(order.charge_cents),
+      amountFormatted: formatEuro(Number(order.charge_cents)),
+      status: order.status,
+      createdAt: order.created_at,
+      updatedAt: order.updated_at,
+    });
+  } catch (error) {
+    console.error(
+      'Order status lookup failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not retrieve order status.',
+    });
+  }
+});
+
+// Register the tightly restricted DT One pre-production test routes.
+require('./dtone-sandbox-test')({
+  app,
+  pool,
+  requireAdmin,
+  DTONE_API_KEY,
+  DTONE_API_SECRET,
+  DTONE_API_BASE_URL,
+  DTONE_CALLBACK_URL,
+  getDtOneAuthHeader,
+});
+
+// Start the server only after configuration checks.
+// Keep this block once, at the very end of server.js.
+async function startServer() {
+  if (!pool) {
+    console.error(
+      'DATABASE_URL is missing. Server will not start.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!stripe) {
+    console.error(
+      'STRIPE_SECRET_KEY is missing. Server will not start.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    await pool.query('SELECT 1');
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(
+        `PGNT ASIAN TOPUP backend listening on port ${PORT}`
+      );
+      console.log(
+        `Customer payment currency: ${PAYMENT_CURRENCY.toUpperCase()}`
+      );
+    });
+  } catch (error) {
+    console.error(
+      'Server startup failed:',
+      error.message
+    );
+
+    process.exitCode = 1;
+  }
+}
+
+startServer(); + values.length); }
+  if (body.rewardEurCents !== undefined) {
+    const n = Number(body.rewardEurCents);
+    if (!Number.isSafeInteger(n) || n < 0 || n > 10000) return res.status(400).json({ error: 'rewardEurCents must be 0-10000.' });
+    values.push(n); fields.push('reward_eur_cents = 
+// without installing an API client. The admin key is entered by the owner
+// in their browser and is never stored by this page.
+app.get('/admin-dtone-check', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  return res.status(200).send(`<!doctype html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PGNT ASIAN — DT One product check</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:620px;margin:32px auto;padding:0 16px;color:#222}
+h1{font-size:1.35rem}label{display:block;margin:18px 0 6px}
+input,button{box-sizing:border-box;width:100%;padding:12px;font:inherit}
+button{margin-top:14px;background:#7a0c10;color:white;border:0;border-radius:6px}
+small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:12px;border-radius:6px}
+</style>
+</head>
+<body>
+<h1>PGNT ASIAN TOPUP</h1>
+<p>Read-only DT One check for Afghanistan ATOMA, product 7194 (115 AFN). This does not create a top-up or enable the product.</p>
+<form id="check">
+<label for="key">Admin API key</label>
+<input id="key" type="password" autocomplete="off" required>
+<small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<hr>
+<h2>Sandbox transaction test</h2>
+<p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
+<label for="scenario">Test result</label>
+<select id="scenario" style="width:100%;padding:12px;font:inherit"><option value="completed">Successful scenario (test number ending 100)</option><option value="declined">Declined scenario (test number ending 106)</option></select>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmSandbox" type="checkbox" style="width:auto"> I confirm this is a DT One SANDBOX test</label>
+<button type="button" id="runSandbox">Run sandbox transaction</button>
+<label for="orderId">Sandbox test order ID (for status lookup)</label>
+<input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
+<button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
+<button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
+</form>
+<hr>
+<h2>Stripe + DT One end-to-end sandbox</h2>
+<p>Admin-only test. Uses Stripe test mode and DT One pre-production with a fixed test recipient. A successful test payment submits one sandbox top-up. It does not activate the ATOMA catalog product. Do not use real card details.</p>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
+<button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
+<h2>Admin pricing controls</h2>
+<p>Load the saved Afghanistan settings, then change the app fee or bonus. Changes are saved to the backend database. Keep the ATOMA product disabled until sandbox checkout and fulfilment checks pass.</p>
+<button type="button" id="loadPricing">Load saved Afghanistan settings</button>
+<label for="feeEur">App fee (EUR)</label><input id="feeEur" type="number" min="0" max="1000" step="0.01" value="0.79">
+<label for="afnRate">AFN per EUR exchange rate</label><input id="afnRate" type="number" min="0.01" step="0.0001" value="70">
+<label for="bonusPercent">Bonus percent</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="2">
+<label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Afghanistan pricing settings active</label>
+<button type="button" id="savePricing">Save Afghanistan pricing settings</button>
+<small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
+<h2>Result</h2><pre id="result">Waiting for verification.</pre>
+<script>
+const form=document.getElementById('check');
+const key=document.getElementById('key');
+const result=document.getElementById('result');
+const discover=document.getElementById('discover');
+const checkDatabase=document.getElementById('checkDatabase');
+const scenario=document.getElementById('scenario');
+const confirmSandbox=document.getElementById('confirmSandbox');
+const runSandbox=document.getElementById('runSandbox');
+const orderId=document.getElementById('orderId');
+const checkSandboxStatus=document.getElementById('checkSandboxStatus');
+const checkStripePaymentStatus=document.getElementById('checkStripePaymentStatus');
+const checkLiveDtOneStatus=document.getElementById('checkLiveDtOneStatus');
+const loadReviewQueue=document.getElementById('loadReviewQueue');
+const loadPricing=document.getElementById('loadPricing');
+const savePricing=document.getElementById('savePricing');
+const confirmStripeDtoneSandbox=document.getElementById('confirmStripeDtoneSandbox');
+const runStripeDtoneSandbox=document.getElementById('runStripeDtoneSandbox');
+const feeEur=document.getElementById('feeEur');
+const afnRate=document.getElementById('afnRate');
+const bonusPercent=document.getElementById('bonusPercent');
+const pricingActive=document.getElementById('pricingActive');
+let loadedAfghanistanPricing=null;
+
+async function adminRequest(url,options={}){
+ const response=await fetch(url,{...options,headers:{...(options.headers||{}),'x-admin-api-key':key.value},cache:'no-store'});
+ const raw=await response.text();
+ let data;
+ try{data=raw?JSON.parse(raw):{};}catch(_){
+  const preview=raw.replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim().slice(0,220);
+  throw new Error('Backend returned non-JSON response (HTTP '+response.status+'). '+(preview||'Empty response'));
+ }
+ if(!response.ok) throw new Error('HTTP '+response.status+': '+JSON.stringify(data));
+ return data;
+}
+form.addEventListener('submit',async event=>{
+ event.preventDefault();
+ result.textContent='Checking DT One pre-production…';
+ try{
+  const response=await fetch('/api/admin/dtone/products/7194',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const data=await response.json();
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(_){
+  result.textContent='Could not contact the backend. Please try again later.';
+ }
+ key.value='';
+});
+loadPricing.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Loading saved Afghanistan pricing settings…';
+ try{
+  const data=await adminRequest('/api/admin/pricing');
+  const saved=(data.pricing||[]).find(item=>item.country==='AF');
+  if(!saved)throw new Error('No Afghanistan pricing settings found.');
+  loadedAfghanistanPricing=saved;
+  feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
+  afnRate.value=Number(saved.afn_per_eur);
+  bonusPercent.value=Number(saved.bonus_percent);
+  pricingActive.checked=saved.active===true;
+  result.textContent=JSON.stringify({loaded:true,country:saved.country,appFeeEur:Number(saved.fee_eur_cents)/100,afnPerEur:Number(saved.afn_per_eur),bonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
+ }catch(error){result.textContent='Could not load pricing: '+error.message;}
+});
+savePricing.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!loadedAfghanistanPricing){result.textContent='First load the saved settings and review them.';return;}
+ const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value);
+ if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100){result.textContent='Check the fee, exchange rate, and bonus values.';return;}
+ if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', bonus: '+bonus+'%. This will not activate the ATOMA product.'))return;
+ result.textContent='Saving Afghanistan pricing settings…';
+ try{
+  const data=await adminRequest('/api/admin/pricing/AF',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:bonus,active:pricingActive.checked})});
+  loadedAfghanistanPricing=data.pricing;
+  result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
+ }catch(error){result.textContent='Could not save pricing: '+error.message;}
+ finally{key.value='';}
+});
+checkDatabase.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Reading saved product and pricing settings…';
+ try{const data=await adminRequest('/api/admin/catalog/7194/pricing');result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not verify database pricing: '+error.message;}
+ finally{key.value='';}
+});
+discover.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Searching DT One pre-production catalog…';
+ try{
+  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG&operator=ATOMA&amount=115',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const data=await response.json();
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
+ key.value='';
+});
+runSandbox.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!confirmSandbox.checked){result.textContent='Tick the sandbox confirmation box first.';return;}
+ if(!confirm('Submit one transaction to DT One PRE-PRODUCTION? No Stripe payment is created.'))return;
+ result.textContent='Submitting one sandbox transaction. Do not press again while waiting…';
+ runSandbox.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/sandbox-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmSandbox:true,scenario:scenario.value})});
+  if(data.orderId)orderId.value=data.orderId;
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Sandbox test did not confirm success. Details: '+error.message;}
+ finally{key.value='';runSandbox.disabled=false;confirmSandbox.checked=false;}
+});
+loadReviewQueue.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Loading orders that need review…';
+ try{
+  const data=await adminRequest('/api/admin/orders/review');
+  result.textContent=JSON.stringify({
+   count:data.count,
+   thresholds:data.thresholds,
+   automaticRetry:data.automaticRetry,
+   orders:(data.orders||[]).map(order=>({
+    order_id:order.order_id,
+    operator:order.operator,
+    amount:order.amount,
+    currency:order.currency,
+    status:order.status,
+    dtone_transaction_id:order.dtone_transaction_id,
+    dtone_status:order.dtone_status,
+    review_reason:order.review_reason,
+    updated_at:order.updated_at
+   })),
+   note:data.note
+  },null,2);
+ }catch(error){result.textContent='Could not load review queue: '+error.message;}
+ finally{key.value='';}
+});
+runStripeDtoneSandbox.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!confirmStripeDtoneSandbox.checked){result.textContent='Tick the Stripe TEST + DT One PRE-PRODUCTION confirmation first.';return;}
+ if(!confirm('Create a Stripe TEST checkout? If you complete it with a test card, one DT One PRE-PRODUCTION sandbox transaction will be submitted. No real card charge or catalog activation occurs.'))return;
+ result.textContent='Creating one sandbox checkout…';
+ runStripeDtoneSandbox.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/stripe-dtone/sandbox-checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmSandbox:true})});
+  result.textContent=JSON.stringify(data,null,2);
+  if(data.checkoutUrl){
+   const open=confirm('Test checkout created for '+data.amountFormatted+'. Open Stripe checkout now?');
+   if(open)window.location.href=data.checkoutUrl;
+  }
+ }catch(error){result.textContent='Could not create sandbox checkout: '+error.message;}
+ finally{key.value='';runStripeDtoneSandbox.disabled=false;confirmStripeDtoneSandbox.checked=false;}
+});
+checkStripePaymentStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const id=orderId.value.trim();
+ if(!id){result.textContent='Enter the existing order ID first.';return;}
+ if(!/^[0-9a-f-]{36}$/i.test(id)){result.textContent='Enter a valid order UUID.';return;}
+ result.textContent='Checking Stripe payment status (read-only)…';
+ checkStripePaymentStatus.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/orders/'+encodeURIComponent(id)+'/payment-status');
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not verify Stripe payment status: '+error.message;}
+ finally{key.value='';checkStripePaymentStatus.disabled=false;}
+});
+checkSandboxStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!orderId.value.trim()){result.textContent='Enter the sandbox order ID first.';return;}
+ result.textContent='Loading saved sandbox order status…';
+ try{const data=await adminRequest('/api/admin/dtone/sandbox-test/'+encodeURIComponent(orderId.value.trim()));result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not verify saved status: '+error.message;}
+ finally{key.value='';}
+});
+checkLiveDtOneStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const externalId=orderId.value.trim();
+ if(!externalId){result.textContent='Enter the existing order ID first.';return;}
+ result.textContent='Querying DT One directly (read-only)…';
+ checkLiveDtOneStatus.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/transaction-status?external_id='+encodeURIComponent(externalId));
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not query DT One live status: '+error.message;}
+ finally{key.value='';checkLiveDtOneStatus.disabled=false;}
+});
+</script>
+</body>
+</html>`);
+});
+
+// Read-only DT One product verification. This never enables a catalog entry
+// and never creates a transaction. Keep the endpoint admin-authenticated.
+app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) => {
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  try {
+    const response = await fetch(
+      `${DTONE_API_BASE_URL}/v1/products/${productId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+
+    const responseText = await response.text();
+    let data = null;
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch (_) {
+      data = null;
+    }
+
+    if (!response.ok) {
+      console.warn('DT One product verification returned HTTP', response.status);
+      return res.status(response.status === 404 ? 404 : 502).json({
+        verified: false,
+        productId,
+        providerStatus: response.status,
+        error: response.status === 404
+          ? 'Product ID was not found in the configured DT One environment.'
+          : 'DT One could not verify this product. Check the provider response in DT One support or dashboard.',
+      });
+    }
+
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      product: data,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+    });
+  } catch (error) {
+    console.error('DT One product verification failed:', error.message);
+    return res.status(502).json({
+      verified: false,
+      productId,
+      error: 'Could not reach DT One to verify this product.',
+    });
+  }
+});
+
+
+// Read-only product discovery in the configured DT One environment.
+// Used to find the correct pre-production product ID; never creates transactions.
+app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
+  const operatorQuery = String(req.query.operator || '').trim().toUpperCase();
+  const amountQuery = Number(req.query.amount || 115);
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
+    return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
+  }
+  if (!Number.isFinite(amountQuery) || amountQuery <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number.' });
+  }
+
+  try {
+    const matchesById = new Map();
+    let providerPagesChecked = 0;
+    let totalSeen = 0;
+
+    // Check a bounded number of pages to avoid unbounded provider requests.
+    for (let page = 1; page <= 5; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+      url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(20000),
+      });
+
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch (_) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const providerBody = String(responseText || '').slice(0, 1000);
+        console.warn('DT One product discovery failed', JSON.stringify({
+          status: response.status,
+          page,
+          baseUrl: DTONE_API_BASE_URL,
+          responseBody: providerBody,
+        }));
+        return res.status(502).json({
+          verified: false,
+          providerStatus: response.status,
+          configuredBaseUrl: DTONE_API_BASE_URL,
+          providerMessage: providerBody || null,
+          pagesChecked: providerPagesChecked,
+          error: 'DT One product discovery failed. Check providerMessage and the configured API environment.',
+        });
+      }
+
+      const products = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      providerPagesChecked += 1;
+      totalSeen += products.length;
+
+      for (const product of products) {
+        const operatorName = String(product?.operator?.name || '').toUpperCase();
+        const countryCode = String(product?.operator?.country?.iso_code || '').toUpperCase();
+        const name = String(product?.name || '');
+        const benefitAmounts = Array.isArray(product?.benefits)
+          ? product.benefits.map((benefit) => Number(benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base))
+          : [];
+        const productAmounts = [
+          product?.destination?.amount,
+          product?.amount?.base,
+          typeof product?.amount === 'number' ? product.amount : NaN,
+        ].map(Number);
+        const mentionsAmount = benefitAmounts.includes(amountQuery)
+          || productAmounts.includes(amountQuery)
+          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
+        const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
+        const isLikelyRelevant = operatorQuery
+          ? isRequestedOperator
+          : (operatorName.includes('ATOMA') || mentionsAmount);
+        if (countryCode === countryIsoCode && isLikelyRelevant) {
+          const id = product?.id;
+          if (id !== undefined && id !== null) matchesById.set(String(id), product);
+        }
+      }
+
+      if (products.length < 100) break;
+    }
+
+    const products = [...matchesById.values()];
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      countryIsoCode,
+      requestedOperator: operatorQuery || null,
+      requestedAmount: amountQuery,
+      providerPagesChecked,
+      providerProductsSeen: totalSeen,
+      resultCount: products.length,
+      products,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+      note: 'Read-only search across up to five pages. Results are candidates; confirm operator, denomination, and pre-production availability before mapping.',
+    });
+  } catch (error) {
+    console.error('DT One product discovery failed:', error.message);
+    return res.status(502).json({
+      verified: false,
+      error: 'Could not reach DT One product discovery endpoint.',
+    });
+  }
+});
+
+// Read-only verification of a catalog product and its country pricing settings.
+// Does not change product activation, prices, orders, or payments.
+app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+  try {
+    const productResult = await pool.query(
+      `SELECT product_id, country, operator, amount, currency,
+              price_eur_cents, wholesale_price_eur_cents, bonus_amount, active
+       FROM product_catalog
+       WHERE product_id = $1
+       LIMIT 1`,
+      [productId]
+    );
+    if (productResult.rowCount !== 1) {
+      return res.status(404).json({ error: 'Product was not found in product_catalog.', productId });
+    }
+    const product = productResult.rows[0];
+    const pricingResult = await pool.query(
+      `SELECT country, fee_eur_cents, bonus_percent, stripe_fee_percent,
+              stripe_fixed_fee_cents, active
+       FROM pricing_settings
+       WHERE country = $1
+       LIMIT 1`,
+      [product.country]
+    );
+    const pricing = pricingResult.rows[0] || null;
+    let customerPricePreview = null;
+    if (product.wholesale_price_eur_cents != null && pricing !== null) {
+      try {
+        const preview = calculateFinalPrice(
+          {
+            wholesalePriceCents: Number(product.wholesale_price_eur_cents),
+          },
+          {
+            feeCents: Number(pricing.fee_eur_cents),
+            bonusPercent: Number(pricing.bonus_percent),
+            stripeFeePercent: Number(pricing.stripe_fee_percent),
+            stripeFixedFeeCents: Number(pricing.stripe_fixed_fee_cents),
+          }
+        );
+        customerPricePreview = {
+          currency: 'EUR',
+          estimatedCustomerPriceEur: Number((preview.finalPriceCents / 100).toFixed(2)),
+          estimatedCustomerPriceCents: preview.finalPriceCents,
+          wholesaleCostEur: Number((preview.basePriceCents / 100).toFixed(2)),
+          appFeeEur: Number((preview.feeCents / 100).toFixed(2)),
+          estimatedStripeFeeEur: Number((preview.estimatedStripeFeeCents / 100).toFixed(2)),
+          note: 'Preview only. Actual Stripe fees may differ; this does not enable the product or perform a payment.',
+        };
+      } catch (previewError) {
+        customerPricePreview = { error: 'Could not calculate customer price preview from the saved settings.' };
+      }
+    }
+    return res.json({
+      readOnly: true,
+      customerPricePreview,
+      paymentCurrency: 'EUR',
+      product: {
+        ...product,
+        retailPriceEur: Number(product.price_eur_cents) / 100,
+        wholesalePriceEur: product.wholesale_price_eur_cents == null
+          ? null : Number(product.wholesale_price_eur_cents) / 100,
+        active: product.active === true
+      },
+      pricing: pricing ? {
+        ...pricing,
+        appFeeEur: Number(pricing.fee_eur_cents) / 100,
+        stripeFeeNote: 'Stripe fee is an estimate; actual fees depend on the Stripe account, card and payment method.'
+      } : null,
+      checks: {
+        wholesalePriceConfigured: product.wholesale_price_eur_cents != null,
+        pricingSettingsConfigured: pricing !== null,
+        productEnabled: product.active === true,
+        safeForRealCheckout: product.wholesale_price_eur_cents != null && pricing !== null && pricing.active === true && product.active === true
+      },
+      note: 'Read-only verification only. No product, order, payment, or setting was changed.'
+    });
+  } catch (error) {
+    console.error('Admin catalog pricing verification failed:', error.message);
+    return res.status(500).json({ error: 'Could not verify catalog pricing.' });
+  }
+});
+
+// Admin pricing overview.
+// Prices and fees are returned in EUR cents.
+app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         country,
+         fee_eur_cents,
+         afn_per_eur,
+         bonus_percent,
+         stripe_fee_percent,
+         stripe_fixed_fee_cents,
+         active
+       FROM pricing_settings
+       ORDER BY country`
+    );
+
+    return res.json({
+      paymentCurrency: 'EUR',
+      pricing: result.rows,
+      stripeFeeNote: 'Stripe fee is an estimate; actual fees vary by card and payment method.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin pricing query failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not load pricing settings.',
+    });
+  }
+});
+
+// Update country pricing controls from a trusted admin client.
+// Prices are stored in integer EUR cents; bonus is informational
+// until country/operator bonus fulfillment rules are verified.
+app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  const country = normalizeCountry(req.params.country);
+
+  if (!isValidCountry(country)) {
+    return res.status(400).json({
+      error: 'Unsupported country.',
+    });
+  }
+
+  const body = req.body || {};
+  const feeCents = Number(body.feeEurCents);
+  const afnPerEur = Number(body.afnPerEur);
+  const bonusPercent = Number(body.bonusPercent);
+
+  if (
+    !Number.isSafeInteger(feeCents) ||
+    feeCents < 0 ||
+    feeCents > 100000
+  ) {
+    return res.status(400).json({
+      error: 'feeEurCents must be an integer from 0 to 100000.',
+    });
+  }
+
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
+    return res.status(400).json({ error: 'afnPerEur must be a positive number no greater than 1000000.' });
+  }
+
+  if (
+    !Number.isFinite(bonusPercent) ||
+    bonusPercent < 0 ||
+    bonusPercent > 100
+  ) {
+    return res.status(400).json({
+      error: 'bonusPercent must be between 0 and 100.',
+    });
+  }
+
+  if (typeof body.active !== 'boolean') {
+    return res.status(400).json({
+      error: 'active must be true or false.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO pricing_settings (
+         country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (country)
+       DO UPDATE SET
+         fee_eur_cents = EXCLUDED.fee_eur_cents,
+         afn_per_eur = EXCLUDED.afn_per_eur,
+         bonus_percent = EXCLUDED.bonus_percent,
+         active = EXCLUDED.active,
+         updated_at = NOW()
+       RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at`,
+      [country, feeCents, afnPerEur, bonusPercent, body.active]
+    );
+
+    return res.json({
+      paymentCurrency: 'EUR',
+      pricing: result.rows[0],
+      note: 'Bonus percentage is saved as a setting; bonus delivery is not enabled by this endpoint.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin pricing update failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not update pricing settings.',
+    });
+  }
+});
+
+// List orders requiring operator review, including stale in-flight
+// states after a server restart. This is read-only: it never retries DT One.
+// Read-only Stripe reconciliation for a single order. Does not create payments,
+// retry a top-up, or issue a refund.
+app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT order_id, status, charge_cents, currency,
+              stripe_session_id, stripe_payment_intent_id, created_at
+       FROM orders
+       WHERE order_id = $1
+       LIMIT 1`,
+      [orderId]
+    );
+
+    if (result.rowCount !== 1) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = result.rows[0];
+    let session = null;
+    let paymentIntent = null;
+    const stripeLookupDiagnostics = {
+      mode: STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' :
+        STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'live' : 'unknown',
+      sessionPagesScanned: 0,
+      sessionsScanned: 0,
+      sessionSearchHasMore: false,
+      paymentIntentSearchCount: 0,
+      orderCreatedAt: order.created_at,
+    };
+
+    if (order.stripe_session_id) {
+      session = await stripe.checkout.sessions.retrieve(
+        order.stripe_session_id,
+        { expand: ['payment_intent'] }
+      );
+      if (session.payment_intent && typeof session.payment_intent === 'object') {
+        paymentIntent = session.payment_intent;
+      }
+    }
+
+    if (!paymentIntent && order.stripe_payment_intent_id) {
+      paymentIntent = await stripe.paymentIntents.retrieve(
+        order.stripe_payment_intent_id
+      );
+    }
+
+    // Recovery lookup for legacy orders whose Stripe IDs were not saved locally.
+    // Search only sessions created around/after this order, and accept a match
+    // only when Stripe's client_reference_id or metadata.orderId equals orderId.
+    if (!session) {
+      const orderCreatedSeconds = Math.max(
+        0,
+        Math.floor(new Date(order.created_at).getTime() / 1000) - 300
+      );
+      let startingAfter;
+      for (let page = 0; page < 5; page += 1) {
+        const params = {
+          limit: 100,
+          created: { gte: orderCreatedSeconds },
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        };
+        const sessions = await stripe.checkout.sessions.list(params);
+        stripeLookupDiagnostics.sessionPagesScanned += 1;
+        stripeLookupDiagnostics.sessionsScanned += sessions.data.length;
+        stripeLookupDiagnostics.sessionSearchHasMore = sessions.has_more;
+        const match = sessions.data.find((candidate) =>
+          candidate.client_reference_id === orderId ||
+          candidate.metadata?.orderId === orderId
+        );
+        if (match) {
+          session = await stripe.checkout.sessions.retrieve(
+            match.id,
+            { expand: ['payment_intent'] }
+          );
+          if (session.payment_intent && typeof session.payment_intent === 'object') {
+            paymentIntent = session.payment_intent;
+          }
+          break;
+        }
+        if (!sessions.has_more || sessions.data.length === 0) break;
+        startingAfter = sessions.data[sessions.data.length - 1].id;
+      }
+    }
+
+    // Last read-only fallback: exact metadata match on PaymentIntent.
+    // Never associate a payment solely by amount, currency, or timestamp.
+    if (!paymentIntent && typeof stripe.paymentIntents.search === 'function') {
+      const found = await stripe.paymentIntents.search({
+        query: `metadata['orderId']:'${orderId}'`,
+        limit: 10,
+      });
+      stripeLookupDiagnostics.paymentIntentSearchCount = found.data.length;
+      const match = found.data.find((candidate) =>
+        candidate.metadata?.orderId === orderId
+      );
+      if (match) paymentIntent = match;
+    }
+
+    const sessionOrderId = session?.metadata?.orderId || session?.client_reference_id || null;
+    const intentOrderId = paymentIntent?.metadata?.orderId || null;
+    const associationVerified =
+      Boolean(session || paymentIntent) &&
+      (!session || sessionOrderId === orderId) &&
+      (!paymentIntent || !intentOrderId || intentOrderId === orderId);
+
+    return res.status(200).json({
+      lookup: 'read_only',
+      orderId,
+      localOrderStatus: order.status,
+      // The order's currency is the recipient top-up currency (e.g. AFN),
+      // while charge_cents is the EUR amount charged by Stripe.
+      chargeCents: Number(order.charge_cents),
+      paymentCurrency: 'EUR',
+      topupCurrency: order.currency,
+      currency: order.currency,
+      stripeSessionFound: Boolean(session),
+      stripeSessionId: session?.id || order.stripe_session_id || null,
+      stripeSessionStatus: session?.status || null,
+      stripePaymentStatus: session?.payment_status || null,
+      stripePaymentIntentId: paymentIntent?.id || order.stripe_payment_intent_id || null,
+      stripePaymentIntentStatus: paymentIntent?.status || null,
+      amountTotal: session?.amount_total ?? null,
+      amountReceived: paymentIntent?.amount_received ?? null,
+      stripeCurrency: session?.currency || paymentIntent?.currency || null,
+      livemode: session?.livemode ?? paymentIntent?.livemode ?? null,
+      associationVerified,
+      stripeLookupDiagnostics,
+      note: 'Read-only reconciliation only. No payment, top-up, or refund was created.',
+    });
+  } catch (error) {
+    console.error('Admin Stripe payment-status lookup failed:', error.message);
+    return res.status(502).json({
+      error: 'Could not verify Stripe payment status. Reconcile the order in Stripe Dashboard.',
+    });
+  }
+});
+
+app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         order_id,
+         country,
+         operator,
+         phone,
+         amount,
+         currency,
+         charge_cents,
+         status,
+         stripe_payment_intent_id,
+         dtone_transaction_id,
+         dtone_status,
+         dtone_error,
+         created_at,
+         updated_at,
+         CASE
+           WHEN status = 'topup_review'
+             THEN 'manual_review_required'
+           WHEN status = 'processing_topup'
+             THEN 'stale_processing_topup'
+           WHEN status = 'topup_submitted'
+             THEN 'stale_provider_status'
+           ELSE 'review_required'
+         END AS review_reason
+       FROM orders
+       WHERE status = 'topup_review'
+          OR (
+            status = 'processing_topup'
+            AND updated_at < NOW() - INTERVAL '5 minutes'
+          )
+          OR (
+            status = 'topup_submitted'
+            AND updated_at < NOW() - INTERVAL '15 minutes'
+          )
+       ORDER BY updated_at ASC
+       LIMIT 100`
+    );
+
+    return res.json({
+      count: result.rowCount,
+      orders: result.rows,
+      thresholds: {
+        processingTopupMinutes: 5,
+        topupSubmittedMinutes: 15,
+      },
+      automaticRetry: false,
+      note: 'Stale orders are surfaced for authenticated admin review only. Check the provider transaction/status before any manual action; do not blindly resubmit.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin review queue failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not load review queue.',
+    });
+  }
+});
+
+// Full Stripe refund, initiated only by an authenticated admin.
+// Idempotency is enforced both by the refunds table's UNIQUE(order_id)
+// constraint and Stripe's idempotency key. This endpoint deliberately
+// does not refund orders that are already completed by DT One.
+app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+
+  const reason = String(req.body?.reason || 'Top-up failed; admin reviewed')
+    .trim()
+    .slice(0, 500);
+  const client = await pool.connect();
+  let transactionOpen = false;
+
+  try {
+    // Keep the order lock until Stripe has returned and both database
+    // records have been updated. A DT One callback cannot change the order
+    // to completed between our eligibility check and refund finalization.
+    await client.query('BEGIN');
+    transactionOpen = true;
+
+    const orderResult = await client.query(
+      `SELECT order_id, status, charge_cents, stripe_payment_intent_id, dtone_status
+       FROM orders WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    if (orderResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = orderResult.rows[0];
+    if (order.status === 'completed' || order.status === 'refunded') {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Order is already completed or refunded; no refund was started.',
+      });
+    }
+
+    if (order.status !== 'topup_review' ||
+        !['failed', 'rejected', 'cancelled', 'canceled', 'declined'].includes(String(order.dtone_status || '').trim().toLowerCase())) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Refund requires a final DT One failure status. Unknown or pending outcomes must be reconciled first.',
+      });
+    }
+
+    if (!order.stripe_payment_intent_id) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({ error: 'The order has no verified Stripe PaymentIntent.' });
+    }
+
+    // Verify the actual Stripe PaymentIntent before creating any refund record
+    // or sending a refund request. The order's charge_cents is EUR, while
+    // order.currency is the destination top-up currency (e.g. AFN).
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.retrieve(
+        order.stripe_payment_intent_id
+      );
+    } catch (lookupError) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(502).json({
+        error: 'Could not verify the Stripe payment. No refund was started.',
+      });
+    }
+
+    const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
+    if (
+      paymentIntent.id !== order.stripe_payment_intent_id ||
+      paymentIntent.status !== 'succeeded' ||
+      paymentIntent.currency !== 'eur' ||
+      paymentIntent.amount_received !== Number(order.charge_cents) ||
+      paymentIntent.livemode === stripeIsTest
+    ) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Stripe payment verification did not match this order. No refund was started.',
+      });
+    }
+
+    const refundResult = await client.query(
+      `SELECT id, stripe_refund_id, amount_cents, status
+       FROM refunds WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    const existingRefund = refundResult.rows[0] || null;
+
+    if (existingRefund?.status === 'succeeded') {
+      await client.query('COMMIT');
+      transactionOpen = false;
+      return res.json({
+        orderId, refundId: existingRefund.stripe_refund_id,
+        status: 'refunded', duplicate: true,
+      });
+    }
+
+    // Do not race two administrators or retry an ambiguous Stripe request.
+    // A pending/failed row must be reconciled against Stripe before retrying.
+    if (existingRefund) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'A refund record already exists. Reconcile it in Stripe Dashboard before retrying.',
+        refundStatus: existingRefund.status,
+        refundId: existingRefund.stripe_refund_id || null,
+      });
+    }
+
+    await client.query(
+      `INSERT INTO refunds (order_id, amount_cents, status, reason)
+       VALUES ($1, $2, 'pending', $3)`,
+      [orderId, Number(order.charge_cents), reason]
+    );
+
+    let refund;
+    try {
+      // Stable idempotency key plus the open row lock prevents concurrent
+      // admin requests and callback status changes during this operation.
+      refund = await stripe.refunds.create(
+        {
+          payment_intent: order.stripe_payment_intent_id,
+          reason: 'requested_by_customer',
+          metadata: { orderId, adminReason: reason },
+        },
+        { idempotencyKey: `pgnt-refund-${orderId}` }
+      );
+    } catch (stripeError) {
+      await client.query(
+        `UPDATE refunds SET status = 'pending', reason = $1 WHERE order_id = $2`,
+        [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
+      );
+      await client.query('COMMIT');
+      transactionOpen = false;
+      console.error('Stripe refund outcome requires reconciliation:', stripeError.message);
+      return res.status(502).json({
+        error: 'Stripe refund outcome is not confirmed. Check Stripe Dashboard before any retry.',
+      });
+    }
+
+    await client.query(
+      `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
+         status = $3, reason = $4 WHERE order_id = $5`,
+      [refund.id, refund.amount, refund.status, reason, orderId]
+    );
+
+    if (refund.status === 'succeeded') {
+      await client.query(
+        `UPDATE orders SET status = 'refunded',
+           refunded_at = COALESCE(refunded_at, NOW()), updated_at = NOW()
+         WHERE order_id = $1 AND status = 'topup_review'`,
+        [orderId]
+      );
+    } else {
+      await client.query(
+        `UPDATE orders SET status = 'topup_review', updated_at = NOW()
+         WHERE order_id = $1 AND status = 'topup_review'`,
+        [orderId]
+      );
+    }
+
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.status(200).json({
+      orderId, refundId: refund.id, status: refund.status,
+      amountCents: refund.amount, currency: refund.currency,
+    });
+  } catch (error) {
+    if (transactionOpen) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Admin refund processing failed:', error.message);
+    return res.status(500).json({ error: 'Refund processing failed; reconcile Stripe Dashboard before retrying.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Order-status lookup protected by a per-order access token.
+// The token is returned only in the initial checkout response and stored
+// as a SHA-256 hash. Orders without a token fail closed.
+app.get('/api/orders/:orderId/status', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  const orderId = String(
+    req.params.orderId || ''
+  ).trim();
+
+  if (
+    !/^[0-9a-f-]{36}$/i.test(orderId)
+  ) {
+    return res.status(400).json({
+      error: 'Invalid order ID.',
+    });
+  }
+
+  try {
+    const accessToken = String(req.get('x-order-access-token') || '').trim();
+    if (!/^[a-f0-9]{64}$/i.test(accessToken)) {
+      return res.status(401).json({ error: 'A valid order access token is required.' });
+    }
+
+    const result = await pool.query(
+      `SELECT order_id, country, currency, charge_cents, status,
+              created_at, updated_at, order_access_token_hash
+       FROM orders WHERE order_id = $1 LIMIT 1`,
+      [orderId]
+    );
+
+    if (result.rowCount !== 1) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = result.rows[0];
+    const suppliedTokenHash = crypto.createHash('sha256').update(accessToken, 'utf8').digest('hex');
+    if (!order.order_access_token_hash ||
+        !constantTimeEqual(suppliedTokenHash, order.order_access_token_hash)) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    return res.json({
+      orderId: order.order_id,
+      country: order.country,
+      paymentCurrency: 'EUR',
+      amountCents: Number(order.charge_cents),
+      amountFormatted: formatEuro(Number(order.charge_cents)),
+      status: order.status,
+      createdAt: order.created_at,
+      updatedAt: order.updated_at,
+    });
+  } catch (error) {
+    console.error(
+      'Order status lookup failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not retrieve order status.',
+    });
+  }
+});
+
+// Register the tightly restricted DT One pre-production test routes.
+require('./dtone-sandbox-test')({
+  app,
+  pool,
+  requireAdmin,
+  DTONE_API_KEY,
+  DTONE_API_SECRET,
+  DTONE_API_BASE_URL,
+  DTONE_CALLBACK_URL,
+  getDtOneAuthHeader,
+});
+
+// Start the server only after configuration checks.
+// Keep this block once, at the very end of server.js.
+async function startServer() {
+  if (!pool) {
+    console.error(
+      'DATABASE_URL is missing. Server will not start.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!stripe) {
+    console.error(
+      'STRIPE_SECRET_KEY is missing. Server will not start.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    await pool.query('SELECT 1');
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(
+        `PGNT ASIAN TOPUP backend listening on port ${PORT}`
+      );
+      console.log(
+        `Customer payment currency: ${PAYMENT_CURRENCY.toUpperCase()}`
+      );
+    });
+  } catch (error) {
+    console.error(
+      'Server startup failed:',
+      error.message
+    );
+
+    process.exitCode = 1;
+  }
+}
+
+startServer(); + values.length);
+  }
+  if (body.maxRewards !== undefined) {
+    const n = body.maxRewards === null ? null : Number(body.maxRewards);
+    if (n !== null && (!Number.isSafeInteger(n) || n < 0)) return res.status(400).json({ error: 'maxRewards must be null or a non-negative integer.' });
+    values.push(n); fields.push('max_rewards = 
+// without installing an API client. The admin key is entered by the owner
+// in their browser and is never stored by this page.
+app.get('/admin-dtone-check', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  return res.status(200).send(`<!doctype html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PGNT ASIAN — DT One product check</title>
+<style>
+body{font:16px system-ui,sans-serif;max-width:620px;margin:32px auto;padding:0 16px;color:#222}
+h1{font-size:1.35rem}label{display:block;margin:18px 0 6px}
+input,button{box-sizing:border-box;width:100%;padding:12px;font:inherit}
+button{margin-top:14px;background:#7a0c10;color:white;border:0;border-radius:6px}
+small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:12px;border-radius:6px}
+</style>
+</head>
+<body>
+<h1>PGNT ASIAN TOPUP</h1>
+<p>Read-only DT One check for Afghanistan ATOMA, product 7194 (115 AFN). This does not create a top-up or enable the product.</p>
+<form id="check">
+<label for="key">Admin API key</label>
+<input id="key" type="password" autocomplete="off" required>
+<small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<hr>
+<h2>Sandbox transaction test</h2>
+<p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
+<label for="scenario">Test result</label>
+<select id="scenario" style="width:100%;padding:12px;font:inherit"><option value="completed">Successful scenario (test number ending 100)</option><option value="declined">Declined scenario (test number ending 106)</option></select>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmSandbox" type="checkbox" style="width:auto"> I confirm this is a DT One SANDBOX test</label>
+<button type="button" id="runSandbox">Run sandbox transaction</button>
+<label for="orderId">Sandbox test order ID (for status lookup)</label>
+<input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
+<button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
+<button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
+</form>
+<hr>
+<h2>Stripe + DT One end-to-end sandbox</h2>
+<p>Admin-only test. Uses Stripe test mode and DT One pre-production with a fixed test recipient. A successful test payment submits one sandbox top-up. It does not activate the ATOMA catalog product. Do not use real card details.</p>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
+<button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
+<h2>Admin pricing controls</h2>
+<p>Load the saved Afghanistan settings, then change the app fee or bonus. Changes are saved to the backend database. Keep the ATOMA product disabled until sandbox checkout and fulfilment checks pass.</p>
+<button type="button" id="loadPricing">Load saved Afghanistan settings</button>
+<label for="feeEur">App fee (EUR)</label><input id="feeEur" type="number" min="0" max="1000" step="0.01" value="0.79">
+<label for="afnRate">AFN per EUR exchange rate</label><input id="afnRate" type="number" min="0.01" step="0.0001" value="70">
+<label for="bonusPercent">Bonus percent</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="2">
+<label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Afghanistan pricing settings active</label>
+<button type="button" id="savePricing">Save Afghanistan pricing settings</button>
+<small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
+<h2>Result</h2><pre id="result">Waiting for verification.</pre>
+<script>
+const form=document.getElementById('check');
+const key=document.getElementById('key');
+const result=document.getElementById('result');
+const discover=document.getElementById('discover');
+const checkDatabase=document.getElementById('checkDatabase');
+const scenario=document.getElementById('scenario');
+const confirmSandbox=document.getElementById('confirmSandbox');
+const runSandbox=document.getElementById('runSandbox');
+const orderId=document.getElementById('orderId');
+const checkSandboxStatus=document.getElementById('checkSandboxStatus');
+const checkStripePaymentStatus=document.getElementById('checkStripePaymentStatus');
+const checkLiveDtOneStatus=document.getElementById('checkLiveDtOneStatus');
+const loadReviewQueue=document.getElementById('loadReviewQueue');
+const loadPricing=document.getElementById('loadPricing');
+const savePricing=document.getElementById('savePricing');
+const confirmStripeDtoneSandbox=document.getElementById('confirmStripeDtoneSandbox');
+const runStripeDtoneSandbox=document.getElementById('runStripeDtoneSandbox');
+const feeEur=document.getElementById('feeEur');
+const afnRate=document.getElementById('afnRate');
+const bonusPercent=document.getElementById('bonusPercent');
+const pricingActive=document.getElementById('pricingActive');
+let loadedAfghanistanPricing=null;
+
+async function adminRequest(url,options={}){
+ const response=await fetch(url,{...options,headers:{...(options.headers||{}),'x-admin-api-key':key.value},cache:'no-store'});
+ const raw=await response.text();
+ let data;
+ try{data=raw?JSON.parse(raw):{};}catch(_){
+  const preview=raw.replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').trim().slice(0,220);
+  throw new Error('Backend returned non-JSON response (HTTP '+response.status+'). '+(preview||'Empty response'));
+ }
+ if(!response.ok) throw new Error('HTTP '+response.status+': '+JSON.stringify(data));
+ return data;
+}
+form.addEventListener('submit',async event=>{
+ event.preventDefault();
+ result.textContent='Checking DT One pre-production…';
+ try{
+  const response=await fetch('/api/admin/dtone/products/7194',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const data=await response.json();
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(_){
+  result.textContent='Could not contact the backend. Please try again later.';
+ }
+ key.value='';
+});
+loadPricing.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Loading saved Afghanistan pricing settings…';
+ try{
+  const data=await adminRequest('/api/admin/pricing');
+  const saved=(data.pricing||[]).find(item=>item.country==='AF');
+  if(!saved)throw new Error('No Afghanistan pricing settings found.');
+  loadedAfghanistanPricing=saved;
+  feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
+  afnRate.value=Number(saved.afn_per_eur);
+  bonusPercent.value=Number(saved.bonus_percent);
+  pricingActive.checked=saved.active===true;
+  result.textContent=JSON.stringify({loaded:true,country:saved.country,appFeeEur:Number(saved.fee_eur_cents)/100,afnPerEur:Number(saved.afn_per_eur),bonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
+ }catch(error){result.textContent='Could not load pricing: '+error.message;}
+});
+savePricing.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!loadedAfghanistanPricing){result.textContent='First load the saved settings and review them.';return;}
+ const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value);
+ if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100){result.textContent='Check the fee, exchange rate, and bonus values.';return;}
+ if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', bonus: '+bonus+'%. This will not activate the ATOMA product.'))return;
+ result.textContent='Saving Afghanistan pricing settings…';
+ try{
+  const data=await adminRequest('/api/admin/pricing/AF',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:bonus,active:pricingActive.checked})});
+  loadedAfghanistanPricing=data.pricing;
+  result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
+ }catch(error){result.textContent='Could not save pricing: '+error.message;}
+ finally{key.value='';}
+});
+checkDatabase.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Reading saved product and pricing settings…';
+ try{const data=await adminRequest('/api/admin/catalog/7194/pricing');result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not verify database pricing: '+error.message;}
+ finally{key.value='';}
+});
+discover.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Searching DT One pre-production catalog…';
+ try{
+  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG&operator=ATOMA&amount=115',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const data=await response.json();
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
+ key.value='';
+});
+runSandbox.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!confirmSandbox.checked){result.textContent='Tick the sandbox confirmation box first.';return;}
+ if(!confirm('Submit one transaction to DT One PRE-PRODUCTION? No Stripe payment is created.'))return;
+ result.textContent='Submitting one sandbox transaction. Do not press again while waiting…';
+ runSandbox.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/sandbox-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmSandbox:true,scenario:scenario.value})});
+  if(data.orderId)orderId.value=data.orderId;
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Sandbox test did not confirm success. Details: '+error.message;}
+ finally{key.value='';runSandbox.disabled=false;confirmSandbox.checked=false;}
+});
+loadReviewQueue.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Loading orders that need review…';
+ try{
+  const data=await adminRequest('/api/admin/orders/review');
+  result.textContent=JSON.stringify({
+   count:data.count,
+   thresholds:data.thresholds,
+   automaticRetry:data.automaticRetry,
+   orders:(data.orders||[]).map(order=>({
+    order_id:order.order_id,
+    operator:order.operator,
+    amount:order.amount,
+    currency:order.currency,
+    status:order.status,
+    dtone_transaction_id:order.dtone_transaction_id,
+    dtone_status:order.dtone_status,
+    review_reason:order.review_reason,
+    updated_at:order.updated_at
+   })),
+   note:data.note
+  },null,2);
+ }catch(error){result.textContent='Could not load review queue: '+error.message;}
+ finally{key.value='';}
+});
+runStripeDtoneSandbox.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!confirmStripeDtoneSandbox.checked){result.textContent='Tick the Stripe TEST + DT One PRE-PRODUCTION confirmation first.';return;}
+ if(!confirm('Create a Stripe TEST checkout? If you complete it with a test card, one DT One PRE-PRODUCTION sandbox transaction will be submitted. No real card charge or catalog activation occurs.'))return;
+ result.textContent='Creating one sandbox checkout…';
+ runStripeDtoneSandbox.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/stripe-dtone/sandbox-checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmSandbox:true})});
+  result.textContent=JSON.stringify(data,null,2);
+  if(data.checkoutUrl){
+   const open=confirm('Test checkout created for '+data.amountFormatted+'. Open Stripe checkout now?');
+   if(open)window.location.href=data.checkoutUrl;
+  }
+ }catch(error){result.textContent='Could not create sandbox checkout: '+error.message;}
+ finally{key.value='';runStripeDtoneSandbox.disabled=false;confirmStripeDtoneSandbox.checked=false;}
+});
+checkStripePaymentStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const id=orderId.value.trim();
+ if(!id){result.textContent='Enter the existing order ID first.';return;}
+ if(!/^[0-9a-f-]{36}$/i.test(id)){result.textContent='Enter a valid order UUID.';return;}
+ result.textContent='Checking Stripe payment status (read-only)…';
+ checkStripePaymentStatus.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/orders/'+encodeURIComponent(id)+'/payment-status');
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not verify Stripe payment status: '+error.message;}
+ finally{key.value='';checkStripePaymentStatus.disabled=false;}
+});
+checkSandboxStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ if(!orderId.value.trim()){result.textContent='Enter the sandbox order ID first.';return;}
+ result.textContent='Loading saved sandbox order status…';
+ try{const data=await adminRequest('/api/admin/dtone/sandbox-test/'+encodeURIComponent(orderId.value.trim()));result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not verify saved status: '+error.message;}
+ finally{key.value='';}
+});
+checkLiveDtOneStatus.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const externalId=orderId.value.trim();
+ if(!externalId){result.textContent='Enter the existing order ID first.';return;}
+ result.textContent='Querying DT One directly (read-only)…';
+ checkLiveDtOneStatus.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/transaction-status?external_id='+encodeURIComponent(externalId));
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not query DT One live status: '+error.message;}
+ finally{key.value='';checkLiveDtOneStatus.disabled=false;}
+});
+</script>
+</body>
+</html>`);
+});
+
+// Read-only DT One product verification. This never enables a catalog entry
+// and never creates a transaction. Keep the endpoint admin-authenticated.
+app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) => {
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  try {
+    const response = await fetch(
+      `${DTONE_API_BASE_URL}/v1/products/${productId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+
+    const responseText = await response.text();
+    let data = null;
+    try {
+      data = responseText ? JSON.parse(responseText) : null;
+    } catch (_) {
+      data = null;
+    }
+
+    if (!response.ok) {
+      console.warn('DT One product verification returned HTTP', response.status);
+      return res.status(response.status === 404 ? 404 : 502).json({
+        verified: false,
+        productId,
+        providerStatus: response.status,
+        error: response.status === 404
+          ? 'Product ID was not found in the configured DT One environment.'
+          : 'DT One could not verify this product. Check the provider response in DT One support or dashboard.',
+      });
+    }
+
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      product: data,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+    });
+  } catch (error) {
+    console.error('DT One product verification failed:', error.message);
+    return res.status(502).json({
+      verified: false,
+      productId,
+      error: 'Could not reach DT One to verify this product.',
+    });
+  }
+});
+
+
+// Read-only product discovery in the configured DT One environment.
+// Used to find the correct pre-production product ID; never creates transactions.
+app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
+  const operatorQuery = String(req.query.operator || '').trim().toUpperCase();
+  const amountQuery = Number(req.query.amount || 115);
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
+    return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
+  }
+  if (!Number.isFinite(amountQuery) || amountQuery <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number.' });
+  }
+
+  try {
+    const matchesById = new Map();
+    let providerPagesChecked = 0;
+    let totalSeen = 0;
+
+    // Check a bounded number of pages to avoid unbounded provider requests.
+    for (let page = 1; page <= 5; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+      url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(20000),
+      });
+
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch (_) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const providerBody = String(responseText || '').slice(0, 1000);
+        console.warn('DT One product discovery failed', JSON.stringify({
+          status: response.status,
+          page,
+          baseUrl: DTONE_API_BASE_URL,
+          responseBody: providerBody,
+        }));
+        return res.status(502).json({
+          verified: false,
+          providerStatus: response.status,
+          configuredBaseUrl: DTONE_API_BASE_URL,
+          providerMessage: providerBody || null,
+          pagesChecked: providerPagesChecked,
+          error: 'DT One product discovery failed. Check providerMessage and the configured API environment.',
+        });
+      }
+
+      const products = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      providerPagesChecked += 1;
+      totalSeen += products.length;
+
+      for (const product of products) {
+        const operatorName = String(product?.operator?.name || '').toUpperCase();
+        const countryCode = String(product?.operator?.country?.iso_code || '').toUpperCase();
+        const name = String(product?.name || '');
+        const benefitAmounts = Array.isArray(product?.benefits)
+          ? product.benefits.map((benefit) => Number(benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base))
+          : [];
+        const productAmounts = [
+          product?.destination?.amount,
+          product?.amount?.base,
+          typeof product?.amount === 'number' ? product.amount : NaN,
+        ].map(Number);
+        const mentionsAmount = benefitAmounts.includes(amountQuery)
+          || productAmounts.includes(amountQuery)
+          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
+        const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
+        const isLikelyRelevant = operatorQuery
+          ? isRequestedOperator
+          : (operatorName.includes('ATOMA') || mentionsAmount);
+        if (countryCode === countryIsoCode && isLikelyRelevant) {
+          const id = product?.id;
+          if (id !== undefined && id !== null) matchesById.set(String(id), product);
+        }
+      }
+
+      if (products.length < 100) break;
+    }
+
+    const products = [...matchesById.values()];
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      countryIsoCode,
+      requestedOperator: operatorQuery || null,
+      requestedAmount: amountQuery,
+      providerPagesChecked,
+      providerProductsSeen: totalSeen,
+      resultCount: products.length,
+      products,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+      note: 'Read-only search across up to five pages. Results are candidates; confirm operator, denomination, and pre-production availability before mapping.',
+    });
+  } catch (error) {
+    console.error('DT One product discovery failed:', error.message);
+    return res.status(502).json({
+      verified: false,
+      error: 'Could not reach DT One product discovery endpoint.',
+    });
+  }
+});
+
+// Read-only verification of a catalog product and its country pricing settings.
+// Does not change product activation, prices, orders, or payments.
+app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+  try {
+    const productResult = await pool.query(
+      `SELECT product_id, country, operator, amount, currency,
+              price_eur_cents, wholesale_price_eur_cents, bonus_amount, active
+       FROM product_catalog
+       WHERE product_id = $1
+       LIMIT 1`,
+      [productId]
+    );
+    if (productResult.rowCount !== 1) {
+      return res.status(404).json({ error: 'Product was not found in product_catalog.', productId });
+    }
+    const product = productResult.rows[0];
+    const pricingResult = await pool.query(
+      `SELECT country, fee_eur_cents, bonus_percent, stripe_fee_percent,
+              stripe_fixed_fee_cents, active
+       FROM pricing_settings
+       WHERE country = $1
+       LIMIT 1`,
+      [product.country]
+    );
+    const pricing = pricingResult.rows[0] || null;
+    let customerPricePreview = null;
+    if (product.wholesale_price_eur_cents != null && pricing !== null) {
+      try {
+        const preview = calculateFinalPrice(
+          {
+            wholesalePriceCents: Number(product.wholesale_price_eur_cents),
+          },
+          {
+            feeCents: Number(pricing.fee_eur_cents),
+            bonusPercent: Number(pricing.bonus_percent),
+            stripeFeePercent: Number(pricing.stripe_fee_percent),
+            stripeFixedFeeCents: Number(pricing.stripe_fixed_fee_cents),
+          }
+        );
+        customerPricePreview = {
+          currency: 'EUR',
+          estimatedCustomerPriceEur: Number((preview.finalPriceCents / 100).toFixed(2)),
+          estimatedCustomerPriceCents: preview.finalPriceCents,
+          wholesaleCostEur: Number((preview.basePriceCents / 100).toFixed(2)),
+          appFeeEur: Number((preview.feeCents / 100).toFixed(2)),
+          estimatedStripeFeeEur: Number((preview.estimatedStripeFeeCents / 100).toFixed(2)),
+          note: 'Preview only. Actual Stripe fees may differ; this does not enable the product or perform a payment.',
+        };
+      } catch (previewError) {
+        customerPricePreview = { error: 'Could not calculate customer price preview from the saved settings.' };
+      }
+    }
+    return res.json({
+      readOnly: true,
+      customerPricePreview,
+      paymentCurrency: 'EUR',
+      product: {
+        ...product,
+        retailPriceEur: Number(product.price_eur_cents) / 100,
+        wholesalePriceEur: product.wholesale_price_eur_cents == null
+          ? null : Number(product.wholesale_price_eur_cents) / 100,
+        active: product.active === true
+      },
+      pricing: pricing ? {
+        ...pricing,
+        appFeeEur: Number(pricing.fee_eur_cents) / 100,
+        stripeFeeNote: 'Stripe fee is an estimate; actual fees depend on the Stripe account, card and payment method.'
+      } : null,
+      checks: {
+        wholesalePriceConfigured: product.wholesale_price_eur_cents != null,
+        pricingSettingsConfigured: pricing !== null,
+        productEnabled: product.active === true,
+        safeForRealCheckout: product.wholesale_price_eur_cents != null && pricing !== null && pricing.active === true && product.active === true
+      },
+      note: 'Read-only verification only. No product, order, payment, or setting was changed.'
+    });
+  } catch (error) {
+    console.error('Admin catalog pricing verification failed:', error.message);
+    return res.status(500).json({ error: 'Could not verify catalog pricing.' });
+  }
+});
+
+// Admin pricing overview.
+// Prices and fees are returned in EUR cents.
+app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         country,
+         fee_eur_cents,
+         afn_per_eur,
+         bonus_percent,
+         stripe_fee_percent,
+         stripe_fixed_fee_cents,
+         active
+       FROM pricing_settings
+       ORDER BY country`
+    );
+
+    return res.json({
+      paymentCurrency: 'EUR',
+      pricing: result.rows,
+      stripeFeeNote: 'Stripe fee is an estimate; actual fees vary by card and payment method.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin pricing query failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not load pricing settings.',
+    });
+  }
+});
+
+// Update country pricing controls from a trusted admin client.
+// Prices are stored in integer EUR cents; bonus is informational
+// until country/operator bonus fulfillment rules are verified.
+app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  const country = normalizeCountry(req.params.country);
+
+  if (!isValidCountry(country)) {
+    return res.status(400).json({
+      error: 'Unsupported country.',
+    });
+  }
+
+  const body = req.body || {};
+  const feeCents = Number(body.feeEurCents);
+  const afnPerEur = Number(body.afnPerEur);
+  const bonusPercent = Number(body.bonusPercent);
+
+  if (
+    !Number.isSafeInteger(feeCents) ||
+    feeCents < 0 ||
+    feeCents > 100000
+  ) {
+    return res.status(400).json({
+      error: 'feeEurCents must be an integer from 0 to 100000.',
+    });
+  }
+
+  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
+    return res.status(400).json({ error: 'afnPerEur must be a positive number no greater than 1000000.' });
+  }
+
+  if (
+    !Number.isFinite(bonusPercent) ||
+    bonusPercent < 0 ||
+    bonusPercent > 100
+  ) {
+    return res.status(400).json({
+      error: 'bonusPercent must be between 0 and 100.',
+    });
+  }
+
+  if (typeof body.active !== 'boolean') {
+    return res.status(400).json({
+      error: 'active must be true or false.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO pricing_settings (
+         country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (country)
+       DO UPDATE SET
+         fee_eur_cents = EXCLUDED.fee_eur_cents,
+         afn_per_eur = EXCLUDED.afn_per_eur,
+         bonus_percent = EXCLUDED.bonus_percent,
+         active = EXCLUDED.active,
+         updated_at = NOW()
+       RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at`,
+      [country, feeCents, afnPerEur, bonusPercent, body.active]
+    );
+
+    return res.json({
+      paymentCurrency: 'EUR',
+      pricing: result.rows[0],
+      note: 'Bonus percentage is saved as a setting; bonus delivery is not enabled by this endpoint.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin pricing update failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not update pricing settings.',
+    });
+  }
+});
+
+// List orders requiring operator review, including stale in-flight
+// states after a server restart. This is read-only: it never retries DT One.
+// Read-only Stripe reconciliation for a single order. Does not create payments,
+// retry a top-up, or issue a refund.
+app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT order_id, status, charge_cents, currency,
+              stripe_session_id, stripe_payment_intent_id, created_at
+       FROM orders
+       WHERE order_id = $1
+       LIMIT 1`,
+      [orderId]
+    );
+
+    if (result.rowCount !== 1) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = result.rows[0];
+    let session = null;
+    let paymentIntent = null;
+    const stripeLookupDiagnostics = {
+      mode: STRIPE_SECRET_KEY.startsWith('sk_test_') ? 'test' :
+        STRIPE_SECRET_KEY.startsWith('sk_live_') ? 'live' : 'unknown',
+      sessionPagesScanned: 0,
+      sessionsScanned: 0,
+      sessionSearchHasMore: false,
+      paymentIntentSearchCount: 0,
+      orderCreatedAt: order.created_at,
+    };
+
+    if (order.stripe_session_id) {
+      session = await stripe.checkout.sessions.retrieve(
+        order.stripe_session_id,
+        { expand: ['payment_intent'] }
+      );
+      if (session.payment_intent && typeof session.payment_intent === 'object') {
+        paymentIntent = session.payment_intent;
+      }
+    }
+
+    if (!paymentIntent && order.stripe_payment_intent_id) {
+      paymentIntent = await stripe.paymentIntents.retrieve(
+        order.stripe_payment_intent_id
+      );
+    }
+
+    // Recovery lookup for legacy orders whose Stripe IDs were not saved locally.
+    // Search only sessions created around/after this order, and accept a match
+    // only when Stripe's client_reference_id or metadata.orderId equals orderId.
+    if (!session) {
+      const orderCreatedSeconds = Math.max(
+        0,
+        Math.floor(new Date(order.created_at).getTime() / 1000) - 300
+      );
+      let startingAfter;
+      for (let page = 0; page < 5; page += 1) {
+        const params = {
+          limit: 100,
+          created: { gte: orderCreatedSeconds },
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        };
+        const sessions = await stripe.checkout.sessions.list(params);
+        stripeLookupDiagnostics.sessionPagesScanned += 1;
+        stripeLookupDiagnostics.sessionsScanned += sessions.data.length;
+        stripeLookupDiagnostics.sessionSearchHasMore = sessions.has_more;
+        const match = sessions.data.find((candidate) =>
+          candidate.client_reference_id === orderId ||
+          candidate.metadata?.orderId === orderId
+        );
+        if (match) {
+          session = await stripe.checkout.sessions.retrieve(
+            match.id,
+            { expand: ['payment_intent'] }
+          );
+          if (session.payment_intent && typeof session.payment_intent === 'object') {
+            paymentIntent = session.payment_intent;
+          }
+          break;
+        }
+        if (!sessions.has_more || sessions.data.length === 0) break;
+        startingAfter = sessions.data[sessions.data.length - 1].id;
+      }
+    }
+
+    // Last read-only fallback: exact metadata match on PaymentIntent.
+    // Never associate a payment solely by amount, currency, or timestamp.
+    if (!paymentIntent && typeof stripe.paymentIntents.search === 'function') {
+      const found = await stripe.paymentIntents.search({
+        query: `metadata['orderId']:'${orderId}'`,
+        limit: 10,
+      });
+      stripeLookupDiagnostics.paymentIntentSearchCount = found.data.length;
+      const match = found.data.find((candidate) =>
+        candidate.metadata?.orderId === orderId
+      );
+      if (match) paymentIntent = match;
+    }
+
+    const sessionOrderId = session?.metadata?.orderId || session?.client_reference_id || null;
+    const intentOrderId = paymentIntent?.metadata?.orderId || null;
+    const associationVerified =
+      Boolean(session || paymentIntent) &&
+      (!session || sessionOrderId === orderId) &&
+      (!paymentIntent || !intentOrderId || intentOrderId === orderId);
+
+    return res.status(200).json({
+      lookup: 'read_only',
+      orderId,
+      localOrderStatus: order.status,
+      // The order's currency is the recipient top-up currency (e.g. AFN),
+      // while charge_cents is the EUR amount charged by Stripe.
+      chargeCents: Number(order.charge_cents),
+      paymentCurrency: 'EUR',
+      topupCurrency: order.currency,
+      currency: order.currency,
+      stripeSessionFound: Boolean(session),
+      stripeSessionId: session?.id || order.stripe_session_id || null,
+      stripeSessionStatus: session?.status || null,
+      stripePaymentStatus: session?.payment_status || null,
+      stripePaymentIntentId: paymentIntent?.id || order.stripe_payment_intent_id || null,
+      stripePaymentIntentStatus: paymentIntent?.status || null,
+      amountTotal: session?.amount_total ?? null,
+      amountReceived: paymentIntent?.amount_received ?? null,
+      stripeCurrency: session?.currency || paymentIntent?.currency || null,
+      livemode: session?.livemode ?? paymentIntent?.livemode ?? null,
+      associationVerified,
+      stripeLookupDiagnostics,
+      note: 'Read-only reconciliation only. No payment, top-up, or refund was created.',
+    });
+  } catch (error) {
+    console.error('Admin Stripe payment-status lookup failed:', error.message);
+    return res.status(502).json({
+      error: 'Could not verify Stripe payment status. Reconcile the order in Stripe Dashboard.',
+    });
+  }
+});
+
+app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         order_id,
+         country,
+         operator,
+         phone,
+         amount,
+         currency,
+         charge_cents,
+         status,
+         stripe_payment_intent_id,
+         dtone_transaction_id,
+         dtone_status,
+         dtone_error,
+         created_at,
+         updated_at,
+         CASE
+           WHEN status = 'topup_review'
+             THEN 'manual_review_required'
+           WHEN status = 'processing_topup'
+             THEN 'stale_processing_topup'
+           WHEN status = 'topup_submitted'
+             THEN 'stale_provider_status'
+           ELSE 'review_required'
+         END AS review_reason
+       FROM orders
+       WHERE status = 'topup_review'
+          OR (
+            status = 'processing_topup'
+            AND updated_at < NOW() - INTERVAL '5 minutes'
+          )
+          OR (
+            status = 'topup_submitted'
+            AND updated_at < NOW() - INTERVAL '15 minutes'
+          )
+       ORDER BY updated_at ASC
+       LIMIT 100`
+    );
+
+    return res.json({
+      count: result.rowCount,
+      orders: result.rows,
+      thresholds: {
+        processingTopupMinutes: 5,
+        topupSubmittedMinutes: 15,
+      },
+      automaticRetry: false,
+      note: 'Stale orders are surfaced for authenticated admin review only. Check the provider transaction/status before any manual action; do not blindly resubmit.',
+    });
+  } catch (error) {
+    console.error(
+      'Admin review queue failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not load review queue.',
+    });
+  }
+});
+
+// Full Stripe refund, initiated only by an authenticated admin.
+// Idempotency is enforced both by the refunds table's UNIQUE(order_id)
+// constraint and Stripe's idempotency key. This endpoint deliberately
+// does not refund orders that are already completed by DT One.
+app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+
+  const reason = String(req.body?.reason || 'Top-up failed; admin reviewed')
+    .trim()
+    .slice(0, 500);
+  const client = await pool.connect();
+  let transactionOpen = false;
+
+  try {
+    // Keep the order lock until Stripe has returned and both database
+    // records have been updated. A DT One callback cannot change the order
+    // to completed between our eligibility check and refund finalization.
+    await client.query('BEGIN');
+    transactionOpen = true;
+
+    const orderResult = await client.query(
+      `SELECT order_id, status, charge_cents, stripe_payment_intent_id, dtone_status
+       FROM orders WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    if (orderResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = orderResult.rows[0];
+    if (order.status === 'completed' || order.status === 'refunded') {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Order is already completed or refunded; no refund was started.',
+      });
+    }
+
+    if (order.status !== 'topup_review' ||
+        !['failed', 'rejected', 'cancelled', 'canceled', 'declined'].includes(String(order.dtone_status || '').trim().toLowerCase())) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Refund requires a final DT One failure status. Unknown or pending outcomes must be reconciled first.',
+      });
+    }
+
+    if (!order.stripe_payment_intent_id) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({ error: 'The order has no verified Stripe PaymentIntent.' });
+    }
+
+    // Verify the actual Stripe PaymentIntent before creating any refund record
+    // or sending a refund request. The order's charge_cents is EUR, while
+    // order.currency is the destination top-up currency (e.g. AFN).
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.retrieve(
+        order.stripe_payment_intent_id
+      );
+    } catch (lookupError) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(502).json({
+        error: 'Could not verify the Stripe payment. No refund was started.',
+      });
+    }
+
+    const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
+    if (
+      paymentIntent.id !== order.stripe_payment_intent_id ||
+      paymentIntent.status !== 'succeeded' ||
+      paymentIntent.currency !== 'eur' ||
+      paymentIntent.amount_received !== Number(order.charge_cents) ||
+      paymentIntent.livemode === stripeIsTest
+    ) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'Stripe payment verification did not match this order. No refund was started.',
+      });
+    }
+
+    const refundResult = await client.query(
+      `SELECT id, stripe_refund_id, amount_cents, status
+       FROM refunds WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    const existingRefund = refundResult.rows[0] || null;
+
+    if (existingRefund?.status === 'succeeded') {
+      await client.query('COMMIT');
+      transactionOpen = false;
+      return res.json({
+        orderId, refundId: existingRefund.stripe_refund_id,
+        status: 'refunded', duplicate: true,
+      });
+    }
+
+    // Do not race two administrators or retry an ambiguous Stripe request.
+    // A pending/failed row must be reconciled against Stripe before retrying.
+    if (existingRefund) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(409).json({
+        error: 'A refund record already exists. Reconcile it in Stripe Dashboard before retrying.',
+        refundStatus: existingRefund.status,
+        refundId: existingRefund.stripe_refund_id || null,
+      });
+    }
+
+    await client.query(
+      `INSERT INTO refunds (order_id, amount_cents, status, reason)
+       VALUES ($1, $2, 'pending', $3)`,
+      [orderId, Number(order.charge_cents), reason]
+    );
+
+    let refund;
+    try {
+      // Stable idempotency key plus the open row lock prevents concurrent
+      // admin requests and callback status changes during this operation.
+      refund = await stripe.refunds.create(
+        {
+          payment_intent: order.stripe_payment_intent_id,
+          reason: 'requested_by_customer',
+          metadata: { orderId, adminReason: reason },
+        },
+        { idempotencyKey: `pgnt-refund-${orderId}` }
+      );
+    } catch (stripeError) {
+      await client.query(
+        `UPDATE refunds SET status = 'pending', reason = $1 WHERE order_id = $2`,
+        [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
+      );
+      await client.query('COMMIT');
+      transactionOpen = false;
+      console.error('Stripe refund outcome requires reconciliation:', stripeError.message);
+      return res.status(502).json({
+        error: 'Stripe refund outcome is not confirmed. Check Stripe Dashboard before any retry.',
+      });
+    }
+
+    await client.query(
+      `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
+         status = $3, reason = $4 WHERE order_id = $5`,
+      [refund.id, refund.amount, refund.status, reason, orderId]
+    );
+
+    if (refund.status === 'succeeded') {
+      await client.query(
+        `UPDATE orders SET status = 'refunded',
+           refunded_at = COALESCE(refunded_at, NOW()), updated_at = NOW()
+         WHERE order_id = $1 AND status = 'topup_review'`,
+        [orderId]
+      );
+    } else {
+      await client.query(
+        `UPDATE orders SET status = 'topup_review', updated_at = NOW()
+         WHERE order_id = $1 AND status = 'topup_review'`,
+        [orderId]
+      );
+    }
+
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.status(200).json({
+      orderId, refundId: refund.id, status: refund.status,
+      amountCents: refund.amount, currency: refund.currency,
+    });
+  } catch (error) {
+    if (transactionOpen) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Admin refund processing failed:', error.message);
+    return res.status(500).json({ error: 'Refund processing failed; reconcile Stripe Dashboard before retrying.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Order-status lookup protected by a per-order access token.
+// The token is returned only in the initial checkout response and stored
+// as a SHA-256 hash. Orders without a token fail closed.
+app.get('/api/orders/:orderId/status', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({
+      error: 'Database is not configured.',
+    });
+  }
+
+  const orderId = String(
+    req.params.orderId || ''
+  ).trim();
+
+  if (
+    !/^[0-9a-f-]{36}$/i.test(orderId)
+  ) {
+    return res.status(400).json({
+      error: 'Invalid order ID.',
+    });
+  }
+
+  try {
+    const accessToken = String(req.get('x-order-access-token') || '').trim();
+    if (!/^[a-f0-9]{64}$/i.test(accessToken)) {
+      return res.status(401).json({ error: 'A valid order access token is required.' });
+    }
+
+    const result = await pool.query(
+      `SELECT order_id, country, currency, charge_cents, status,
+              created_at, updated_at, order_access_token_hash
+       FROM orders WHERE order_id = $1 LIMIT 1`,
+      [orderId]
+    );
+
+    if (result.rowCount !== 1) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = result.rows[0];
+    const suppliedTokenHash = crypto.createHash('sha256').update(accessToken, 'utf8').digest('hex');
+    if (!order.order_access_token_hash ||
+        !constantTimeEqual(suppliedTokenHash, order.order_access_token_hash)) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    return res.json({
+      orderId: order.order_id,
+      country: order.country,
+      paymentCurrency: 'EUR',
+      amountCents: Number(order.charge_cents),
+      amountFormatted: formatEuro(Number(order.charge_cents)),
+      status: order.status,
+      createdAt: order.created_at,
+      updatedAt: order.updated_at,
+    });
+  } catch (error) {
+    console.error(
+      'Order status lookup failed:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error: 'Could not retrieve order status.',
+    });
+  }
+});
+
+// Register the tightly restricted DT One pre-production test routes.
+require('./dtone-sandbox-test')({
+  app,
+  pool,
+  requireAdmin,
+  DTONE_API_KEY,
+  DTONE_API_SECRET,
+  DTONE_API_BASE_URL,
+  DTONE_CALLBACK_URL,
+  getDtOneAuthHeader,
+});
+
+// Start the server only after configuration checks.
+// Keep this block once, at the very end of server.js.
+async function startServer() {
+  if (!pool) {
+    console.error(
+      'DATABASE_URL is missing. Server will not start.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!stripe) {
+    console.error(
+      'STRIPE_SECRET_KEY is missing. Server will not start.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    await pool.query('SELECT 1');
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(
+        `PGNT ASIAN TOPUP backend listening on port ${PORT}`
+      );
+      console.log(
+        `Customer payment currency: ${PAYMENT_CURRENCY.toUpperCase()}`
+      );
+    });
+  } catch (error) {
+    console.error(
+      'Server startup failed:',
+      error.message
+    );
+
+    process.exitCode = 1;
+  }
+}
+
+startServer(); + values.length);
+  }
+  if (!fields.length) return res.status(400).json({ error: 'Supply active, rewardEurCents, or maxRewards.' });
+  try {
+    const result = await pool.query(`UPDATE referral_codes SET ${fields.join(', ')}, updated_at=NOW() WHERE code=$1 RETURNING code, owner_name, owner_contact, reward_eur_cents, max_rewards, active`, values);
+    if (!result.rowCount) return res.status(404).json({ error: 'Referral code not found.' });
+    return res.json({ referral: result.rows[0] });
+  } catch (error) {
+    console.error('Referral code update failed:', error.message);
+    return res.status(500).json({ error: 'Could not update referral code.' });
+  }
+});
+
+// Public read-only validation; never accepts a reward amount from the client.
+app.get('/api/referrals/validate/:code', async (req, res) => {
+  if (!pool) return res.status(503).json({ valid: false, error: 'Service unavailable.' });
+  const code = String(req.params.code || '').trim().toUpperCase();
+  try {
+    const result = await pool.query('SELECT code, owner_name FROM referral_codes WHERE code=$1 AND active=TRUE LIMIT 1', [code]);
+    if (!result.rowCount) return res.status(404).json({ valid: false, error: 'Referral code is not active.' });
+    return res.json({ valid: true, code: result.rows[0].code, ownerName: result.rows[0].owner_name });
+  } catch (error) {
+    console.error('Referral validation failed:', error.message);
+    return res.status(500).json({ valid: false, error: 'Could not validate referral code.' });
+  }
+});
+
 // Small browser page for the owner to run the read-only product check
 // without installing an API client. The admin key is entered by the owner
 // in their browser and is never stored by this page.
