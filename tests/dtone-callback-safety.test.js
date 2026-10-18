@@ -27,6 +27,12 @@ test('callback rejects missing references and unknown provider statuses', () => 
   assert.match(callback, /providerStatus === 'unknown'/);
 });
 
+test('callback refuses to change an order without verified Stripe payment evidence', () => {
+  assert.match(callback, /if \(!order\.paid_at \|\| !order\.stripe_payment_intent_id\)/);
+  assert.match(callback, /Order has no verified Stripe payment evidence/);
+  assert.ok(callback.indexOf("Order has no verified Stripe payment evidence") < callback.indexOf("let nextStatus"));
+});
+
 test('callback locks the order and rejects mismatched provider transaction IDs', () => {
   assert.match(callback, /FOR UPDATE/);
   assert.match(callback, /Transaction reference mismatch/);
