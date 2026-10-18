@@ -299,6 +299,49 @@ async function runMigration() {
 
 
 
+
+    // Version 009 creates private recipient benefit codes and disables general bonuses.
+    const privateCodesVersion = "009_private_benefit_codes";
+    const privateCodesCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [privateCodesVersion]
+    );
+    if (privateCodesCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS private_benefit_codes (
+            id BIGSERIAL PRIMARY KEY,
+            code VARCHAR(40) NOT NULL UNIQUE,
+            target_email VARCHAR(254),
+            target_phone VARCHAR(40),
+            reward_type VARCHAR(40) NOT NULL CHECK (reward_type IN ('first_topup_discount_percent', 'wallet_credit_eur_cents')),
+            reward_value INTEGER NOT NULL CHECK (reward_value > 0),
+            max_redemptions INTEGER NOT NULL DEFAULT 1 CHECK (max_redemptions = 1),
+            redemption_count INTEGER NOT NULL DEFAULT 0 CHECK (redemption_count >= 0),
+            expires_at TIMESTAMPTZ,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (target_email IS NOT NULL OR target_phone IS NOT NULL)
+          );
+          CREATE INDEX IF NOT EXISTS idx_private_benefit_codes_active ON private_benefit_codes (active, expires_at);
+          UPDATE pricing_settings SET bonus_percent = 0, updated_at = NOW();
+          UPDATE product_catalog SET bonus_amount = 0, updated_at = NOW();
+        `);
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [privateCodesVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 009 private_benefit_codes completed; general bonuses set to zero.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 009_private_benefit_codes is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"

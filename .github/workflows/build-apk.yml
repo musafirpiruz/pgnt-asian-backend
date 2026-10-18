@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - feature/private-bonus-codes
       - fix/schema-server-compatibility
       - ui/homepage-redesign
       - feature/vip-support-screen
