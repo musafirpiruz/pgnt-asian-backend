@@ -111,6 +111,53 @@ class MobileOperator {
   );
 }
 
+Color operatorBrandColor(String name) {
+  switch (name) {
+    case 'Roshan':
+    case 'Jazz':
+    case 'Airtel':
+    case 'Robi':
+      return const Color(0xFFE31E24);
+    case 'Etisalat':
+    case 'Zong':
+    case 'Grameenphone':
+      return const Color(0xFF008A4B);
+    case 'ATOMA':
+    case 'Jio':
+      return const Color(0xFF1769AA);
+    case 'AWCC':
+    case 'Ufone':
+    case 'Banglalink':
+      return const Color(0xFFE87524);
+    case 'Salaam':
+    case 'Vi':
+      return const Color(0xFF6A287D);
+    case 'Telenor':
+      return const Color(0xFF0067A5);
+    default:
+      return primaryRed;
+  }
+}
+
+String operatorInitials(String name) {
+  switch (name) {
+    case 'Grameenphone':
+      return 'GP';
+    case 'Banglalink':
+      return 'BL';
+    case 'Etisalat':
+      return 'e';
+    default:
+      final parts = name.trim().split(RegExp(r'\\s+'));
+      if (parts.length > 1) {
+        return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+      }
+      return name.length <= 2
+          ? name.toUpperCase()
+          : name.substring(0, 2).toUpperCase();
+  }
+}
+
 const List<MobileOperator> operators = [
   // Afghanistan
   MobileOperator('AF', 'Roshan', '📶'),
@@ -675,7 +722,7 @@ class PgntBrandHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [primaryRed, darkRed],
@@ -686,7 +733,7 @@ class PgntBrandHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const PgntLogo(size: 44),
+          const PgntLogo(size: 34),
           const SizedBox(width: 14),
           const Expanded(
             child: Column(
@@ -1175,11 +1222,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CircleAvatar(
-                      radius: 19,
-                      backgroundColor: selected ? primaryRed : cream,
+                      radius: 17,
+                      backgroundColor: operatorBrandColor(item.name),
                       child: Text(
-                        item.icon,
-                        style: const TextStyle(fontSize: 18),
+                        operatorInitials(item.name),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 7),
