@@ -83,8 +83,18 @@ const paymentStatusRoute = paymentStatusStart >= 0 && paymentStatusEnd > payment
   ? server.slice(paymentStatusStart, paymentStatusEnd)
   : '';
 
-test('read-only payment status does not verify association when Stripe objects are missing', () => {
+test('read-only payment status requires explicit order association and verified payment evidence', () => {
   assert.notEqual(paymentStatusStart, -1, 'payment-status route must exist');
   assert.match(paymentStatusRoute, /Boolean\(session \|\| paymentIntent\)/);
   assert.match(paymentStatusRoute, /const associationVerified/);
+  assert.match(paymentStatusRoute, /!intentOrderId \|\| intentOrderId === orderId/);
+  assert.match(paymentStatusRoute, /const paymentVerified/);
+  assert.match(paymentStatusRoute, /paymentIntent\.status === ['"]succeeded['"]/);
+  assert.match(paymentStatusRoute, /paymentIntent\.amount_received === Number\(order\.charge_cents\)/);
+  assert.match(paymentStatusRoute, /session\.amount_total === Number\(order\.charge_cents\)/);
+  assert.match(paymentStatusRoute, /paymentVerified,/);
+});
+
+test('DT One read-only transaction lookup accepts non-numeric provider IDs safely', () => {
+  assert.match(server, /\^\[A-Za-z0-9_-\]\{1,100\}\$/.source.replace(/\\/g, '\\'));
 });
