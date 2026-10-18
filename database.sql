@@ -719,6 +719,26 @@ FOR EACH ROW
 EXECUTE FUNCTION pgnt_set_updated_at();
 
 
+
+-- =========================================================
+-- PRIVATE BENEFIT CODES (individually issued; no global/share bonus)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS private_benefit_codes (
+  id BIGSERIAL PRIMARY KEY,
+  code VARCHAR(40) NOT NULL UNIQUE,
+  target_email VARCHAR(254),
+  target_phone VARCHAR(40),
+  reward_type VARCHAR(40) NOT NULL CHECK (reward_type IN ('first_topup_discount_percent', 'wallet_credit_eur_cents')),
+  reward_value INTEGER NOT NULL CHECK (reward_value > 0),
+  max_redemptions INTEGER NOT NULL DEFAULT 1 CHECK (max_redemptions = 1),
+  redemption_count INTEGER NOT NULL DEFAULT 0 CHECK (redemption_count >= 0),
+  expires_at TIMESTAMPTZ,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (target_email IS NOT NULL OR target_phone IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_private_benefit_codes_active ON private_benefit_codes (active, expires_at);
+
 -- =========================================================
 -- 24. FINAL DATABASE VERIFICATION
 -- =========================================================
