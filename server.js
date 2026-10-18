@@ -1789,7 +1789,7 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
     // the read-only lookup by DT One's transaction ID; never create/resubmit.
     if (response.status === 404 && local.rows[0]?.dtone_transaction_id) {
       const providerTransactionId = String(local.rows[0].dtone_transaction_id);
-      if (/^\\d+$/.test(providerTransactionId)) {
+      if (/^[A-Za-z0-9_-]{1,100}$/.test(providerTransactionId)) {
         response = await fetch(
           `${DTONE_API_BASE_URL}/v1/transactions/${encodeURIComponent(providerTransactionId)}`,
           {
@@ -2985,10 +2985,33 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
 
     const sessionOrderId = session?.metadata?.orderId || session?.client_reference_id || null;
     const intentOrderId = paymentIntent?.metadata?.orderId || null;
+    // Every Stripe object used as evidence must explicitly identify this order.
+    // A locally stored ID alone is not enough to claim the association is verified.
     const associationVerified =
       Boolean(session || paymentIntent) &&
       (!session || sessionOrderId === orderId) &&
-      (!paymentIntent || !intentOrderId || intentOrderId === orderId);
+      (!paymentIntent || intentOrderId === orderId);
+    const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
+    const expectedLivemode = !stripeIsTest;
+    const evidenceSession = !session || (
+      sessionOrderId === orderId &&
+      session.currency === 'eur' &&
+      session.amount_total === Number(order.charge_cents) &&
+      session.livemode === expectedLivemode
+    );
+    const evidencePaymentIntent = !paymentIntent || (
+      intentOrderId === orderId &&
+      paymentIntent.status === 'succeeded' &&
+      paymentIntent.currency === 'eur' &&
+      paymentIntent.amount_received === Number(order.charge_cents) &&
+      paymentIntent.livemode === expectedLivemode
+    );
+    const paymentVerified =
+      associationVerified &&
+      Boolean(paymentIntent || (session && session.payment_status === 'paid')) &&
+      evidenceSession &&
+      evidencePaymentIntent &&
+      (!session || session.payment_status === 'paid');
 
     return res.status(200).json({
       lookup: 'read_only',
@@ -3011,6 +3034,7 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
       stripeCurrency: session?.currency || paymentIntent?.currency || null,
       livemode: session?.livemode ?? paymentIntent?.livemode ?? null,
       associationVerified,
+      paymentVerified,
       stripeLookupDiagnostics,
       note: 'Read-only reconciliation only. No payment, top-up, or refund was created.',
     });
