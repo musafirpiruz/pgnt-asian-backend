@@ -2235,6 +2235,14 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+// Customer and admin support-ticket API routes. These use per-order access
+// tokens for customer requests and the existing ADMIN_API_KEY for admin actions.
+require('./support-routes')({
+  app,
+  pool,
+  requireAdmin,
+});
+
 
 
 // Small browser page for the owner to run the read-only product check
