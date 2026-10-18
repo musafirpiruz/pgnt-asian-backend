@@ -1771,7 +1771,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final columns = 2;
-        final spacing = 9.0;
+        final spacing = 8.0;
         final cardWidth =
             (constraints.maxWidth - spacing * (columns - 1)) / columns;
         return Wrap(
@@ -1781,7 +1781,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             final selected = selectedOperator?.name == item.name &&
                 selectedOperator?.countryCode == item.countryCode;
             return InkWell(
-              borderRadius: BorderRadius.circular(13),
+              borderRadius: BorderRadius.circular(12),
               onTap: () {
                 setState(() {
                   selectedOperator = item;
@@ -1809,7 +1809,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   children: [
                     OperatorBrandMark(
                       operator: item,
-                      size: 42,
+                      size: 30,
                     ),
                     const SizedBox(height: 7),
                     Text(
@@ -1818,7 +1818,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: selected ? primaryRed : Colors.black87,
                       ),
