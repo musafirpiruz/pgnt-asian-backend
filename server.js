@@ -2358,6 +2358,7 @@ body{font:16px system-ui,sans-serif;max-width:620px;margin:32px auto;padding:0 1
 h1{font-size:1.35rem}label{display:block;margin:18px 0 6px}
 input,button{box-sizing:border-box;width:100%;padding:12px;font:inherit}
 button{margin-top:14px;background:#7a0c10;color:white;border:0;border-radius:6px}
+.ticket-card{border:1px solid #ddd;border-radius:8px;padding:14px;margin:14px 0;background:#fff}.ticket-card h3{font-size:1.05rem}.ticket-card label{margin:12px 0 6px}.ticket-card textarea{display:block}.ticket-card button{margin-top:12px}
 small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:12px;border-radius:6px}
 </style>
 </head>
@@ -2395,6 +2396,14 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Afghanistan pricing settings active</label>
 <button type="button" id="savePricing">Save Afghanistan pricing settings</button>
 <small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
+<h2>Customer Support Tickets</h2>
+<p>Review customer requests, prioritize urgent issues, reply to customers, and update ticket status. This page does not issue refunds or change payment/top-up outcomes.</p>
+<label for="ticketStatusFilter">Ticket status filter</label>
+<select id="ticketStatusFilter" style="width:100%;padding:12px;font:inherit">
+<option value="">All tickets</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option>
+</select>
+<button type="button" id="loadSupportTickets">Load / refresh support tickets</button>
+<div id="supportTickets" aria-live="polite"></div>
 <h2>Result</h2><pre id="result">Waiting for verification.</pre>
 <script>
 const form=document.getElementById('check');
@@ -2431,6 +2440,74 @@ async function adminRequest(url,options={}){
  if(!response.ok) throw new Error('HTTP '+response.status+': '+JSON.stringify(data));
  return data;
 }
+
+const ticketStatusFilter=document.getElementById('ticketStatusFilter');
+const loadSupportTickets=document.getElementById('loadSupportTickets');
+const supportTickets=document.getElementById('supportTickets');
+function makeTicketElement(tag, text, className){
+ const node=document.createElement(tag);
+ if(text!==undefined)node.textContent=text;
+ if(className)node.className=className;
+ return node;
+}
+async function refreshSupportTickets(){
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ supportTickets.replaceChildren(makeTicketElement('p','Loading support tickets…'));
+ loadSupportTickets.disabled=true;
+ try{
+  const status=ticketStatusFilter.value;
+  const data=await adminRequest('/api/admin/support/tickets?limit=100'+(status?'&status='+encodeURIComponent(status):''));
+  supportTickets.replaceChildren();
+  const tickets=Array.isArray(data.tickets)?data.tickets:[];
+  if(!tickets.length){supportTickets.append(makeTicketElement('p','No tickets found for this filter.'));return;}
+  for(const ticket of tickets){
+   const card=makeTicketElement('section',undefined,'ticket-card');
+   card.append(makeTicketElement('h3','#'+ticket.id+' — '+(ticket.subject||'Support request')));
+   card.append(makeTicketElement('p','Status: '+ticket.status+' | Priority: '+ticket.priority+' | Category: '+ticket.category));
+   card.append(makeTicketElement('p','Order: '+ticket.order_id+' | '+(ticket.country||'')+' '+(ticket.operator||'')+' | Phone: '+(ticket.phone||'')+' | Order status: '+(ticket.order_status||'unknown')));
+   card.append(makeTicketElement('p','Customer message: '+(ticket.message||'')));
+   card.append(makeTicketElement('small','Created: '+(ticket.created_at||'—')));
+   const statusLabel=makeTicketElement('label','Update status');
+   const statusSelect=document.createElement('select');
+   statusSelect.style.cssText='width:100%;padding:10px;font:inherit';
+   for(const option of [['open','Open'],['in_progress','In progress'],['resolved','Resolved'],['closed','Closed']]){
+    const item=document.createElement('option');item.value=option[0];item.textContent=option[1];item.selected=ticket.status===option[0];statusSelect.append(item);
+   }
+   statusLabel.append(statusSelect);card.append(statusLabel);
+   const priorityLabel=makeTicketElement('label','Priority');
+   const prioritySelect=document.createElement('select');
+   prioritySelect.style.cssText='width:100%;padding:10px;font:inherit';
+   for(const option of [['low','Low'],['normal','Normal'],['high','High'],['urgent','Urgent']]){
+    const item=document.createElement('option');item.value=option[0];item.textContent=option[1];item.selected=ticket.priority===option[0];prioritySelect.append(item);
+   }
+   priorityLabel.append(prioritySelect);card.append(priorityLabel);
+   const replyLabel=makeTicketElement('label','Reply to customer');
+   const reply=document.createElement('textarea');reply.rows=4;reply.maxLength=4000;reply.style.cssText='box-sizing:border-box;width:100%;padding:10px;font:inherit';
+   reply.value=ticket.admin_reply||'';reply.placeholder='Write a clear reply. Do not promise a refund until the verified payment/top-up status supports it.';
+   replyLabel.append(reply);card.append(replyLabel);
+   const save=document.createElement('button');save.type='button';save.textContent='Save reply and ticket updates';
+   save.addEventListener('click',async()=>{
+    if(!key.value){result.textContent='Enter the admin API key first.';return;}
+    if(!confirm('Save the reply and status/priority for ticket #'+ticket.id+'?'))return;
+    save.disabled=true;result.textContent='Saving ticket #'+ticket.id+'…';
+    try{
+     const updated=await adminRequest('/api/admin/support/tickets/'+encodeURIComponent(ticket.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:statusSelect.value,priority:prioritySelect.value,adminReply:reply.value})});
+     result.textContent=JSON.stringify({saved:true,ticket:updated.ticket},null,2);
+     await refreshSupportTickets();
+    }catch(error){result.textContent='Could not save ticket: '+error.message;}
+    finally{save.disabled=false;}
+   });
+   card.append(save);
+   supportTickets.append(card);
+  }
+  result.textContent='Loaded '+tickets.length+' support ticket(s).';
+ }catch(error){
+  supportTickets.replaceChildren(makeTicketElement('p','Could not load support tickets.'));
+  result.textContent='Could not load support tickets: '+error.message;
+ }finally{key.value='';loadSupportTickets.disabled=false;}
+}
+loadSupportTickets.addEventListener('click',refreshSupportTickets);
+
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  result.textContent='Checking DT One pre-production…';
