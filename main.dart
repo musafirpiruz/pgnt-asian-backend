@@ -922,7 +922,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       bottomNavigationBar: NavigationBar(
         backgroundColor: cream,
         indicatorColor: gold.withValues(alpha: 0.35),
-        selectedIndex: selectedTab,
+        selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
         onDestinationSelected: (index) {
           setState(() => selectedTab = index);
         },
@@ -946,11 +946,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
             icon: const Icon(Icons.support_agent_outlined),
             selectedIcon: const Icon(Icons.support_agent),
             label: t('support'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.person_outline),
-            selectedIcon: const Icon(Icons.person),
-            label: t('profile'),
           ),
         ],
       ),
@@ -2178,6 +2173,19 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       icon: const Icon(Icons.close),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.person_outline, color: primaryRed),
+                    title: const Text('Profile (optional)'),
+                    subtitle: const Text('Add your details only if you want to.'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      setState(() => selectedTab = 4);
+                      Navigator.pop(sheetContext);
+                    },
+                  ),
                 ),
                 const SizedBox(height: 8),
                 ...languages.map(
