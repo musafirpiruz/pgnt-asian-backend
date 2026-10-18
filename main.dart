@@ -1758,19 +1758,23 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final faqs = <Map<String, String>>[
       {
         'q': 'How can I check my top-up?',
-        'a': 'Open History and check the transaction status or receipt.',
+        'a': 'Open History and review the order status. Keep your transaction ID when asking for help.',
       },
       {
-        'q': 'What if my top-up fails?',
-        'a': 'Keep your transaction ID and contact support for review.',
+        'q': 'What should I do if a top-up is delayed?',
+        'a': 'Do not pay again immediately. Check the order status first; some operator confirmations take additional time.',
       },
       {
-        'q': 'When will my payment be confirmed?',
-        'a': 'Payment confirmation depends on the verified payment status.',
+        'q': 'What happens if a top-up fails?',
+        'a': 'Keep the transaction ID and payment receipt. A refund or review must be confirmed by the payment and order records.',
       },
       {
-        'q': 'Is my payment secure?',
-        'a': 'Never share your password, card PIN, or security codes.',
+        'q': 'Is payment confirmation the same as top-up completion?',
+        'a': 'No. A successful payment does not by itself mean the mobile operator has completed the top-up.',
+      },
+      {
+        'q': 'What information should I never share?',
+        'a': 'Never share your password, full card details, card PIN, one-time security code, or payment-provider secret keys.',
       },
     ];
 
@@ -1778,67 +1782,141 @@ class _PgntHomePageState extends State<PgntHomePage> {
       padding: const EdgeInsets.all(16),
       children: [
         const PgntBrandHeader(),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
         pgntSectionTitle(
           t('support'),
           Icons.support_agent_rounded,
         ),
         const SizedBox(height: 12),
         Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
               colors: [primaryRed, darkRed],
             ),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: primaryRed.withValues(alpha: 0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.headset_mic_rounded,
-                color: gold,
-                size: 38,
+              Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: gold.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: gold.withValues(alpha: 0.55)),
+                    ),
+                    child: const Icon(
+                      Icons.support_agent_rounded,
+                      color: gold,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'VIP Assistance',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 5),
+                        Text(
+                          'FREE • 24/7 help centre',
+                          style: TextStyle(
+                            color: gold,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                t('getHelp'),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               const Text(
-                'Find answers about payments, top-ups and transactions.',
-                style: TextStyle(color: Colors.white70),
+                'Find guidance for payments, mobile top-ups and order problems.',
+                style: TextStyle(color: Colors.white, height: 1.45),
               ),
               const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    showMessage(
-                      'Support contact is not connected yet. '
-                      'Configure a real support email or support API.',
-                    );
-                  },
-                  icon: const Icon(Icons.mail_outline),
-                  label: Text(t('contactSupport')),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: gold,
-                    side: const BorderSide(color: gold),
-                  ),
-                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _supportFeatureChip(Icons.question_answer_outlined, 'FAQs'),
+                  _supportFeatureChip(Icons.receipt_long_outlined, 'Order guidance'),
+                  _supportFeatureChip(Icons.lock_outline, 'Payment safety'),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Automated help is available at any time. Live-agent response depends on support availability.',
+                style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 20),
+        pgntSectionTitle(
+          'Quick help',
+          Icons.flash_on_outlined,
+        ),
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: Color(0x147A0C10),
+              child: Icon(Icons.history_rounded, color: primaryRed),
+            ),
+            title: const Text(
+              'Check an order',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text(
+              'Open your history to see the latest available status.',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => setState(() => selectedTab = 1),
+          ),
+        ),
+        Card(
+          child: ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: Color(0x147A0C10),
+              child: Icon(Icons.account_balance_wallet_outlined, color: primaryRed),
+            ),
+            title: const Text(
+              'Payment and wallet',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text(
+              'Review wallet information and payment guidance.',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => setState(() => selectedTab = 2),
+          ),
+        ),
+        const SizedBox(height: 20),
         pgntSectionTitle(
           t('faq'),
-          Icons.question_answer_outlined,
+          Icons.quiz_outlined,
         ),
         const SizedBox(height: 8),
         ...faqs.map(
@@ -1846,35 +1924,79 @@ class _PgntHomePageState extends State<PgntHomePage> {
             margin: const EdgeInsets.only(bottom: 8),
             child: ExpansionTile(
               leading: const Icon(
-                Icons.help_outline,
+                Icons.help_outline_rounded,
                 color: primaryRed,
               ),
               title: Text(
                 faq['q']!,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              childrenPadding: const EdgeInsets.fromLTRB(
-                16, 0, 16, 16,
-              ),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               children: [
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(faq['a']!),
+                  child: Text(
+                    faq['a']!,
+                    style: const TextStyle(height: 1.45),
+                  ),
                 ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: primaryRed.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: primaryRed.withValues(alpha: 0.12)),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline, color: primaryRed),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'For a failed or delayed order, save the transaction ID and receipt. Direct ticket submission and automatic refund review still require a connected support service.',
+                  style: TextStyle(height: 1.4),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
         const Center(
           child: Text(
-            'PGNT ASIAN TOPUP • Support',
+            'PGNT ASIAN TOPUP • VIP Assistance',
             style: TextStyle(color: Colors.grey),
           ),
         ),
+        const SizedBox(height: 8),
       ],
+    );
+  }
+
+  Widget _supportFeatureChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: gold, size: 16),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 
