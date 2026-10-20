@@ -1,5 +1,6 @@
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -863,6 +864,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   final TextEditingController phoneController =
       TextEditingController();
+  final TextEditingController referralCodeController =
+      TextEditingController();
+  static const String _referralInstallIdKey = 'pgnt_referral_install_id_v1';
   final TextEditingController supportSubjectController =
       TextEditingController();
   final TextEditingController supportMessageController =
@@ -1254,6 +1258,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           pgntSectionTitle(t('phone'), Icons.phone_android),
           buildPhoneField(),
           const SizedBox(height: 14),
+          buildReferralCodeField(),
+          const SizedBox(height: 14),
           pgntSectionTitle(t('selectOperator'), Icons.signal_cellular_alt),
           buildOperatorSelector(),
           const SizedBox(height: 14),
@@ -1385,6 +1391,37 @@ class _PgntHomePageState extends State<PgntHomePage> {
         );
       },
     );
+  }
+
+  Widget buildReferralCodeField() {
+    return TextField(
+      controller: referralCodeController,
+      textCapitalization: TextCapitalization.characters,
+      autocorrect: false,
+      enableSuggestions: false,
+      maxLength: 40,
+      decoration: const InputDecoration(
+        labelText: 'Referral code (optional)',
+        hintText: 'Enter invitation code',
+        helperText: 'Optional — the reward is credited after a successful top-up.',
+        prefixIcon: Icon(Icons.card_giftcard, color: primaryRed),
+        counterText: '',
+      ),
+    );
+  }
+
+  Future<String> _getReferralInstallId() async {
+    final preferences = await SharedPreferences.getInstance();
+    final existing = preferences.getString(_referralInstallIdKey);
+    if (existing != null && RegExp(r'^[A-Za-z0-9._:-]{16,128}$').hasMatch(existing)) {
+      return existing;
+    }
+    final random = math.Random.secure();
+    final installId = List<int>.generate(32, (_) => random.nextInt(256))
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    await preferences.setString(_referralInstallIdKey, installId);
+    return installId;
   }
 
   Widget buildPhoneField() {
@@ -1627,12 +1664,22 @@ class _PgntHomePageState extends State<PgntHomePage> {
       return;
     }
 
+    final referralCode = referralCodeController.text.trim().toUpperCase();
+    if (referralCode.isNotEmpty &&
+        !RegExp(r'^[A-Z0-9_-]{4,40}$').hasMatch(referralCode)) {
+      showMessage('Referral code must be 4–40 letters, numbers, _ or -.');
+      return;
+    }
+
     setState(() => isLoading = true);
 
     try {
       final uri = Uri.parse(
         '$backendBaseUrl/api/payments/checkout',
       );
+      final referralInstallId = referralCode.isEmpty
+          ? null
+          : await _getReferralInstallId();
 
       final response = await http
           .post(
@@ -1650,6 +1697,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
+              if (referralCode.isNotEmpty) 'referralCode': referralCode,
+              if (referralInstallId != null) 'referralInstallId': referralInstallId,
             }),
           )
           .timeout(const Duration(seconds: 30));
