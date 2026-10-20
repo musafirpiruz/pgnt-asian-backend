@@ -950,6 +950,57 @@ app.post('/api/payments/checkout', async (req, res) => {
       pricing
     );
 
+    // Referral attribution is server-validated and tied to a stable
+    // client-generated install identifier. This is abuse friction, not
+    // proof of a unique human/device; reward approval remains manual.
+    const referralCode = String(req.body?.referralCode || '').trim().toUpperCase();
+    const referralInstallId = String(req.body?.referralInstallId || '').trim();
+    let referralInstallHash = null;
+    if (referralCode || referralInstallId) {
+      if (!/^[A-Z0-9_-]{4,40}$/.test(referralCode) ||
+          !/^[A-Za-z0-9._:-]{16,128}$/.test(referralInstallId)) {
+        throw new Error('A valid referral code and install identifier are required together.');
+      }
+      referralInstallHash = crypto.createHash('sha256')
+        .update(referralInstallId, 'utf8').digest('hex');
+      const referral = await client.query(
+        `SELECT code, reward_eur_cents, max_rewards, active
+         FROM referral_codes WHERE code = $1 FOR UPDATE`,
+        [referralCode]
+      );
+      if (referral.rowCount !== 1 || referral.rows[0].active !== true ||
+          Number(referral.rows[0].reward_eur_cents) <= 0) {
+        throw new Error('This referral code is invalid or inactive.');
+      }
+      const cap = referral.rows[0].max_rewards;
+      if (cap !== null) {
+        const used = await client.query(
+          `SELECT COUNT(*)::int AS count FROM referral_ledger
+           WHERE referral_code = $1 AND status IN ('pending','approved','paid')`,
+          [referralCode]
+        );
+        if (Number(used.rows[0].count) >= Number(cap)) {
+          throw new Error('This referral code has reached its reward limit.');
+        }
+      }
+      const attribution = await client.query(
+        `INSERT INTO referral_attributions (install_id_hash, referral_code, first_order_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (install_id_hash) DO NOTHING
+         RETURNING referral_code`,
+        [referralInstallHash, referralCode, 'pending']
+      );
+      if (attribution.rowCount === 0) {
+        const existing = await client.query(
+          'SELECT referral_code FROM referral_attributions WHERE install_id_hash = $1 FOR UPDATE',
+          [referralInstallHash]
+        );
+        if (existing.rowCount !== 1 || existing.rows[0].referral_code !== referralCode) {
+          throw new Error('This install is already attributed to another referral code.');
+        }
+      }
+    }
+
     orderId = createOrderId();
     const orderAccessToken = crypto.randomBytes(32).toString('hex');
     const orderAccessTokenHash = crypto.createHash('sha256').update(orderAccessToken, 'utf8').digest('hex');
@@ -959,16 +1010,17 @@ app.post('/api/payments/checkout', async (req, res) => {
       `INSERT INTO orders (
          order_id, country, operator, phone, product_id,
          amount, currency, product_price_cents, fee_cents,
-         charge_cents, status, order_access_token_hash, created_at, updated_at
+         charge_cents, status, order_access_token_hash, referral_code,
+         referral_install_id, created_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         'awaiting_payment', $11, NOW(), NOW()
+         'awaiting_payment', $11, $12, $13, NOW(), NOW()
        )`,
       [
         orderId, input.country, product.name, input.phone,
         product.id, product.localAmount, product.currency,
         price.basePriceCents, price.feeCents, price.finalPriceCents,
-        orderAccessTokenHash,
+        orderAccessTokenHash, referralCode || null, referralInstallHash,
       ]
     );
 
