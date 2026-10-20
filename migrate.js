@@ -348,6 +348,40 @@ async function runMigration() {
       } catch (error) { await client.query('ROLLBACK'); throw error; }
     }
 
+    // Version 009 reserves referral reward capacity at checkout.
+    const referralReservationVersion = '009_referral_reward_reservations';
+    const referralReservationCheck = await client.query(
+      'SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1',
+      [referralReservationVersion]
+    );
+    if (referralReservationCheck.rows.length === 0) {
+      await client.query('BEGIN');
+      try {
+        await client.query(`
+          ALTER TABLE referral_ledger
+            DROP CONSTRAINT IF EXISTS referral_ledger_status_check;
+          ALTER TABLE referral_ledger
+            ADD CONSTRAINT referral_ledger_status_check
+            CHECK (status IN ('reserved','pending','approved','paid','reversed'));
+          ALTER TABLE referral_ledger
+            DROP CONSTRAINT IF EXISTS referral_ledger_install_id_hash_key;
+          CREATE UNIQUE INDEX IF NOT EXISTS uq_referral_ledger_active_install
+            ON referral_ledger(install_id_hash)
+            WHERE status IN ('reserved','pending','approved','paid');
+          INSERT INTO schema_migrations (version)
+          VALUES ('009_referral_reward_reservations')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query('COMMIT');
+        console.log('Migration 009_referral_reward_reservations completed successfully.');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    } else {
+      console.log('Migration 009_referral_reward_reservations is already applied.');
+    }
+
 
 
   } catch (error) {
