@@ -40,7 +40,7 @@ test('checkout attribution is campaign-specific and locked to a single install h
   assert.match(server, /influencerCode/);
   assert.match(server, /influencerInstallHash/);
   assert.match(server, /FROM influencer_campaigns WHERE code = \$1 FOR UPDATE/);
-  assert.match(server, /UNIQUE install hash/);
+  assert.match(migration, /install_hash CHAR\\(64\\) NOT NULL UNIQUE/);
   assert.match(migration, /install_hash CHAR\(64\) NOT NULL UNIQUE/);
 });
 
