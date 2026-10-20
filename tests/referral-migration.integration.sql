@@ -64,4 +64,38 @@ INSERT INTO referral_ledger
 VALUES
   ('CITEST009', repeat('a', 64), 'ci-order-retry', 7, 'reserved');
 
+-- Verify the cap-counting rule used by checkout: reservations count immediately,
+-- while reversed entries do not consume capacity.
+INSERT INTO referral_ledger
+  (referral_code, install_id_hash, order_id, reward_eur_cents, status)
+VALUES
+  ('CITEST009', repeat('b', 64), 'ci-order-pending', 7, 'pending');
+
+DO $$
+DECLARE
+  active_count INTEGER;
+  configured_cap INTEGER;
+BEGIN
+  SELECT max_rewards INTO configured_cap
+  FROM referral_codes WHERE code = 'CITEST009';
+
+  SELECT COUNT(*)::int INTO active_count
+  FROM referral_ledger
+  WHERE referral_code = 'CITEST009'
+    AND status IN ('reserved','pending','approved','paid');
+
+  IF active_count <> configured_cap THEN
+    RAISE EXCEPTION 'active reward count %, expected cap %', active_count, configured_cap;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM referral_ledger
+    WHERE referral_code = 'CITEST009'
+      AND order_id = 'ci-order-reserved'
+      AND status IN ('reserved','pending','approved','paid')
+  ) THEN
+    RAISE EXCEPTION 'reversed reward incorrectly consumes capacity';
+  END IF;
+END $$;
+
 ROLLBACK;
