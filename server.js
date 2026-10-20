@@ -988,7 +988,7 @@ app.post('/api/payments/checkout', async (req, res) => {
          VALUES ($1, $2, $3)
          ON CONFLICT (install_id_hash) DO NOTHING
          RETURNING referral_code`,
-        [referralInstallHash, referralCode, 'pending']
+        [referralInstallHash, referralCode, null]
       );
       if (attribution.rowCount === 0) {
         const existing = await client.query(
@@ -2112,6 +2112,41 @@ app.post('/api/dtone/callback', async (req, res) => {
         orderId,
       ]
     );
+
+    // Create the reward only after a final successful DT One callback.
+    // Unique ledger keys on install hash and order ID prevent duplicate awards.
+    if (nextStatus === 'completed' && order.referral_code && order.referral_install_id) {
+      const referral = await client.query(
+        `SELECT code, reward_eur_cents, max_rewards, active
+         FROM referral_codes WHERE code = $1 FOR UPDATE`,
+        [order.referral_code]
+      );
+      if (referral.rowCount === 1 && referral.rows[0].active === true &&
+          Number(referral.rows[0].reward_eur_cents) > 0) {
+        const cap = referral.rows[0].max_rewards;
+        const used = await client.query(
+          `SELECT COUNT(*)::int AS count FROM referral_ledger
+           WHERE referral_code = $1 AND status IN ('pending','approved','paid')`,
+          [order.referral_code]
+        );
+        if (cap === null || Number(used.rows[0].count) < Number(cap)) {
+          await client.query(
+            `INSERT INTO referral_ledger
+               (referral_code, install_id_hash, order_id, reward_eur_cents, status)
+             VALUES ($1, $2, $3, $4, 'pending')
+             ON CONFLICT DO NOTHING`,
+            [order.referral_code, order.referral_install_id, orderId,
+             Number(referral.rows[0].reward_eur_cents)]
+          );
+          await client.query(
+            `UPDATE referral_attributions
+             SET first_paid_at = COALESCE(first_paid_at, NOW())
+             WHERE install_id_hash = $1 AND referral_code = $2`,
+            [order.referral_install_id, order.referral_code]
+          );
+        }
+      }
+    }
 
     await client.query('COMMIT');
     console.info('DT One callback order updated.', {
