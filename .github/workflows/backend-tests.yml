@@ -9,6 +9,23 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pgnt_test
+          POSTGRES_PASSWORD: pgnt_test_password
+          POSTGRES_DB: pgnt_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pgnt_test -d pgnt_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://pgnt_test:pgnt_test_password@localhost:5432/pgnt_test
+      NODE_ENV: test
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -18,5 +35,7 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install --ignore-scripts
+      - name: Apply migrations to isolated PostgreSQL test database
+        run: node migrate.js
       - name: Run regression tests
         run: npm test
