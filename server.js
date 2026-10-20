@@ -3135,6 +3135,149 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
   }
 });
 
+// Read-only DT One price-sync preview. Compares provider prices with saved catalog
+// values; it never updates the database, enables a product, or creates a transaction.
+app.get('/api/admin/catalog/:productId/dtone-price-sync-preview', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+
+  try {
+    const response = await fetch(
+      `${DTONE_API_BASE_URL}/v1/products/${productId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+    const responseText = await response.text();
+    let providerProduct = null;
+    try { providerProduct = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+
+    if (!response.ok || !providerProduct || String(providerProduct.id) !== String(productId)) {
+      return res.status(response.status === 404 ? 404 : 502).json({
+        readOnly: true,
+        verified: false,
+        productId,
+        providerStatus: response.status,
+        error: response.status === 404
+          ? 'Product ID was not found in the configured DT One environment.'
+          : 'Could not verify the DT One product for price comparison.',
+      });
+    }
+
+    const savedResult = await pool.query(
+      `SELECT product_id, country, operator, amount, currency,
+              price_eur_cents, wholesale_price_eur_cents, active
+       FROM product_catalog
+       WHERE product_id = $1
+       LIMIT 1`,
+      [productId]
+    );
+    if (savedResult.rowCount !== 1) {
+      return res.status(404).json({
+        readOnly: true,
+        verified: true,
+        productId,
+        provider: {
+          name: providerProduct.name || null,
+          operator: providerProduct.operator?.name || null,
+          country: providerProduct.operator?.country?.iso_code || null,
+          destinationAmount: providerProduct.destination?.amount ?? null,
+          destinationCurrency: providerProduct.destination?.unit || null,
+          retailPriceEur: providerProduct.prices?.retail?.unit === 'EUR'
+            ? providerProduct.prices.retail.amount : null,
+          wholesalePriceEur: providerProduct.prices?.wholesale?.unit === 'EUR'
+            ? providerProduct.prices.wholesale.amount : null,
+        },
+        savedCatalog: null,
+        differences: ['Product is not mapped in the local product_catalog.'],
+        note: 'Preview only. No database values changed; product activation and transactions are untouched.',
+      });
+    }
+
+    const saved = savedResult.rows[0];
+    const providerRetail = providerProduct.prices?.retail?.unit === 'EUR'
+      ? Number(providerProduct.prices.retail.amount) : null;
+    const providerWholesale = providerProduct.prices?.wholesale?.unit === 'EUR'
+      ? Number(providerProduct.prices.wholesale.amount) : null;
+    const savedRetail = saved.price_eur_cents == null
+      ? null : Number(saved.price_eur_cents) / 100;
+    const savedWholesale = saved.wholesale_price_eur_cents == null
+      ? null : Number(saved.wholesale_price_eur_cents) / 100;
+    const differences = [];
+
+    if (String(saved.operator).toUpperCase() !== String(providerProduct.operator?.name || '').toUpperCase()) {
+      differences.push('Operator name differs between DT One and local catalog.');
+    }
+    if (Number(saved.amount) !== Number(providerProduct.destination?.amount)) {
+      differences.push('Top-up amount differs between DT One and local catalog.');
+    }
+    if (String(saved.currency).toUpperCase() !== String(providerProduct.destination?.unit || '').toUpperCase()) {
+      differences.push('Top-up currency differs between DT One and local catalog.');
+    }
+    if (providerRetail === null || savedRetail === null || Math.round(providerRetail * 100) !== Math.round(savedRetail * 100)) {
+      differences.push('Retail EUR price differs or is missing.');
+    }
+    if (providerWholesale === null || savedWholesale === null || Math.round(providerWholesale * 100) !== Math.round(savedWholesale * 100)) {
+      differences.push('Wholesale EUR price differs or is missing.');
+    }
+
+    return res.json({
+      readOnly: true,
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      productId,
+      provider: {
+        name: providerProduct.name || null,
+        operator: providerProduct.operator?.name || null,
+        country: providerProduct.operator?.country?.iso_code || null,
+        destinationAmount: providerProduct.destination?.amount ?? null,
+        destinationCurrency: providerProduct.destination?.unit || null,
+        retailPriceEur: providerRetail,
+        wholesalePriceEur: providerWholesale,
+        retailRateAfnPerEur: Number.isFinite(Number(providerProduct.rates?.retail)) && Number(providerProduct.rates.retail) > 0
+          ? Number(providerProduct.rates.retail) : null,
+        wholesaleRateAfnPerEur: Number.isFinite(Number(providerProduct.rates?.wholesale)) && Number(providerProduct.rates.wholesale) > 0
+          ? Number(providerProduct.rates.wholesale) : null,
+      },
+      savedCatalog: {
+        operator: saved.operator,
+        amount: Number(saved.amount),
+        currency: saved.currency,
+        retailPriceEur: savedRetail,
+        wholesalePriceEur: savedWholesale,
+        active: saved.active === true,
+      },
+      differences,
+      syncAvailable: providerRetail !== null && providerWholesale !== null
+        && String(saved.country).toUpperCase() === 'AF'
+        && String(providerProduct.operator?.country?.iso_code || '').toUpperCase() === 'AFG',
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+      note: 'Read-only preview only. No database values changed. Product activation, checkout and transactions are untouched.',
+    });
+  } catch (error) {
+    console.error('DT One price-sync preview failed:', error.message);
+    return res.status(502).json({
+      readOnly: true,
+      verified: false,
+      productId,
+      error: 'Could not compare saved catalog prices with DT One.',
+    });
+  }
+});
+
 // Read-only verification of a catalog product and its country pricing settings.
 // Does not change product activation, prices, orders, or payments.
 app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) => {
