@@ -2408,7 +2408,9 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <button type="button" id="loadPricing">Load saved Afghanistan settings</button>
 <label for="feeEur">App fee (EUR)</label><input id="feeEur" type="number" min="0" max="1000" step="0.01" value="0.79">
 <label for="afnRate">AFN per EUR exchange rate</label><input id="afnRate" type="number" min="0.01" step="0.0001" value="70">
-<label for="bonusPercent">Bonus percent</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="2">
+<label for="bonusPercent">Legacy bonus percent (informational only)</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="0">
+<label for="stripeFeePercent">Estimated Stripe fee percent</label><input id="stripeFeePercent" type="number" min="0" max="99.99" step="0.001" value="1.5">
+<label for="stripeFixedFee">Estimated Stripe fixed fee (EUR)</label><input id="stripeFixedFee" type="number" min="0" max="100" step="0.01" value="0.25">
 <label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Afghanistan pricing settings active</label>
 <button type="button" id="savePricing">Save Afghanistan pricing settings</button>
 <small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
@@ -2443,6 +2445,8 @@ const runStripeDtoneSandbox=document.getElementById('runStripeDtoneSandbox');
 const feeEur=document.getElementById('feeEur');
 const afnRate=document.getElementById('afnRate');
 const bonusPercent=document.getElementById('bonusPercent');
+const stripeFeePercent=document.getElementById('stripeFeePercent');
+const stripeFixedFee=document.getElementById('stripeFixedFee');
 const pricingActive=document.getElementById('pricingActive');
 let loadedAfghanistanPricing=null;
 
@@ -2548,6 +2552,8 @@ loadPricing.addEventListener('click',async()=>{
   feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
   afnRate.value=Number(saved.afn_per_eur);
   bonusPercent.value=Number(saved.bonus_percent);
+  stripeFeePercent.value=Number(saved.stripe_fee_percent);
+  stripeFixedFee.value=(Number(saved.stripe_fixed_fee_cents)/100).toFixed(2);
   pricingActive.checked=saved.active===true;
   result.textContent=JSON.stringify({loaded:true,country:saved.country,appFeeEur:Number(saved.fee_eur_cents)/100,afnPerEur:Number(saved.afn_per_eur),bonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
  }catch(error){result.textContent='Could not load pricing: '+error.message;}
@@ -2555,12 +2561,12 @@ loadPricing.addEventListener('click',async()=>{
 savePricing.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  if(!loadedAfghanistanPricing){result.textContent='First load the saved settings and review them.';return;}
- const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value);
- if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100){result.textContent='Check the fee, exchange rate, and bonus values.';return;}
- if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', bonus: '+bonus+'%. This will not activate the ATOMA product.'))return;
+ const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value),stripeRate=Number(stripeFeePercent.value),stripeFixed=Number(stripeFixedFee.value);
+ if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100||!Number.isFinite(stripeRate)||stripeRate<0||stripeRate>=100||!Number.isFinite(stripeFixed)||stripeFixed<0||stripeFixed>100){result.textContent='Check app fee, exchange rate, legacy bonus, and Stripe fee values.';return;}
+ if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', estimated Stripe fee: '+stripeRate+'% + €'+stripeFixed.toFixed(2)+'. Legacy bonus is informational only. This will not activate the ATOMA product.'))return;
  result.textContent='Saving Afghanistan pricing settings…';
  try{
-  const data=await adminRequest('/api/admin/pricing/AF',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:bonus,active:pricingActive.checked})});
+  const data=await adminRequest('/api/admin/pricing/AF',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:bonus,stripeFeePercent:stripeRate,stripeFixedFeeCents:Math.round(stripeFixed*100),active:pricingActive.checked})});
   loadedAfghanistanPricing=data.pricing;
   result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
  }catch(error){result.textContent='Could not save pricing: '+error.message;}
@@ -3009,6 +3015,8 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   const feeCents = Number(body.feeEurCents);
   const afnPerEur = Number(body.afnPerEur);
   const bonusPercent = Number(body.bonusPercent);
+  const stripeFeePercent = Number(body.stripeFeePercent);
+  const stripeFixedFeeCents = Number(body.stripeFixedFeeCents);
 
   if (
     !Number.isSafeInteger(feeCents) ||
@@ -3034,6 +3042,13 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
     });
   }
 
+  if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
+    return res.status(400).json({ error: 'stripeFeePercent must be from 0 up to (but not including) 100.' });
+  }
+  if (!Number.isSafeInteger(stripeFixedFeeCents) || stripeFixedFeeCents < 0 || stripeFixedFeeCents > 10000) {
+    return res.status(400).json({ error: 'stripeFixedFeeCents must be an integer from 0 to 10000.' });
+  }
+
   if (typeof body.active !== 'boolean') {
     return res.status(400).json({
       error: 'active must be true or false.',
@@ -3043,18 +3058,22 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO pricing_settings (
-         country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at
+         country, fee_eur_cents, afn_per_eur, bonus_percent,
+         stripe_fee_percent, stripe_fixed_fee_cents, active, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        ON CONFLICT (country)
        DO UPDATE SET
          fee_eur_cents = EXCLUDED.fee_eur_cents,
          afn_per_eur = EXCLUDED.afn_per_eur,
          bonus_percent = EXCLUDED.bonus_percent,
+         stripe_fee_percent = EXCLUDED.stripe_fee_percent,
+         stripe_fixed_fee_cents = EXCLUDED.stripe_fixed_fee_cents,
          active = EXCLUDED.active,
          updated_at = NOW()
-       RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent, active, updated_at`,
-      [country, feeCents, afnPerEur, bonusPercent, body.active]
+       RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent,
+                 stripe_fee_percent, stripe_fixed_fee_cents, active, updated_at`,
+      [country, feeCents, afnPerEur, bonusPercent, stripeFeePercent, stripeFixedFeeCents, body.active]
     );
 
     return res.json({
