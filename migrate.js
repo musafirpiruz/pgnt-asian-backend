@@ -464,6 +464,74 @@ async function runMigration() {
     }
 
 
+    // Version 013 introduces isolated, admin-managed influencer campaigns and auditable rewards.
+    const influencerCampaignVersion = '013_influencer_campaigns';
+    const influencerCampaignCheck = await client.query(
+      'SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1',
+      [influencerCampaignVersion]
+    );
+    if (influencerCampaignCheck.rows.length === 0) {
+      await client.query('BEGIN');
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS influencer_campaigns (
+            id BIGSERIAL PRIMARY KEY,
+            name VARCHAR(120) NOT NULL,
+            code VARCHAR(40) NOT NULL UNIQUE,
+            starts_at TIMESTAMPTZ NOT NULL,
+            ends_at TIMESTAMPTZ NOT NULL,
+            reward_eur_cents INTEGER NOT NULL DEFAULT 0 CHECK (reward_eur_cents >= 0),
+            max_conversions INTEGER NULL CHECK (max_conversions IS NULL OR max_conversions >= 0),
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (ends_at > starts_at)
+          );
+          CREATE TABLE IF NOT EXISTS influencer_clicks (
+            id BIGSERIAL PRIMARY KEY,
+            campaign_id BIGINT NOT NULL REFERENCES influencer_campaigns(id),
+            visitor_hash CHAR(64) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (campaign_id, visitor_hash)
+          );
+          CREATE TABLE IF NOT EXISTS influencer_attributions (
+            id BIGSERIAL PRIMARY KEY,
+            campaign_id BIGINT NOT NULL REFERENCES influencer_campaigns(id),
+            install_hash CHAR(64) NOT NULL UNIQUE,
+            customer_key VARCHAR(160) NULL,
+            first_paid_order_id VARCHAR(120) NULL UNIQUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            first_paid_at TIMESTAMPTZ NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_influencer_attributions_campaign
+            ON influencer_attributions(campaign_id);
+          CREATE TABLE IF NOT EXISTS influencer_rewards (
+            id BIGSERIAL PRIMARY KEY,
+            campaign_id BIGINT NOT NULL REFERENCES influencer_campaigns(id),
+            attribution_id BIGINT NOT NULL UNIQUE REFERENCES influencer_attributions(id),
+            order_id VARCHAR(120) NOT NULL UNIQUE,
+            reward_eur_cents INTEGER NOT NULL CHECK (reward_eur_cents >= 0),
+            status VARCHAR(20) NOT NULL DEFAULT 'pending'
+              CHECK (status IN ('pending','approved','paid','rejected')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_influencer_rewards_campaign_status
+            ON influencer_rewards(campaign_id, status);
+          INSERT INTO schema_migrations (version)
+          VALUES ('013_influencer_campaigns')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query('COMMIT');
+        console.log('Migration 013_influencer_campaigns completed; campaign and reward records are isolated from legacy referrals.');
+      } catch (migrationError) {
+        await client.query('ROLLBACK');
+        throw migrationError;
+      }
+    } else {
+      console.log('Migration 013_influencer_campaigns is already applied.');
+    }
+
     // Version 012 retires ordinary-customer referral rewards without deleting audit history.
     // Existing codes are disabled, old ledger/attribution records remain intact, and
     // future callback code must not grant the legacy €0.07 customer referral reward.
