@@ -24,14 +24,14 @@ test('checkout requires a valid referral code and stable install identifier toge
   assert.match(checkout, /referralCode/);
   assert.match(checkout, /referralInstallId/);
   assert.match(checkout, /referralClientErrors/);
-  assert.match(checkout, /res\.status\(400\)\.json\(\{ error: error\.message \}\)/);
-  assert.match(checkout, /\^\[A-Z0-9_-\]\{4,40\}\$/);
-  assert.match(checkout, /\^\[A-Za-z0-9._:-\]\{16,128\}\$/);
+  assert.match(checkout, /res\\.status\\(400\\)\\.json\\(\\{ error: error\\.message \\}\\)/);
+  assert.match(checkout, /\\^\\[A-Z0-9_-\\]\\{4,40\\}\\$/);
+  assert.match(checkout, /\\^\\[A-Za-z0-9._:-\\]\\{16,128\\}\\$/);
 });
 
 test('install identifiers are hashed before persistence and cannot be attributed to a different code', () => {
-  assert.match(checkout, /createHash\('sha256'\)/);
-  assert.match(checkout, /ON CONFLICT \(install_id_hash\) DO NOTHING/);
+  assert.match(checkout, /createHash\\('sha256'\\)/);
+  assert.match(checkout, /ON CONFLICT \\(install_id_hash\\) DO NOTHING/);
   assert.match(checkout, /already attributed to another referral code/);
   assert.match(checkout, /referral_install_id/);
 });
@@ -41,7 +41,7 @@ test('reward ledger is written only on final DT One completed status and is idem
   assert.match(callback, /nextStatus === 'completed'/);
   assert.match(callback, /INSERT INTO referral_ledger/);
   assert.match(callback, /ON CONFLICT DO NOTHING/);
-  assert.match(callback, /first_paid_at = COALESCE\(first_paid_at, NOW\(\)\)/);
+  assert.match(callback, /first_paid_at = COALESCE\\(first_paid_at, NOW\\(\\)\\)/);
 });
 
 test('deactivating a code after checkout does not block an already reserved reward', () => {
@@ -49,31 +49,31 @@ test('deactivating a code after checkout does not block an already reserved rewa
   const awardEnd = callback.indexOf("await client.query('COMMIT')", awardStart);
   const award = awardStart >= 0 && awardEnd > awardStart ? callback.slice(awardStart, awardEnd) : '';
   assert.match(award, /status = 'reserved'/);
-  assert.doesNotMatch(award, /rows\[0\]\.active === true/);
+  assert.doesNotMatch(award, /rows\\[0\\]\\.active === true/);
 });
 
 test('failed or review statuses cannot directly award referral credit', () => {
   assert.match(callback, /nextStatus === 'completed'/);
-  assert.doesNotMatch(callback, /nextStatus === 'failed'[\s\S]{0,300}INSERT INTO referral_ledger/);
+  assert.doesNotMatch(callback, /nextStatus === 'failed'[\\s\\S]{0,300}INSERT INTO referral_ledger/);
 });
 
 test('referral tests are source-only and never call provider APIs', () => {
   const source = fs.readFileSync(__filename, 'utf8');
   assert.ok(source.includes('fs.readFileSync'));
-  assert.doesNotMatch(source, /fetch\s*\(/);
-  assert.doesNotMatch(source, /refunds\.create/);
+  assert.doesNotMatch(source, /fetch\\s*\\(/);
+  assert.doesNotMatch(source, /refunds\\.create/);
 });
 
 test('checkout reserves referral cap capacity transactionally before commit', () => {
-  assert.match(checkout, /status IN \('reserved','pending','approved','paid'\)/);
-  assert.match(checkout, /VALUES \(\$1, \$2, \$3, \$4, 'reserved'\)/);
+  assert.match(checkout, /status IN \\('reserved','pending','approved','paid'\\)/);
+  assert.match(checkout, /VALUES \\(\\$1, \\$2, \\$3, \\$4, 'reserved'\\)/);
   assert.ok(checkout.indexOf("INSERT INTO referral_ledger") < checkout.indexOf("await client.query('COMMIT')"));
 });
 
 test('successful DT One callback promotes a reservation instead of consuming a second slot', () => {
-  assert.match(callback, /SET status = 'pending', updated_at = NOW\(\)/);
+  assert.match(callback, /SET status = 'pending', updated_at = NOW\\(\\)/);
   assert.match(callback, /status = 'reserved'/);
-  assert.match(callback, /first_order_id = COALESCE\(first_order_id, \$1\)/);
+  assert.match(callback, /first_order_id = COALESCE\\(first_order_id, \\$1\\)/);
 });
 
 test('migration allows reserved ledger entries and only one active reward per install', () => {
@@ -89,7 +89,7 @@ test('failed Stripe checkout payment releases only a reservation for the matchin
   const fn = server.slice(start, end);
   assert.match(fn, /status = 'payment_failed'/);
   assert.match(fn, /status = 'reversed'/);
-  assert.match(fn, /WHERE order_id = \$1 AND status = 'reserved'/);
+  assert.match(fn, /WHERE order_id = \\$1 AND status = 'reserved'/);
 });
 
 test('Stripe checkout creation failure releases the reserved referral slot', () => {
@@ -115,4 +115,14 @@ test('repeated successful DT One callbacks cannot promote or insert a second rew
   assert.ok(callback.includes("if (!rewardRecorded)"));
   assert.ok(callback.includes("ON CONFLICT DO NOTHING"));
   assert.ok(callback.includes("first_paid_at = COALESCE(first_paid_at, NOW())"));
+});
+
+test('Stripe session persistence failure does not release a reservation that may still be payable', () => {
+  const sessionCreated = checkout.indexOf('stripeSessionCreated = true');
+  const persistSession = checkout.indexOf('SET stripe_session_id = $1', sessionCreated);
+  const catchStart = checkout.indexOf('} catch (error) {', persistSession);
+  const cleanup = checkout.indexOf('if (orderId && !transactionOpen && !stripeSessionCreated)', catchStart);
+  assert.ok(sessionCreated >= 0 && persistSession > sessionCreated && catchStart > persistSession);
+  assert.ok(cleanup > catchStart);
+  assert.ok(checkout.indexOf('Keep the reservation when Stripe returned a session') > catchStart);
 });
