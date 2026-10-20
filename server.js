@@ -2393,6 +2393,8 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <button type="button" id="runSandbox">Run sandbox transaction</button>
 <label for="orderId">Sandbox test order ID (for status lookup)</label>
 <input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
+<label for="stripeSessionId">Stripe Checkout Session ID (optional; from Stripe event)</label>
+<input id="stripeSessionId" autocomplete="off" placeholder="cs_test_… or cs_live_…">
 <button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
 <button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
 </form>
@@ -2429,6 +2431,7 @@ const scenario=document.getElementById('scenario');
 const confirmSandbox=document.getElementById('confirmSandbox');
 const runSandbox=document.getElementById('runSandbox');
 const orderId=document.getElementById('orderId');
+const stripeSessionId=document.getElementById('stripeSessionId');
 const checkSandboxStatus=document.getElementById('checkSandboxStatus');
 const checkStripePaymentStatus=document.getElementById('checkStripePaymentStatus');
 const checkLiveDtOneStatus=document.getElementById('checkLiveDtOneStatus');
@@ -2642,7 +2645,9 @@ checkStripePaymentStatus.addEventListener('click',async()=>{
  result.textContent='Checking Stripe payment status (read-only)…';
  checkStripePaymentStatus.disabled=true;
  try{
-  const data=await adminRequest('/api/admin/orders/'+encodeURIComponent(id)+'/payment-status');
+  const sessionId=stripeSessionId.value.trim();
+  const sessionQuery=sessionId?'?session_id='+encodeURIComponent(sessionId):'';
+  const data=await adminRequest('/api/admin/orders/'+encodeURIComponent(id)+'/payment-status'+sessionQuery);
   result.textContent=JSON.stringify(data,null,2);
  }catch(error){result.textContent='Could not verify Stripe payment status: '+error.message;}
  finally{key.value='';checkStripePaymentStatus.disabled=false;}
