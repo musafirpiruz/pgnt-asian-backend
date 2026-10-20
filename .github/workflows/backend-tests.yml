@@ -39,5 +39,11 @@ jobs:
         run: node migrate.js
       - name: Verify referral reservation constraints and idempotency in PostgreSQL
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/referral-migration.integration.sql
+      - name: Reconstruct pre-009 schema with an existing ledger row
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/referral-migration-upgrade-prepare.sql
+      - name: Upgrade existing database to migration 009
+        run: node migrate.js
+      - name: Verify migration 009 preserves existing ledger rows
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/referral-migration-upgrade-verify.sql
       - name: Run regression tests
         run: npm test
