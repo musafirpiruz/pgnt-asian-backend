@@ -2280,10 +2280,25 @@ app.post('/api/dtone/callback', async (req, res) => {
       ]
     );
 
-    // Record or reconcile the referral reward only after final DT One success.
-    if (nextStatus === 'completed') {
-      await ensureReferralRewardRecorded(order);
+    // Legacy customer rewards remain retired; influencer rewards are separate and pending admin approval.
+    if (nextStatus === 'completed' && order.influencer_campaign_id && order.influencer_install_hash) {
+      const firstPaid = await client.query(
+        'UPDATE influencer_attributions SET first_paid_order_id = $1, first_paid_at = COALESCE(first_paid_at, NOW()) WHERE install_hash = $2 AND campaign_id = $3 AND first_paid_order_id IS NULL RETURNING id',
+        [orderId, order.influencer_install_hash, order.influencer_campaign_id]
+      );
+      if (firstPaid.rowCount === 1) {
+        const campaignReward = await client.query('SELECT reward_eur_cents FROM influencer_campaigns WHERE id = $1 FOR UPDATE', [order.influencer_campaign_id]);
+        const rewardCents = Number(campaignReward.rows[0]?.reward_eur_cents || 0);
+        if (rewardCents > 0) {
+          await client.query(
+            "INSERT INTO influencer_rewards (campaign_id, attribution_id, order_id, reward_eur_cents, status) VALUES ($1,$2,$3,$4,'pending') ON CONFLICT DO NOTHING",
+            [order.influencer_campaign_id, firstPaid.rows[0].id, orderId, rewardCents]
+          );
+        }
+      }
     }
+    // Record/reconcile the retired legacy path only as a no-op; do not grant customer rewards.
+    if (nextStatus === 'completed') await ensureReferralRewardRecorded(order);
 
     await client.query('COMMIT');
     console.info('DT One callback order updated.', {
