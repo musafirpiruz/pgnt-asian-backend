@@ -2460,6 +2460,9 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+// Admin-managed influencer campaigns are isolated from retired customer referrals.
+require('./influencer-routes')({ app, pool, requireAdmin, appBaseUrl: APP_BASE_URL });
+
 // Customer and admin support-ticket API routes. These use per-order access
 // tokens for customer requests and the existing ADMIN_API_KEY for admin actions.
 require('./support-routes')({
