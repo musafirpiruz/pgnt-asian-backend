@@ -426,6 +426,45 @@ async function runMigration() {
 
 
 
+    // Version 011 repairs missing/zero reference FX rates in existing country rows.
+    // Preserve any positive owner-edited rate; only replace NULL or non-positive values.
+    const pricingRateRepairVersion = '011_repair_zero_country_fx_rates';
+    const pricingRateRepairCheck = await client.query(
+      'SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1',
+      [pricingRateRepairVersion]
+    );
+    if (pricingRateRepairCheck.rows.length === 0) {
+      await client.query('BEGIN');
+      try {
+        await client.query(`
+          UPDATE pricing_settings
+          SET afn_per_eur = CASE country
+                WHEN 'AF' THEN 72.8325
+                WHEN 'PK' THEN 310.7630
+                WHEN 'IN' THEN 106.4700
+                WHEN 'BD' THEN 138.6300
+                ELSE afn_per_eur
+              END,
+              updated_at = NOW()
+          WHERE country IN ('AF', 'PK', 'IN', 'BD')
+            AND (afn_per_eur IS NULL OR afn_per_eur <= 0);
+
+          INSERT INTO schema_migrations (version)
+          VALUES ('011_repair_zero_country_fx_rates')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query('COMMIT');
+        console.log('Migration 011_repair_zero_country_fx_rates completed; only missing or non-positive reference rates were repaired.');
+      } catch (migrationError) {
+        await client.query('ROLLBACK');
+        throw migrationError;
+      }
+    } else {
+      console.log('Migration 011_repair_zero_country_fx_rates is already applied.');
+    }
+
+
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
