@@ -2645,7 +2645,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="dtonePriceSyncPreview">Compare DT One prices with database (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2692,6 +2692,7 @@ const key=document.getElementById('key');
 const result=document.getElementById('result');
 const discover=document.getElementById('discover');
 const checkDatabase=document.getElementById('checkDatabase');
+const dtonePriceSyncPreview=document.getElementById('dtonePriceSyncPreview');
 const scenario=document.getElementById('scenario');
 const confirmSandbox=document.getElementById('confirmSandbox');
 const runSandbox=document.getElementById('runSandbox');
@@ -2840,6 +2841,16 @@ savePricing.addEventListener('click',async()=>{
   result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
  }catch(error){result.textContent='Could not save pricing: '+error.message;}
  finally{key.value='';}
+});
+dtonePriceSyncPreview.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Comparing DT One product 7194 with saved catalog prices (read-only)…';
+ dtonePriceSyncPreview.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/catalog/7194/dtone-price-sync-preview');
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not compare DT One prices: '+error.message;}
+ finally{key.value='';dtonePriceSyncPreview.disabled=false;}
 });
 checkDatabase.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
