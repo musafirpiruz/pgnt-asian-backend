@@ -45,10 +45,11 @@ test('reward ledger is written only on final DT One completed status and is idem
 });
 
 test('deactivating a code after checkout does not block an already reserved reward', () => {
-  const awardStart = callback.indexOf('// Promote the checkout-time reservation only after final DT One success.');
-  const awardEnd = callback.indexOf("await client.query('COMMIT')", awardStart);
+  const awardStart = callback.indexOf('const ensureReferralRewardRecorded = async');
+  const awardEnd = callback.indexOf('// DT One may retry a callback', awardStart);
   const award = awardStart >= 0 && awardEnd > awardStart ? callback.slice(awardStart, awardEnd) : '';
   assert.match(award, /status = 'reserved'/);
+  assert.match(award, /status = 'pending'/);
   assert.doesNotMatch(award, /rows\[0\]\.active === true/);
 });
 
