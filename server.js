@@ -3124,8 +3124,18 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
             lookup: 'read_only',
             orderId,
             stripeSessionId: exactSession.id,
+            stripeSessionLivemode: exactSession.livemode,
+            stripeSessionCurrency: exactSession.currency || null,
+            stripeSessionAmountTotal: exactSession.amount_total ?? null,
+            stripeSessionStatus: exactSession.status || null,
+            stripePaymentStatus: exactSession.payment_status || null,
+            // Read-only diagnostics so the admin can compare the retrieved
+            // Stripe object with the exact event JSON without exposing secrets.
+            retrievedClientReferenceId: exactSession.client_reference_id || null,
+            retrievedMetadataOrderId: exactSession.metadata?.orderId || null,
             clientReferenceMatches: exactSession.client_reference_id === orderId,
             metadataOrderIdMatches: exactSession.metadata?.orderId === orderId,
+            note: 'No order was created and no payment, refund, or DT One action was performed.',
           });
         }
         const exactIntent = exactSession.payment_intent && typeof exactSession.payment_intent === 'object'
