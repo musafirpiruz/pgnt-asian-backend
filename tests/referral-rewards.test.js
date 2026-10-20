@@ -63,3 +63,31 @@ test('referral tests are source-only and never call provider APIs', () => {
   assert.doesNotMatch(source, /fetch\s*\(/);
   assert.doesNotMatch(source, /refunds\.create/);
 });
+
+test('checkout reserves referral cap capacity transactionally before commit', () => {
+  assert.match(checkout, /status IN \('reserved','pending','approved','paid'\)/);
+  assert.match(checkout, /VALUES \(\$1, \$2, \$3, \$4, 'reserved'\)/);
+  assert.ok(checkout.indexOf("INSERT INTO referral_ledger") < checkout.indexOf("await client.query('COMMIT')"));
+});
+
+test('successful DT One callback promotes a reservation instead of consuming a second slot', () => {
+  assert.match(callback, /SET status = 'pending', updated_at = NOW\(\)/);
+  assert.match(callback, /status = 'reserved'/);
+  assert.match(callback, /first_order_id = COALESCE\(first_order_id, \$1\)/);
+});
+
+test('migration allows reserved ledger entries and only one active reward per install', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'migrate.js'), 'utf8');
+  assert.match(source, /009_referral_reward_reservations/);
+  assert.match(source, /'reserved','pending','approved','paid','reversed'/);
+  assert.match(source, /uq_referral_ledger_active_install/);
+});
+
+test('failed Stripe checkout payment releases only a reservation for the matching unpaid order', () => {
+  const start = server.indexOf('async function markCheckoutPaymentFailed');
+  const end = server.indexOf('// Record refund state only', start);
+  const fn = server.slice(start, end);
+  assert.match(fn, /status = 'payment_failed'/);
+  assert.match(fn, /status = 'reversed'/);
+  assert.match(fn, /WHERE order_id = \$1 AND status = 'reserved'/);
+});
