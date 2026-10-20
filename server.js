@@ -3094,7 +3094,52 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
     );
 
     if (result.rowCount !== 1) {
-      return res.status(404).json({ error: 'Order not found.' });
+      // A paid Stripe PaymentIntent can outlive a missing local order row.
+      // Search by the exact orderId metadata only; never match by amount/time,
+      // and never create an order or trigger fulfillment from this diagnostic.
+      if (typeof stripe.paymentIntents.search === 'function') {
+        const found = await stripe.paymentIntents.search({
+          query: `metadata['orderId']:'${orderId}'`,
+          limit: 10,
+        });
+        const matches = found.data.filter((candidate) =>
+          candidate.metadata?.orderId === orderId
+        );
+
+        if (matches.length > 0) {
+          return res.status(200).json({
+            lookup: 'read_only',
+            orderId,
+            localOrderFound: false,
+            localOrderStatus: null,
+            stripePaymentIntentFound: true,
+            stripePaymentIntents: matches.map((intent) => ({
+              id: intent.id,
+              status: intent.status,
+              amount: intent.amount,
+              amountReceived: intent.amount_received,
+              currency: intent.currency,
+              livemode: intent.livemode,
+              created: intent.created,
+              metadataOrderIdMatches: intent.metadata?.orderId === orderId,
+            })),
+            paymentIntentSearchCount: found.data.length,
+            associationVerified: matches.every((intent) =>
+              intent.metadata?.orderId === orderId
+            ),
+            nextStep: 'Review the exact Stripe payment and restore/reconcile the missing local order through an audited admin process. No order was created and no top-up or refund was triggered.',
+          });
+        }
+      }
+
+      return res.status(404).json({
+        error: 'Local order not found and no exact Stripe PaymentIntent metadata match was found.',
+        lookup: 'read_only',
+        orderId,
+        localOrderFound: false,
+        stripeMetadataSearchAttempted: typeof stripe.paymentIntents.search === 'function',
+        note: 'A Stripe search can be eventually consistent. Verify in Stripe Dashboard before concluding that no payment exists.',
+      });
     }
 
     const order = result.rows[0];
