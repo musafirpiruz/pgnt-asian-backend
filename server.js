@@ -1004,6 +1004,30 @@ app.post('/api/payments/checkout', async (req, res) => {
       }
     }
 
+    // Influencer attribution is independent of legacy customer referrals.
+    const influencerCode = String(req.body?.influencerCode || '').trim().toUpperCase();
+    const influencerInstallId = String(req.body?.influencerInstallId || '').trim();
+    let influencerCampaignId = null;
+    let influencerInstallHash = null;
+    if (influencerCode || influencerInstallId) {
+      if (!/^[A-Z0-9_-]{4,40}$/.test(influencerCode) || !/^[A-Za-z0-9._:-]{16,128}$/.test(influencerInstallId)) throw new Error('A valid influencer code and install identifier are required together.');
+      influencerInstallHash = crypto.createHash('sha256').update(influencerInstallId, 'utf8').digest('hex');
+      const campaignResult = await client.query('SELECT id, active, starts_at, ends_at, max_conversions FROM influencer_campaigns WHERE code = $1 FOR UPDATE', [influencerCode]);
+      const campaign = campaignResult.rows[0];
+      const now = Date.now();
+      if (!campaign || campaign.active !== true || new Date(campaign.starts_at).getTime() > now || new Date(campaign.ends_at).getTime() <= now) throw new Error('This influencer campaign is invalid, inactive, or outside its campaign dates.');
+      const existingAttribution = await client.query('SELECT campaign_id FROM influencer_attributions WHERE install_hash = $1 FOR UPDATE', [influencerInstallHash]);
+      if (existingAttribution.rowCount && Number(existingAttribution.rows[0].campaign_id) !== Number(campaign.id)) throw new Error('This install is already attributed to another influencer campaign.');
+      if (!existingAttribution.rowCount) {
+        if (campaign.max_conversions !== null) {
+          const used = await client.query('SELECT COUNT(*)::int AS count FROM influencer_attributions WHERE campaign_id = $1', [campaign.id]);
+          if (Number(used.rows[0].count) >= Number(campaign.max_conversions)) throw new Error('This influencer campaign has reached its conversion limit.');
+        }
+        await client.query('INSERT INTO influencer_attributions (campaign_id, install_hash) VALUES ($1,$2) ON CONFLICT (install_hash) DO NOTHING', [campaign.id, influencerInstallHash]);
+      }
+      influencerCampaignId = campaign.id;
+    }
+
     orderId = createOrderId();
     const orderAccessToken = crypto.randomBytes(32).toString('hex');
     const orderAccessTokenHash = crypto.createHash('sha256').update(orderAccessToken, 'utf8').digest('hex');
@@ -1014,16 +1038,17 @@ app.post('/api/payments/checkout', async (req, res) => {
          order_id, country, operator, phone, product_id,
          amount, currency, product_price_cents, fee_cents,
          charge_cents, status, order_access_token_hash, referral_code,
-         referral_install_id, created_at, updated_at
+         referral_install_id, influencer_campaign_id, influencer_install_hash, created_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         'awaiting_payment', $11, $12, $13, NOW(), NOW()
+         'awaiting_payment', $11, $12, $13, $14, $15, NOW(), NOW()
        )`,
       [
         orderId, input.country, product.name, input.phone,
         product.id, product.localAmount, product.currency,
         price.basePriceCents, price.feeCents, price.finalPriceCents,
         orderAccessTokenHash, referralCode || null, referralInstallHash,
+        influencerCampaignId, influencerInstallHash,
       ]
     );
 
@@ -1143,6 +1168,10 @@ app.post('/api/payments/checkout', async (req, res) => {
       'This referral code is invalid or inactive.',
       'This referral code has reached its reward limit.',
       'This install is already attributed to another referral code.',
+      'A valid influencer code and install identifier are required together.',
+      'This influencer campaign is invalid, inactive, or outside its campaign dates.',
+      'This install is already attributed to another influencer campaign.',
+      'This influencer campaign has reached its conversion limit.',
     ]);
     if (referralClientErrors.has(error.message)) {
       return res.status(400).json({ error: error.message });
