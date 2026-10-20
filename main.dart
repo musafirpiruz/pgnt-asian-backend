@@ -1588,14 +1588,41 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   Widget buildPriceCard() {
     final quote = priceQuote;
-    final basePrice = quote == null ? null : quote['formattedBasePrice'];
-    final fee = quote == null ? null : quote['formattedFee'];
-    final total = quote == null ? null : quote['formattedFinalPrice'];
+    // Prefer server-formatted values, but safely format the authoritative
+    // EUR-cent fields if a compatible backend response omits display strings.
+    final basePrice = quote == null ? null :
+        (quote['formattedBasePrice'] is String
+            ? quote['formattedBasePrice']
+            : quote['basePriceCents'] is num
+                ? formatEuroCents(quote['basePriceCents'])
+                : null);
+    final fee = quote == null ? null :
+        (quote['formattedFee'] is String
+            ? quote['formattedFee']
+            : quote['feeCents'] is num
+                ? formatEuroCents(quote['feeCents'])
+                : null);
+    final total = quote == null ? null :
+        (quote['formattedFinalPrice'] is String
+            ? quote['formattedFinalPrice']
+            : quote['finalPriceCents'] is num
+                ? formatEuroCents(quote['finalPriceCents'])
+                : null);
     final bonusPercent = quote == null ? null : quote['bonusPercent'];
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(children: [
+          if (priceQuoteError != null) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                priceQuoteError!,
+                style: const TextStyle(color: errorRed, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(children: [
             const Text('€', style: TextStyle(color: primaryRed, fontSize: 24, fontWeight: FontWeight.bold)),
             const SizedBox(width: 10), Expanded(child: Text(t('price'))),
