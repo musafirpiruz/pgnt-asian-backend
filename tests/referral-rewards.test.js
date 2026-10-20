@@ -109,8 +109,10 @@ test('capped referral rewards are serialized and count reserved rewards', () => 
 });
 
 test('repeated successful DT One callbacks cannot promote or insert a second reward', () => {
-  assert.match(callback, /WHERE order_id = \\$1 AND install_id_hash = \\$2[\\s\\S]*status = 'reserved'[\\s\\S]*RETURNING id/);
-  assert.match(callback, /if \(!rewardRecorded\)/);
-  assert.match(callback, /ON CONFLICT DO NOTHING/);
-  assert.match(callback, /first_paid_at = COALESCE\(first_paid_at, NOW\(\)\)/);
+  assert.ok(callback.includes("WHERE order_id = $1 AND install_id_hash = $2"));
+  assert.ok(callback.includes("status = 'reserved'"));
+  assert.ok(callback.includes("RETURNING id"));
+  assert.ok(callback.includes("if (!rewardRecorded)"));
+  assert.ok(callback.includes("ON CONFLICT DO NOTHING"));
+  assert.ok(callback.includes("first_paid_at = COALESCE(first_paid_at, NOW())"));
 });
