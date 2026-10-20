@@ -612,7 +612,7 @@ async function getPricingSettings(client, country) {
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
-async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null) {
+async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
   const result = await client.query(
     `SELECT
        id,
@@ -643,7 +643,10 @@ async function getProduct(client, productId, requestedCountry = null, operator =
 
   const product = result.rows[0];
 
-  if (product.enabled !== true) {
+  // Read-only price quotes may inspect disabled catalog products so the app
+  // can display a verified preview without enabling checkout. All checkout
+  // callers keep the default strict behavior.
+  if (product.enabled !== true && options.allowInactive !== true) {
     throw new Error(
       'This product is currently unavailable.'
     );
@@ -844,7 +847,7 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, null, country, operator, amount);
+    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
     const pricing = await getPricingSettings(client, country);
     const price = calculateFinalPrice(product, pricing);
     return res.json({
