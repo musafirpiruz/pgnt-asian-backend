@@ -37,5 +37,7 @@ jobs:
         run: npm install --ignore-scripts
       - name: Apply migrations to isolated PostgreSQL test database
         run: node migrate.js
+      - name: Verify referral reservation constraints and idempotency in PostgreSQL
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/referral-migration.integration.sql
       - name: Run regression tests
         run: npm test
