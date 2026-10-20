@@ -49,3 +49,17 @@ test('only final successful top-up creates a pending influencer reward for first
   assert.match(server, /influencer_rewards .*'pending'/);
   assert.match(server, /ensureReferralRewardRecorded = async/);
 });
+
+test('campaign edits validate the combined date range before attempting the update', () => {
+  const routeStart = routes.indexOf("app.patch('/api/admin/influencer-campaigns/:id'");
+  const routeEnd = routes.indexOf("app.get('/api/admin/influencer-campaigns/:id/report'", routeStart);
+  assert.ok(routeStart >= 0 && routeEnd > routeStart, 'campaign update route exists');
+  const updateRoute = routes.slice(routeStart, routeEnd);
+  const validateExisting = updateRoute.indexOf("SELECT starts_at, ends_at FROM influencer_campaigns WHERE id=$1");
+  const validateRange = updateRoute.indexOf("if (finalEnd <= finalStart)");
+  const writeUpdate = updateRoute.indexOf("UPDATE influencer_campaigns SET");
+  assert.ok(validateExisting >= 0, 'existing date range is loaded');
+  assert.ok(validateRange > validateExisting, 'combined date range is validated');
+  assert.ok(writeUpdate > validateRange, 'validation happens before the database update');
+  assert.match(updateRoute, /name must be 1-120 characters/);
+});
