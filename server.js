@@ -922,6 +922,7 @@ app.post('/api/payments/checkout', async (req, res) => {
   const client = await pool.connect();
   let transactionOpen = false;
   let orderId = null;
+  let stripeSessionCreated = false;
 
   try {
     await client.query('BEGIN');
@@ -1084,6 +1085,7 @@ app.post('/api/payments/checkout', async (req, res) => {
         idempotencyKey: `checkout-${orderId}`,
       }
     );
+    stripeSessionCreated = true;
 
     await pool.query(
       `UPDATE orders
@@ -1103,6 +1105,28 @@ app.post('/api/payments/checkout', async (req, res) => {
       amountFormatted: formatEuro(price.finalPriceCents),
     });
   } catch (error) {
+    // If Stripe did not create a Checkout Session, release any reserved
+    // referral slot so an infrastructure/API error cannot consume the cap.
+    // Keep the reservation when Stripe returned a session, even if a later
+    // database update fails, because that session may still be payable.
+    if (orderId && !transactionOpen && !stripeSessionCreated) {
+      try {
+        await pool.query(
+          `UPDATE orders
+           SET status = 'payment_failed', updated_at = NOW()
+           WHERE order_id = $1 AND status = 'awaiting_payment'`,
+          [orderId]
+        );
+        await pool.query(
+          `UPDATE referral_ledger
+           SET status = 'reversed', updated_at = NOW()
+           WHERE order_id = $1 AND status = 'reserved'`,
+          [orderId]
+        );
+      } catch (cleanupError) {
+        console.error('Checkout reservation cleanup failed:', cleanupError.message);
+      }
+    }
     if (transactionOpen) {
       try {
         await client.query('ROLLBACK');
