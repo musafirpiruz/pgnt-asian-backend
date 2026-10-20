@@ -3094,6 +3094,61 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
     );
 
     if (result.rowCount !== 1) {
+      // An admin may provide a known Checkout Session ID from Stripe's event
+      // dashboard. Retrieve that exact object first, but accept it only when
+      // Stripe's own order reference exactly matches the requested order ID.
+      const suppliedSessionId = String(req.query.session_id || '').trim();
+      if (suppliedSessionId) {
+        if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(suppliedSessionId)) {
+          return res.status(400).json({
+            error: 'Invalid Stripe Checkout Session ID.',
+            lookup: 'read_only',
+            orderId,
+          });
+        }
+        const exactSession = await stripe.checkout.sessions.retrieve(
+          suppliedSessionId,
+          { expand: ['payment_intent'] }
+        );
+        const sessionOrderId = exactSession.metadata?.orderId || exactSession.client_reference_id;
+        if (sessionOrderId !== orderId ||
+            (exactSession.client_reference_id && exactSession.client_reference_id !== orderId) ||
+            (exactSession.metadata?.orderId && exactSession.metadata.orderId !== orderId)) {
+          return res.status(409).json({
+            error: 'Stripe Checkout Session does not exactly match the requested order ID.',
+            lookup: 'read_only',
+            orderId,
+            stripeSessionId: exactSession.id,
+            clientReferenceMatches: exactSession.client_reference_id === orderId,
+            metadataOrderIdMatches: exactSession.metadata?.orderId === orderId,
+          });
+        }
+        const exactIntent = exactSession.payment_intent && typeof exactSession.payment_intent === 'object'
+          ? exactSession.payment_intent
+          : typeof exactSession.payment_intent === 'string'
+            ? await stripe.paymentIntents.retrieve(exactSession.payment_intent)
+            : null;
+        return res.status(200).json({
+          lookup: 'read_only',
+          orderId,
+          localOrderFound: false,
+          stripeSessionFound: true,
+          stripeSessionId: exactSession.id,
+          stripeSessionStatus: exactSession.status,
+          stripePaymentStatus: exactSession.payment_status,
+          stripePaymentIntentId: exactIntent?.id || null,
+          stripePaymentIntentStatus: exactIntent?.status || null,
+          amountTotal: exactSession.amount_total,
+          amountReceived: exactIntent?.amount_received ?? null,
+          stripeCurrency: exactSession.currency || exactIntent?.currency || null,
+          livemode: exactSession.livemode,
+          clientReferenceMatches: exactSession.client_reference_id === orderId,
+          metadataOrderIdMatches: exactSession.metadata?.orderId === orderId,
+          associationVerified: true,
+          nextStep: 'Verified exact Checkout Session only; no order was created and no top-up or refund was triggered.',
+        });
+      }
+
       // The Checkout Session can contain the exact order reference even when
       // the PaymentIntent does not. Search recent sessions and require an exact
       // client_reference_id or metadata.orderId match; never match by amount.

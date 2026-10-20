@@ -53,3 +53,17 @@ test('Checkout Session fallback remains read-only and does not fulfill a missing
   assert.doesNotMatch(missingOrderBranch, /processPaidStripeSession\(/);
   assert.doesNotMatch(missingOrderBranch, /stripe\.refunds\.create\(/);
 });
+
+test('missing-order diagnostic can retrieve a supplied exact Checkout Session ID', () => {
+  assert.match(route, /req\.query\.session_id/);
+  assert.match(route, /stripe\.checkout\.sessions\.retrieve\(\s*suppliedSessionId/);
+  assert.match(route, /Stripe Checkout Session does not exactly match the requested order ID/);
+  assert.match(route, /associationVerified: true/);
+});
+
+test('supplied Checkout Session lookup does not create an order or trigger side effects', () => {
+  const missingOrderBranch = route.slice(0, route.indexOf("const order = result.rows[0]"));
+  assert.doesNotMatch(missingOrderBranch, /INSERT INTO orders/i);
+  assert.doesNotMatch(missingOrderBranch, /processPaidStripeSession\(/);
+  assert.doesNotMatch(missingOrderBranch, /stripe\.refunds\.create\(/);
+});
