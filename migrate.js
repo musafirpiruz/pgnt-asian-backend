@@ -464,6 +464,39 @@ async function runMigration() {
     }
 
 
+    // Version 012 retires ordinary-customer referral rewards without deleting audit history.
+    // Existing codes are disabled, old ledger/attribution records remain intact, and
+    // future callback code must not grant the legacy €0.07 customer referral reward.
+    const retireLegacyReferralVersion = '012_retire_ordinary_referral_rewards';
+    const retireLegacyReferralCheck = await client.query(
+      'SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1',
+      [retireLegacyReferralVersion]
+    );
+    if (retireLegacyReferralCheck.rows.length === 0) {
+      await client.query('BEGIN');
+      try {
+        await client.query(`
+          UPDATE referral_codes
+          SET active = FALSE, updated_at = NOW()
+          WHERE active = TRUE;
+          UPDATE pricing_settings
+          SET bonus_percent = 0, updated_at = NOW()
+          WHERE country IN ('AF', 'PK', 'IN', 'BD') AND bonus_percent <> 0;
+          INSERT INTO schema_migrations (version)
+          VALUES ('012_retire_ordinary_referral_rewards')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query('COMMIT');
+        console.log('Migration 012 retired ordinary referral rewards; historical ledger and attribution records were preserved.');
+      } catch (migrationError) {
+        await client.query('ROLLBACK');
+        throw migrationError;
+      }
+    } else {
+      console.log('Migration 012_retire_ordinary_referral_rewards is already applied.');
+    }
+
+
 
   } catch (error) {
     console.error(
