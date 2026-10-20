@@ -36,3 +36,20 @@ test('no exact Stripe metadata match is reported as unresolved, not as proof of 
   assert.match(route, /Local order not found and no exact Stripe PaymentIntent metadata match was found/);
   assert.match(route, /Stripe search can be eventually consistent/);
 });
+
+test('missing local order searches Checkout Sessions by exact client reference or order metadata', () => {
+  assert.match(route, /stripe\.checkout\.sessions\.list\(/);
+  assert.match(route, /item\.client_reference_id === orderId/);
+  assert.match(route, /item\.metadata\?\.orderId === orderId/);
+  assert.match(route, /stripeSessionFound: true/);
+  assert.match(route, /stripePaymentStatus: matchedSession\.payment_status/);
+  assert.match(route, /sessionPagesScanned/);
+});
+
+test('Checkout Session fallback remains read-only and does not fulfill a missing order', () => {
+  const missingOrderBranch = route.slice(0, route.indexOf("const order = result.rows[0]"));
+  assert.match(missingOrderBranch, /restore\/reconcile the missing local order through an audited admin process/);
+  assert.doesNotMatch(missingOrderBranch, /INSERT INTO orders/i);
+  assert.doesNotMatch(missingOrderBranch, /processPaidStripeSession\(/);
+  assert.doesNotMatch(missingOrderBranch, /stripe\.refunds\.create\(/);
+});
