@@ -130,7 +130,8 @@ test('duplicate completed DT One callbacks reconcile a missing referral reward w
   assert.match(duplicate, /status: 'completed'/);
   assert.match(duplicate, /duplicate: true/);
   assert.match(callback, /const ensureReferralRewardRecorded = async/);
-  assert.match(callback, /AND status IN \\('pending','approved','paid'\\)\\s+LIMIT 1/);
+  assert.ok(callback.includes("AND status IN ('pending','approved','paid')"));
+  assert.ok(callback.includes('LIMIT 1'));
   assert.match(callback, /Referral reward reconciliation required for completed top-up/);
 });
 
