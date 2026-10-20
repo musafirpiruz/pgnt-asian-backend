@@ -2087,6 +2087,9 @@ app.post('/api/dtone/callback', async (req, res) => {
     // Keep referral reward reconciliation idempotent and reusable for duplicate
     // successful callbacks. A completed top-up must not silently skip a missing reward.
     const ensureReferralRewardRecorded = async (completedOrder) => {
+      // Retired ordinary-customer referral program: keep historical ledger rows,
+      // but do not create, promote, or reconcile new ordinary referral rewards.
+      return false;
       if (!completedOrder.referral_code || !completedOrder.referral_install_id) return false;
 
       const referral = await client.query(
@@ -2474,6 +2477,7 @@ require('./support-routes')({
 // All new referral codes are disabled until explicitly activated by admin.
 // =====================================================
 app.post('/api/admin/referrals/codes', requireAdmin, async (req, res) => {
+  return res.status(410).json({ error: 'Ordinary-customer referral rewards are retired. Use admin-managed influencer campaigns instead.' });
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const body = req.body || {};
   const code = String(body.code || '').trim().toUpperCase();
@@ -3976,6 +3980,7 @@ require('./dtone-sandbox-test')({
 // Start the server only after configuration checks.
 // Keep this block once, at the very end of server.js.
 app.get('/api/referrals/validate/:code', async (req, res) => {
+  return res.status(410).json({ valid: false, error: 'Ordinary-customer referral codes are retired.' });
   if (!pool) return res.status(503).json({ valid: false, error: 'Service unavailable.' });
   const code = String(req.params.code || '').trim().toUpperCase();
   try {
