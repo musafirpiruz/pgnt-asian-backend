@@ -1,5 +1,6 @@
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -406,6 +407,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'ثبتول',
     'cancel': 'لغوه کول',
     'retry': 'بیا هڅه',
+    'referralCode': 'د بلنې کوډ (اختیاري)',
+    'referralHint': 'اختیاري — انعام د چارج له بریالیتوب وروسته ثبتېږي.',
+    'invalidReferralCode': 'د بلنې کوډ باید ۴ تر ۴۰ توري، شمېرې، _ یا - ولري.',
   },
 
   'fa': {
@@ -452,6 +456,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'ذخیره',
     'cancel': 'لغو',
     'retry': 'تلاش دوباره',
+    'referralCode': 'کد دعوت (اختیاری)',
+    'referralHint': 'اختیاری — پاداش پس از شارژ موفق ثبت می‌شود.',
+    'invalidReferralCode': 'کد دعوت باید ۴ تا ۴۰ حرف، عدد، _ یا - داشته باشد.',
   },
 
   'en': {
@@ -498,6 +505,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'Save',
     'cancel': 'Cancel',
     'retry': 'Retry',
+    'referralCode': 'Referral code (optional)',
+    'referralHint': 'Optional — the reward is credited after a successful top-up.',
+    'invalidReferralCode': 'Referral code must be 4–40 letters, numbers, _ or -.',
   },
 
   'ur': {
@@ -544,6 +554,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'محفوظ کریں',
     'cancel': 'منسوخ کریں',
     'retry': 'دوبارہ کوشش',
+    'referralCode': 'دعوتی کوڈ (اختیاری)',
+    'referralHint': 'اختیاری — کامیاب ریچارج کے بعد انعام درج ہوگا۔',
+    'invalidReferralCode': 'دعوتی کوڈ میں ۴ سے ۴۰ حروف، اعداد، _ یا - ہوں۔',
   },
 
   'hi': {
@@ -590,6 +603,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'सहेजें',
     'cancel': 'रद्द करें',
     'retry': 'फिर कोशिश करें',
+    'referralCode': 'रेफरल कोड (वैकल्पिक)',
+    'referralHint': 'वैकल्पिक — सफल रिचार्ज के बाद इनाम दर्ज होगा।',
+    'invalidReferralCode': 'रेफरल कोड में 4–40 अक्षर, अंक, _ या - होने चाहिए।',
   },
 
   'bn': {
@@ -636,6 +652,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'সংরক্ষণ করুন',
     'cancel': 'বাতিল',
     'retry': 'আবার চেষ্টা করুন',
+    'referralCode': 'রেফারেল কোড (ঐচ্ছিক)',
+    'referralHint': 'ঐচ্ছিক — সফল রিচার্জের পর পুরস্কার জমা হবে।',
+    'invalidReferralCode': 'রেফারেল কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।'
   },
 };
 
@@ -863,6 +882,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   final TextEditingController phoneController =
       TextEditingController();
+  final TextEditingController referralCodeController =
+      TextEditingController();
+  static const String _referralInstallIdKey = 'pgnt_referral_install_id_v1';
   final TextEditingController supportSubjectController =
       TextEditingController();
   final TextEditingController supportMessageController =
@@ -1074,6 +1096,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void dispose() {
     phoneController.dispose();
+    referralCodeController.dispose();
     supportSubjectController.dispose();
     supportMessageController.dispose();
     super.dispose();
@@ -1254,6 +1277,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           pgntSectionTitle(t('phone'), Icons.phone_android),
           buildPhoneField(),
           const SizedBox(height: 14),
+          buildReferralCodeField(),
+          const SizedBox(height: 14),
           pgntSectionTitle(t('selectOperator'), Icons.signal_cellular_alt),
           buildOperatorSelector(),
           const SizedBox(height: 14),
@@ -1385,6 +1410,37 @@ class _PgntHomePageState extends State<PgntHomePage> {
         );
       },
     );
+  }
+
+  Widget buildReferralCodeField() {
+    return TextField(
+      controller: referralCodeController,
+      textCapitalization: TextCapitalization.characters,
+      autocorrect: false,
+      enableSuggestions: false,
+      maxLength: 40,
+      decoration: InputDecoration(
+        labelText: t('referralCode'),
+        hintText: t('referralCode'),
+        helperText: t('referralHint'),
+        prefixIcon: const Icon(Icons.card_giftcard, color: primaryRed),
+        counterText: '',
+      ),
+    );
+  }
+
+  Future<String> _getReferralInstallId() async {
+    final preferences = await SharedPreferences.getInstance();
+    final existing = preferences.getString(_referralInstallIdKey);
+    if (existing != null && RegExp(r'^[A-Za-z0-9._:-]{16,128}$').hasMatch(existing)) {
+      return existing;
+    }
+    final random = math.Random.secure();
+    final installId = List<int>.generate(32, (_) => random.nextInt(256))
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    await preferences.setString(_referralInstallIdKey, installId);
+    return installId;
   }
 
   Widget buildPhoneField() {
@@ -1627,12 +1683,22 @@ class _PgntHomePageState extends State<PgntHomePage> {
       return;
     }
 
+    final referralCode = referralCodeController.text.trim().toUpperCase();
+    if (referralCode.isNotEmpty &&
+        !RegExp(r'^[A-Z0-9_-]{4,40}$').hasMatch(referralCode)) {
+      showMessage(t('invalidReferralCode'));
+      return;
+    }
+
     setState(() => isLoading = true);
 
     try {
       final uri = Uri.parse(
         '$backendBaseUrl/api/payments/checkout',
       );
+      final referralInstallId = referralCode.isEmpty
+          ? null
+          : await _getReferralInstallId();
 
       final response = await http
           .post(
@@ -1650,6 +1716,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
+              if (referralCode.isNotEmpty) 'referralCode': referralCode,
+              if (referralInstallId != null) 'referralInstallId': referralInstallId,
             }),
           )
           .timeout(const Duration(seconds: 30));

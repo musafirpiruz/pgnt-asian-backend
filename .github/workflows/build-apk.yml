@@ -11,6 +11,7 @@ on:
       - feature/vip-support-screen
       - ui/optional-profile-in-settings
       - fix/persist-order-history-secure-tokens
+      - fix/referral-first-topup-rewards
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
