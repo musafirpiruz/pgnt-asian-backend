@@ -2106,7 +2106,7 @@ app.post('/api/dtone/callback', async (req, res) => {
       const existing = await client.query(
         `SELECT id FROM referral_ledger
          WHERE order_id = $1 AND install_id_hash = $2 AND referral_code = $3
-           AND status IN ('reserved','pending','approved','paid')
+           AND status IN ('pending','approved','paid')
          LIMIT 1`,
         [orderId, completedOrder.referral_install_id, completedOrder.referral_code]
       );
