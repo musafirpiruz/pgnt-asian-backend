@@ -953,6 +953,7 @@ app.post('/api/payments/checkout', async (req, res) => {
     // Referral attribution is server-validated and tied to a stable
     // client-generated install identifier. This is abuse friction, not
     // proof of a unique human/device; reward approval remains manual.
+    let referralRewardCents = null;
     const referralCode = String(req.body?.referralCode || '').trim().toUpperCase();
     const referralInstallId = String(req.body?.referralInstallId || '').trim();
     let referralInstallHash = null;
@@ -972,11 +973,12 @@ app.post('/api/payments/checkout', async (req, res) => {
           Number(referral.rows[0].reward_eur_cents) <= 0) {
         throw new Error('This referral code is invalid or inactive.');
       }
+      referralRewardCents = Number(referral.rows[0].reward_eur_cents);
       const cap = referral.rows[0].max_rewards;
       if (cap !== null) {
         const used = await client.query(
           `SELECT COUNT(*)::int AS count FROM referral_ledger
-           WHERE referral_code = $1 AND status IN ('pending','approved','paid')`,
+           WHERE referral_code = $1 AND status IN ('reserved','pending','approved','paid')`,
           [referralCode]
         );
         if (Number(used.rows[0].count) >= Number(cap)) {
@@ -1023,6 +1025,18 @@ app.post('/api/payments/checkout', async (req, res) => {
         orderAccessTokenHash, referralCode || null, referralInstallHash,
       ]
     );
+
+    // Reserve a referral reward slot in the same transaction as the order.
+    // The referral_codes row lock serializes capped checkouts.
+    if (referralInstallHash && referralCode && referralRewardCents !== null) {
+      await client.query(
+        `INSERT INTO referral_ledger
+           (referral_code, install_id_hash, order_id, reward_eur_cents, status)
+         VALUES ($1, $2, $3, $4, 'reserved')
+         ON CONFLICT DO NOTHING`,
+        [referralCode, referralInstallHash, orderId, referralRewardCents]
+      );
+    }
 
     await client.query('COMMIT');
     transactionOpen = false;
@@ -2123,44 +2137,52 @@ app.post('/api/dtone/callback', async (req, res) => {
       ]
     );
 
-    // Create the reward only after a final successful DT One callback.
-    // Unique ledger keys on install hash and order ID prevent duplicate awards.
+    // Promote the checkout-time reservation only after final DT One success.
+    // Legacy orders without a reservation use a cap-checked fallback.
     if (nextStatus === 'completed' && order.referral_code && order.referral_install_id) {
       const referral = await client.query(
-        `SELECT code, reward_eur_cents, max_rewards, active
+        `SELECT code, reward_eur_cents, max_rewards
          FROM referral_codes WHERE code = $1 FOR UPDATE`,
         [order.referral_code]
       );
-      // Once a paid order has a valid attribution, later deactivation should
-      // stop new checkouts, not erase a reward already earned by this order.
-      if (referral.rowCount === 1 &&
-          Number(referral.rows[0].reward_eur_cents) > 0) {
-        const cap = referral.rows[0].max_rewards;
-        const used = await client.query(
-          `SELECT COUNT(*)::int AS count FROM referral_ledger
-           WHERE referral_code = $1 AND status IN ('pending','approved','paid')`,
-          [order.referral_code]
+      if (referral.rowCount === 1 && Number(referral.rows[0].reward_eur_cents) > 0) {
+        const reservation = await client.query(
+          `UPDATE referral_ledger
+           SET status = 'pending', updated_at = NOW()
+           WHERE order_id = $1 AND install_id_hash = $2
+             AND referral_code = $3 AND status = 'reserved'
+           RETURNING id`,
+          [orderId, order.referral_install_id, order.referral_code]
         );
-        if (cap === null || Number(used.rows[0].count) < Number(cap)) {
-          const ledgerInsert = await client.query(
-            `INSERT INTO referral_ledger
-               (referral_code, install_id_hash, order_id, reward_eur_cents, status)
-             VALUES ($1, $2, $3, $4, 'pending')
-             ON CONFLICT DO NOTHING
-             RETURNING id`,
-            [order.referral_code, order.referral_install_id, orderId,
-             Number(referral.rows[0].reward_eur_cents)]
+        let rewardRecorded = reservation.rowCount === 1;
+        if (!rewardRecorded) {
+          const cap = referral.rows[0].max_rewards;
+          const used = await client.query(
+            `SELECT COUNT(*)::int AS count FROM referral_ledger
+             WHERE referral_code = $1 AND status IN ('reserved','pending','approved','paid')`,
+            [order.referral_code]
           );
-          // Mark the attribution as paid only if this callback actually
-          // created its unique reward ledger row.
-          if (ledgerInsert.rowCount === 1) {
-            await client.query(
-              `UPDATE referral_attributions
-               SET first_paid_at = COALESCE(first_paid_at, NOW())
-               WHERE install_id_hash = $1 AND referral_code = $2`,
-              [order.referral_install_id, order.referral_code]
+          if (cap === null || Number(used.rows[0].count) < Number(cap)) {
+            const ledgerInsert = await client.query(
+              `INSERT INTO referral_ledger
+                 (referral_code, install_id_hash, order_id, reward_eur_cents, status)
+               VALUES ($1, $2, $3, $4, 'pending')
+               ON CONFLICT DO NOTHING
+               RETURNING id`,
+              [order.referral_code, order.referral_install_id, orderId,
+               Number(referral.rows[0].reward_eur_cents)]
             );
+            rewardRecorded = ledgerInsert.rowCount === 1;
           }
+        }
+        if (rewardRecorded) {
+          await client.query(
+            `UPDATE referral_attributions
+             SET first_paid_at = COALESCE(first_paid_at, NOW()),
+                 first_order_id = COALESCE(first_order_id, $1)
+             WHERE install_id_hash = $2 AND referral_code = $3`,
+            [orderId, order.referral_install_id, order.referral_code]
+          );
         }
       }
     }
@@ -2203,14 +2225,30 @@ async function markCheckoutPaymentFailed(session) {
     throw new Error('Invalid failed payment event.');
   }
 
-  await pool.query(
-    `UPDATE orders
-     SET status = 'payment_failed',
-         updated_at = NOW()
-     WHERE stripe_session_id = $1
-       AND status = 'awaiting_payment'`,
-    [session.id]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const changed = await client.query(
+      `UPDATE orders
+       SET status = 'payment_failed', updated_at = NOW()
+       WHERE stripe_session_id = $1 AND status = 'awaiting_payment'
+       RETURNING order_id`,
+      [session.id]
+    );
+    if (changed.rowCount === 1) {
+      await client.query(
+        `UPDATE referral_ledger SET status = 'reversed', updated_at = NOW()
+         WHERE order_id = $1 AND status = 'reserved'`,
+        [changed.rows[0].order_id]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // Record refund state only when the Stripe charge
