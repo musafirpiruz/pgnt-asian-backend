@@ -2084,16 +2084,103 @@ app.post('/api/dtone/callback', async (req, res) => {
       });
     }
 
+    // Keep referral reward reconciliation idempotent and reusable for duplicate
+    // successful callbacks. A completed top-up must not silently skip a missing reward.
+    const ensureReferralRewardRecorded = async (completedOrder) => {
+      if (!completedOrder.referral_code || !completedOrder.referral_install_id) return false;
+
+      const referral = await client.query(
+        `SELECT code, reward_eur_cents, max_rewards
+         FROM referral_codes WHERE code = $1 FOR UPDATE`,
+        [completedOrder.referral_code]
+      );
+      if (referral.rowCount !== 1 || Number(referral.rows[0].reward_eur_cents) <= 0) {
+        console.warn('Completed top-up referral reward needs review: referral code or reward is unavailable.', {
+          hasReferralCode: Boolean(completedOrder.referral_code),
+        });
+        return false;
+      }
+
+      // Treat an already active ledger entry for this order/install as success.
+      // This prevents a duplicate callback from consuming another cap slot.
+      const existing = await client.query(
+        `SELECT id FROM referral_ledger
+         WHERE order_id = $1 AND install_id_hash = $2 AND referral_code = $3
+           AND status IN ('reserved','pending','approved','paid')
+         LIMIT 1`,
+        [orderId, completedOrder.referral_install_id, completedOrder.referral_code]
+      );
+      let rewardRecorded = existing.rowCount === 1;
+
+      if (!rewardRecorded) {
+        const reservation = await client.query(
+          `UPDATE referral_ledger
+           SET status = 'pending', updated_at = NOW()
+           WHERE order_id = $1 AND install_id_hash = $2
+             AND referral_code = $3 AND status = 'reserved'
+           RETURNING id`,
+          [orderId, completedOrder.referral_install_id, completedOrder.referral_code]
+        );
+        rewardRecorded = reservation.rowCount === 1;
+      }
+
+      if (!rewardRecorded) {
+        const cap = referral.rows[0].max_rewards;
+        const used = await client.query(
+          `SELECT COUNT(*)::int AS count FROM referral_ledger
+           WHERE referral_code = $1 AND status IN ('reserved','pending','approved','paid')`,
+          [completedOrder.referral_code]
+        );
+        if (cap === null || Number(used.rows[0].count) < Number(cap)) {
+          const ledgerInsert = await client.query(
+            `INSERT INTO referral_ledger
+               (referral_code, install_id_hash, order_id, reward_eur_cents, status)
+             VALUES ($1, $2, $3, $4, 'pending')
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
+            [completedOrder.referral_code, completedOrder.referral_install_id, orderId,
+             Number(referral.rows[0].reward_eur_cents)]
+          );
+          rewardRecorded = ledgerInsert.rowCount === 1;
+        }
+      }
+
+      if (rewardRecorded) {
+        await client.query(
+          `UPDATE referral_attributions
+           SET first_paid_at = COALESCE(first_paid_at, NOW()),
+               first_order_id = COALESCE(first_order_id, $1)
+           WHERE install_id_hash = $2 AND referral_code = $3`,
+          [orderId, completedOrder.referral_install_id, completedOrder.referral_code]
+        );
+      } else {
+        // Do not roll back an already-delivered top-up, but make reward loss visible.
+        console.error('Referral reward reconciliation required for completed top-up.', {
+          orderId,
+          referralCode: completedOrder.referral_code,
+          reason: 'reservation missing, cap reached, or active-install conflict',
+        });
+      }
+      return rewardRecorded;
+    };
+
     // DT One may retry a callback if the earlier HTTP response was lost.
     // A repeat notification for an already completed matching transaction
     // is safe to acknowledge with HTTP 200 without changing the order.
     if (order.status === 'completed') {
+      // Only a repeated final-success callback may repair a missing reward.
+      // Stale pending/failed callbacks must never downgrade a completed order.
+      let referralRewardRecorded = null;
+      if (providerStatus === 'completed') {
+        referralRewardRecorded = await ensureReferralRewardRecorded(order);
+      }
       await client.query('COMMIT');
       return res.status(200).json({
         received: true,
         orderId,
         status: 'completed',
         duplicate: true,
+        ...(referralRewardRecorded === null ? {} : { referralRewardRecorded }),
       });
     }
 
@@ -2161,54 +2248,9 @@ app.post('/api/dtone/callback', async (req, res) => {
       ]
     );
 
-    // Promote the checkout-time reservation only after final DT One success.
-    // Legacy orders without a reservation use a cap-checked fallback.
-    if (nextStatus === 'completed' && order.referral_code && order.referral_install_id) {
-      const referral = await client.query(
-        `SELECT code, reward_eur_cents, max_rewards
-         FROM referral_codes WHERE code = $1 FOR UPDATE`,
-        [order.referral_code]
-      );
-      if (referral.rowCount === 1 && Number(referral.rows[0].reward_eur_cents) > 0) {
-        const reservation = await client.query(
-          `UPDATE referral_ledger
-           SET status = 'pending', updated_at = NOW()
-           WHERE order_id = $1 AND install_id_hash = $2
-             AND referral_code = $3 AND status = 'reserved'
-           RETURNING id`,
-          [orderId, order.referral_install_id, order.referral_code]
-        );
-        let rewardRecorded = reservation.rowCount === 1;
-        if (!rewardRecorded) {
-          const cap = referral.rows[0].max_rewards;
-          const used = await client.query(
-            `SELECT COUNT(*)::int AS count FROM referral_ledger
-             WHERE referral_code = $1 AND status IN ('reserved','pending','approved','paid')`,
-            [order.referral_code]
-          );
-          if (cap === null || Number(used.rows[0].count) < Number(cap)) {
-            const ledgerInsert = await client.query(
-              `INSERT INTO referral_ledger
-                 (referral_code, install_id_hash, order_id, reward_eur_cents, status)
-               VALUES ($1, $2, $3, $4, 'pending')
-               ON CONFLICT DO NOTHING
-               RETURNING id`,
-              [order.referral_code, order.referral_install_id, orderId,
-               Number(referral.rows[0].reward_eur_cents)]
-            );
-            rewardRecorded = ledgerInsert.rowCount === 1;
-          }
-        }
-        if (rewardRecorded) {
-          await client.query(
-            `UPDATE referral_attributions
-             SET first_paid_at = COALESCE(first_paid_at, NOW()),
-                 first_order_id = COALESCE(first_order_id, $1)
-             WHERE install_id_hash = $2 AND referral_code = $3`,
-            [orderId, order.referral_install_id, order.referral_code]
-          );
-        }
-      }
+    // Record or reconcile the referral reward only after final DT One success.
+    if (nextStatus === 'completed') {
+      await ensureReferralRewardRecorded(order);
     }
 
     await client.query('COMMIT');
