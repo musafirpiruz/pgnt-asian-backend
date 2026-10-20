@@ -505,6 +505,8 @@ async function runMigration() {
           );
           CREATE INDEX IF NOT EXISTS idx_influencer_attributions_campaign
             ON influencer_attributions(campaign_id);
+          ALTER TABLE orders ADD COLUMN IF NOT EXISTS influencer_campaign_id BIGINT NULL REFERENCES influencer_campaigns(id);
+          ALTER TABLE orders ADD COLUMN IF NOT EXISTS influencer_install_hash CHAR(64) NULL;
           CREATE TABLE IF NOT EXISTS influencer_rewards (
             id BIGSERIAL PRIMARY KEY,
             campaign_id BIGINT NOT NULL REFERENCES influencer_campaigns(id),
