@@ -117,6 +117,21 @@ test('repeated successful DT One callbacks cannot promote or insert a second rew
   assert.ok(callback.includes("first_paid_at = COALESCE(first_paid_at, NOW())"));
 });
 
+
+test('duplicate completed DT One callbacks reconcile a missing referral reward without downgrading the order', () => {
+  const duplicateStart = callback.indexOf("if (order.status === 'completed')");
+  const duplicateEnd = callback.indexOf('// Never allow a callback to change an order', duplicateStart);
+  const duplicate = duplicateStart >= 0 && duplicateEnd > duplicateStart
+    ? callback.slice(duplicateStart, duplicateEnd)
+    : '';
+  assert.match(duplicate, /providerStatus === 'completed'/);
+  assert.match(duplicate, /ensureReferralRewardRecorded\(order\)/);
+  assert.match(duplicate, /status: 'completed'/);
+  assert.match(duplicate, /duplicate: true/);
+  assert.match(callback, /const ensureReferralRewardRecorded = async/);
+  assert.match(callback, /Referral reward reconciliation required for completed top-up/);
+});
+
 test('Stripe session persistence failure does not release a reservation that may still be payable', () => {
   const sessionCreated = checkout.indexOf('stripeSessionCreated = true');
   const persistSession = checkout.indexOf('SET stripe_session_id = $1', sessionCreated);
