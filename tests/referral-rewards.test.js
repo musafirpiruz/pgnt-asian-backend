@@ -102,10 +102,10 @@ test('Stripe checkout creation failure releases the reserved referral slot', () 
 });
 
 test('capped referral rewards are serialized and count reserved rewards', () => {
-  assert.match(checkout, /FROM referral_codes WHERE code = \\$1 FOR UPDATE/);
-  assert.match(checkout, /COUNT\(\*\)::int AS count FROM referral_ledger/);
-  assert.match(checkout, /status IN \('reserved','pending','approved','paid'\)/);
-  assert.match(checkout, /This referral code has reached its reward limit/);
+  assert.ok(checkout.includes('FROM referral_codes WHERE code = $1 FOR UPDATE'));
+  assert.ok(checkout.includes('COUNT(*)::int AS count FROM referral_ledger'));
+  assert.ok(checkout.includes("status IN ('reserved','pending','approved','paid')"));
+  assert.ok(checkout.includes('This referral code has reached its reward limit'));
 });
 
 test('repeated successful DT One callbacks cannot promote or insert a second reward', () => {
