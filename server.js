@@ -2612,15 +2612,16 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
 <button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
 <h2>Admin pricing controls</h2>
-<p>Load the saved Afghanistan settings, then change the app fee or bonus. Changes are saved to the backend database. Keep the ATOMA product disabled until sandbox checkout and fulfilment checks pass.</p>
-<button type="button" id="loadPricing">Load saved Afghanistan settings</button>
+<p>Choose any supported country to manage its EUR app fee, local-currency reference rate, and estimated Stripe fees. Reference exchange rates are indicative and must be checked before production. Keep unverified products disabled.</p>
+<label for="pricingCountry">Country pricing</label><select id="pricingCountry" style="width:100%;padding:12px;font:inherit"><option value="AF">Afghanistan (AFN)</option><option value="PK">Pakistan (PKR)</option><option value="IN">India (INR)</option><option value="BD">Bangladesh (BDT)</option></select>
+<button type="button" id="loadPricing">Load selected country settings</button>
 <label for="feeEur">App fee (EUR)</label><input id="feeEur" type="number" min="0" max="1000" step="0.01" value="0.79">
-<label for="afnRate">AFN per EUR exchange rate</label><input id="afnRate" type="number" min="0.01" step="0.0001" value="70">
-<label for="bonusPercent">Legacy bonus percent (informational only)</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="0">
+<label id="localRateLabel" for="afnRate">Local currency units per EUR</label><input id="afnRate" type="number" min="0.01" step="0.0001" value="72.8325">
+<label for="bonusPercent">Legacy general bonus (removed; referral rewards are separate)</label><input id="bonusPercent" type="number" min="0" max="100" step="0.01" value="0" disabled>
 <label for="stripeFeePercent">Estimated Stripe fee percent</label><input id="stripeFeePercent" type="number" min="0" max="99.99" step="0.001" value="1.5">
 <label for="stripeFixedFee">Estimated Stripe fixed fee (EUR)</label><input id="stripeFixedFee" type="number" min="0" max="100" step="0.01" value="0.25">
-<label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Afghanistan pricing settings active</label>
-<button type="button" id="savePricing">Save Afghanistan pricing settings</button>
+<label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Selected country pricing settings active</label>
+<button type="button" id="savePricing">Save selected country pricing settings</button>
 <small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
 <h2>Customer Support Tickets</h2>
 <p>Review customer requests, prioritize urgent issues, reply to customers, and update ticket status. This page does not issue refunds or change payment/top-up outcomes.</p>
@@ -2651,12 +2652,16 @@ const savePricing=document.getElementById('savePricing');
 const confirmStripeDtoneSandbox=document.getElementById('confirmStripeDtoneSandbox');
 const runStripeDtoneSandbox=document.getElementById('runStripeDtoneSandbox');
 const feeEur=document.getElementById('feeEur');
+const pricingCountry=document.getElementById('pricingCountry');
+const localRateLabel=document.getElementById('localRateLabel');
+const countryCurrencies={AF:'AFN',PK:'PKR',IN:'INR',BD:'BDT'};
 const afnRate=document.getElementById('afnRate');
 const bonusPercent=document.getElementById('bonusPercent');
 const stripeFeePercent=document.getElementById('stripeFeePercent');
 const stripeFixedFee=document.getElementById('stripeFixedFee');
 const pricingActive=document.getElementById('pricingActive');
-let loadedAfghanistanPricing=null;
+let loadedCountryPricing=null;
+pricingCountry.addEventListener('change',()=>{localRateLabel.textContent=countryCurrencies[pricingCountry.value]+' per EUR exchange rate';loadedCountryPricing=null;});
 
 async function adminRequest(url,options={}){
  const response=await fetch(url,{...options,headers:{...(options.headers||{}),'x-admin-api-key':key.value},cache:'no-store'});
@@ -2751,31 +2756,33 @@ form.addEventListener('submit',async event=>{
 });
 loadPricing.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
- result.textContent='Loading saved Afghanistan pricing settings…';
+ result.textContent='Loading selected country pricing settings…';
  try{
   const data=await adminRequest('/api/admin/pricing');
-  const saved=(data.pricing||[]).find(item=>item.country==='AF');
-  if(!saved)throw new Error('No Afghanistan pricing settings found.');
-  loadedAfghanistanPricing=saved;
+  const selectedCountry=pricingCountry.value;
+  const saved=(data.pricing||[]).find(item=>item.country===selectedCountry);
+  if(!saved)throw new Error('No pricing settings found for '+selectedCountry+'. Run the latest backend migration first.');
+  loadedCountryPricing=saved;
   feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
   afnRate.value=Number(saved.afn_per_eur);
   bonusPercent.value=Number(saved.bonus_percent);
   stripeFeePercent.value=Number(saved.stripe_fee_percent);
   stripeFixedFee.value=(Number(saved.stripe_fixed_fee_cents)/100).toFixed(2);
   pricingActive.checked=saved.active===true;
-  result.textContent=JSON.stringify({loaded:true,country:saved.country,appFeeEur:Number(saved.fee_eur_cents)/100,afnPerEur:Number(saved.afn_per_eur),bonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
+  result.textContent=JSON.stringify({loaded:true,country:saved.country,localCurrency:countryCurrencies[saved.country],appFeeEur:Number(saved.fee_eur_cents)/100,localCurrencyPerEur:Number(saved.afn_per_eur),legacyBonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
  }catch(error){result.textContent='Could not load pricing: '+error.message;}
 });
 savePricing.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
- if(!loadedAfghanistanPricing){result.textContent='First load the saved settings and review them.';return;}
+ if(!loadedCountryPricing||loadedCountryPricing.country!==pricingCountry.value){result.textContent='First load the selected country settings and review them.';return;}
  const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value),stripeRate=Number(stripeFeePercent.value),stripeFixed=Number(stripeFixedFee.value);
  if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100||!Number.isFinite(stripeRate)||stripeRate<0||stripeRate>=100||!Number.isFinite(stripeFixed)||stripeFixed<0||stripeFixed>100){result.textContent='Check app fee, exchange rate, legacy bonus, and Stripe fee values.';return;}
- if(!confirm('Save Afghanistan pricing settings? App fee: €'+fee.toFixed(2)+', AFN/EUR: '+rate+', estimated Stripe fee: '+stripeRate+'% + €'+stripeFixed.toFixed(2)+'. Legacy bonus is informational only. This will not activate the ATOMA product.'))return;
- result.textContent='Saving Afghanistan pricing settings…';
+ const selectedCountry=pricingCountry.value;
+ if(!confirm('Save '+selectedCountry+' pricing settings? App fee: €'+fee.toFixed(2)+', '+countryCurrencies[selectedCountry]+'/EUR: '+rate+', estimated Stripe fee: '+stripeRate+'% + €'+stripeFixed.toFixed(2)+'. General bonus remains disabled. This will not activate any product.'))return;
+ result.textContent='Saving selected country pricing settings…';
  try{
-  const data=await adminRequest('/api/admin/pricing/AF',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:bonus,stripeFeePercent:stripeRate,stripeFixedFeeCents:Math.round(stripeFixed*100),active:pricingActive.checked})});
-  loadedAfghanistanPricing=data.pricing;
+  const data=await adminRequest('/api/admin/pricing/'+selectedCountry,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:0,stripeFeePercent:stripeRate,stripeFixedFeeCents:Math.round(stripeFixed*100),active:pricingActive.checked})});
+  loadedCountryPricing=data.pricing;
   result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
  }catch(error){result.textContent='Could not save pricing: '+error.message;}
  finally{key.value='';}
