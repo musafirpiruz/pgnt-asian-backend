@@ -154,13 +154,17 @@ module.exports = function registerInfluencerRoutes({ app, pool, requireAdmin, ap
     const code = String(req.params.code || '').trim().toUpperCase();
     const visitorId = String(req.query.visitorId || '').trim();
     if (!/^[A-Z0-9_-]{4,40}$/.test(code)) return res.status(400).json({ error: 'Invalid campaign code.' });
-    if (!/^[A-Za-z0-9._:-]{16,128}$/.test(visitorId)) return res.status(400).json({ error: 'A valid visitorId is required for abuse-resistant click tracking.' });
+    // The public URL works without app query parameters. A client-supplied stable ID is preferred;
+    // otherwise use a short-lived request fingerprint as lightweight abuse friction, not identity proof.
+    const visitorFingerprint = visitorId && /^[A-Za-z0-9._:-]{16,128}$/.test(visitorId)
+      ? visitorId
+      : String(req.ip || 'unknown') + '|' + String(req.headers['user-agent'] || 'unknown').slice(0, 180);
     try {
       const c = await pool.query(`SELECT id, code, active, starts_at, ends_at FROM influencer_campaigns WHERE code=$1`, [code]);
       if (!c.rowCount || !c.rows[0].active || new Date(c.rows[0].starts_at) > new Date() || new Date(c.rows[0].ends_at) <= new Date()) return res.status(404).json({ error: 'Campaign is not active.' });
       await pool.query(`INSERT INTO influencer_clicks (campaign_id, visitor_hash, created_at)
         VALUES ($1,$2,NOW()) ON CONFLICT (campaign_id, visitor_hash) DO NOTHING`,
-        [c.rows[0].id, hash(visitorId)]);
+        [c.rows[0].id, hash(visitorFingerprint)]);
       return res.json({ valid: true, code, campaignId: c.rows[0].id, message: 'Campaign recorded. Complete sign-up and first successful top-up to qualify for any reward.' });
     } catch (e) {
       console.error('Influencer click tracking failed:', e.message);
