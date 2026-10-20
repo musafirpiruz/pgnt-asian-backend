@@ -407,6 +407,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'ثبتول',
     'cancel': 'لغوه کول',
     'retry': 'بیا هڅه',
+    'referralCode': 'د بلنې کوډ (اختیاري)',
+    'referralHint': 'اختیاري — انعام د چارج له بریالیتوب وروسته ثبتېږي.',
+    'invalidReferralCode': 'د بلنې کوډ باید ۴ تر ۴۰ توري، شمېرې، _ یا - ولري.',
   },
 
   'fa': {
@@ -453,6 +456,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'ذخیره',
     'cancel': 'لغو',
     'retry': 'تلاش دوباره',
+    'referralCode': 'کد دعوت (اختیاری)',
+    'referralHint': 'اختیاری — پاداش پس از شارژ موفق ثبت می‌شود.',
+    'invalidReferralCode': 'کد دعوت باید ۴ تا ۴۰ حرف، عدد، _ یا - داشته باشد.',
   },
 
   'en': {
@@ -499,6 +505,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'Save',
     'cancel': 'Cancel',
     'retry': 'Retry',
+    'referralCode': 'Referral code (optional)',
+    'referralHint': 'Optional — the reward is credited after a successful top-up.',
+    'invalidReferralCode': 'Referral code must be 4–40 letters, numbers, _ or -.',
   },
 
   'ur': {
@@ -545,6 +554,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'محفوظ کریں',
     'cancel': 'منسوخ کریں',
     'retry': 'دوبارہ کوشش',
+    'referralCode': 'دعوتی کوڈ (اختیاری)',
+    'referralHint': 'اختیاری — کامیاب ریچارج کے بعد انعام درج ہوگا۔',
+    'invalidReferralCode': 'دعوتی کوڈ میں ۴ سے ۴۰ حروف، اعداد، _ یا - ہوں۔',
   },
 
   'hi': {
@@ -591,6 +603,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'सहेजें',
     'cancel': 'रद्द करें',
     'retry': 'फिर कोशिश करें',
+    'referralCode': 'रेफरल कोड (वैकल्पिक)',
+    'referralHint': 'वैकल्पिक — सफल रिचार्ज के बाद इनाम दर्ज होगा।',
+    'invalidReferralCode': 'रेफरल कोड में 4–40 अक्षर, अंक, _ या - होने चाहिए।',
   },
 
   'bn': {
@@ -637,6 +652,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'সংরক্ষণ করুন',
     'cancel': 'বাতিল',
     'retry': 'আবার চেষ্টা করুন',
+    'referralCode': 'রেফারেল কোড (ঐচ্ছিক)',
+    'referralHint': 'ঐচ্ছিক — সফল রিচার্জের পর পুরস্কার জমা হবে।',
+    'invalidReferralCode': 'রেফারেল কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।'
   },
 };
 
@@ -1078,6 +1096,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void dispose() {
     phoneController.dispose();
+    referralCodeController.dispose();
     supportSubjectController.dispose();
     supportMessageController.dispose();
     super.dispose();
@@ -1400,11 +1419,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
       autocorrect: false,
       enableSuggestions: false,
       maxLength: 40,
-      decoration: const InputDecoration(
-        labelText: 'Referral code (optional)',
-        hintText: 'Enter invitation code',
-        helperText: 'Optional — the reward is credited after a successful top-up.',
-        prefixIcon: Icon(Icons.card_giftcard, color: primaryRed),
+      decoration: InputDecoration(
+        labelText: t('referralCode'),
+        hintText: t('referralCode'),
+        helperText: t('referralHint'),
+        prefixIcon: const Icon(Icons.card_giftcard, color: primaryRed),
         counterText: '',
       ),
     );
@@ -1667,7 +1686,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final referralCode = referralCodeController.text.trim().toUpperCase();
     if (referralCode.isNotEmpty &&
         !RegExp(r'^[A-Z0-9_-]{4,40}$').hasMatch(referralCode)) {
-      showMessage('Referral code must be 4–40 letters, numbers, _ or -.');
+      showMessage(t('invalidReferralCode'));
       return;
     }
 
