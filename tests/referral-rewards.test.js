@@ -23,6 +23,8 @@ test('checkout requires a valid referral code and stable install identifier toge
   assert.notEqual(checkoutStart, -1);
   assert.match(checkout, /referralCode/);
   assert.match(checkout, /referralInstallId/);
+  assert.match(checkout, /referralClientErrors/);
+  assert.match(checkout, /res\.status\(400\)\.json\(\{ error: error\.message \}\)/);
   assert.match(checkout, /\^\[A-Z0-9_-\]\{4,40\}\$/);
   assert.match(checkout, /\^\[A-Za-z0-9._:-\]\{16,128\}\$/);
 });
