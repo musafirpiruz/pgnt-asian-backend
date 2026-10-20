@@ -383,6 +383,48 @@ async function runMigration() {
     }
 
 
+    // Version 010 creates editable EUR pricing settings for all four supported countries.
+    // Exchange rates below are reference estimates dated 2026-10-20, not payout/provider rates.
+    // Existing country fee/rate settings are preserved; only missing country rows are seeded.
+    // The legacy bonus percentage is disabled because referrals now use fixed EUR-cent rewards.
+    const fourCountryPricingVersion = '010_four_country_pricing';
+    const fourCountryPricingCheck = await client.query(
+      'SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1',
+      [fourCountryPricingVersion]
+    );
+    if (fourCountryPricingCheck.rows.length === 0) {
+      await client.query('BEGIN');
+      try {
+        await client.query(`
+          INSERT INTO pricing_settings
+            (country, fee_eur_cents, afn_per_eur, bonus_percent,
+             stripe_fee_percent, stripe_fixed_fee_cents, active, updated_at)
+          VALUES
+            ('AF', 79, 72.8325, 0, 1.500, 25, TRUE, NOW()),
+            ('PK', 79, 310.7630, 0, 1.500, 25, TRUE, NOW()),
+            ('IN', 79, 106.4700, 0, 1.500, 25, TRUE, NOW()),
+            ('BD', 79, 138.6300, 0, 1.500, 25, TRUE, NOW())
+          ON CONFLICT (country) DO NOTHING;
+
+          UPDATE pricing_settings
+          SET bonus_percent = 0, updated_at = NOW()
+          WHERE country IN ('AF', 'PK', 'IN', 'BD');
+
+          INSERT INTO schema_migrations (version)
+          VALUES ('010_four_country_pricing')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query('COMMIT');
+        console.log('Migration 010_four_country_pricing completed; four-country EUR fees and reference exchange rates are configured. Product catalog activation is unchanged.');
+      } catch (migrationError) {
+        await client.query('ROLLBACK');
+        throw migrationError;
+      }
+    } else {
+      console.log('Migration 010_four_country_pricing is already applied.');
+    }
+
+
 
   } catch (error) {
     console.error(
