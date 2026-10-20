@@ -97,5 +97,6 @@ test('Stripe checkout creation failure releases the reserved referral slot', () 
   assert.match(checkout, /stripeSessionCreated = true/);
   assert.match(checkout, /!stripeSessionCreated/);
   assert.match(checkout, /Checkout reservation cleanup failed/);
-  assert.match(checkout, /SET status = 'reversed'[\\s\\S]*WHERE order_id = \\$1 AND status = 'reserved'/);
+  assert.ok(checkout.includes("SET status = 'reversed'"));
+  assert.ok(checkout.includes("WHERE order_id = $1 AND status = 'reserved'"));
 });
