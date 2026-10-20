@@ -12,6 +12,7 @@ on:
       - ui/optional-profile-in-settings
       - fix/persist-order-history-secure-tokens
       - fix/referral-first-topup-rewards
+      - feature/influencer-campaigns-disable-legacy-referrals
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'

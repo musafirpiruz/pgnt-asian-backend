@@ -612,7 +612,7 @@ async function getPricingSettings(client, country) {
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
-async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null) {
+async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
   const result = await client.query(
     `SELECT
        id,
@@ -643,7 +643,10 @@ async function getProduct(client, productId, requestedCountry = null, operator =
 
   const product = result.rows[0];
 
-  if (product.enabled !== true) {
+  // Read-only price quotes may inspect disabled catalog products so the app
+  // can display a verified preview without enabling checkout. All checkout
+  // callers keep the default strict behavior.
+  if (product.enabled !== true && options.allowInactive !== true) {
     throw new Error(
       'This product is currently unavailable.'
     );
@@ -844,7 +847,7 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, null, country, operator, amount);
+    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
     const pricing = await getPricingSettings(client, country);
     const price = calculateFinalPrice(product, pricing);
     return res.json({
@@ -1004,6 +1007,30 @@ app.post('/api/payments/checkout', async (req, res) => {
       }
     }
 
+    // Influencer attribution is independent of legacy customer referrals.
+    const influencerCode = String(req.body?.influencerCode || '').trim().toUpperCase();
+    const influencerInstallId = String(req.body?.influencerInstallId || '').trim();
+    let influencerCampaignId = null;
+    let influencerInstallHash = null;
+    if (influencerCode || influencerInstallId) {
+      if (!/^[A-Z0-9_-]{4,40}$/.test(influencerCode) || !/^[A-Za-z0-9._:-]{16,128}$/.test(influencerInstallId)) throw new Error('A valid influencer code and install identifier are required together.');
+      influencerInstallHash = crypto.createHash('sha256').update(influencerInstallId, 'utf8').digest('hex');
+      const campaignResult = await client.query('SELECT id, active, starts_at, ends_at, max_conversions FROM influencer_campaigns WHERE code = $1 FOR UPDATE', [influencerCode]);
+      const campaign = campaignResult.rows[0];
+      const now = Date.now();
+      if (!campaign || campaign.active !== true || new Date(campaign.starts_at).getTime() > now || new Date(campaign.ends_at).getTime() <= now) throw new Error('This influencer campaign is invalid, inactive, or outside its campaign dates.');
+      const existingAttribution = await client.query('SELECT campaign_id FROM influencer_attributions WHERE install_hash = $1 FOR UPDATE', [influencerInstallHash]);
+      if (existingAttribution.rowCount && Number(existingAttribution.rows[0].campaign_id) !== Number(campaign.id)) throw new Error('This install is already attributed to another influencer campaign.');
+      if (!existingAttribution.rowCount) {
+        if (campaign.max_conversions !== null) {
+          const used = await client.query('SELECT COUNT(*)::int AS count FROM influencer_attributions WHERE campaign_id = $1', [campaign.id]);
+          if (Number(used.rows[0].count) >= Number(campaign.max_conversions)) throw new Error('This influencer campaign has reached its conversion limit.');
+        }
+        await client.query('INSERT INTO influencer_attributions (campaign_id, install_hash) VALUES ($1,$2) ON CONFLICT (install_hash) DO NOTHING', [campaign.id, influencerInstallHash]);
+      }
+      influencerCampaignId = campaign.id;
+    }
+
     orderId = createOrderId();
     const orderAccessToken = crypto.randomBytes(32).toString('hex');
     const orderAccessTokenHash = crypto.createHash('sha256').update(orderAccessToken, 'utf8').digest('hex');
@@ -1014,16 +1041,17 @@ app.post('/api/payments/checkout', async (req, res) => {
          order_id, country, operator, phone, product_id,
          amount, currency, product_price_cents, fee_cents,
          charge_cents, status, order_access_token_hash, referral_code,
-         referral_install_id, created_at, updated_at
+         referral_install_id, influencer_campaign_id, influencer_install_hash, created_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         'awaiting_payment', $11, $12, $13, NOW(), NOW()
+         'awaiting_payment', $11, $12, $13, $14, $15, NOW(), NOW()
        )`,
       [
         orderId, input.country, product.name, input.phone,
         product.id, product.localAmount, product.currency,
         price.basePriceCents, price.feeCents, price.finalPriceCents,
         orderAccessTokenHash, referralCode || null, referralInstallHash,
+        influencerCampaignId, influencerInstallHash,
       ]
     );
 
@@ -1143,6 +1171,10 @@ app.post('/api/payments/checkout', async (req, res) => {
       'This referral code is invalid or inactive.',
       'This referral code has reached its reward limit.',
       'This install is already attributed to another referral code.',
+      'A valid influencer code and install identifier are required together.',
+      'This influencer campaign is invalid, inactive, or outside its campaign dates.',
+      'This install is already attributed to another influencer campaign.',
+      'This influencer campaign has reached its conversion limit.',
     ]);
     if (referralClientErrors.has(error.message)) {
       return res.status(400).json({ error: error.message });
@@ -2087,6 +2119,9 @@ app.post('/api/dtone/callback', async (req, res) => {
     // Keep referral reward reconciliation idempotent and reusable for duplicate
     // successful callbacks. A completed top-up must not silently skip a missing reward.
     const ensureReferralRewardRecorded = async (completedOrder) => {
+      // Retired ordinary-customer referral program: keep historical ledger rows,
+      // but do not create, promote, or reconcile new ordinary referral rewards.
+      return false;
       if (!completedOrder.referral_code || !completedOrder.referral_install_id) return false;
 
       const referral = await client.query(
@@ -2248,10 +2283,25 @@ app.post('/api/dtone/callback', async (req, res) => {
       ]
     );
 
-    // Record or reconcile the referral reward only after final DT One success.
-    if (nextStatus === 'completed') {
-      await ensureReferralRewardRecorded(order);
+    // Legacy customer rewards remain retired; influencer rewards are separate and pending admin approval.
+    if (nextStatus === 'completed' && order.influencer_campaign_id && order.influencer_install_hash) {
+      const firstPaid = await client.query(
+        'UPDATE influencer_attributions SET first_paid_order_id = $1, first_paid_at = COALESCE(first_paid_at, NOW()) WHERE install_hash = $2 AND campaign_id = $3 AND first_paid_order_id IS NULL RETURNING id',
+        [orderId, order.influencer_install_hash, order.influencer_campaign_id]
+      );
+      if (firstPaid.rowCount === 1) {
+        const campaignReward = await client.query('SELECT reward_eur_cents FROM influencer_campaigns WHERE id = $1 FOR UPDATE', [order.influencer_campaign_id]);
+        const rewardCents = Number(campaignReward.rows[0]?.reward_eur_cents || 0);
+        if (rewardCents > 0) {
+          await client.query(
+            "INSERT INTO influencer_rewards (campaign_id, attribution_id, order_id, reward_eur_cents, status) VALUES ($1,$2,$3,$4,'pending') ON CONFLICT DO NOTHING",
+            [order.influencer_campaign_id, firstPaid.rows[0].id, orderId, rewardCents]
+          );
+        }
+      }
     }
+    // Record/reconcile the retired legacy path only as a no-op; do not grant customer rewards.
+    if (nextStatus === 'completed') await ensureReferralRewardRecorded(order);
 
     await client.query('COMMIT');
     console.info('DT One callback order updated.', {
@@ -2457,6 +2507,9 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+// Admin-managed influencer campaigns are isolated from retired customer referrals.
+require('./influencer-routes')({ app, pool, requireAdmin, appBaseUrl: APP_BASE_URL });
+
 // Customer and admin support-ticket API routes. These use per-order access
 // tokens for customer requests and the existing ADMIN_API_KEY for admin actions.
 require('./support-routes')({
@@ -2474,6 +2527,7 @@ require('./support-routes')({
 // All new referral codes are disabled until explicitly activated by admin.
 // =====================================================
 app.post('/api/admin/referrals/codes', requireAdmin, async (req, res) => {
+  return res.status(410).json({ error: 'Ordinary-customer referral rewards are retired. Use admin-managed influencer campaigns instead.' });
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const body = req.body || {};
   const code = String(body.code || '').trim().toUpperCase();
@@ -2591,7 +2645,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="dtonePriceSyncPreview">Compare DT One prices with database (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2638,6 +2692,7 @@ const key=document.getElementById('key');
 const result=document.getElementById('result');
 const discover=document.getElementById('discover');
 const checkDatabase=document.getElementById('checkDatabase');
+const dtonePriceSyncPreview=document.getElementById('dtonePriceSyncPreview');
 const scenario=document.getElementById('scenario');
 const confirmSandbox=document.getElementById('confirmSandbox');
 const runSandbox=document.getElementById('runSandbox');
@@ -2786,6 +2841,16 @@ savePricing.addEventListener('click',async()=>{
   result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
  }catch(error){result.textContent='Could not save pricing: '+error.message;}
  finally{key.value='';}
+});
+dtonePriceSyncPreview.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ result.textContent='Comparing DT One product 7194 with saved catalog prices (read-only)…';
+ dtonePriceSyncPreview.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/catalog/7194/dtone-price-sync-preview');
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not compare DT One prices: '+error.message;}
+ finally{key.value='';dtonePriceSyncPreview.disabled=false;}
 });
 checkDatabase.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
@@ -3077,6 +3142,149 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
     return res.status(502).json({
       verified: false,
       error: 'Could not reach DT One product discovery endpoint.',
+    });
+  }
+});
+
+// Read-only DT One price-sync preview. Compares provider prices with saved catalog
+// values; it never updates the database, enables a product, or creates a transaction.
+app.get('/api/admin/catalog/:productId/dtone-price-sync-preview', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+
+  try {
+    const response = await fetch(
+      `${DTONE_API_BASE_URL}/v1/products/${productId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+    const responseText = await response.text();
+    let providerProduct = null;
+    try { providerProduct = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+
+    if (!response.ok || !providerProduct || String(providerProduct.id) !== String(productId)) {
+      return res.status(response.status === 404 ? 404 : 502).json({
+        readOnly: true,
+        verified: false,
+        productId,
+        providerStatus: response.status,
+        error: response.status === 404
+          ? 'Product ID was not found in the configured DT One environment.'
+          : 'Could not verify the DT One product for price comparison.',
+      });
+    }
+
+    const savedResult = await pool.query(
+      `SELECT product_id, country, operator, amount, currency,
+              price_eur_cents, wholesale_price_eur_cents, active
+       FROM product_catalog
+       WHERE product_id = $1
+       LIMIT 1`,
+      [productId]
+    );
+    if (savedResult.rowCount !== 1) {
+      return res.status(404).json({
+        readOnly: true,
+        verified: true,
+        productId,
+        provider: {
+          name: providerProduct.name || null,
+          operator: providerProduct.operator?.name || null,
+          country: providerProduct.operator?.country?.iso_code || null,
+          destinationAmount: providerProduct.destination?.amount ?? null,
+          destinationCurrency: providerProduct.destination?.unit || null,
+          retailPriceEur: providerProduct.prices?.retail?.unit === 'EUR'
+            ? providerProduct.prices.retail.amount : null,
+          wholesalePriceEur: providerProduct.prices?.wholesale?.unit === 'EUR'
+            ? providerProduct.prices.wholesale.amount : null,
+        },
+        savedCatalog: null,
+        differences: ['Product is not mapped in the local product_catalog.'],
+        note: 'Preview only. No database values changed; product activation and transactions are untouched.',
+      });
+    }
+
+    const saved = savedResult.rows[0];
+    const providerRetail = providerProduct.prices?.retail?.unit === 'EUR'
+      ? Number(providerProduct.prices.retail.amount) : null;
+    const providerWholesale = providerProduct.prices?.wholesale?.unit === 'EUR'
+      ? Number(providerProduct.prices.wholesale.amount) : null;
+    const savedRetail = saved.price_eur_cents == null
+      ? null : Number(saved.price_eur_cents) / 100;
+    const savedWholesale = saved.wholesale_price_eur_cents == null
+      ? null : Number(saved.wholesale_price_eur_cents) / 100;
+    const differences = [];
+
+    if (String(saved.operator).toUpperCase() !== String(providerProduct.operator?.name || '').toUpperCase()) {
+      differences.push('Operator name differs between DT One and local catalog.');
+    }
+    if (Number(saved.amount) !== Number(providerProduct.destination?.amount)) {
+      differences.push('Top-up amount differs between DT One and local catalog.');
+    }
+    if (String(saved.currency).toUpperCase() !== String(providerProduct.destination?.unit || '').toUpperCase()) {
+      differences.push('Top-up currency differs between DT One and local catalog.');
+    }
+    if (providerRetail === null || savedRetail === null || Math.round(providerRetail * 100) !== Math.round(savedRetail * 100)) {
+      differences.push('Retail EUR price differs or is missing.');
+    }
+    if (providerWholesale === null || savedWholesale === null || Math.round(providerWholesale * 100) !== Math.round(savedWholesale * 100)) {
+      differences.push('Wholesale EUR price differs or is missing.');
+    }
+
+    return res.json({
+      readOnly: true,
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      productId,
+      provider: {
+        name: providerProduct.name || null,
+        operator: providerProduct.operator?.name || null,
+        country: providerProduct.operator?.country?.iso_code || null,
+        destinationAmount: providerProduct.destination?.amount ?? null,
+        destinationCurrency: providerProduct.destination?.unit || null,
+        retailPriceEur: providerRetail,
+        wholesalePriceEur: providerWholesale,
+        retailRateAfnPerEur: Number.isFinite(Number(providerProduct.rates?.retail)) && Number(providerProduct.rates.retail) > 0
+          ? Number(providerProduct.rates.retail) : null,
+        wholesaleRateAfnPerEur: Number.isFinite(Number(providerProduct.rates?.wholesale)) && Number(providerProduct.rates.wholesale) > 0
+          ? Number(providerProduct.rates.wholesale) : null,
+      },
+      savedCatalog: {
+        operator: saved.operator,
+        amount: Number(saved.amount),
+        currency: saved.currency,
+        retailPriceEur: savedRetail,
+        wholesalePriceEur: savedWholesale,
+        active: saved.active === true,
+      },
+      differences,
+      syncAvailable: providerRetail !== null && providerWholesale !== null
+        && String(saved.country).toUpperCase() === 'AF'
+        && String(providerProduct.operator?.country?.iso_code || '').toUpperCase() === 'AFG',
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+      note: 'Read-only preview only. No database values changed. Product activation, checkout and transactions are untouched.',
+    });
+  } catch (error) {
+    console.error('DT One price-sync preview failed:', error.message);
+    return res.status(502).json({
+      readOnly: true,
+      verified: false,
+      productId,
+      error: 'Could not compare saved catalog prices with DT One.',
     });
   }
 });
@@ -3976,6 +4184,7 @@ require('./dtone-sandbox-test')({
 // Start the server only after configuration checks.
 // Keep this block once, at the very end of server.js.
 app.get('/api/referrals/validate/:code', async (req, res) => {
+  return res.status(410).json({ valid: false, error: 'Ordinary-customer referral codes are retired.' });
   if (!pool) return res.status(503).json({ valid: false, error: 'Service unavailable.' });
   const code = String(req.params.code || '').trim().toUpperCase();
   try {

@@ -407,9 +407,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'ثبتول',
     'cancel': 'لغوه کول',
     'retry': 'بیا هڅه',
-    'referralCode': 'د بلنې کوډ (اختیاري)',
-    'referralHint': 'اختیاري — انعام د چارج له بریالیتوب وروسته ثبتېږي.',
-    'invalidReferralCode': 'د بلنې کوډ باید ۴ تر ۴۰ توري، شمېرې، _ یا - ولري.',
+    'referralCode': 'د کمپاین کوډ (اختیاري)',
+    'referralHint': 'د اعلان کوډ یوازې هغه وخت ولیکئ چې د کمپاین له لارې راغلي یاست.',
+    'invalidReferralCode': 'د کمپاین کوډ باید ۴ تر ۴۰ توري، شمېرې، _ یا - ولري.',
   },
 
   'fa': {
@@ -456,9 +456,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'ذخیره',
     'cancel': 'لغو',
     'retry': 'تلاش دوباره',
-    'referralCode': 'کد دعوت (اختیاری)',
-    'referralHint': 'اختیاری — پاداش پس از شارژ موفق ثبت می‌شود.',
-    'invalidReferralCode': 'کد دعوت باید ۴ تا ۴۰ حرف، عدد، _ یا - داشته باشد.',
+    'referralCode': 'کد کمپین (اختیاری)',
+    'referralHint': 'کد کمپین را فقط اگر از طریق یک کمپین تبلیغاتی آمده‌اید وارد کنید.',
+    'invalidReferralCode': 'کد کمپین باید ۴ تا ۴۰ حرف، عدد، _ یا - داشته باشد.',
   },
 
   'en': {
@@ -505,9 +505,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'Save',
     'cancel': 'Cancel',
     'retry': 'Retry',
-    'referralCode': 'Referral code (optional)',
-    'referralHint': 'Optional — the reward is credited after a successful top-up.',
-    'invalidReferralCode': 'Referral code must be 4–40 letters, numbers, _ or -.',
+    'referralCode': 'Campaign code (optional)',
+    'referralHint': 'Enter a campaign code only if you came through an advertising campaign.',
+    'invalidReferralCode': 'Campaign code must be 4–40 letters, numbers, _ or -.',
   },
 
   'ur': {
@@ -554,9 +554,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'محفوظ کریں',
     'cancel': 'منسوخ کریں',
     'retry': 'دوبارہ کوشش',
-    'referralCode': 'دعوتی کوڈ (اختیاری)',
-    'referralHint': 'اختیاری — کامیاب ریچارج کے بعد انعام درج ہوگا۔',
-    'invalidReferralCode': 'دعوتی کوڈ میں ۴ سے ۴۰ حروف، اعداد، _ یا - ہوں۔',
+    'referralCode': 'مہم کا کوڈ (اختیاری)',
+    'referralHint': 'اشتہاری مہم کے ذریعے آئے ہوں تو ہی مہم کا کوڈ درج کریں۔',
+    'invalidReferralCode': 'مہم کے کوڈ میں ۴ سے ۴۰ حروف، اعداد، _ یا - ہوں۔',
   },
 
   'hi': {
@@ -603,9 +603,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'सहेजें',
     'cancel': 'रद्द करें',
     'retry': 'फिर कोशिश करें',
-    'referralCode': 'रेफरल कोड (वैकल्पिक)',
-    'referralHint': 'वैकल्पिक — सफल रिचार्ज के बाद इनाम दर्ज होगा।',
-    'invalidReferralCode': 'रेफरल कोड में 4–40 अक्षर, अंक, _ या - होने चाहिए।',
+    'referralCode': 'अभियान कोड (वैकल्पिक)',
+    'referralHint': 'विज्ञापन अभियान से आए हैं, तभी अभियान कोड डालें।',
+    'invalidReferralCode': 'अभियान कोड में 4–40 अक्षर, अंक, _ या - होने चाहिए।',
   },
 
   'bn': {
@@ -652,9 +652,9 @@ const Map<String, Map<String, String>> translations = {
     'save': 'সংরক্ষণ করুন',
     'cancel': 'বাতিল',
     'retry': 'আবার চেষ্টা করুন',
-    'referralCode': 'রেফারেল কোড (ঐচ্ছিক)',
-    'referralHint': 'ঐচ্ছিক — সফল রিচার্জের পর পুরস্কার জমা হবে।',
-    'invalidReferralCode': 'রেফারেল কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।'
+    'referralCode': 'ক্যাম্পেইন কোড (ঐচ্ছিক)',
+    'referralHint': 'বিজ্ঞাপন ক্যাম্পেইন থেকে এলে তবেই ক্যাম্পেইন কোড দিন।',
+    'invalidReferralCode': 'ক্যাম্পেইন কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।'
   },
 };
 
@@ -1588,14 +1588,41 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   Widget buildPriceCard() {
     final quote = priceQuote;
-    final basePrice = quote == null ? null : quote['formattedBasePrice'];
-    final fee = quote == null ? null : quote['formattedFee'];
-    final total = quote == null ? null : quote['formattedFinalPrice'];
+    // Prefer server-formatted values, but safely format the authoritative
+    // EUR-cent fields if a compatible backend response omits display strings.
+    final basePrice = quote == null ? null :
+        (quote['formattedBasePrice'] is String
+            ? quote['formattedBasePrice']
+            : quote['basePriceCents'] is num
+                ? formatEuroCents(quote['basePriceCents'])
+                : null);
+    final fee = quote == null ? null :
+        (quote['formattedFee'] is String
+            ? quote['formattedFee']
+            : quote['feeCents'] is num
+                ? formatEuroCents(quote['feeCents'])
+                : null);
+    final total = quote == null ? null :
+        (quote['formattedFinalPrice'] is String
+            ? quote['formattedFinalPrice']
+            : quote['finalPriceCents'] is num
+                ? formatEuroCents(quote['finalPriceCents'])
+                : null);
     final bonusPercent = quote == null ? null : quote['bonusPercent'];
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(children: [
+          if (priceQuoteError != null) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                priceQuoteError!,
+                style: const TextStyle(color: errorRed, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(children: [
             const Text('€', style: TextStyle(color: primaryRed, fontSize: 24, fontWeight: FontWeight.bold)),
             const SizedBox(width: 10), Expanded(child: Text(t('price'))),
@@ -1716,8 +1743,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
-              if (referralCode.isNotEmpty) 'referralCode': referralCode,
-              if (referralInstallId != null) 'referralInstallId': referralInstallId,
+              if (referralCode.isNotEmpty) 'influencerCode': referralCode,
+              if (referralInstallId != null) 'influencerInstallId': referralInstallId,
             }),
           )
           .timeout(const Duration(seconds: 30));
