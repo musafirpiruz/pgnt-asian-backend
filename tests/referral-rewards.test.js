@@ -44,11 +44,11 @@ test('reward ledger is written only on final DT One completed status and is idem
   assert.match(callback, /first_paid_at = COALESCE\(first_paid_at, NOW\(\)\)/);
 });
 
-test('deactivating a code after checkout does not erase a reward already earned', () => {
-  const awardStart = callback.indexOf('// Create the reward only after a final successful DT One callback.');
+test('deactivating a code after checkout does not block an already reserved reward', () => {
+  const awardStart = callback.indexOf('// Promote the checkout-time reservation only after final DT One success.');
   const awardEnd = callback.indexOf("await client.query('COMMIT')", awardStart);
   const award = awardStart >= 0 && awardEnd > awardStart ? callback.slice(awardStart, awardEnd) : '';
-  assert.match(award, /Once a paid order has a valid attribution/);
+  assert.match(award, /status = 'reserved'/);
   assert.doesNotMatch(award, /rows\[0\]\.active === true/);
 });
 
