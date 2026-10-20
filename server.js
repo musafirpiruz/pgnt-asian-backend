@@ -3094,9 +3094,77 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
     );
 
     if (result.rowCount !== 1) {
-      // A paid Stripe PaymentIntent can outlive a missing local order row.
-      // Search by the exact orderId metadata only; never match by amount/time,
-      // and never create an order or trigger fulfillment from this diagnostic.
+      // The Checkout Session can contain the exact order reference even when
+      // the PaymentIntent does not. Search recent sessions and require an exact
+      // client_reference_id or metadata.orderId match; never match by amount.
+      let matchedSession = null;
+      let matchedIntent = null;
+      let sessionPagesScanned = 0;
+      let sessionSearchHasMore = false;
+      let startingAfter;
+      for (let page = 0; page < 5; page += 1) {
+        const params = {
+          limit: 100,
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        };
+        const sessions = await stripe.checkout.sessions.list(params);
+        sessionPagesScanned += 1;
+        sessionSearchHasMore = sessions.has_more;
+        const candidate = sessions.data.find((item) =>
+          item.client_reference_id === orderId ||
+          item.metadata?.orderId === orderId
+        );
+        if (candidate) {
+          const sessionOrderId = candidate.metadata?.orderId || candidate.client_reference_id;
+          if (sessionOrderId === orderId) {
+            matchedSession = await stripe.checkout.sessions.retrieve(
+              candidate.id,
+              { expand: ['payment_intent'] }
+            );
+            if (matchedSession.payment_intent && typeof matchedSession.payment_intent === 'object') {
+              matchedIntent = matchedSession.payment_intent;
+            } else if (typeof matchedSession.payment_intent === 'string') {
+              matchedIntent = await stripe.paymentIntents.retrieve(matchedSession.payment_intent);
+            }
+          }
+          break;
+        }
+        if (!sessions.has_more || sessions.data.length === 0) break;
+        startingAfter = sessions.data[sessions.data.length - 1].id;
+      }
+
+      if (matchedSession) {
+        const intentOrderId = matchedIntent?.metadata?.orderId || null;
+        const associationVerified =
+          (matchedSession.client_reference_id === orderId ||
+            matchedSession.metadata?.orderId === orderId) &&
+          (!intentOrderId || intentOrderId === orderId);
+        return res.status(200).json({
+          lookup: 'read_only',
+          orderId,
+          localOrderFound: false,
+          localOrderStatus: null,
+          stripeSessionFound: true,
+          stripeSessionId: matchedSession.id,
+          stripeSessionStatus: matchedSession.status,
+          stripePaymentStatus: matchedSession.payment_status,
+          stripePaymentIntentId: matchedIntent?.id || null,
+          stripePaymentIntentStatus: matchedIntent?.status || null,
+          amountTotal: matchedSession.amount_total,
+          amountReceived: matchedIntent?.amount_received ?? null,
+          stripeCurrency: matchedSession.currency || matchedIntent?.currency || null,
+          livemode: matchedSession.livemode,
+          clientReferenceMatches: matchedSession.client_reference_id === orderId,
+          metadataOrderIdMatches: matchedSession.metadata?.orderId === orderId,
+          associationVerified,
+          sessionPagesScanned,
+          sessionSearchHasMore,
+          nextStep: 'Review the verified Checkout Session and restore/reconcile the missing local order through an audited admin process. This lookup did not create an order, top-up, or refund.',
+        });
+      }
+
+      // Fallback to exact PaymentIntent metadata when no Checkout Session
+      // reference is found. Never associate by amount, currency, or timestamp.
       if (typeof stripe.paymentIntents.search === 'function') {
         const found = await stripe.paymentIntents.search({
           query: `metadata['orderId']:'${orderId}'`,
