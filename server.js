@@ -2121,7 +2121,9 @@ app.post('/api/dtone/callback', async (req, res) => {
          FROM referral_codes WHERE code = $1 FOR UPDATE`,
         [order.referral_code]
       );
-      if (referral.rowCount === 1 && referral.rows[0].active === true &&
+      // Once a paid order has a valid attribution, later deactivation should
+      // stop new checkouts, not erase a reward already earned by this order.
+      if (referral.rowCount === 1 &&
           Number(referral.rows[0].reward_eur_cents) > 0) {
         const cap = referral.rows[0].max_rewards;
         const used = await client.query(
