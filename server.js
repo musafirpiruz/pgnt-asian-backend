@@ -1100,6 +1100,16 @@ app.post('/api/payments/checkout', async (req, res) => {
       }
     }
 
+    const referralClientErrors = new Set([
+      'A valid referral code and install identifier are required together.',
+      'This referral code is invalid or inactive.',
+      'This referral code has reached its reward limit.',
+      'This install is already attributed to another referral code.',
+    ]);
+    if (referralClientErrors.has(error.message)) {
+      return res.status(400).json({ error: error.message });
+    }
+
     console.error(
       'Checkout creation failed:',
       error.message
@@ -2132,20 +2142,25 @@ app.post('/api/dtone/callback', async (req, res) => {
           [order.referral_code]
         );
         if (cap === null || Number(used.rows[0].count) < Number(cap)) {
-          await client.query(
+          const ledgerInsert = await client.query(
             `INSERT INTO referral_ledger
                (referral_code, install_id_hash, order_id, reward_eur_cents, status)
              VALUES ($1, $2, $3, $4, 'pending')
-             ON CONFLICT DO NOTHING`,
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
             [order.referral_code, order.referral_install_id, orderId,
              Number(referral.rows[0].reward_eur_cents)]
           );
-          await client.query(
-            `UPDATE referral_attributions
-             SET first_paid_at = COALESCE(first_paid_at, NOW())
-             WHERE install_id_hash = $1 AND referral_code = $2`,
-            [order.referral_install_id, order.referral_code]
-          );
+          // Mark the attribution as paid only if this callback actually
+          // created its unique reward ledger row.
+          if (ledgerInsert.rowCount === 1) {
+            await client.query(
+              `UPDATE referral_attributions
+               SET first_paid_at = COALESCE(first_paid_at, NOW())
+               WHERE install_id_hash = $1 AND referral_code = $2`,
+              [order.referral_install_id, order.referral_code]
+            );
+          }
         }
       }
     }
