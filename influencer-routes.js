@@ -72,7 +72,15 @@ module.exports = function registerInfluencerRoutes({ app, pool, requireAdmin, ap
     const startsAt = b.startsAt === undefined ? null : new Date(b.startsAt);
     const endsAt = b.endsAt === undefined ? null : new Date(b.endsAt);
     if ((startsAt && !Number.isFinite(startsAt.getTime())) || (endsAt && !Number.isFinite(endsAt.getTime()))) return res.status(400).json({ error: 'Invalid campaign date.' });
+    if (b.name !== undefined && (!String(b.name).trim() || String(b.name).trim().length > 120)) return res.status(400).json({ error: 'name must be 1-120 characters.' });
     try {
+      // Validate the combined date range before UPDATE so a bad request returns 400
+      // instead of hitting the database CHECK constraint and becoming a 500.
+      const existing = await pool.query('SELECT starts_at, ends_at FROM influencer_campaigns WHERE id=$1', [id]);
+      if (!existing.rowCount) return res.status(404).json({ error: 'Campaign not found.' });
+      const finalStart = startsAt || new Date(existing.rows[0].starts_at);
+      const finalEnd = endsAt || new Date(existing.rows[0].ends_at);
+      if (finalEnd <= finalStart) return res.status(400).json({ error: 'Campaign end must be after start.' });
       const r = await pool.query(
         `UPDATE influencer_campaigns SET
           active = COALESCE($2, active), name = COALESCE($3, name),
@@ -88,7 +96,6 @@ module.exports = function registerInfluencerRoutes({ app, pool, requireAdmin, ap
           Object.prototype.hasOwnProperty.call(b, 'maxConversions'), b.maxConversions === undefined || b.maxConversions === null ? null : Number(b.maxConversions)]
       );
       if (!r.rowCount) return res.status(404).json({ error: 'Campaign not found.' });
-      if (new Date(r.rows[0].ends_at) <= new Date(r.rows[0].starts_at)) return res.status(400).json({ error: 'Campaign end must be after start.' });
       return res.json({ campaign: r.rows[0] });
     } catch (e) {
       console.error('Influencer campaign update failed:', e.message);
