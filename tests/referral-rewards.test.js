@@ -91,3 +91,11 @@ test('failed Stripe checkout payment releases only a reservation for the matchin
   assert.match(fn, /status = 'reversed'/);
   assert.match(fn, /WHERE order_id = \$1 AND status = 'reserved'/);
 });
+
+test('Stripe checkout creation failure releases the reserved referral slot', () => {
+  assert.match(checkout, /let stripeSessionCreated = false/);
+  assert.match(checkout, /stripeSessionCreated = true/);
+  assert.match(checkout, /!stripeSessionCreated/);
+  assert.match(checkout, /Checkout reservation cleanup failed/);
+  assert.match(checkout, /SET status = 'reversed'[\\s\\S]*WHERE order_id = \\$1 AND status = 'reserved'/);
+});
