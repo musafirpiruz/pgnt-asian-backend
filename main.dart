@@ -1113,42 +1113,89 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (mounted) setState(() { priceQuote = null; priceQuoteError = null; });
       return;
     }
+
     final countryCode = selectedCountry.code;
     final amount = selectedAmount;
     setState(() { isQuoteLoading = true; priceQuoteError = null; });
+
     try {
-      final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(queryParameters: {
-        'country': countryCode, 'operator': operator.name, 'amount': '$amount',
-      });
-      final response = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 60));
-      final dynamic decoded = jsonDecode(response.body);
-      if (response.statusCode < 200 || response.statusCode >= 300 || decoded is! Map<String, dynamic>) {
-        final message = decoded is Map<String, dynamic> ? decoded['error'] : null;
-        throw Exception(message is String ? message : 'Verified price is not available yet.');
+      final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(
+        queryParameters: {
+          'country': countryCode,
+          'operator': operator.name,
+          'amount': '$amount',
+        },
+      );
+
+      final response = await http
+          .get(uri, headers: const {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 60));
+
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception(
+          'HTTP ${response.statusCode}: سرور JSON نه دی را لېږلی.',
+        );
       }
-      if (!mounted || countryCode != selectedCountry.code || amount != selectedAmount || operator.name != selectedOperator?.name) return;
-      setState(() { priceQuote = decoded; priceQuoteError = null; });
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final message = decoded is Map<String, dynamic>
+            ? decoded['error']?.toString()
+            : null;
+        throw Exception(
+          'HTTP ${response.statusCode}: ${(message == null || message.isEmpty) ? 'قیمت ترلاسه نه شو' : message}',
+        );
+      }
+
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('HTTP ${response.statusCode}: د سرور ځواب ناسم جوړښت لري.');
+      }
+
+      if (!mounted ||
+          countryCode != selectedCountry.code ||
+          amount != selectedAmount ||
+          operator.name != selectedOperator?.name) {
+        return;
+      }
+
+      setState(() {
+        priceQuote = decoded;
+        priceQuoteError = null;
+      });
     } catch (error) {
-      if (!mounted || countryCode != selectedCountry.code || amount != selectedAmount || operator.name != selectedOperator?.name) return;
+      if (!mounted ||
+          countryCode != selectedCountry.code ||
+          amount != selectedAmount ||
+          operator.name != selectedOperator?.name) {
+        return;
+      }
+
       final detail = error.toString().replaceFirst('Exception: ', '').trim();
       final String safeDetail;
       if (error is FormatException) {
-        safeDetail = 'د سرور ځواب د لوستلو وړ نه دی. مهرباني وکړئ بیا هڅه وکړئ.';
+        safeDetail = 'د سرور ځواب د لوستلو وړ نه دی.';
       } else if (detail.contains('TimeoutException')) {
-        safeDetail = 'د سرور ځواب ناوخته شو. مهرباني وکړئ لږ انتظار وکړئ او بیا هڅه وکړئ.';
-      } else if (detail.contains('SocketException') || detail.contains('HandshakeException')) {
-        safeDetail = 'له سرور سره اړیکه جوړه نه شوه. انټرنېټ وګورئ او بیا هڅه وکړئ.';
-      } else if (detail.isEmpty || detail.length > 140) {
-        safeDetail = 'د قیمت خدمت موقتي ستونزه لري. مهرباني وکړئ بیا هڅه وکړئ.';
+        safeDetail = 'د سرور ځواب ناوخته شو (timeout).';
+      } else if (detail.contains('SocketException') ||
+          detail.contains('HandshakeException')) {
+        safeDetail = 'له سرور سره اړیکه جوړه نه شوه: ${detail.length > 100 ? detail.substring(0, 100) : detail}';
+      } else if (detail.isEmpty) {
+        safeDetail = 'ناپېژندل شوې ستونزه.';
       } else {
-        safeDetail = detail;
+        safeDetail = detail.length > 150 ? detail.substring(0, 150) : detail;
       }
+
       setState(() {
         priceQuote = null;
-        priceQuoteError = 'قیمت لا تایید شوی نه دی: $safeDetail';
+        priceQuoteError = 'قیمت تایید نه شو: $safeDetail';
       });
     } finally {
-      if (mounted && countryCode == selectedCountry.code && amount == selectedAmount && operator.name == selectedOperator?.name) {
+      if (mounted &&
+          countryCode == selectedCountry.code &&
+          amount == selectedAmount &&
+          operator.name == selectedOperator?.name) {
         setState(() => isQuoteLoading = false);
       }
     }
