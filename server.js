@@ -612,7 +612,7 @@ async function getPricingSettings(client, country) {
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
-async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null) {
+async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
   const result = await client.query(
     `SELECT
        id,
@@ -643,7 +643,9 @@ async function getProduct(client, productId, requestedCountry = null, operator =
 
   const product = result.rows[0];
 
-  if (product.enabled !== true) {
+  // Read-only quote requests may inspect inactive catalog products.
+  // All checkout/order callers remain strict unless explicitly opted in.
+  if (product.enabled !== true && options.allowInactive !== true) {
     throw new Error(
       'This product is currently unavailable.'
     );
@@ -831,7 +833,7 @@ async function getProductQuote(productId, country) {
   }
 }
 // Return a server-authoritative quote for the selected country/operator/amount.
-// Quotes are available only for enabled, database-mapped products.
+// Quotes may preview inactive, database-mapped products; checkout still requires an enabled product.
 app.get('/api/pricing/quote', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Pricing service is not configured.' });
@@ -844,7 +846,7 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, null, country, operator, amount);
+    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
     const pricing = await getPricingSettings(client, country);
     const price = calculateFinalPrice(product, pricing);
     return res.json({
