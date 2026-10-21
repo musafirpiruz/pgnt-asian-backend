@@ -1131,11 +1131,18 @@ class _PgntHomePageState extends State<PgntHomePage> {
     } catch (error) {
       if (!mounted || countryCode != selectedCountry.code || amount != selectedAmount || operator.name != selectedOperator?.name) return;
       final detail = error.toString().replaceFirst('Exception: ', '').trim();
-      final safeDetail = detail.contains('TimeoutException')
-          ? 'د سرور ځواب ناوخته شو. مهرباني وکړئ لږ انتظار وکړئ او بیا هڅه وکړئ.'
-          : (detail.isEmpty || detail.length > 140
-              ? 'محصول یا د تبادلې نرخ لا تنظیم شوی نه دی.'
-              : detail);
+      final String safeDetail;
+      if (error is FormatException) {
+        safeDetail = 'د سرور ځواب د لوستلو وړ نه دی. مهرباني وکړئ بیا هڅه وکړئ.';
+      } else if (detail.contains('TimeoutException')) {
+        safeDetail = 'د سرور ځواب ناوخته شو. مهرباني وکړئ لږ انتظار وکړئ او بیا هڅه وکړئ.';
+      } else if (detail.contains('SocketException') || detail.contains('HandshakeException')) {
+        safeDetail = 'له سرور سره اړیکه جوړه نه شوه. انټرنېټ وګورئ او بیا هڅه وکړئ.';
+      } else if (detail.isEmpty || detail.length > 140) {
+        safeDetail = 'د قیمت خدمت موقتي ستونزه لري. مهرباني وکړئ بیا هڅه وکړئ.';
+      } else {
+        safeDetail = detail;
+      }
       setState(() {
         priceQuote = null;
         priceQuoteError = 'قیمت لا تایید شوی نه دی: $safeDetail';
