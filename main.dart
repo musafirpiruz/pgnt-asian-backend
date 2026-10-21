@@ -1120,7 +1120,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(queryParameters: {
         'country': countryCode, 'operator': operator.name, 'amount': '$amount',
       });
-      final response = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      final response = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 60));
       final dynamic decoded = jsonDecode(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300 || decoded is! Map<String, dynamic>) {
         final message = decoded is Map<String, dynamic> ? decoded['error'] : null;
@@ -1131,9 +1131,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
     } catch (error) {
       if (!mounted || countryCode != selectedCountry.code || amount != selectedAmount || operator.name != selectedOperator?.name) return;
       final detail = error.toString().replaceFirst('Exception: ', '').trim();
-      final safeDetail = detail.isEmpty || detail.length > 140
-          ? 'محصول یا د تبادلې نرخ لا تنظیم شوی نه دی.'
-          : detail;
+      final safeDetail = detail.contains('TimeoutException')
+          ? 'د سرور ځواب ناوخته شو. مهرباني وکړئ لږ انتظار وکړئ او بیا هڅه وکړئ.'
+          : (detail.isEmpty || detail.length > 140
+              ? 'محصول یا د تبادلې نرخ لا تنظیم شوی نه دی.'
+              : detail);
       setState(() {
         priceQuote = null;
         priceQuoteError = 'قیمت لا تایید شوی نه دی: $safeDetail';
