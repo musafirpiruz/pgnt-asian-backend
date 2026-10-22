@@ -2604,12 +2604,12 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 </head>
 <body>
 <h1>PGNT ASIAN TOPUP</h1>
-<p>Read-only DT One check for Afghanistan ATOMA, product 7194 (115 AFN). This does not create a top-up or enable the product.</p>
+<p>Read-only DT One product discovery for Afghanistan, Pakistan, India, and Bangladesh. Search results are candidates only; this never maps or activates a catalog product and never creates a transaction.</p>
 <form id="check">
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="discoveryCountry">Country to search</label><select id="discoveryCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="discoveryOperator">Operator name (optional)</label><input id="discoveryOperator" maxlength="120" placeholder="Leave blank to search likely matches"><label for="discoveryAmount">Top-up amount (optional hint)</label><input id="discoveryAmount" type="number" min="1" step="1" value="115"><button type="button" id="discover">Search DT One pre-production catalog</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2865,13 +2865,23 @@ checkDatabase.addEventListener('click',async()=>{
 });
 discover.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
- result.textContent='Searching DT One pre-production catalog…';
+ const countryIsoCode=document.getElementById('discoveryCountry').value;
+ const operator=document.getElementById('discoveryOperator').value.trim();
+ const amountText=document.getElementById('discoveryAmount').value.trim();
+ const amount=Number(amountText);
+ if(amountText!==''&&(!Number.isSafeInteger(amount)||amount<=0)){result.textContent='Amount hint must be a positive whole number.';return;}
+ const params=new URLSearchParams({country_iso_code:countryIsoCode});
+ if(operator)params.set('operator',operator);
+ if(amountText)params.set('amount',String(amount));
+ result.textContent='Searching '+countryIsoCode+' in DT One PRE-PRODUCTION. Read-only; no product activation or transaction…';
+ discover.disabled=true;
  try{
-  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG&operator=ATOMA&amount=115',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const response=await fetch('/api/admin/dtone/products?'+params.toString(),{headers:{'x-admin-api-key':key.value},cache:'no-store'});
   const data=await response.json();
+  if(!response.ok)throw new Error('HTTP '+response.status+': '+JSON.stringify(data));
   result.textContent=JSON.stringify(data,null,2);
- }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
- key.value='';
+ }catch(error){result.textContent='Could not search DT One products: '+error.message;}
+ finally{key.value='';discover.disabled=false;}
 });
 runSandbox.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
