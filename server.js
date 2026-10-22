@@ -2054,14 +2054,30 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     const order = result.rows[0];
 
-    // A provider callback must never move an order unless the Stripe
-    // fulfillment path has already verified payment and saved its evidence.
-    // This also protects legacy/review orders with missing payment linkage.
-    if (!order.paid_at || !order.stripe_payment_intent_id) {
+    // Ordinary customer orders must have verified Stripe payment evidence
+    // before a provider callback can change their state. The only exception is
+    // the isolated ATOMA-SANDBOX-TEST route, which is explicitly pre-production
+    // and deliberately creates no Stripe payment. Keep this exception tightly
+    // scoped to that operator and the exact DT One pre-production host.
+    let isolatedSandboxTestOrder = false;
+    if (order.operator === 'ATOMA-SANDBOX-TEST') {
+      try {
+        const callbackBaseUrl = new URL(DTONE_API_BASE_URL);
+        isolatedSandboxTestOrder =
+          callbackBaseUrl.protocol === 'https:' &&
+          callbackBaseUrl.hostname === 'preprod-dvs-api.dtone.com' &&
+          (callbackBaseUrl.pathname === '' || callbackBaseUrl.pathname === '/');
+      } catch (_) {
+        isolatedSandboxTestOrder = false;
+      }
+    }
+
+    if ((!order.paid_at || !order.stripe_payment_intent_id) && !isolatedSandboxTestOrder) {
       await client.query('ROLLBACK');
       console.warn('DT One callback rejected: verified Stripe payment evidence is missing.', {
         hasPaidAt: Boolean(order.paid_at),
         hasStripePaymentIntentId: Boolean(order.stripe_payment_intent_id),
+        isolatedSandboxTestOrder,
       });
       return res.status(409).json({
         error: 'Order has no verified Stripe payment evidence.',
