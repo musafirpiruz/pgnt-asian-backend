@@ -2991,11 +2991,13 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
 
   const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
   const operatorQuery = String(req.query.operator || '').trim().toUpperCase();
-  const amountQuery = Number(req.query.amount || 115);
+  const amountQuery = req.query.amount == null || String(req.query.amount).trim() === ''
+    ? null
+    : Number(req.query.amount);
   if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
     return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
   }
-  if (!Number.isFinite(amountQuery) || amountQuery <= 0) {
+  if (amountQuery !== null && (!Number.isFinite(amountQuery) || amountQuery <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number.' });
   }
 
@@ -3005,7 +3007,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
     let totalSeen = 0;
 
     // Check a bounded number of pages to avoid unbounded provider requests.
-    for (let page = 1; page <= 5; page += 1) {
+    for (let page = 1; page <= 20; page += 1) {
       const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
       url.searchParams.set('country_iso_code', countryIsoCode);
       url.searchParams.set('per_page', '100');
@@ -3080,7 +3082,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       products,
       catalogActivation: 'unchanged',
       transactionCreated: false,
-      note: 'Read-only search across up to five pages (maximum 500 provider records). With no operator filter, all Afghanistan products returned by those pages are included. Results are candidates; confirm operator, denomination, and pre-production availability before mapping. No product is activated and no transaction is created.',
+      note: 'Read-only search across up to twenty pages (maximum 2,000 provider records). With no operator filter, all Afghanistan products returned by those pages are included. Results are candidates; confirm operator, denomination, and pre-production availability before mapping. No product is activated and no transaction is created.',
     });
   } catch (error) {
     console.error('DT One product discovery failed:', error.message);
