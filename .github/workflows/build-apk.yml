@@ -12,6 +12,7 @@ on:
       - ui/optional-profile-in-settings
       - fix/persist-order-history-secure-tokens
       - fix/referral-first-topup-rewards
+      - fix/android-internet-permission
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -97,6 +98,41 @@ jobs:
           test -d android
           test -f pubspec.yaml
           test -f lib/main.dart
+          test -f android/app/src/main/AndroidManifest.xml
+
+      - name: Ensure Android network permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          test -f "$MANIFEST"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          text = path.read_text(encoding="utf-8")
+          required = [
+              "android.permission.INTERNET",
+              "android.permission.ACCESS_NETWORK_STATE",
+          ]
+          for permission in required:
+              if permission not in text:
+                  tag = f'    <uses-permission android:name="{permission}" />\n'
+                  match = re.search(r"(?m)^\s*<application\b", text)
+                  if not match:
+                      raise SystemExit("ERROR: <application> tag not found in AndroidManifest.xml")
+                  text = text[:match.start()] + tag + text[match.start():]
+          path.write_text(text, encoding="utf-8")
+          for permission in required:
+              if permission not in text:
+                  raise SystemExit(f"ERROR: missing required permission {permission}")
+          print("Verified Android INTERNET and network-state permissions.")
+          PY
+
+          grep -q 'android.permission.INTERNET' "$MANIFEST"
+          grep -q 'android.permission.ACCESS_NETWORK_STATE' "$MANIFEST"
 
       - name: Install dependencies
         run: flutter pub get
@@ -124,4 +160,3 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
-          
