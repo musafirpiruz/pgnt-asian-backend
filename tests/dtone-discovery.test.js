@@ -30,3 +30,16 @@ test('DT One product discovery remains read-only', () => {
   assert.match(route, /catalogActivation: 'unchanged'/);
   assert.doesNotMatch(route, /INSERT INTO product_catalog|UPDATE product_catalog|POST.*\/v1\/transactions/i);
 });
+
+test('DT One operator discovery returns compact read-only network results', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
+  const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
+  assert.ok(start >= 0 && end > start, 'operator discovery route should be present before product discovery');
+  const route = server.slice(start, end);
+  assert.match(route, /\/v1\/operators/);
+  assert.match(route, /operatorCount/);
+  assert.match(route, /transactionCreated: false/);
+  assert.match(route, /catalogActivation: 'unchanged'/);
+  assert.doesNotMatch(route, /INSERT INTO product_catalog|UPDATE product_catalog|POST.*\/v1\/transactions/i);
+  assert.match(server, /id="discoverOperators"/);
+});
