@@ -2649,6 +2649,20 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 </select>
 <button type="button" id="loadSupportTickets">Load / refresh support tickets</button>
 <div id="supportTickets" aria-live="polite"></div>
+<h2>Referral program (admin)</h2>
+<p>Create admin-controlled referral codes. New codes stay disabled until explicitly activated. Reward is fixed at €0.07 by default and is recorded only after the first completed top-up; rewards remain pending until admin review.</p>
+<label for="referralCode">Referral code (4–40 letters, numbers, _ or -)</label><input id="referralCode" maxlength="40" autocomplete="off" placeholder="e.g. FRIEND2026">
+<label for="referralOwner">Code owner name</label><input id="referralOwner" maxlength="120" autocomplete="off" placeholder="Referral owner">
+<label for="referralContact">Owner contact (optional)</label><input id="referralContact" maxlength="160" autocomplete="off" placeholder="Optional contact">
+<label for="referralReward">Reward per eligible first top-up (EUR)</label><input id="referralReward" type="number" min="0" max="100" step="0.01" value="0.07">
+<label for="referralCap">Maximum rewards (blank = no limit)</label><input id="referralCap" type="number" min="0" step="1" placeholder="Optional limit">
+<button type="button" id="createReferral">Create disabled referral code</button>
+<label for="referralManageCode">Existing referral code</label><input id="referralManageCode" maxlength="40" autocomplete="off" placeholder="Enter exact code">
+<label style="display:flex;gap:8px;align-items:center"><input id="referralActive" type="checkbox" style="width:auto"> Code active (allow new attributions)</label>
+<button type="button" id="saveReferral">Save code settings</button>
+<button type="button" id="loadReferrals">Load referral report</button>
+<p><small>Code creation and settings require the admin API key. This panel does not pay rewards; it only reports the ledger. Rewards remain pending until admin review.</small></p>
+<div id="referralReport" aria-live="polite"></div>
 <h2>Result</h2><pre id="result">Waiting for verification.</pre>
 <script>
 const form=document.getElementById('check');
@@ -2760,6 +2774,43 @@ async function refreshSupportTickets(){
 }
 loadSupportTickets.addEventListener('click',refreshSupportTickets);
 
+const createReferral=document.getElementById('createReferral');
+const loadReferrals=document.getElementById('loadReferrals');
+const saveReferral=document.getElementById('saveReferral');
+const referralReport=document.getElementById('referralReport');
+function showReferralReport(value){referralReport.replaceChildren();const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:12px;border-radius:8px';pre.textContent=JSON.stringify(value,null,2);referralReport.append(pre);}
+createReferral.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const code=document.getElementById('referralCode').value.trim().toUpperCase();
+ const ownerName=document.getElementById('referralOwner').value.trim();
+ const ownerContact=document.getElementById('referralContact').value.trim();
+ const reward=Number(document.getElementById('referralReward').value);
+ const capText=document.getElementById('referralCap').value.trim();
+ const maxRewards=capText===''?null:Number(capText);
+ if(!/^[A-Z0-9_-]{4,40}$/.test(code)||!ownerName||!Number.isFinite(reward)||reward<0||reward>100||Math.round(reward*100)!==reward*100||(maxRewards!==null&&(!Number.isSafeInteger(maxRewards)||maxRewards<0))){result.textContent='Check referral code, owner, reward (EUR cents), and optional maximum reward count.';return;}
+ if(!confirm('Create referral code '+code+' with €'+reward.toFixed(2)+' reward? The code will remain disabled until activated.'))return;
+ createReferral.disabled=true;result.textContent='Creating disabled referral code…';
+ try{const data=await adminRequest('/api/admin/referrals/codes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,ownerName,ownerContact,rewardEurCents:Math.round(reward*100),maxRewards})});document.getElementById('referralManageCode').value=code;document.getElementById('referralActive').checked=false;result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not create referral code: '+error.message;}
+ finally{key.value='';createReferral.disabled=false;}
+});
+saveReferral.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const code=document.getElementById('referralManageCode').value.trim().toUpperCase();
+ if(!/^[A-Z0-9_-]{4,40}$/.test(code)){result.textContent='Enter a valid existing referral code.';return;}
+ if(!confirm('Save activation setting for '+code+'?'))return;
+ saveReferral.disabled=true;result.textContent='Saving referral code settings…';
+ try{const data=await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:document.getElementById('referralActive').checked})});result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not update referral code: '+error.message;}
+ finally{key.value='';saveReferral.disabled=false;}
+});
+loadReferrals.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ loadReferrals.disabled=true;result.textContent='Loading referral report…';
+ try{const data=await adminRequest('/api/admin/referrals');showReferralReport(data);result.textContent='Referral report loaded. Reward rule: '+(data.rewardRule||'see report');}
+ catch(error){result.textContent='Could not load referral report: '+error.message;}
+ finally{key.value='';loadReferrals.disabled=false;}
+});
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  result.textContent='Checking DT One pre-production…';
