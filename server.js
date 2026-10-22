@@ -2787,7 +2787,7 @@ createReferral.addEventListener('click',async()=>{
  const reward=Number(document.getElementById('referralReward').value);
  const capText=document.getElementById('referralCap').value.trim();
  const maxRewards=capText===''?null:Number(capText);
- if(!/^[A-Z0-9_-]{4,40}$/.test(code)||!ownerName||!Number.isFinite(reward)||reward<0||reward>100||Math.round(reward*100)!==reward*100||(maxRewards!==null&&(!Number.isSafeInteger(maxRewards)||maxRewards<0))){result.textContent='Check referral code, owner, reward (EUR cents), and optional maximum reward count.';return;}
+ if(!/^[A-Z0-9_-]{4,40}$/.test(code)||!ownerName||!Number.isFinite(reward)||reward<0||reward>100||Math.abs(reward*100-Math.round(reward*100))>1e-8||(maxRewards!==null&&(!Number.isSafeInteger(maxRewards)||maxRewards<0))){result.textContent='Check referral code, owner, reward (EUR cents), and optional maximum reward count.';return;}
  if(!confirm('Create referral code '+code+' with €'+reward.toFixed(2)+' reward? The code will remain disabled until activated.'))return;
  createReferral.disabled=true;result.textContent='Creating disabled referral code…';
  try{const data=await adminRequest('/api/admin/referrals/codes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,ownerName,ownerContact,rewardEurCents:Math.round(reward*100),maxRewards})});document.getElementById('referralManageCode').value=code;document.getElementById('referralActive').checked=false;result.textContent=JSON.stringify(data,null,2);}
