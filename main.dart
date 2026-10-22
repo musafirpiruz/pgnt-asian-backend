@@ -508,7 +508,7 @@ const Map<String, Map<String, String>> translations = {
     'topupAmount': 'Top-up amount',
     'totalToPay': 'Total to pay',
     'priceNotVerified': 'Price not verified',
-    'priceMustBeVerified': t('priceMustBeVerified'),
+    'priceMustBeVerified': 'Payment stays disabled until the server confirms this exact product and price.',
     'invalidAmount': 'Enter a valid positive amount.',
     'home': 'Home',
     'topup': 'Mobile Top-up',
