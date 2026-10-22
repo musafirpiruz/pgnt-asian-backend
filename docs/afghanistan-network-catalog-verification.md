@@ -16,15 +16,16 @@ The app should show only denominations actually available for the selected opera
 
 ## Known repository records
 
-The current migration history contains these ATOMA rows sourced from an earlier DT Shop export. They are deliberately inactive:
+The migration history contains historic ATOMA rows, and a newly supplied ATOMA CSV export was inspected on 2026-10-22. Keep existing rows inactive until the current export is reconciled with the catalog and sandbox flow:
 
 | Operator | Amount | DT One product ID | Retail price recorded | Status |
 |---|---:|---:|---:|---|
-| ATOMA | 100 AFN | 7191 | €1.65 | Inactive; re-verify |
-| ATOMA | 250 AFN | 7203 | €4.11 | Inactive; re-verify |
-| ATOMA | 500 AFN | 7213 | €8.21 | Inactive; re-verify |
-| ATOMA | 1,000 AFN | 7233 | €16.41 | Inactive; re-verify |
-| ATOMA | 115 AFN | 7194 | €2.10 retail / €1.89 wholesale | Inactive; prior pre-production evidence exists; checkout must be retested |
+| ATOMA | 100 AFN | 7191 | Current CSV: €1.84 (wholesale €1.66) | Inactive; reconcile migration |
+| ATOMA | 150 AFN | 7199 | €2.76 (wholesale €2.48) | In CSV; migration row missing |
+| ATOMA | 250 AFN | 7203 | Current CSV: €4.61 (wholesale €4.14) | Inactive; reconcile migration |
+| ATOMA | 500 AFN | 7213 | Current CSV: €9.19 (wholesale €8.27) | Inactive; reconcile migration |
+| ATOMA | 1,000 AFN | 7233 | Current CSV: €18.37 (wholesale €16.53) | Inactive; reconcile migration |
+| ATOMA | 115 AFN | 7194 | Current CSV: €2.13 (wholesale €1.91); older repository recorded €2.10 / €1.89 | Inactive; price discrepancy; verify and retest |
 
 Prices above are historic repository values, not a claim that current provider prices or product availability have been verified.
 
@@ -52,7 +53,7 @@ Prices are copied from the supplied CSV columns `WHOLESALE PRICE (EUR)` and `RET
 
 The open-range rows need separate API/schema/checkout verification before they can be offered. The app must not treat them as ordinary fixed denominations.
 
-The four supplied CSV exports now cover Roshan, Etisalat, AWCC, and Salaam. ATOMA has separate historic migration rows in this repository and still needs its current provider export/verification. Placeholder IDs and illustrative UI prices must never be used for fulfillment.
+The four supplied CSV exports cover Roshan, Etisalat, AWCC, and Salaam. A fifth supplied CSV export covers ATOMA Afghanistan (119 rows, 118 distinct fixed-value denominations and one non-fixed/open-range row). Requested amounts in the current ATOMA export: 100 AFN ID 7191, wholesale €1.66 / retail €1.84; 150 AFN ID 7199, €2.48 / €2.76; 250 AFN ID 7203, €4.14 / €4.61; 500 AFN ID 7213, €8.27 / €9.19; 1,000 AFN ID 7233, €16.53 / €18.37. For 115 AFN ID 7194 the current CSV says wholesale €1.91 / retail €2.13, differing from older repository values. Reconcile catalog rows with this latest export before any activation. Placeholder IDs and illustrative UI prices must never be used for fulfillment.
 
 ## Verification checklist per provider product
 
@@ -66,4 +67,4 @@ The four supplied CSV exports now cover Roshan, Etisalat, AWCC, and Salaam. ATOM
 
 ## Current blocker
 
-The current isolated sandbox route is hard-coded to ATOMA product ID 7194 and test scenarios. It does not yet test other operators. Next, verify the currency/product metadata and provider-supported sandbox test rules for the four supplied CSV catalogs, obtain a current ATOMA export, and adapt the isolated test path to handle approved product IDs safely. Keep all catalog rows inactive until sandbox fulfillment and checkout pricing are verified. No credentials, live transactions, or catalog activation are performed by this document.
+The current isolated sandbox route is hard-coded to ATOMA product ID 7194 and test scenarios. It does not yet test other operators. Next, verify the currency/product metadata and provider-supported sandbox test rules for the four supplied CSV catalogs, reconcile the supplied current ATOMA export, and adapt the isolated test path to handle approved product IDs safely. Keep all catalog rows inactive until sandbox fulfillment and checkout pricing are verified. No credentials, live transactions, or catalog activation are performed by this document.
