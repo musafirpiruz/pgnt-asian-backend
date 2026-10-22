@@ -511,6 +511,49 @@ async function runMigration() {
       console.log("Migration 012_payment_currency_settings is already applied.");
     }
 
+    // Version 013 refreshes the four recipient-currency reference rates.
+    // Values are official reference rates published by Bank of Lithuania for 2026-10-22.
+    // These are comparison rates only, NOT DT One wholesale prices or guaranteed settlement rates.
+    const fourCountryFxVersion = "013_four_country_reference_fx_20261022";
+    const fourCountryFxCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [fourCountryFxVersion]
+    );
+    if (fourCountryFxCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE pricing_settings
+            ADD COLUMN IF NOT EXISTS fx_rate_source TEXT,
+            ADD COLUMN IF NOT EXISTS fx_rate_date DATE;
+
+          UPDATE pricing_settings
+          SET afn_per_eur = CASE country
+                WHEN 'AF' THEN 73.70991
+                WHEN 'PK' THEN 314.55666
+                WHEN 'IN' THEN 106.1265
+                WHEN 'BD' THEN 139.60169
+                ELSE afn_per_eur
+              END,
+              fx_rate_source = 'Bank of Lithuania / ECB reference rates',
+              fx_rate_date = DATE '2026-10-22',
+              updated_at = NOW()
+          WHERE country IN ('AF', 'PK', 'IN', 'BD');
+
+          INSERT INTO schema_migrations (version)
+          VALUES ('013_four_country_reference_fx_20261022')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 013 completed: refreshed AFN, PKR, INR, and BDT reference rates dated 2026-10-22. These do not replace DT One product prices.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 013_four_country_reference_fx_20261022 is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
