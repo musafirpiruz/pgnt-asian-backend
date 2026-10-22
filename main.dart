@@ -364,6 +364,35 @@ String formatEuroCents(int cents) {
 }
 const Map<String, Map<String, String>> translations = {
   'ps': {
+    'faqCheckQ': 'څنګه د خپل ټاپ‌اپ حالت وګورم؟',
+    'faqCheckA': 'د معاملاتو تاریخ خلاص کړئ او د امر حالت وګورئ. د مرستې غوښتلو پر مهال د معاملې شمېره وساتئ.',
+    'faqDelayQ': 'که ټاپ‌اپ وځنډېږي، څه وکړم؟',
+    'faqDelayA': 'سمدستي بیا پیسې مه ورکوئ. لومړی د امر حالت وګورئ؛ د شبکې تایید کله ناکله وخت نیسي.',
+    'faqFailQ': 'که ټاپ‌اپ ناکام شي، څه کېږي؟',
+    'faqFailA': 'د معاملې شمېره او د تادیې رسید وساتئ. د بېرته ورکړې یا بیاکتنې پرېکړه باید د تادیې او امر له ثبتونو تایید شي.',
+    'faqPaymentQ': 'ایا د تادیې تایید د ټاپ‌اپ بشپړېدل دي؟',
+    'faqPaymentA': 'نه. د تادیې بریالیتوب په خپله دا نه ثابتوي چې د موبایل شبکې ټاپ‌اپ بشپړ کړی دی.',
+    'faqPrivacyQ': 'کوم معلومات باید هېڅکله شریک نه کړم؟',
+    'faqPrivacyA': 'خپل پټنوم، د کارت بشپړ معلومات، PIN، یوځلي امنیتي کوډ یا د تادیې د خدمت پټې کیلي هېڅکله مه شریکوئ.',
+    'vipAssistance': 'ځانګړې مرسته',
+    'helpCentre': 'وړیا • د ورځې ۲۴ ساعته مرسته',
+    'supportIntro': 'د تادیاتو، موبایل چارج او د امر ستونزو لپاره لارښوونې ومومئ.',
+    'step1Subtitle': 'د ټاپ‌اپ مقصد هېواد وټاکئ',
+    'step2Subtitle': 'د ترلاسه کوونکي موبایل شمېره ولیکئ',
+    'step3Subtitle': 'د ترلاسه کوونکي شبکه وټاکئ',
+    'step4Subtitle': 'مقدار انتخاب یا پخپله ولیکئ',
+    'step5Title': 'بیاکتنه او تادیه',
+    'step5Subtitle': 'له تادیې مخکې معلومات وګورئ',
+    'customAmount': 'خپل مقدار ولیکئ',
+    'customAmountHint': 'د خپلې خوښې مقدار',
+    'destination': 'مقصد هېواد',
+    'recipientNumber': 'د ترلاسه کوونکي شمېره',
+    'network': 'شبکه',
+    'topupAmount': 'د چارج مقدار',
+    'totalToPay': 'ټوله تادیه',
+    'priceNotVerified': 'قیمت لا تایید شوی نه دی',
+    'priceMustBeVerified': 'تر تادیې مخکې باید سرور همدا محصول او قیمت تایید کړي.',
+    'invalidAmount': 'سم مثبت مقدار ولیکئ.',
     'home': 'کور',
     'topup': 'موبایل چارج',
     'wallet': 'والټ',
@@ -413,6 +442,35 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'fa': {
+    'faqCheckQ': 'چگونه وضعیت شارژ خود را بررسی کنم؟',
+    'faqCheckA': 'تاریخچه تراکنش‌ها را باز کنید و وضعیت سفارش را ببینید. هنگام درخواست کمک، شماره تراکنش را نگه دارید.',
+    'faqDelayQ': 'اگر شارژ به تأخیر افتاد چه کنم؟',
+    'faqDelayA': 'فوراً دوباره پرداخت نکنید. ابتدا وضعیت سفارش را بررسی کنید؛ تأیید اپراتور گاهی زمان می‌برد.',
+    'faqFailQ': 'اگر شارژ ناموفق شود چه اتفاقی می‌افتد؟',
+    'faqFailA': 'شماره تراکنش و رسید پرداخت را نگه دارید. بازپرداخت یا بررسی باید با سوابق پرداخت و سفارش تأیید شود.',
+    'faqPaymentQ': 'آیا تأیید پرداخت به معنی تکمیل شارژ است؟',
+    'faqPaymentA': 'خیر. موفقیت پرداخت به‌تنهایی ثابت نمی‌کند که اپراتور شارژ را تکمیل کرده است.',
+    'faqPrivacyQ': 'چه اطلاعاتی را هرگز نباید به اشتراک بگذارم؟',
+    'faqPrivacyA': 'رمز عبور، اطلاعات کامل کارت، PIN، کد امنیتی یک‌بارمصرف یا کلیدهای محرمانه پرداخت را هرگز به اشتراک نگذارید.',
+    'vipAssistance': 'پشتیبانی ویژه',
+    'helpCentre': 'رایگان • مرکز کمک ۲۴ ساعته',
+    'supportIntro': 'راهنمای پرداخت، شارژ موبایل و مشکلات سفارش را پیدا کنید.',
+    'step1Subtitle': 'کشور مقصد شارژ را انتخاب کنید',
+    'step2Subtitle': 'شماره موبایل گیرنده را وارد کنید',
+    'step3Subtitle': 'شبکه گیرنده را انتخاب کنید',
+    'step4Subtitle': 'مقدار را انتخاب یا وارد کنید',
+    'step5Title': 'بررسی و پرداخت',
+    'step5Subtitle': 'پیش از پرداخت جزئیات را بررسی کنید',
+    'customAmount': 'مقدار دلخواه را وارد کنید',
+    'customAmountHint': 'مقدار دلخواه',
+    'destination': 'کشور مقصد',
+    'recipientNumber': 'شماره گیرنده',
+    'network': 'شبکه',
+    'topupAmount': 'مقدار شارژ',
+    'totalToPay': 'مبلغ قابل پرداخت',
+    'priceNotVerified': 'قیمت هنوز تأیید نشده',
+    'priceMustBeVerified': 'تا زمانی که سرور محصول و قیمت دقیق را تأیید نکند، پرداخت غیرفعال می‌ماند.',
+    'invalidAmount': 'یک مقدار مثبت و معتبر وارد کنید.',
     'home': 'خانه',
     'topup': 'شارژ موبایل',
     'wallet': 'کیف پول',
@@ -462,6 +520,35 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'en': {
+    'faqCheckQ': 'How can I check my top-up?',
+    'faqCheckA': 'Open History and review the order status. Keep your transaction ID when asking for help.',
+    'faqDelayQ': 'What should I do if a top-up is delayed?',
+    'faqDelayA': 'Do not pay again immediately. Check the order status first; some operator confirmations take additional time.',
+    'faqFailQ': 'What happens if a top-up fails?',
+    'faqFailA': 'Keep the transaction ID and payment receipt. A refund or review must be confirmed by the payment and order records.',
+    'faqPaymentQ': 'Is payment confirmation the same as top-up completion?',
+    'faqPaymentA': 'No. A successful payment does not by itself mean the mobile operator has completed the top-up.',
+    'faqPrivacyQ': 'What information should I never share?',
+    'faqPrivacyA': 'Never share your password, full card details, card PIN, one-time security code, or payment-provider secret keys.',
+    'vipAssistance': 'VIP assistance',
+    'helpCentre': 'Free • 24/7 Help Centre',
+    'supportIntro': 'Find guidance for payments, mobile top-ups, and order issues.',
+    'step1Subtitle': 'Choose the top-up destination',
+    'step2Subtitle': 'Enter the recipient mobile number',
+    'step3Subtitle': 'Choose the recipient network',
+    'step4Subtitle': 'Select a package or enter an amount',
+    'step5Title': 'Review & pay',
+    'step5Subtitle': 'Check the details before payment',
+    'customAmount': 'Enter your own amount',
+    'customAmountHint': 'Custom amount',
+    'destination': 'Destination',
+    'recipientNumber': 'Recipient number',
+    'network': 'Network',
+    'topupAmount': 'Top-up amount',
+    'totalToPay': 'Total to pay',
+    'priceNotVerified': 'Price not verified',
+    'priceMustBeVerified': 'Payment stays disabled until the server confirms this exact product and price.',
+    'invalidAmount': 'Enter a valid positive amount.',
     'home': 'Home',
     'topup': 'Mobile Top-up',
     'wallet': 'Wallet',
@@ -511,6 +598,35 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'ur': {
+    'faqCheckQ': 'میں اپنے ٹاپ اپ کی حالت کیسے دیکھ سکتا ہوں؟',
+    'faqCheckA': 'ہسٹری کھولیں اور آرڈر کی حالت دیکھیں۔ مدد مانگتے وقت ٹرانزیکشن نمبر محفوظ رکھیں۔',
+    'faqDelayQ': 'اگر ٹاپ اپ میں دیر ہو تو کیا کروں؟',
+    'faqDelayA': 'فوراً دوبارہ ادائیگی نہ کریں۔ پہلے آرڈر کی حالت دیکھیں؛ نیٹ ورک کی تصدیق میں وقت لگ سکتا ہے۔',
+    'faqFailQ': 'اگر ٹاپ اپ ناکام ہو جائے تو کیا ہوگا؟',
+    'faqFailA': 'ٹرانزیکشن نمبر اور ادائیگی کی رسید محفوظ رکھیں۔ رقم واپسی یا جائزے کی تصدیق ادائیگی اور آرڈر کے ریکارڈ سے ہونی چاہیے۔',
+    'faqPaymentQ': 'کیا ادائیگی کی تصدیق کا مطلب ٹاپ اپ مکمل ہونا ہے؟',
+    'faqPaymentA': 'نہیں۔ ادائیگی کامیاب ہونے سے یہ ثابت نہیں ہوتا کہ موبائل نیٹ ورک نے ٹاپ اپ مکمل کر دیا ہے۔',
+    'faqPrivacyQ': 'کون سی معلومات کبھی شیئر نہیں کرنی چاہئیں؟',
+    'faqPrivacyA': 'اپنا پاس ورڈ، کارڈ کی مکمل تفصیلات، PIN، ایک بار استعمال ہونے والا سیکیورٹی کوڈ یا ادائیگی کی خفیہ کلیدیں کبھی شیئر نہ کریں۔',
+    'vipAssistance': 'خصوصی معاونت',
+    'helpCentre': 'مفت • چوبیس گھنٹے مدد',
+    'supportIntro': 'ادائیگی، موبائل ٹاپ اپ اور آرڈر کے مسائل کے لیے رہنمائی حاصل کریں۔',
+    'step1Subtitle': 'ریچارج کے لیے ملک منتخب کریں',
+    'step2Subtitle': 'وصول کنندہ کا موبائل نمبر درج کریں',
+    'step3Subtitle': 'وصول کنندہ کا نیٹ ورک منتخب کریں',
+    'step4Subtitle': 'رقم منتخب کریں یا خود درج کریں',
+    'step5Title': 'جائزہ اور ادائیگی',
+    'step5Subtitle': 'ادائیگی سے پہلے تفصیلات دیکھیں',
+    'customAmount': 'اپنی رقم درج کریں',
+    'customAmountHint': 'اپنی مطلوبہ رقم',
+    'destination': 'ملک',
+    'recipientNumber': 'وصول کنندہ نمبر',
+    'network': 'نیٹ ورک',
+    'topupAmount': 'ریچارج رقم',
+    'totalToPay': 'کل قابل ادائیگی',
+    'priceNotVerified': 'قیمت کی تصدیق نہیں ہوئی',
+    'priceMustBeVerified': 'سرور کی جانب سے مصنوعات اور قیمت کی تصدیق تک ادائیگی بند رہے گی۔',
+    'invalidAmount': 'درست مثبت رقم درج کریں۔',
     'home': 'ہوم',
     'topup': 'موبائل ریچارج',
     'wallet': 'والٹ',
@@ -560,6 +676,35 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'hi': {
+    'faqCheckQ': 'मैं अपना टॉप-अप कैसे जाँचूँ?',
+    'faqCheckA': 'इतिहास खोलें और ऑर्डर की स्थिति देखें। सहायता माँगते समय लेन-देन आईडी अपने पास रखें।',
+    'faqDelayQ': 'टॉप-अप में देरी हो तो क्या करूँ?',
+    'faqDelayA': 'तुरंत दोबारा भुगतान न करें। पहले ऑर्डर की स्थिति देखें; नेटवर्क की पुष्टि में समय लग सकता है।',
+    'faqFailQ': 'टॉप-अप विफल होने पर क्या होगा?',
+    'faqFailA': 'लेन-देन आईडी और भुगतान रसीद सुरक्षित रखें। रिफंड या समीक्षा की पुष्टि भुगतान और ऑर्डर रिकॉर्ड से होनी चाहिए।',
+    'faqPaymentQ': 'क्या भुगतान की पुष्टि का अर्थ टॉप-अप पूरा होना है?',
+    'faqPaymentA': 'नहीं। भुगतान सफल होने से यह साबित नहीं होता कि मोबाइल ऑपरेटर ने टॉप-अप पूरा कर दिया है।',
+    'faqPrivacyQ': 'कौन-सी जानकारी कभी साझा नहीं करनी चाहिए?',
+    'faqPrivacyA': 'अपना पासवर्ड, कार्ड का पूरा विवरण, PIN, एक बार इस्तेमाल होने वाला सुरक्षा कोड या भुगतान सेवा की गुप्त कुंजियाँ साझा न करें।',
+    'vipAssistance': 'विशेष सहायता',
+    'helpCentre': 'निःशुल्क • 24/7 सहायता केंद्र',
+    'supportIntro': 'भुगतान, मोबाइल टॉप-अप और ऑर्डर की समस्याओं के लिए मार्गदर्शन पाएँ।',
+    'step1Subtitle': 'रिचार्ज के लिए देश चुनें',
+    'step2Subtitle': 'प्राप्तकर्ता का मोबाइल नंबर दर्ज करें',
+    'step3Subtitle': 'प्राप्तकर्ता का नेटवर्क चुनें',
+    'step4Subtitle': 'राशि चुनें या स्वयं दर्ज करें',
+    'step5Title': 'जाँचें और भुगतान करें',
+    'step5Subtitle': 'भुगतान से पहले विवरण जाँचें',
+    'customAmount': 'अपनी राशि दर्ज करें',
+    'customAmountHint': 'अपनी इच्छित राशि',
+    'destination': 'गंतव्य देश',
+    'recipientNumber': 'प्राप्तकर्ता नंबर',
+    'network': 'नेटवर्क',
+    'topupAmount': 'रिचार्ज राशि',
+    'totalToPay': 'कुल भुगतान',
+    'priceNotVerified': 'कीमत सत्यापित नहीं है',
+    'priceMustBeVerified': 'सर्वर द्वारा उत्पाद और कीमत की पुष्टि होने तक भुगतान बंद रहेगा।',
+    'invalidAmount': 'मान्य सकारात्मक राशि दर्ज करें।',
     'home': 'होम',
     'topup': 'मोबाइल रिचार्ज',
     'wallet': 'वॉलेट',
@@ -609,6 +754,35 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'bn': {
+    'faqCheckQ': 'আমি কীভাবে আমার টপ-আপের অবস্থা দেখব?',
+    'faqCheckA': 'ইতিহাস খুলে অর্ডারের অবস্থা দেখুন। সাহায্য চাইলে লেনদেনের আইডি সংরক্ষণ করুন।',
+    'faqDelayQ': 'টপ-আপ দেরি হলে কী করব?',
+    'faqDelayA': 'সঙ্গে সঙ্গে আবার পেমেন্ট করবেন না। আগে অর্ডারের অবস্থা দেখুন; নেটওয়ার্কের নিশ্চিতকরণে সময় লাগতে পারে।',
+    'faqFailQ': 'টপ-আপ ব্যর্থ হলে কী হবে?',
+    'faqFailA': 'লেনদেনের আইডি ও পেমেন্টের রসিদ রাখুন। ফেরত বা পর্যালোচনা পেমেন্ট ও অর্ডারের রেকর্ড দিয়ে নিশ্চিত করতে হবে।',
+    'faqPaymentQ': 'পেমেন্ট নিশ্চিত হওয়া কি টপ-আপ সম্পন্ন হওয়ার সমান?',
+    'faqPaymentA': 'না। পেমেন্ট সফল হলেই মোবাইল অপারেটর টপ-আপ সম্পন্ন করেছে—এটি প্রমাণ হয় না।',
+    'faqPrivacyQ': 'কোন তথ্য কখনো শেয়ার করা উচিত নয়?',
+    'faqPrivacyA': 'পাসওয়ার্ড, কার্ডের সম্পূর্ণ তথ্য, PIN, একবার ব্যবহারযোগ্য নিরাপত্তা কোড বা পেমেন্ট প্রদানকারীর গোপন কী শেয়ার করবেন না।',
+    'vipAssistance': 'বিশেষ সহায়তা',
+    'helpCentre': 'বিনামূল্যে • ২৪/৭ সহায়তা কেন্দ্র',
+    'supportIntro': 'পেমেন্ট, মোবাইল টপ-আপ এবং অর্ডারের সমস্যার নির্দেশনা পান।',
+    'step1Subtitle': 'রিচার্জের গন্তব্য দেশ নির্বাচন করুন',
+    'step2Subtitle': 'প্রাপকের মোবাইল নম্বর লিখুন',
+    'step3Subtitle': 'প্রাপকের নেটওয়ার্ক নির্বাচন করুন',
+    'step4Subtitle': 'পরিমাণ নির্বাচন করুন বা নিজে লিখুন',
+    'step5Title': 'পর্যালোচনা ও পেমেন্ট',
+    'step5Subtitle': 'পেমেন্টের আগে তথ্য যাচাই করুন',
+    'customAmount': 'নিজের পরিমাণ লিখুন',
+    'customAmountHint': 'পছন্দের পরিমাণ',
+    'destination': 'গন্তব্য দেশ',
+    'recipientNumber': 'প্রাপকের নম্বর',
+    'network': 'নেটওয়ার্ক',
+    'topupAmount': 'রিচার্জের পরিমাণ',
+    'totalToPay': 'মোট পরিশোধযোগ্য',
+    'priceNotVerified': 'মূল্য যাচাই হয়নি',
+    'priceMustBeVerified': 'সার্ভার পণ্য ও মূল্য নিশ্চিত না করা পর্যন্ত পেমেন্ট বন্ধ থাকবে।',
+    'invalidAmount': 'একটি বৈধ ধনাত্মক পরিমাণ লিখুন।',
     'home': 'হোম',
     'topup': 'মোবাইল রিচার্জ',
     'wallet': 'ওয়ালেট',
@@ -880,10 +1054,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Map<String, dynamic>? priceQuote;
   String? priceQuoteError;
 
-  final TextEditingController phoneController =
-      TextEditingController();
-  final TextEditingController referralCodeController =
-      TextEditingController();
+  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController customAmountController = TextEditingController();
+  final TextEditingController referralCodeController = TextEditingController();
   static const String _referralInstallIdKey = 'pgnt_referral_install_id_v1';
   final TextEditingController supportSubjectController =
       TextEditingController();
@@ -1096,6 +1269,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void dispose() {
     phoneController.dispose();
+    customAmountController.dispose();
     referralCodeController.dispose();
     supportSubjectController.dispose();
     supportMessageController.dispose();
@@ -1327,22 +1501,27 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const SizedBox(height: 18),
           buildWelcomeCard(),
           const SizedBox(height: 18),
-          pgntSectionTitle(t('selectCountry'), Icons.public),
+          _buildStepHeader(1, t('selectCountry'), t('step1Subtitle')),
           buildCountrySelector(),
-          const SizedBox(height: 14),
-          pgntSectionTitle(t('phone'), Icons.phone_android),
+          const SizedBox(height: 18),
+          _buildStepHeader(2, t('phone'), t('step2Subtitle')),
           buildPhoneField(),
-          const SizedBox(height: 14),
-          buildReferralCodeField(),
-          const SizedBox(height: 14),
-          pgntSectionTitle(t('selectOperator'), Icons.signal_cellular_alt),
+          const SizedBox(height: 18),
+          _buildStepHeader(3, t('selectOperator'), t('step3Subtitle')),
           buildOperatorSelector(),
-          const SizedBox(height: 14),
-          pgntSectionTitle(t('amount'), Icons.payments_outlined),
+          const SizedBox(height: 18),
+          _buildStepHeader(4, t('amount'), t('step4Subtitle')),
           buildAmountSelector(),
+          const SizedBox(height: 10),
+          buildCustomAmountField(),
           const SizedBox(height: 14),
           buildPriceCard(),
           const SizedBox(height: 18),
+          _buildStepHeader(5, t('step5Title'), t('step5Subtitle')),
+          buildReviewSummary(),
+          const SizedBox(height: 12),
+          buildReferralCodeField(),
+          const SizedBox(height: 12),
           buildPaymentButton(),
           const SizedBox(height: 12),
           buildSecureNote(),
@@ -1634,6 +1813,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             fontWeight: FontWeight.bold,
           ),
           onSelected: (_) {
+            customAmountController.clear();
             setState(() { selectedAmount = amount; priceQuote = null; priceQuoteError = null; });
             loadPriceQuote();
           },
@@ -1642,6 +1822,49 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
 
+  Widget _buildStepHeader(int number, String title, String subtitle) {
+    return Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(width: 34, height: 34, alignment: Alignment.center, decoration: const BoxDecoration(color: primaryRed, shape: BoxShape.circle), child: Text('$number', style: const TextStyle(color: brightGold, fontWeight: FontWeight.w900, fontSize: 16))),
+      const SizedBox(width: 11),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primaryRed)),
+        const SizedBox(height: 3),
+        Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+      ])),
+    ]));
+  }
+
+  Widget buildCustomAmountField() {
+    void applyAmount(String raw) {
+      final value = int.tryParse(raw.trim());
+      if (value == null || value <= 0) { showMessage(t('invalidAmount')); return; }
+      setState(() { selectedAmount = value; priceQuote = null; priceQuoteError = null; });
+      loadPriceQuote();
+    }
+    return TextField(controller: customAmountController, keyboardType: TextInputType.number,
+      decoration: InputDecoration(labelText: '${t('customAmount')} (${selectedCountry.currency})', hintText: t('customAmountHint'), prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed), suffixIcon: IconButton(tooltip: 'Check amount and price', icon: const Icon(Icons.check_circle_outline, color: primaryRed), onPressed: () => applyAmount(customAmountController.text))),
+      onSubmitted: applyAmount);
+  }
+
+  Widget buildReviewSummary() {
+    final quote = priceQuote;
+    return Card(child: Padding(padding: const EdgeInsets.all(15), child: Column(children: [
+      _reviewRow(t('destination'), '${selectedCountry.flag} ${selectedCountry.name}'),
+      const Divider(height: 18),
+      _reviewRow(t('recipientNumber'), phoneController.text.isEmpty ? '—' : phoneController.text),
+      const Divider(height: 18),
+      _reviewRow(t('network'), selectedOperator?.name ?? '—'),
+      const Divider(height: 18),
+      _reviewRow(t('topupAmount'), '$selectedAmount ${selectedCountry.currency}'),
+      const Divider(height: 18),
+      _reviewRow(t('totalToPay'), quote?['formattedFinalPrice']?.toString() ?? t('priceNotVerified')),
+      if (quote == null) const Padding(padding: EdgeInsets.only(top: 10), child: Text('Payment stays disabled until the server confirms this exact product and price.', style: TextStyle(color: errorRed, fontSize: 12), textAlign: TextAlign.center)),
+    ])));
+  }
+
+  Widget _reviewRow(String label, String value) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Text(label, style: const TextStyle(color: Colors.black54))), const SizedBox(width: 12), Flexible(child: Text(value, textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w700)))]);
+  }
   Widget buildPriceCard() {
     final quote = priceQuote;
     final basePrice = quote == null ? null : quote['formattedBasePrice'];
@@ -2251,26 +2474,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
         .where((item) => item.orderId != null && _orderAccessTokens.containsKey(item.orderId))
         .toList();
     final faqs = <Map<String, String>>[
-      {
-        'q': 'How can I check my top-up?',
-        'a': 'Open History and review the order status. Keep your transaction ID when asking for help.',
-      },
-      {
-        'q': 'What should I do if a top-up is delayed?',
-        'a': 'Do not pay again immediately. Check the order status first; some operator confirmations take additional time.',
-      },
-      {
-        'q': 'What happens if a top-up fails?',
-        'a': 'Keep the transaction ID and payment receipt. A refund or review must be confirmed by the payment and order records.',
-      },
-      {
-        'q': 'Is payment confirmation the same as top-up completion?',
-        'a': 'No. A successful payment does not by itself mean the mobile operator has completed the top-up.',
-      },
-      {
-        'q': 'What information should I never share?',
-        'a': 'Never share your password, full card details, card PIN, one-time security code, or payment-provider secret keys.',
-      },
+      {'q': t('faqCheckQ'), 'a': t('faqCheckA')},
+      {'q': t('faqDelayQ'), 'a': t('faqDelayA')},
+      {'q': t('faqFailQ'), 'a': t('faqFailA')},
+      {'q': t('faqPaymentQ'), 'a': t('faqPaymentA')},
+      {'q': t('faqPrivacyQ'), 'a': t('faqPrivacyA')},
     ];
 
     return ListView(
