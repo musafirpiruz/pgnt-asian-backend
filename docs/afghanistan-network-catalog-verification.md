@@ -28,21 +28,31 @@ The current migration history contains these ATOMA rows sourced from an earlier 
 
 Prices above are historic repository values, not a claim that current provider prices or product availability have been verified.
 
-### Newly supplied DT One CSV: Salaam Afghanistan
+### User-supplied DT One CSV exports (2026-10-22)
 
-A user-uploaded CSV named `products_e9d96f2a-6f46-4af5-b9ff-473c5a318c7e_1792650302589.csv` was inspected on 2026-10-22. It contains 61 records, all with operator name `Salaam Afghanistan` and destination currency AFN. This provides catalog evidence for Salaam, but does not by itself prove the export is current or that pre-production fulfillment succeeds.
+Four uploaded CSV exports were inspected. Each is an Afghanistan catalog export in AFN. These files are evidence of catalog records in the supplied export, not proof that the export is current or that pre-production fulfillment and checkout have passed.
 
-| Amount | Product ID | Wholesale EUR | CSV retail EUR |
-|---:|---:|---:|---:|
-| 100 AFN | 23130 | €1.66 | €1.85 |
-| 150 AFN | 23135 | €2.49 | €2.77 |
-| 250 AFN | 23142 | €4.15 | €4.62 |
-| 500 AFN | 23152 | €8.30 | €9.23 |
-| 1,000 AFN | 23172 | €16.60 | €18.45 |
+#### Fixed-value products and requested denominations
 
-Other Salaam denominations present in the file include 50, 70, 75, 80, 85, 90, 95, 110, 120, 130, 140, 160, 170, 175, 180, 190, 200, 225, 275, 300, 325, 350, 375, 400, 425, 450, 475, 525, 535, 550, 575, 600, 625, 650, 675, 685, 695, 700, 725, 738, 750, 775, 800, 825, 850, 875, 900, 925, 950, 975, 1,450, 2,000, 2,500, 3,000, and 4,000 AFN, plus an `Open_Range` product shown as 25–4,000 AFN. The file includes some product names without the operator prefix; verify their operator and product metadata before enabling them.
+| Operator | CSV rows | Fixed-value products | 100 AFN (ID / wholesale / retail) | 150 AFN (ID / wholesale / retail) | 250 AFN (ID / wholesale / retail) | 500 AFN (ID / wholesale / retail) | 1,000 AFN (ID / wholesale / retail) |
+|---|---:|---:|---|---|---|---|---|
+| Roshan Afghanistan | 120 | 119 | 6149 / €1.66 / €1.85 | 6157 / €2.48 / €2.76 | 6161 / €4.14 / €4.61 | 6171 / €8.27 / €9.19 | 6191 / €16.53 / €18.37 |
+| Etisalat Afghanistan | 122 | 121 | 6478 / €1.66 / €1.85 | 6554 / €2.49 / €2.77 | 6558 / €4.14 / €4.61 | 6568 / €8.28 / €9.21 | 6588 / €16.56 / €18.41 |
+| Afghan Wireless Afghanistan (AWCC) | 120 | 119 | 10531 / €1.63 / €1.82 | 10596 / €2.44 / €2.72 | 10599 / €4.07 / €4.53 | 10535 / €8.13 / €9.05 | 10536 / €16.25 / €18.06 |
+| Salaam Afghanistan | 61 | 60 | 23130 / €1.66 / €1.85 | 23135 / €2.49 / €2.77 | 23142 / €4.15 / €4.62 | 23152 / €8.30 / €9.23 | 23172 / €16.60 / €18.45 |
 
-No authoritative product IDs or prices for Roshan, Etisalat, or AWCC were found in the accessible current repository search. Placeholder IDs and illustrative UI prices must never be used for fulfillment.
+Prices are copied from the supplied CSV columns `WHOLESALE PRICE (EUR)` and `RETAIL PRICE (EUR)`. They are not yet the final customer checkout price: the backend must calculate/verify its app fee and Stripe fee treatment, and the catalog must remain inactive until the product and sandbox flow pass.
+
+#### Catalog coverage and open-range entries
+
+- Roshan: 116 distinct fixed-value denominations in the export; one `Open_Range` row, product ID 11188, range 30–5,000 AFN.
+- Etisalat: 117 distinct fixed-value denominations; one `Open_Range` row, product ID 11187, range 30–5,000 AFN.
+- AWCC: 117 distinct fixed-value denominations; one `Open_Range_AFN` row, product ID 11186, range 50–5,000 AFN.
+- Salaam: 60 fixed-value denominations; one `Open_Range` row, product ID 23182, range 25–4,000 AFN.
+
+The open-range rows need separate API/schema/checkout verification before they can be offered. The app must not treat them as ordinary fixed denominations.
+
+The four supplied CSV exports now cover Roshan, Etisalat, AWCC, and Salaam. ATOMA has separate historic migration rows in this repository and still needs its current provider export/verification. Placeholder IDs and illustrative UI prices must never be used for fulfillment.
 
 ## Verification checklist per provider product
 
@@ -56,4 +66,4 @@ No authoritative product IDs or prices for Roshan, Etisalat, or AWCC were found 
 
 ## Current blocker
 
-The current isolated sandbox route is hard-coded to ATOMA product ID 7194 and test scenarios. It does not yet test other operators. To safely add tests for Salaam and the other operators, verify the supplied Salaam export is current, confirm product metadata and provider-supported sandbox test rules, and obtain the authoritative catalog export for Roshan, Etisalat, and AWCC. No credentials, live transactions, or catalog activation are performed by this document.
+The current isolated sandbox route is hard-coded to ATOMA product ID 7194 and test scenarios. It does not yet test other operators. Next, verify the currency/product metadata and provider-supported sandbox test rules for the four supplied CSV catalogs, obtain a current ATOMA export, and adapt the isolated test path to handle approved product IDs safely. Keep all catalog rows inactive until sandbox fulfillment and checkout pricing are verified. No credentials, live transactions, or catalog activation are performed by this document.
