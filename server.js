@@ -3120,13 +3120,14 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
           product?.amount?.base,
           typeof product?.amount === 'number' ? product.amount : NaN,
         ].map(Number);
-        const mentionsAmount = benefitAmounts.includes(amountQuery)
+        const localCurrency = ({ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' })[countryIsoCode];
+        const mentionsAmount = amountQuery !== null && (
+          benefitAmounts.includes(amountQuery)
           || productAmounts.includes(amountQuery)
-          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
+          || (localCurrency && new RegExp(`\\\\b${amountQuery}\\\\s*${localCurrency}\\\\b|\\\\b${localCurrency}\\\\s*${amountQuery}\\\\b`, 'i').test(name))
+        );
         const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
-        const isLikelyRelevant = operatorQuery
-          ? isRequestedOperator
-          : (operatorName.includes('ATOMA') || mentionsAmount);
+        const isLikelyRelevant = isRequestedOperator && (amountQuery === null || mentionsAmount);
         if (countryCode === countryIsoCode && isLikelyRelevant) {
           const id = product?.id;
           if (id !== undefined && id !== null) matchesById.set(String(id), product);
