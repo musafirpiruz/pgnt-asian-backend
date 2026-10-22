@@ -96,7 +96,7 @@ test('configured Basic callback credentials fail closed without shared-secret fa
   assert.ok(authStart >= 0 && authEnd > authStart);
   const auth = server.slice(authStart, authEnd);
   assert.match(auth, /When Basic callback credentials are configured, use them exclusively/);
-  assert.match(auth, /if \(!DTONE_CALLBACK_USERNAME \|\| !DTONE_CALLBACK_PASSWORD \|\| !authorization\.startsWith\('Basic '\)\)/);
+  assert.match(auth, /!DTONE_CALLBACK_USERNAME\s*\|\|\s*!DTONE_CALLBACK_PASSWORD\s*\|\|\s*!authorization\.startsWith\('Basic '\)/);
   assert.match(auth, /constantTimeEqual\(suppliedUsername, DTONE_CALLBACK_USERNAME\)/);
   assert.match(auth, /constantTimeEqual\(suppliedPassword, DTONE_CALLBACK_PASSWORD\)/);
   assert.ok(auth.indexOf('return false;') < auth.indexOf('// Legacy shared-header auth'));
