@@ -597,13 +597,30 @@ async function runMigration() {
           ('AF', 'SALAAM', 250, 'AFN', 23142, 462, 415),
           ('AF', 'SALAAM', 500, 'AFN', 23152, 923, 830),
           ('AF', 'SALAAM', 1000, 'AFN', 23172, 1845, 1660)`;
+        // First reconcile by the natural key. This has priority over a matching
+        // product ID so one seed row cannot update two legacy rows at once.
+        await client.query(`
+          UPDATE product_catalog AS p
+          SET product_id = seed.product_id,
+              price_eur_cents = seed.retail_cents,
+              wholesale_price_eur_cents = seed.wholesale_cents,
+              bonus_amount = 0,
+              active = FALSE,
+              updated_at = NOW()
+          FROM (${seedValues}) AS seed(country, operator, amount, currency, product_id, retail_cents, wholesale_cents)
+          WHERE p.country = seed.country
+            AND LOWER(p.operator) = LOWER(seed.operator)
+            AND p.amount = seed.amount
+            AND p.currency = seed.currency
+        `);
+        // If no natural-key row exists, reconcile a record already carrying the
+        // provider product ID, provided the target natural key is still unused.
         await client.query(`
           UPDATE product_catalog AS p
           SET country = seed.country,
               operator = seed.operator,
               amount = seed.amount,
               currency = seed.currency,
-              product_id = seed.product_id,
               price_eur_cents = seed.retail_cents,
               wholesale_price_eur_cents = seed.wholesale_cents,
               bonus_amount = 0,
@@ -611,10 +628,14 @@ async function runMigration() {
               updated_at = NOW()
           FROM (${seedValues}) AS seed(country, operator, amount, currency, product_id, retail_cents, wholesale_cents)
           WHERE p.product_id = seed.product_id
-             OR (p.country = seed.country
-                 AND LOWER(p.operator) = LOWER(seed.operator)
-                 AND p.amount = seed.amount
-                 AND p.currency = seed.currency)
+            AND NOT EXISTS (
+              SELECT 1 FROM product_catalog natural_row
+              WHERE natural_row.country = seed.country
+                AND LOWER(natural_row.operator) = LOWER(seed.operator)
+                AND natural_row.amount = seed.amount
+                AND natural_row.currency = seed.currency
+                AND natural_row.id <> p.id
+            )
         `);
         await client.query(`
           INSERT INTO product_catalog
