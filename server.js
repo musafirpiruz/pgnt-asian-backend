@@ -549,6 +549,8 @@ async function getPricingSettings(client, country) {
        country,
        fee_eur_cents,
        afn_per_eur,
+       fx_rate_source,
+       fx_rate_date,
        bonus_percent,
        stripe_fee_percent,
        stripe_fixed_fee_cents,
@@ -825,8 +827,11 @@ async function getProductQuote(productId, country) {
       formattedFinalPrice: price.formattedFinalPrice,
       bonusPercent: price.bonusPercent,
       exchangeRateAfnPerEur: pricing.afnPerEur,
-      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
-      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
+      exchangeRateLocalCurrencyPerEur: pricing.localCurrencyPerEur,
+      fxRateSource: pricing.fxRateSource,
+      fxRateDate: pricing.fxRateDate,
+      marketEquivalentEur: Number((product.localAmount / pricing.localCurrencyPerEur).toFixed(2)),
+      marketEquivalentEurFormatted: formatEuro(Math.round((product.localAmount / pricing.localCurrencyPerEur) * 100)),
     };
   } finally {
     client.release();
@@ -864,8 +869,11 @@ app.get('/api/pricing/quote', async (req, res) => {
       formattedFinalPrice: price.formattedFinalPrice,
       bonusPercent: price.bonusPercent,
       exchangeRateAfnPerEur: pricing.afnPerEur,
-      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
-      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
+      exchangeRateLocalCurrencyPerEur: pricing.localCurrencyPerEur,
+      fxRateSource: pricing.fxRateSource,
+      fxRateDate: pricing.fxRateDate,
+      marketEquivalentEur: Number((product.localAmount / pricing.localCurrencyPerEur).toFixed(2)),
+      marketEquivalentEurFormatted: formatEuro(Math.round((product.localAmount / pricing.localCurrencyPerEur) * 100)),
     });
   } catch (error) {
     const message = error.message === 'Product not found.' || error.message === 'This product is currently unavailable.' || error.message === 'DT One product mapping is missing.'
