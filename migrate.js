@@ -465,6 +465,52 @@ async function runMigration() {
 
 
 
+
+    // Version 012 prepares EUR/USD/GBP payment-currency configuration.
+    // USD and GBP deliberately remain disabled until rates and Stripe fees are verified.
+    const paymentCurrencyVersion = "012_payment_currency_settings";
+    const paymentCurrencyCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [paymentCurrencyVersion]
+    );
+    if (paymentCurrencyCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS payment_currency_settings (
+            currency CHAR(3) PRIMARY KEY CHECK (currency IN ('EUR', 'USD', 'GBP')),
+            rate_per_eur NUMERIC(18,8) CHECK (rate_per_eur IS NULL OR rate_per_eur > 0),
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            rate_source TEXT,
+            rate_updated_at TIMESTAMPTZ,
+            stripe_fee_percent NUMERIC(6,3) NOT NULL DEFAULT 1.500
+              CHECK (stripe_fee_percent >= 0 AND stripe_fee_percent < 100),
+            stripe_fixed_fee_minor INTEGER NOT NULL DEFAULT 25
+              CHECK (stripe_fixed_fee_minor >= 0),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (currency <> 'EUR' OR rate_per_eur = 1 OR rate_per_eur IS NULL)
+          );
+          INSERT INTO payment_currency_settings
+            (currency, rate_per_eur, active, rate_source, rate_updated_at)
+          VALUES
+            ('EUR', 1, TRUE, 'base-currency', NOW()),
+            ('USD', NULL, FALSE, NULL, NULL),
+            ('GBP', NULL, FALSE, NULL, NULL)
+          ON CONFLICT (currency) DO NOTHING;
+          INSERT INTO schema_migrations (version)
+          VALUES ('012_payment_currency_settings')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 012_payment_currency_settings completed; EUR active, USD/GBP disabled pending verified FX and fees.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 012_payment_currency_settings is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
