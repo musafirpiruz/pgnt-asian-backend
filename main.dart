@@ -880,10 +880,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Map<String, dynamic>? priceQuote;
   String? priceQuoteError;
 
-  final TextEditingController phoneController =
-      TextEditingController();
-  final TextEditingController referralCodeController =
-      TextEditingController();
+  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController customAmountController = TextEditingController();
+  final TextEditingController referralCodeController = TextEditingController();
   static const String _referralInstallIdKey = 'pgnt_referral_install_id_v1';
   final TextEditingController supportSubjectController =
       TextEditingController();
@@ -1096,6 +1095,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void dispose() {
     phoneController.dispose();
+    customAmountController.dispose();
     referralCodeController.dispose();
     supportSubjectController.dispose();
     supportMessageController.dispose();
@@ -1327,22 +1327,27 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const SizedBox(height: 18),
           buildWelcomeCard(),
           const SizedBox(height: 18),
-          pgntSectionTitle(t('selectCountry'), Icons.public),
+          _buildStepHeader(1, t('selectCountry'), 'Choose the top-up destination'),
           buildCountrySelector(),
-          const SizedBox(height: 14),
-          pgntSectionTitle(t('phone'), Icons.phone_android),
+          const SizedBox(height: 18),
+          _buildStepHeader(2, t('phone'), 'Enter the recipient mobile number'),
           buildPhoneField(),
-          const SizedBox(height: 14),
-          buildReferralCodeField(),
-          const SizedBox(height: 14),
-          pgntSectionTitle(t('selectOperator'), Icons.signal_cellular_alt),
+          const SizedBox(height: 18),
+          _buildStepHeader(3, t('selectOperator'), 'Choose the recipient network'),
           buildOperatorSelector(),
-          const SizedBox(height: 14),
-          pgntSectionTitle(t('amount'), Icons.payments_outlined),
+          const SizedBox(height: 18),
+          _buildStepHeader(4, t('amount'), 'Select a package or enter an amount'),
           buildAmountSelector(),
+          const SizedBox(height: 10),
+          buildCustomAmountField(),
           const SizedBox(height: 14),
           buildPriceCard(),
           const SizedBox(height: 18),
+          _buildStepHeader(5, 'Review & pay', 'Check the details before payment'),
+          buildReviewSummary(),
+          const SizedBox(height: 12),
+          buildReferralCodeField(),
+          const SizedBox(height: 12),
           buildPaymentButton(),
           const SizedBox(height: 12),
           buildSecureNote(),
@@ -1634,6 +1639,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             fontWeight: FontWeight.bold,
           ),
           onSelected: (_) {
+            customAmountController.clear();
             setState(() { selectedAmount = amount; priceQuote = null; priceQuoteError = null; });
             loadPriceQuote();
           },
@@ -1642,6 +1648,49 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
 
+  Widget _buildStepHeader(int number, String title, String subtitle) {
+    return Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(width: 34, height: 34, alignment: Alignment.center, decoration: const BoxDecoration(color: primaryRed, shape: BoxShape.circle), child: Text('$number', style: const TextStyle(color: brightGold, fontWeight: FontWeight.w900, fontSize: 16))),
+      const SizedBox(width: 11),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primaryRed)),
+        const SizedBox(height: 3),
+        Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+      ])),
+    ]));
+  }
+
+  Widget buildCustomAmountField() {
+    void applyAmount(String raw) {
+      final value = int.tryParse(raw.trim());
+      if (value == null || value <= 0) { showMessage('Enter a valid positive amount.'); return; }
+      setState(() { selectedAmount = value; priceQuote = null; priceQuoteError = null; });
+      loadPriceQuote();
+    }
+    return TextField(controller: customAmountController, keyboardType: TextInputType.number,
+      decoration: InputDecoration(labelText: 'Enter your own amount (${selectedCountry.currency})', hintText: 'Custom amount', prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed), suffixIcon: IconButton(tooltip: 'Check amount and price', icon: const Icon(Icons.check_circle_outline, color: primaryRed), onPressed: () => applyAmount(customAmountController.text))),
+      onSubmitted: applyAmount);
+  }
+
+  Widget buildReviewSummary() {
+    final quote = priceQuote;
+    return Card(child: Padding(padding: const EdgeInsets.all(15), child: Column(children: [
+      _reviewRow('Destination', '${selectedCountry.flag} ${selectedCountry.name}'),
+      const Divider(height: 18),
+      _reviewRow('Recipient number', phoneController.text.isEmpty ? '—' : phoneController.text),
+      const Divider(height: 18),
+      _reviewRow('Network', selectedOperator?.name ?? 'Not selected'),
+      const Divider(height: 18),
+      _reviewRow('Top-up amount', '$selectedAmount ${selectedCountry.currency}'),
+      const Divider(height: 18),
+      _reviewRow('Total to pay', quote?['formattedFinalPrice']?.toString() ?? 'Price not verified'),
+      if (quote == null) const Padding(padding: EdgeInsets.only(top: 10), child: Text('Payment stays disabled until the server confirms this exact product and price.', style: TextStyle(color: errorRed, fontSize: 12), textAlign: TextAlign.center)),
+    ])));
+  }
+
+  Widget _reviewRow(String label, String value) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Text(label, style: const TextStyle(color: Colors.black54))), const SizedBox(width: 12), Flexible(child: Text(value, textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w700)))]);
+  }
   Widget buildPriceCard() {
     final quote = priceQuote;
     final basePrice = quote == null ? null : quote['formattedBasePrice'];
