@@ -55,9 +55,13 @@ test('customer app maps review and refund outcomes to visible transaction states
     ? app.slice(statusStart, statusEnd)
     : '';
   assert.notEqual(statusStart, -1, 'client status mapper must exist');
-  assert.match(mapper, /case 'refunded':/);
+  assert.match(mapper, /refundStatus/);
+  assert.match(mapper, /TransactionStatus\.refundPending/);
+  assert.match(mapper, /TransactionStatus\.refunded/);
+  assert.match(mapper, /TransactionStatus\.refundNeedsReview/);
   assert.match(mapper, /case 'topup_review':/);
   assert.match(mapper, /return TransactionStatus\.underReview/);
+  assert.match(mapper, /case 'declined':/);
   assert.match(mapper, /return TransactionStatus\.failed/);
 });
 
@@ -78,6 +82,20 @@ test('refund stays under review unless Stripe confirms the refund succeeded', ()
   const nonSuccessBranch = refundRoute.slice(successGuard, refundRoute.indexOf("await client.query('COMMIT')", successGuard));
   assert.match(nonSuccessBranch, /status = 'topup_review'/);
   assert.match(nonSuccessBranch, /refund\.status/);
+});
+
+test('customer order-status API exposes refund state without exposing the refund reason', () => {
+  const statusStart = server.indexOf("app.get('/api/orders/:orderId/status'");
+  const statusRoute = statusStart >= 0 ? server.slice(statusStart) : '';
+  assert.notEqual(statusStart, -1);
+  assert.match(statusRoute, /AS refund_status/);
+  assert.match(statusRoute, /refundStatus: order\.refund_status \|\| null/);
+  assert.doesNotMatch(statusRoute, /reason: order\.refund/);
+});
+
+test('an ambiguous Stripe refund exception is surfaced as needs_review, not success', () => {
+  assert.match(refundRoute, /UPDATE refunds SET status = 'needs_review'/);
+  assert.match(refundRoute, /refund outcome is not confirmed/);
 });
 
 test('refund operation holds the order lock and creates a pending audit row before contacting Stripe', () => {
