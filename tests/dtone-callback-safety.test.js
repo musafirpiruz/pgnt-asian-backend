@@ -88,3 +88,24 @@ test('a stale failed or pending callback cannot downgrade an already completed o
   assert.match(duplicateHandler, /providerStatus === 'completed'/);
   assert.doesNotMatch(duplicateHandler, /UPDATE orders/);
 });
+
+
+test('configured Basic callback credentials fail closed without shared-secret fallback', () => {
+  const authStart = server.indexOf('function verifyDtOneCallback(req)');
+  const authEnd = server.indexOf('// DT One transaction callback.', authStart);
+  assert.ok(authStart >= 0 && authEnd > authStart);
+  const auth = server.slice(authStart, authEnd);
+  assert.match(auth, /When Basic callback credentials are configured, use them exclusively/);
+  assert.match(auth, /if \(!DTONE_CALLBACK_USERNAME \|\| !DTONE_CALLBACK_PASSWORD \|\| !authorization\.startsWith\('Basic '\)\)/);
+  assert.match(auth, /constantTimeEqual\(suppliedUsername, DTONE_CALLBACK_USERNAME\)/);
+  assert.match(auth, /constantTimeEqual\(suppliedPassword, DTONE_CALLBACK_PASSWORD\)/);
+  assert.ok(auth.indexOf('return false;') < auth.indexOf('// Legacy shared-header auth'));
+  assert.match(auth, /if \(DTONE_CALLBACK_SECRET\)/);
+});
+
+test('provider failure is routed to review and does not trigger an automatic Stripe refund', () => {
+  assert.match(callback, /nextStatus = 'topup_review'/);
+  assert.match(callback, /providerStatus === 'failed'/);
+  assert.doesNotMatch(callback, /stripe\.refunds\.create/);
+  assert.doesNotMatch(callback, /stripe\.refunds\.create/);
+});
