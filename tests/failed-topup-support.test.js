@@ -51,3 +51,27 @@ test('these checks are source-only and never issue a payment or refund', () => {
   const source = fs.readFileSync(__filename, 'utf8');
   assert.doesNotMatch(source, /fetch\s*\(|stripe\.refunds\.create\s*\(/);
 });
+
+
+test('support ticket endpoints validate bounded inputs and avoid returning other orders tickets', () => {
+  const createStart = support.indexOf("app.post('/api/support/tickets'");
+  const historyStart = support.indexOf("app.get('/api/support/tickets/order/:orderId'");
+  const adminStart = support.indexOf("app.get('/api/admin/support/tickets'");
+  const create = createStart >= 0 && historyStart > createStart ? support.slice(createStart, historyStart) : '';
+  const history = historyStart >= 0 && adminStart > historyStart ? support.slice(historyStart, adminStart) : '';
+  assert.match(create, /subject\.length < 4 \|\| subject\.length > 160/);
+  assert.match(create, /message\.length < 10 \|\| message\.length > 4000/);
+  assert.match(create, /TICKET_CATEGORIES\.has\(category\)/);
+  assert.match(history, /ORDER BY created_at DESC LIMIT 50/);
+  assert.match(history, /FROM support_tickets WHERE order_id = \$1/);
+  assert.match(history, /tokenMatches\(accessToken, orderResult\.rows\[0\]\.order_access_token_hash\)/);
+});
+
+test('admin ticket updates accept only known statuses and priorities', () => {
+  const updateStart = support.indexOf("app.patch('/api/admin/support/tickets/:ticketId'");
+  const update = updateStart >= 0 ? support.slice(updateStart) : '';
+  assert.match(update, /TICKET_STATUSES\.has\(status\)/);
+  assert.match(update, /TICKET_PRIORITIES\.has\(priority\)/);
+  assert.match(update, /adminReply\.length > 4000/);
+  assert.match(update, /requireAdmin/);
+});
