@@ -119,8 +119,8 @@ jobs:
           ]
           for permission in required:
               if permission not in text:
-                  tag = f'    <uses-permission android:name="{permission}" />\\n'
-                  match = re.search(r"(?m)^\\s*<application\\b", text)
+                  tag = f'    <uses-permission android:name="{permission}" />\n'
+                  match = re.search(r"(?m)^\s*<application\b", text)
                   if not match:
                       raise SystemExit("ERROR: <application> tag not found in AndroidManifest.xml")
                   text = text[:match.start()] + tag + text[match.start():]
