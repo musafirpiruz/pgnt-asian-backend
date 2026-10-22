@@ -2609,7 +2609,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="discoveryCountry">Country to search</label><select id="discoveryCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="discoveryOperator">Operator name (optional)</label><input id="discoveryOperator" maxlength="120" placeholder="Leave blank to list operators"><label for="discoveryAmount">Top-up amount (optional filter)</label><input id="discoveryAmount" type="number" min="1" step="1" placeholder="Any amount"><button type="button" id="discover">Search DT One pre-production catalog</button>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="discoveryCountry">Country to search</label><select id="discoveryCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="discoveryOperator">Operator name (optional)</label><input id="discoveryOperator" maxlength="120" placeholder="Leave blank to list operators"><label for="discoveryAmount">Top-up amount (optional filter)</label><input id="discoveryAmount" type="number" min="1" step="1" placeholder="Any amount"><button type="button" id="discoverOperators">List networks (short result)</button><button type="button" id="discover">Search DT One pre-production catalog</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2863,6 +2863,16 @@ checkDatabase.addEventListener('click',async()=>{
  catch(error){result.textContent='Could not verify database pricing: '+error.message;}
  finally{key.value='';}
 });
+document.getElementById('discoverOperators').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ try {
+  const country=document.getElementById('discoveryCountry').value;
+  result.textContent='Searching DT One operator list…';
+  const data=await adminRequest('/api/admin/dtone/operators?country_iso_code='+encodeURIComponent(country));
+  if(!data.verified) throw new Error(data.error||'Operator discovery failed');
+  result.textContent=JSON.stringify({environment:data.environment,countryIsoCode:data.countryIsoCode,operatorCount:data.operatorCount,operators:data.operators.map(op=>({id:op.id,name:op.name,regions:op.regions.join(', ')})),transactionCreated:false},null,2);
+ } catch(error) { result.textContent=error.message; }
+});
 discover.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const countryIsoCode=document.getElementById('discoveryCountry').value;
@@ -3042,6 +3052,43 @@ app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) =
 
 // Read-only product discovery in the configured DT One environment.
 // Used to find the correct pre-production product ID; never creates transactions.
+// Read-only operator discovery to verify all networks without copying long product JSON.
+app.get('/api/admin/dtone/operators', requireAdmin, async (req, res) => {
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
+  try {
+    const byId = new Map();
+    let pagesChecked = 0;
+    let totalSeen = 0;
+    for (let page = 1; page <= 5; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/operators`);
+      url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, { method: 'GET', headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+      const responseText = await response.text();
+      let data = null;
+      try { data = responseText ? JSON.parse(responseText) : null; } catch (_) { data = null; }
+      if (!response.ok) return res.status(502).json({ verified: false, providerStatus: response.status, configuredBaseUrl: DTONE_API_BASE_URL, providerMessage: String(responseText || '').slice(0, 1000) || null, pagesChecked, error: 'DT One operator discovery failed.' });
+      const operators = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      pagesChecked += 1;
+      totalSeen += operators.length;
+      for (const operator of operators) {
+        const country = String(operator?.country?.iso_code || '').toUpperCase();
+        if (country !== countryIsoCode || operator?.id == null || !operator?.name) continue;
+        byId.set(String(operator.id), { id: operator.id, name: operator.name, countryIsoCode: country, regions: Array.isArray(operator.regions) ? operator.regions.map(region => region?.name).filter(Boolean) : [] });
+      }
+      if (operators.length < 100) break;
+    }
+    const operators = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return res.json({ verified: true, environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured', countryIsoCode, pagesChecked, providerOperatorsSeen: totalSeen, operatorCount: operators.length, operators, catalogActivation: 'unchanged', transactionCreated: false, note: 'Read-only operator list; network presence does not prove airtime product availability.' });
+  } catch (error) {
+    console.error('DT One operator discovery failed:', error.message);
+    return res.status(502).json({ verified: false, error: 'Could not reach DT One operator discovery endpoint.' });
+  }
+});
+
 app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
   if (!DTONE_API_KEY || !DTONE_API_SECRET) {
     return res.status(503).json({ error: 'DT One credentials are not configured.' });
