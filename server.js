@@ -2604,12 +2604,12 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 </head>
 <body>
 <h1>PGNT ASIAN TOPUP</h1>
-<p>Read-only DT One check for Afghanistan ATOMA, product 7194 (115 AFN). This does not create a top-up or enable the product.</p>
+<p>Read-only DT One product discovery for Afghanistan, Pakistan, India, and Bangladesh. Search results are candidates only; this never maps or activates a catalog product and never creates a transaction.</p>
 <form id="check">
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="discoveryCountry">Country to search</label><select id="discoveryCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="discoveryOperator">Operator name (optional)</label><input id="discoveryOperator" maxlength="120" placeholder="Leave blank to list operators"><label for="discoveryAmount">Top-up amount (optional filter)</label><input id="discoveryAmount" type="number" min="1" step="1" placeholder="Any amount"><button type="button" id="discoverOperators">List networks (short result)</button><button type="button" id="discover">Search DT One pre-production catalog</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2649,6 +2649,20 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 </select>
 <button type="button" id="loadSupportTickets">Load / refresh support tickets</button>
 <div id="supportTickets" aria-live="polite"></div>
+<h2>Referral program (admin)</h2>
+<p>Create admin-controlled referral codes. New codes stay disabled until explicitly activated. Reward is fixed at €0.07 by default and is recorded only after the first completed top-up; rewards remain pending until admin review.</p>
+<label for="referralCode">Referral code (4–40 letters, numbers, _ or -)</label><input id="referralCode" maxlength="40" autocomplete="off" placeholder="e.g. FRIEND2026">
+<label for="referralOwner">Code owner name</label><input id="referralOwner" maxlength="120" autocomplete="off" placeholder="Referral owner">
+<label for="referralContact">Owner contact (optional)</label><input id="referralContact" maxlength="160" autocomplete="off" placeholder="Optional contact">
+<label for="referralReward">Reward per eligible first top-up (EUR)</label><input id="referralReward" type="number" min="0" max="100" step="0.01" value="0.07">
+<label for="referralCap">Maximum rewards (blank = no limit)</label><input id="referralCap" type="number" min="0" step="1" placeholder="Optional limit">
+<button type="button" id="createReferral">Create disabled referral code</button>
+<label for="referralManageCode">Existing referral code</label><input id="referralManageCode" maxlength="40" autocomplete="off" placeholder="Enter exact code">
+<label style="display:flex;gap:8px;align-items:center"><input id="referralActive" type="checkbox" style="width:auto"> Code active (allow new attributions)</label>
+<button type="button" id="saveReferral">Save code settings</button>
+<button type="button" id="loadReferrals">Load referral report</button>
+<p><small>Code creation and settings require the admin API key. This panel does not pay rewards; it only reports the ledger. Rewards remain pending until admin review.</small></p>
+<div id="referralReport" aria-live="polite"></div>
 <h2>Result</h2><pre id="result">Waiting for verification.</pre>
 <script>
 const form=document.getElementById('check');
@@ -2760,6 +2774,43 @@ async function refreshSupportTickets(){
 }
 loadSupportTickets.addEventListener('click',refreshSupportTickets);
 
+const createReferral=document.getElementById('createReferral');
+const loadReferrals=document.getElementById('loadReferrals');
+const saveReferral=document.getElementById('saveReferral');
+const referralReport=document.getElementById('referralReport');
+function showReferralReport(value){referralReport.replaceChildren();const pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:12px;border-radius:8px';pre.textContent=JSON.stringify(value,null,2);referralReport.append(pre);}
+createReferral.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const code=document.getElementById('referralCode').value.trim().toUpperCase();
+ const ownerName=document.getElementById('referralOwner').value.trim();
+ const ownerContact=document.getElementById('referralContact').value.trim();
+ const reward=Number(document.getElementById('referralReward').value);
+ const capText=document.getElementById('referralCap').value.trim();
+ const maxRewards=capText===''?null:Number(capText);
+ if(!/^[A-Z0-9_-]{4,40}$/.test(code)||!ownerName||!Number.isFinite(reward)||reward<0||reward>100||Math.abs(reward*100-Math.round(reward*100))>1e-8||(maxRewards!==null&&(!Number.isSafeInteger(maxRewards)||maxRewards<0))){result.textContent='Check referral code, owner, reward (EUR cents), and optional maximum reward count.';return;}
+ if(!confirm('Create referral code '+code+' with €'+reward.toFixed(2)+' reward? The code will remain disabled until activated.'))return;
+ createReferral.disabled=true;result.textContent='Creating disabled referral code…';
+ try{const data=await adminRequest('/api/admin/referrals/codes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,ownerName,ownerContact,rewardEurCents:Math.round(reward*100),maxRewards})});document.getElementById('referralManageCode').value=code;document.getElementById('referralActive').checked=false;result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not create referral code: '+error.message;}
+ finally{key.value='';createReferral.disabled=false;}
+});
+saveReferral.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const code=document.getElementById('referralManageCode').value.trim().toUpperCase();
+ if(!/^[A-Z0-9_-]{4,40}$/.test(code)){result.textContent='Enter a valid existing referral code.';return;}
+ if(!confirm('Save activation setting for '+code+'?'))return;
+ saveReferral.disabled=true;result.textContent='Saving referral code settings…';
+ try{const data=await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:document.getElementById('referralActive').checked})});result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not update referral code: '+error.message;}
+ finally{key.value='';saveReferral.disabled=false;}
+});
+loadReferrals.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ loadReferrals.disabled=true;result.textContent='Loading referral report…';
+ try{const data=await adminRequest('/api/admin/referrals');showReferralReport(data);result.textContent='Referral report loaded. Reward rule: '+(data.rewardRule||'see report');}
+ catch(error){result.textContent='Could not load referral report: '+error.message;}
+ finally{key.value='';loadReferrals.disabled=false;}
+});
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  result.textContent='Checking DT One pre-production…';
@@ -2812,15 +2863,35 @@ checkDatabase.addEventListener('click',async()=>{
  catch(error){result.textContent='Could not verify database pricing: '+error.message;}
  finally{key.value='';}
 });
+document.getElementById('discoverOperators').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ try {
+  const country=document.getElementById('discoveryCountry').value;
+  result.textContent='Searching DT One operator list…';
+  const data=await adminRequest('/api/admin/dtone/operators?country_iso_code='+encodeURIComponent(country));
+  if(!data.verified) throw new Error(data.error||'Operator discovery failed');
+  result.textContent=JSON.stringify({environment:data.environment,countryIsoCode:data.countryIsoCode,operatorCount:data.operatorCount,operators:data.operators.map(op=>({id:op.id,name:op.name,regions:op.regions.join(', ')})),transactionCreated:false},null,2);
+ } catch(error) { result.textContent=error.message; }
+});
 discover.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
- result.textContent='Searching DT One pre-production catalog…';
+ const countryIsoCode=document.getElementById('discoveryCountry').value;
+ const operator=document.getElementById('discoveryOperator').value.trim();
+ const amountText=document.getElementById('discoveryAmount').value.trim();
+ const amount=Number(amountText);
+ if(amountText!==''&&(!Number.isSafeInteger(amount)||amount<=0)){result.textContent='Amount hint must be a positive whole number.';return;}
+ const params=new URLSearchParams({country_iso_code:countryIsoCode});
+ if(operator)params.set('operator',operator);
+ if(amountText)params.set('amount',String(amount));
+ result.textContent='Searching '+countryIsoCode+' in DT One PRE-PRODUCTION. Read-only; no product activation or transaction…';
+ discover.disabled=true;
  try{
-  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG&operator=ATOMA&amount=115',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const response=await fetch('/api/admin/dtone/products?'+params.toString(),{headers:{'x-admin-api-key':key.value},cache:'no-store'});
   const data=await response.json();
+  if(!response.ok)throw new Error('HTTP '+response.status+': '+JSON.stringify(data));
   result.textContent=JSON.stringify(data,null,2);
- }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
- key.value='';
+ }catch(error){result.textContent='Could not search DT One products: '+error.message;}
+ finally{key.value='';discover.disabled=false;}
 });
 runSandbox.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
@@ -2981,6 +3052,43 @@ app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) =
 
 // Read-only product discovery in the configured DT One environment.
 // Used to find the correct pre-production product ID; never creates transactions.
+// Read-only operator discovery to verify all networks without copying long product JSON.
+app.get('/api/admin/dtone/operators', requireAdmin, async (req, res) => {
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
+  try {
+    const byId = new Map();
+    let pagesChecked = 0;
+    let totalSeen = 0;
+    for (let page = 1; page <= 5; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/operators`);
+      url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, { method: 'GET', headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+      const responseText = await response.text();
+      let data = null;
+      try { data = responseText ? JSON.parse(responseText) : null; } catch (_) { data = null; }
+      if (!response.ok) return res.status(502).json({ verified: false, providerStatus: response.status, configuredBaseUrl: DTONE_API_BASE_URL, providerMessage: String(responseText || '').slice(0, 1000) || null, pagesChecked, error: 'DT One operator discovery failed.' });
+      const operators = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      pagesChecked += 1;
+      totalSeen += operators.length;
+      for (const operator of operators) {
+        const country = String(operator?.country?.iso_code || '').toUpperCase();
+        if (country !== countryIsoCode || operator?.id == null || !operator?.name) continue;
+        byId.set(String(operator.id), { id: operator.id, name: operator.name, countryIsoCode: country, regions: Array.isArray(operator.regions) ? operator.regions.map(region => region?.name).filter(Boolean) : [] });
+      }
+      if (operators.length < 100) break;
+    }
+    const operators = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return res.json({ verified: true, environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured', countryIsoCode, pagesChecked, providerOperatorsSeen: totalSeen, operatorCount: operators.length, operators, catalogActivation: 'unchanged', transactionCreated: false, note: 'Read-only operator list; network presence does not prove airtime product availability.' });
+  } catch (error) {
+    console.error('DT One operator discovery failed:', error.message);
+    return res.status(502).json({ verified: false, error: 'Could not reach DT One operator discovery endpoint.' });
+  }
+});
+
 app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
   if (!DTONE_API_KEY || !DTONE_API_SECRET) {
     return res.status(503).json({ error: 'DT One credentials are not configured.' });
@@ -2988,11 +3096,11 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
 
   const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
   const operatorQuery = String(req.query.operator || '').trim().toUpperCase();
-  const amountQuery = Number(req.query.amount || 115);
+  const amountQuery = req.query.amount === undefined || String(req.query.amount).trim() === '' ? null : Number(req.query.amount);
   if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
     return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
   }
-  if (!Number.isFinite(amountQuery) || amountQuery <= 0) {
+  if (amountQuery !== null && (!Number.isFinite(amountQuery) || amountQuery <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number.' });
   }
 
@@ -3059,13 +3167,14 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
           product?.amount?.base,
           typeof product?.amount === 'number' ? product.amount : NaN,
         ].map(Number);
-        const mentionsAmount = benefitAmounts.includes(amountQuery)
+        const localCurrency = ({ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' })[countryIsoCode];
+        const mentionsAmount = amountQuery !== null && (
+          benefitAmounts.includes(amountQuery)
           || productAmounts.includes(amountQuery)
-          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
+          || (localCurrency && new RegExp(`\\\\b${amountQuery}\\\\s*${localCurrency}\\\\b|\\\\b${localCurrency}\\\\s*${amountQuery}\\\\b`, 'i').test(name))
+        );
         const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
-        const isLikelyRelevant = operatorQuery
-          ? isRequestedOperator
-          : (operatorName.includes('ATOMA') || mentionsAmount);
+        const isLikelyRelevant = isRequestedOperator && (amountQuery === null || mentionsAmount);
         if (countryCode === countryIsoCode && isLikelyRelevant) {
           const id = product?.id;
           if (id !== undefined && id !== null) matchesById.set(String(id), product);
