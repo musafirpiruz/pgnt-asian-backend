@@ -71,3 +71,41 @@ test('callback writes status and payload transactionally', () => {
 test('these checks are source-only and do not execute external side effects', () => {
   assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /fetch\(|stripe\.refunds\.create/);
 });
+
+
+test('a delayed pending callback cannot downgrade an order already in topup_review', () => {
+  assert.match(callback, /nextStatus = order\.status === 'topup_review'\s*\? 'topup_review'\s*:\s*'topup_submitted'/);
+  assert.match(callback, /A delayed "pending" callback must not downgrade an order/);
+  assert.match(callback, /'topup_review',\s*\]\.includes\(order\.status\)/);
+});
+
+test('a stale failed or pending callback cannot downgrade an already completed order', () => {
+  const completedGuard = callback.indexOf("if (order.status === 'completed')");
+  const pendingTransition = callback.indexOf("let nextStatus;");
+  assert.ok(completedGuard >= 0 && pendingTransition > completedGuard);
+  const duplicateHandler = callback.slice(completedGuard, pendingTransition);
+  assert.match(duplicateHandler, /status: 'completed'/);
+  assert.match(duplicateHandler, /providerStatus === 'completed'/);
+  assert.doesNotMatch(duplicateHandler, /UPDATE orders/);
+});
+
+
+test('configured Basic callback credentials fail closed without shared-secret fallback', () => {
+  const authStart = server.indexOf('function verifyDtOneCallback(req)');
+  const authEnd = server.indexOf('// DT One transaction callback.', authStart);
+  assert.ok(authStart >= 0 && authEnd > authStart);
+  const auth = server.slice(authStart, authEnd);
+  assert.match(auth, /When Basic callback credentials are configured, use them exclusively/);
+  assert.match(auth, /!DTONE_CALLBACK_USERNAME\s*\|\|\s*!DTONE_CALLBACK_PASSWORD\s*\|\|\s*!authorization\.startsWith\('Basic '\)/);
+  assert.match(auth, /constantTimeEqual\(suppliedUsername, DTONE_CALLBACK_USERNAME\)/);
+  assert.match(auth, /constantTimeEqual\(suppliedPassword, DTONE_CALLBACK_PASSWORD\)/);
+  assert.ok(auth.indexOf('return false;') < auth.indexOf('// Legacy shared-header auth'));
+  assert.match(auth, /if \(DTONE_CALLBACK_SECRET\)/);
+});
+
+test('provider failure is routed to review and does not trigger an automatic Stripe refund', () => {
+  assert.match(callback, /nextStatus = 'topup_review'/);
+  assert.match(callback, /providerStatus === 'failed'/);
+  assert.doesNotMatch(callback, /stripe\.refunds\.create/);
+  assert.doesNotMatch(callback, /stripe\.refunds\.create/);
+});

@@ -549,6 +549,8 @@ async function getPricingSettings(client, country) {
        country,
        fee_eur_cents,
        afn_per_eur,
+       fx_rate_source,
+       fx_rate_date,
        bonus_percent,
        stripe_fee_percent,
        stripe_fixed_fee_cents,
@@ -825,8 +827,11 @@ async function getProductQuote(productId, country) {
       formattedFinalPrice: price.formattedFinalPrice,
       bonusPercent: price.bonusPercent,
       exchangeRateAfnPerEur: pricing.afnPerEur,
-      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
-      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
+      exchangeRateLocalCurrencyPerEur: pricing.localCurrencyPerEur,
+      fxRateSource: pricing.fxRateSource,
+      fxRateDate: pricing.fxRateDate,
+      marketEquivalentEur: Number((product.localAmount / pricing.localCurrencyPerEur).toFixed(2)),
+      marketEquivalentEurFormatted: formatEuro(Math.round((product.localAmount / pricing.localCurrencyPerEur) * 100)),
     };
   } finally {
     client.release();
@@ -864,8 +869,11 @@ app.get('/api/pricing/quote', async (req, res) => {
       formattedFinalPrice: price.formattedFinalPrice,
       bonusPercent: price.bonusPercent,
       exchangeRateAfnPerEur: pricing.afnPerEur,
-      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
-      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
+      exchangeRateLocalCurrencyPerEur: pricing.localCurrencyPerEur,
+      fxRateSource: pricing.fxRateSource,
+      fxRateDate: pricing.fxRateDate,
+      marketEquivalentEur: Number((product.localAmount / pricing.localCurrencyPerEur).toFixed(2)),
+      marketEquivalentEurFormatted: formatEuro(Math.round((product.localAmount / pricing.localCurrencyPerEur) * 100)),
     });
   } catch (error) {
     const message = error.message === 'Product not found.' || error.message === 'This product is currently unavailable.' || error.message === 'DT One product mapping is missing.'
@@ -4009,6 +4017,41 @@ app.get('/api/referrals/validate/:code', async (req, res) => {
 // Small browser page for the owner to run the read-only product check
 // without installing an API client. The admin key is entered by the owner
 // in their browser and is never stored by this page.
+
+// Public, read-only payment currency options. This endpoint never enables checkout by itself.
+// EUR is the only active option until USD/GBP rates and payment fees are verified.
+app.get('/api/payment-currencies', async (_req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Currency settings are not configured.' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT currency, active, rate_per_eur, rate_source, rate_updated_at,
+              stripe_fee_percent, stripe_fixed_fee_minor
+       FROM payment_currency_settings
+       ORDER BY CASE currency WHEN 'EUR' THEN 1 WHEN 'USD' THEN 2 WHEN 'GBP' THEN 3 ELSE 4 END`
+    );
+    const labels = { EUR: { name: 'Euro', symbol: '€' }, USD: { name: 'US Dollar', symbol: '$' }, GBP: { name: 'British Pound', symbol: '£' } };
+    return res.json({
+      baseCurrency: 'EUR',
+      currencies: result.rows.map((row) => ({
+        code: String(row.currency).trim(),
+        name: labels[String(row.currency).trim()]?.name || String(row.currency).trim(),
+        symbol: labels[String(row.currency).trim()]?.symbol || '',
+        enabled: row.active === true && row.rate_per_eur != null && row.rate_updated_at != null,
+        ratePerEur: row.active === true && row.rate_per_eur != null ? Number(row.rate_per_eur) : null,
+        rateSource: row.active === true ? row.rate_source : null,
+        rateUpdatedAt: row.active === true && row.rate_updated_at ? row.rate_updated_at : null,
+        stripeFeePercent: row.active === true ? Number(row.stripe_fee_percent) : null,
+        stripeFixedFeeMinor: row.active === true ? Number(row.stripe_fixed_fee_minor) : null,
+      })),
+      note: 'USD and GBP remain unavailable for checkout until their exchange rates, Stripe fees, and checkout flows are verified.',
+    });
+  } catch (error) {
+    console.error('Payment currency settings lookup failed:', error.message);
+    return res.status(503).json({ error: 'Could not load payment currency settings.' });
+  }
+});
 
 async function startServer() {
   if (!pool) {

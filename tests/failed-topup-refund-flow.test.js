@@ -65,3 +65,26 @@ test('these regression checks never call external payment or top-up services', (
   const source = fs.readFileSync(__filename, 'utf8');
   assert.doesNotMatch(source, /fetch\s*\(|stripe\.refunds\.create\s*\(/);
 });
+
+
+test('refund stays under review unless Stripe confirms the refund succeeded', () => {
+  const createRefund = refundRoute.indexOf('stripe.refunds.create');
+  const updateRefund = refundRoute.indexOf('UPDATE refunds SET stripe_refund_id');
+  const successGuard = refundRoute.indexOf("if (refund.status === 'succeeded')");
+  const markRefunded = refundRoute.indexOf("SET status = 'refunded'");
+  assert.ok(createRefund >= 0 && updateRefund > createRefund);
+  assert.ok(successGuard > updateRefund);
+  assert.ok(markRefunded > successGuard);
+  const nonSuccessBranch = refundRoute.slice(successGuard, refundRoute.indexOf("await client.query('COMMIT')", successGuard));
+  assert.match(nonSuccessBranch, /status = 'topup_review'/);
+  assert.match(nonSuccessBranch, /refund\.status/);
+});
+
+test('refund operation holds the order lock and creates a pending audit row before contacting Stripe', () => {
+  const lock = refundRoute.indexOf('FOR UPDATE');
+  const pendingInsert = refundRoute.indexOf("VALUES ($1, $2, 'pending', $3)");
+  const stripeCall = refundRoute.indexOf('stripe.refunds.create');
+  assert.ok(lock >= 0 && pendingInsert > lock && stripeCall > pendingInsert);
+  assert.match(refundRoute, /idempotencyKey: `pgnt-refund-\$\{orderId\}`/);
+  assert.match(refundRoute, /A refund record already exists\. Reconcile it in Stripe Dashboard before retrying/);
+});

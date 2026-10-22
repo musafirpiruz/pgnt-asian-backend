@@ -465,6 +465,247 @@ async function runMigration() {
 
 
 
+
+    // Version 012 prepares EUR/USD/GBP payment-currency configuration.
+    // USD and GBP deliberately remain disabled until rates and Stripe fees are verified.
+    const paymentCurrencyVersion = "012_payment_currency_settings";
+    const paymentCurrencyCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [paymentCurrencyVersion]
+    );
+    if (paymentCurrencyCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS payment_currency_settings (
+            currency CHAR(3) PRIMARY KEY CHECK (currency IN ('EUR', 'USD', 'GBP')),
+            rate_per_eur NUMERIC(18,8) CHECK (rate_per_eur IS NULL OR rate_per_eur > 0),
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            rate_source TEXT,
+            rate_updated_at TIMESTAMPTZ,
+            stripe_fee_percent NUMERIC(6,3) NOT NULL DEFAULT 1.500
+              CHECK (stripe_fee_percent >= 0 AND stripe_fee_percent < 100),
+            stripe_fixed_fee_minor INTEGER NOT NULL DEFAULT 25
+              CHECK (stripe_fixed_fee_minor >= 0),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (currency <> 'EUR' OR rate_per_eur = 1 OR rate_per_eur IS NULL)
+          );
+          INSERT INTO payment_currency_settings
+            (currency, rate_per_eur, active, rate_source, rate_updated_at)
+          VALUES
+            ('EUR', 1, TRUE, 'base-currency', NOW()),
+            ('USD', NULL, FALSE, NULL, NULL),
+            ('GBP', NULL, FALSE, NULL, NULL)
+          ON CONFLICT (currency) DO NOTHING;
+          INSERT INTO schema_migrations (version)
+          VALUES ('012_payment_currency_settings')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 012_payment_currency_settings completed; EUR active, USD/GBP disabled pending verified FX and fees.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 012_payment_currency_settings is already applied.");
+    }
+
+    // Version 013 refreshes the four recipient-currency reference rates.
+    // Values are official reference rates published by Bank of Lithuania for 2026-10-22.
+    // These are comparison rates only, NOT DT One wholesale prices or guaranteed settlement rates.
+    const fourCountryFxVersion = "013_four_country_reference_fx_20261022";
+    const fourCountryFxCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [fourCountryFxVersion]
+    );
+    if (fourCountryFxCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE pricing_settings
+            ALTER COLUMN afn_per_eur TYPE NUMERIC(12,5),
+            ADD COLUMN IF NOT EXISTS fx_rate_source TEXT,
+            ADD COLUMN IF NOT EXISTS fx_rate_date DATE;
+
+          UPDATE pricing_settings
+          SET afn_per_eur = CASE country
+                WHEN 'AF' THEN 73.70991
+                WHEN 'PK' THEN 314.55666
+                WHEN 'IN' THEN 106.1265
+                WHEN 'BD' THEN 139.60169
+                ELSE afn_per_eur
+              END,
+              fx_rate_source = 'Bank of Lithuania / ECB reference rates',
+              fx_rate_date = DATE '2026-10-22',
+              updated_at = NOW()
+          WHERE country IN ('AF', 'PK', 'IN', 'BD');
+
+          INSERT INTO schema_migrations (version)
+          VALUES ('013_four_country_reference_fx_20261022')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 013 completed: refreshed AFN, PKR, INR, and BDT reference rates dated 2026-10-22. These do not replace DT One product prices.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 013_four_country_reference_fx_20261022 is already applied.");
+    }
+
+
+    // Version 014 seeds requested fixed-value products from the five supplied DT One CSV exports.
+    // Prices are CSV retail/wholesale values in EUR cents; all rows remain inactive pending sandbox and checkout verification.
+    // Match existing records case-insensitively before inserting: the legacy schema includes title-case placeholders
+    // (for example "Roshan") and product IDs are globally unique. This avoids unique-key conflicts and duplicate operators.
+    // Open-range products and additional denominations are intentionally excluded from this initial safe seed.
+    const afCatalogVersion = "014_afghanistan_catalog_seed";
+    const afCatalogCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [afCatalogVersion]
+    );
+    if (afCatalogCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        const seedValues = `
+          VALUES
+          ('AF', 'ATOMA', 100, 'AFN', 7191, 184, 166),
+          ('AF', 'ATOMA', 150, 'AFN', 7199, 276, 248),
+          ('AF', 'ATOMA', 250, 'AFN', 7203, 461, 414),
+          ('AF', 'ATOMA', 500, 'AFN', 7213, 919, 827),
+          ('AF', 'ATOMA', 1000, 'AFN', 7233, 1837, 1653),
+          ('AF', 'ATOMA', 115, 'AFN', 7194, 213, 191),
+          ('AF', 'ROSHAN', 100, 'AFN', 6149, 185, 166),
+          ('AF', 'ROSHAN', 150, 'AFN', 6157, 276, 248),
+          ('AF', 'ROSHAN', 250, 'AFN', 6161, 461, 414),
+          ('AF', 'ROSHAN', 500, 'AFN', 6171, 919, 827),
+          ('AF', 'ROSHAN', 1000, 'AFN', 6191, 1837, 1653),
+          ('AF', 'ETISALAT', 100, 'AFN', 6478, 185, 166),
+          ('AF', 'ETISALAT', 150, 'AFN', 6554, 277, 249),
+          ('AF', 'ETISALAT', 250, 'AFN', 6558, 461, 414),
+          ('AF', 'ETISALAT', 500, 'AFN', 6568, 921, 828),
+          ('AF', 'ETISALAT', 1000, 'AFN', 6588, 1841, 1656),
+          ('AF', 'AWCC', 100, 'AFN', 10531, 182, 163),
+          ('AF', 'AWCC', 150, 'AFN', 10596, 272, 244),
+          ('AF', 'AWCC', 250, 'AFN', 10599, 453, 407),
+          ('AF', 'AWCC', 500, 'AFN', 10535, 905, 813),
+          ('AF', 'AWCC', 1000, 'AFN', 10536, 1806, 1625),
+          ('AF', 'SALAAM', 100, 'AFN', 23130, 185, 166),
+          ('AF', 'SALAAM', 150, 'AFN', 23135, 277, 249),
+          ('AF', 'SALAAM', 250, 'AFN', 23142, 462, 415),
+          ('AF', 'SALAAM', 500, 'AFN', 23152, 923, 830),
+          ('AF', 'SALAAM', 1000, 'AFN', 23172, 1845, 1660)`;
+        // Fail closed if a provider product ID is already attached to a
+        // different catalog row while the seed's natural key also exists.
+        // Updating either row in that situation could violate the globally
+        // unique product_id constraint or silently remap an unrelated product.
+        const productIdConflicts = await client.query(`
+          SELECT seed.product_id, seed.operator, seed.amount,
+                 p.id AS conflicting_row_id, p.operator AS existing_operator,
+                 p.amount AS existing_amount, p.country AS existing_country
+          FROM (${seedValues}) AS seed(country, operator, amount, currency, product_id, retail_cents, wholesale_cents)
+          JOIN product_catalog AS p ON p.product_id = seed.product_id
+          WHERE NOT (
+            p.country = seed.country
+            AND LOWER(p.operator) = LOWER(seed.operator)
+            AND p.amount = seed.amount
+            AND p.currency = seed.currency
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM product_catalog AS natural_row
+            WHERE natural_row.country = seed.country
+              AND LOWER(natural_row.operator) = LOWER(seed.operator)
+              AND natural_row.amount = seed.amount
+              AND natural_row.currency = seed.currency
+              AND natural_row.id <> p.id
+          )
+          LIMIT 10
+        `);
+        if (productIdConflicts.rowCount > 0) {
+          const summary = productIdConflicts.rows.map((row) =>
+            `product_id=${row.product_id} seed=${row.operator}/${row.amount}AFN conflicts_with_row=${row.conflicting_row_id} (${row.existing_country}/${row.existing_operator}/${row.existing_amount})`
+          ).join('; ');
+          throw new Error(
+            `Migration 014 stopped safely: provider product ID conflicts need manual catalog reconciliation: ${summary}`
+          );
+        }
+
+        // First reconcile by the natural key. This has priority over a matching
+        // product ID so one seed row cannot update two legacy rows at once.
+        await client.query(`
+          UPDATE product_catalog AS p
+          SET product_id = seed.product_id,
+              price_eur_cents = seed.retail_cents,
+              wholesale_price_eur_cents = seed.wholesale_cents,
+              bonus_amount = 0,
+              active = FALSE,
+              updated_at = NOW()
+          FROM (${seedValues}) AS seed(country, operator, amount, currency, product_id, retail_cents, wholesale_cents)
+          WHERE p.country = seed.country
+            AND LOWER(p.operator) = LOWER(seed.operator)
+            AND p.amount = seed.amount
+            AND p.currency = seed.currency
+        `);
+        // If no natural-key row exists, reconcile a record already carrying the
+        // provider product ID, provided the target natural key is still unused.
+        await client.query(`
+          UPDATE product_catalog AS p
+          SET country = seed.country,
+              operator = seed.operator,
+              amount = seed.amount,
+              currency = seed.currency,
+              price_eur_cents = seed.retail_cents,
+              wholesale_price_eur_cents = seed.wholesale_cents,
+              bonus_amount = 0,
+              active = FALSE,
+              updated_at = NOW()
+          FROM (${seedValues}) AS seed(country, operator, amount, currency, product_id, retail_cents, wholesale_cents)
+          WHERE p.product_id = seed.product_id
+            AND NOT EXISTS (
+              SELECT 1 FROM product_catalog natural_row
+              WHERE natural_row.country = seed.country
+                AND LOWER(natural_row.operator) = LOWER(seed.operator)
+                AND natural_row.amount = seed.amount
+                AND natural_row.currency = seed.currency
+                AND natural_row.id <> p.id
+            )
+        `);
+        await client.query(`
+          INSERT INTO product_catalog
+            (country, operator, amount, currency, product_id, price_eur_cents,
+             wholesale_price_eur_cents, bonus_amount, active, updated_at)
+          SELECT seed.country, seed.operator, seed.amount, seed.currency,
+                 seed.product_id, seed.retail_cents, seed.wholesale_cents, 0, FALSE, NOW()
+          FROM (${seedValues}) AS seed(country, operator, amount, currency, product_id, retail_cents, wholesale_cents)
+          WHERE NOT EXISTS (
+            SELECT 1 FROM product_catalog p WHERE p.product_id = seed.product_id
+          )
+            AND NOT EXISTS (
+              SELECT 1 FROM product_catalog p
+              WHERE p.country = seed.country
+                AND LOWER(p.operator) = LOWER(seed.operator)
+                AND p.amount = seed.amount
+                AND p.currency = seed.currency
+            )
+        `);
+        await client.query(`
+          INSERT INTO schema_migrations (version)
+          VALUES ('014_afghanistan_catalog_seed')
+          ON CONFLICT (version) DO NOTHING
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 014 completed: seeded or reconciled requested denominations for all five Afghanistan networks; all products remain inactive pending verification.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 014_afghanistan_catalog_seed is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
