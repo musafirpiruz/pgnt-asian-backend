@@ -2609,7 +2609,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="discover">Find Afghanistan ATOMA products</button>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="operatorSearch">Afghanistan network</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks (Afghanistan)</option><option value="ROSHAN">Roshan</option><option value="ETISALAT">Etisalat</option><option value="AWCC">AWCC</option><option value="SALAAM">Salaam</option><option value="ATOMA">ATOMA</option></select><button type="button" id="discover">Find Afghanistan products</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2816,7 +2816,10 @@ discover.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  result.textContent='Searching DT One pre-production catalog…';
  try{
-  const response=await fetch('/api/admin/dtone/products?country_iso_code=AFG&operator=ATOMA&amount=115',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
+  const selectedOperator=document.getElementById('operatorSearch').value;
+  const params=new URLSearchParams({country_iso_code:'AFG'});
+  if(selectedOperator!=='ALL')params.set('operator',selectedOperator);
+  const response=await fetch('/api/admin/dtone/products?'+params.toString(),{headers:{'x-admin-api-key':key.value},cache:'no-store'});
   const data=await response.json();
   result.textContent=JSON.stringify(data,null,2);
  }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
@@ -3065,7 +3068,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
         const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
         const isLikelyRelevant = operatorQuery
           ? isRequestedOperator
-          : (operatorName.includes('ATOMA') || mentionsAmount);
+          : true;
         if (countryCode === countryIsoCode && isLikelyRelevant) {
           const id = product?.id;
           if (id !== undefined && id !== null) matchesById.set(String(id), product);
@@ -3088,7 +3091,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       products,
       catalogActivation: 'unchanged',
       transactionCreated: false,
-      note: 'Read-only search across up to five pages. Results are candidates; confirm operator, denomination, and pre-production availability before mapping.',
+      note: 'Read-only search across up to five pages (maximum 500 provider records). With no operator filter, all Afghanistan products returned by those pages are included. Results are candidates; confirm operator, denomination, and pre-production availability before mapping. No product is activated and no transaction is created.',
     });
   } catch (error) {
     console.error('DT One product discovery failed:', error.message);
