@@ -3054,17 +3054,6 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
         const operatorName = String(product?.operator?.name || '').toUpperCase();
         const countryCode = String(product?.operator?.country?.iso_code || '').toUpperCase();
         const name = String(product?.name || '');
-        const benefitAmounts = Array.isArray(product?.benefits)
-          ? product.benefits.map((benefit) => Number(benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base))
-          : [];
-        const productAmounts = [
-          product?.destination?.amount,
-          product?.amount?.base,
-          typeof product?.amount === 'number' ? product.amount : NaN,
-        ].map(Number);
-        const mentionsAmount = benefitAmounts.includes(amountQuery)
-          || productAmounts.includes(amountQuery)
-          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
         const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
         const isLikelyRelevant = operatorQuery
           ? isRequestedOperator
