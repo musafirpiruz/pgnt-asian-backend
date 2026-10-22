@@ -524,6 +524,7 @@ async function runMigration() {
       try {
         await client.query(`
           ALTER TABLE pricing_settings
+            ALTER COLUMN afn_per_eur TYPE NUMERIC(12,5),
             ADD COLUMN IF NOT EXISTS fx_rate_source TEXT,
             ADD COLUMN IF NOT EXISTS fx_rate_date DATE;
 
