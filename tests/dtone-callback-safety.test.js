@@ -27,10 +27,18 @@ test('callback rejects missing references and unknown provider statuses', () => 
   assert.match(callback, /providerStatus === 'unknown'/);
 });
 
-test('callback refuses to change an order without verified Stripe payment evidence', () => {
-  assert.match(callback, /if \(!order\.paid_at \|\| !order\.stripe_payment_intent_id\)/);
+test('ordinary customer orders require verified Stripe payment evidence', () => {
+  assert.match(callback, /if \(\(!order\.paid_at \|\| !order\.stripe_payment_intent_id\) && !isolatedSandboxTestOrder\)/);
   assert.match(callback, /Order has no verified Stripe payment evidence/);
   assert.ok(callback.indexOf("Order has no verified Stripe payment evidence") < callback.indexOf("let nextStatus"));
+});
+
+test('only the isolated ATOMA sandbox test order on the exact DT One pre-production host bypasses Stripe evidence', () => {
+  assert.match(callback, /order\.operator === 'ATOMA-SANDBOX-TEST'/);
+  assert.match(callback, /callbackBaseUrl\.hostname === 'preprod-dvs-api\.dtone\.com'/);
+  assert.match(callback, /callbackBaseUrl\.protocol === 'https:'/);
+  assert.match(callback, /isolatedSandboxTestOrder = false/);
+  assert.match(callback, /\(!order\.paid_at \|\| !order\.stripe_payment_intent_id\) && !isolatedSandboxTestOrder/);
 });
 
 test('callback locks the order and rejects mismatched provider transaction IDs', () => {
