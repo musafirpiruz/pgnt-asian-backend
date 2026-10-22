@@ -76,7 +76,7 @@ test('these checks are source-only and do not execute external side effects', ()
 test('a delayed pending callback cannot downgrade an order already in topup_review', () => {
   assert.match(callback, /nextStatus = order\.status === 'topup_review'\s*\? 'topup_review'\s*:\s*'topup_submitted'/);
   assert.match(callback, /A delayed "pending" callback must not downgrade an order/);
-  assert.match(callback, /'topup_review',\s*\]\)\.includes\(order\.status\)/);
+  assert.match(callback, /'topup_review',\s*\]\.includes\(order\.status\)/);
 });
 
 test('a stale failed or pending callback cannot downgrade an already completed order', () => {
