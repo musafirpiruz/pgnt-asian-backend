@@ -2609,7 +2609,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="discoveryCountry">Country to search</label><select id="discoveryCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="discoveryOperator">Operator name (optional)</label><input id="discoveryOperator" maxlength="120" placeholder="Leave blank to search likely matches"><label for="discoveryAmount">Top-up amount (optional hint)</label><input id="discoveryAmount" type="number" min="1" step="1" value="115"><button type="button" id="discover">Search DT One pre-production catalog</button>
+<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="discoveryCountry">Country to search</label><select id="discoveryCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="discoveryOperator">Operator name (optional)</label><input id="discoveryOperator" maxlength="120" placeholder="Leave blank to list operators"><label for="discoveryAmount">Top-up amount (optional filter)</label><input id="discoveryAmount" type="number" min="1" step="1" placeholder="Any amount"><button type="button" id="discover">Search DT One pre-production catalog</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -3049,11 +3049,11 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
 
   const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
   const operatorQuery = String(req.query.operator || '').trim().toUpperCase();
-  const amountQuery = Number(req.query.amount || 115);
+  const amountQuery = req.query.amount === undefined || String(req.query.amount).trim() === '' ? null : Number(req.query.amount);
   if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
     return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
   }
-  if (!Number.isFinite(amountQuery) || amountQuery <= 0) {
+  if (amountQuery !== null && (!Number.isFinite(amountQuery) || amountQuery <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number.' });
   }
 
