@@ -201,6 +201,9 @@ enum TransactionStatus {
   successful,
   failed,
   underReview,
+  refundPending,
+  refunded,
+  refundNeedsReview,
 }
 
 String statusLabel(
@@ -216,6 +219,12 @@ String statusLabel(
       return 'Failed';
     case TransactionStatus.underReview:
       return 'Under review';
+    case TransactionStatus.refundPending:
+      return 'Refund pending';
+    case TransactionStatus.refunded:
+      return 'Refunded';
+    case TransactionStatus.refundNeedsReview:
+      return 'Refund needs review';
   }
 }
 
@@ -1170,13 +1179,26 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   String t(String key) => tr(languageCode, key);
 
-  TransactionStatus _statusFromServer(dynamic value) {
+  TransactionStatus _statusFromServer(
+    dynamic value, {
+    dynamic refundStatus,
+  }) {
+    final refund = refundStatus?.toString().trim().toLowerCase();
+    if (refund == 'succeeded' || value?.toString().toLowerCase() == 'refunded') {
+      return TransactionStatus.refunded;
+    }
+    if (refund == 'pending') {
+      return TransactionStatus.refundPending;
+    }
+    if (refund != null && refund.isNotEmpty) {
+      return TransactionStatus.refundNeedsReview;
+    }
+
     switch (value?.toString().toLowerCase()) {
       case 'completed':
         return TransactionStatus.successful;
       case 'failed':
       case 'declined':
-      case 'refunded':
         return TransactionStatus.failed;
       case 'topup_review':
       case 'review':
@@ -1199,7 +1221,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (response.statusCode != 200) return;
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic>) return;
-      final nextStatus = _statusFromServer(decoded['status']);
+      final nextStatus = _statusFromServer(
+        decoded['status'],
+        refundStatus: decoded['refundStatus'],
+      );
       if (!mounted) return;
       final index = transactions.indexWhere((item) => item.orderId == orderId);
       if (index < 0) return;
@@ -1243,7 +1268,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final status = matches.first.status;
       if (status == TransactionStatus.successful ||
           status == TransactionStatus.failed ||
-          status == TransactionStatus.underReview) {
+          status == TransactionStatus.underReview ||
+          status == TransactionStatus.refundPending ||
+          status == TransactionStatus.refunded ||
+          status == TransactionStatus.refundNeedsReview) {
         return;
       }
     }
