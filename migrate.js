@@ -555,6 +555,71 @@ async function runMigration() {
       console.log("Migration 013_four_country_reference_fx_20261022 is already applied.");
     }
 
+
+    // Version 014 seeds requested fixed-value products from the five supplied DT One CSV exports.
+    // Prices are CSV retail/wholesale values in EUR cents; all rows remain inactive pending sandbox and checkout verification.
+    // Open-range products and additional denominations are intentionally excluded from this initial safe seed.
+    const afCatalogVersion = "014_afghanistan_catalog_seed";
+    const afCatalogCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [afCatalogVersion]
+    );
+    if (afCatalogCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          INSERT INTO product_catalog
+            (country, operator, amount, currency, product_id, price_eur_cents,
+             wholesale_price_eur_cents, bonus_amount, active, updated_at)
+          VALUES
+          ('AF', 'ATOMA', 100, 'AFN', 7191, 184, 166, 0, FALSE, NOW()),
+          ('AF', 'ATOMA', 150, 'AFN', 7199, 276, 248, 0, FALSE, NOW()),
+          ('AF', 'ATOMA', 250, 'AFN', 7203, 461, 414, 0, FALSE, NOW()),
+          ('AF', 'ATOMA', 500, 'AFN', 7213, 919, 827, 0, FALSE, NOW()),
+          ('AF', 'ATOMA', 1000, 'AFN', 7233, 1837, 1653, 0, FALSE, NOW()),
+          ('AF', 'ATOMA', 115, 'AFN', 7194, 213, 191, 0, FALSE, NOW()),
+          ('AF', 'ROSHAN', 100, 'AFN', 6149, 185, 166, 0, FALSE, NOW()),
+          ('AF', 'ROSHAN', 150, 'AFN', 6157, 276, 248, 0, FALSE, NOW()),
+          ('AF', 'ROSHAN', 250, 'AFN', 6161, 461, 414, 0, FALSE, NOW()),
+          ('AF', 'ROSHAN', 500, 'AFN', 6171, 919, 827, 0, FALSE, NOW()),
+          ('AF', 'ROSHAN', 1000, 'AFN', 6191, 1837, 1653, 0, FALSE, NOW()),
+          ('AF', 'ETISALAT', 100, 'AFN', 6478, 185, 166, 0, FALSE, NOW()),
+          ('AF', 'ETISALAT', 150, 'AFN', 6554, 277, 249, 0, FALSE, NOW()),
+          ('AF', 'ETISALAT', 250, 'AFN', 6558, 461, 414, 0, FALSE, NOW()),
+          ('AF', 'ETISALAT', 500, 'AFN', 6568, 921, 828, 0, FALSE, NOW()),
+          ('AF', 'ETISALAT', 1000, 'AFN', 6588, 1841, 1656, 0, FALSE, NOW()),
+          ('AF', 'AWCC', 100, 'AFN', 10531, 182, 163, 0, FALSE, NOW()),
+          ('AF', 'AWCC', 150, 'AFN', 10596, 272, 244, 0, FALSE, NOW()),
+          ('AF', 'AWCC', 250, 'AFN', 10599, 453, 407, 0, FALSE, NOW()),
+          ('AF', 'AWCC', 500, 'AFN', 10535, 905, 813, 0, FALSE, NOW()),
+          ('AF', 'AWCC', 1000, 'AFN', 10536, 1806, 1625, 0, FALSE, NOW()),
+          ('AF', 'SALAAM', 100, 'AFN', 23130, 185, 166, 0, FALSE, NOW()),
+          ('AF', 'SALAAM', 150, 'AFN', 23135, 277, 249, 0, FALSE, NOW()),
+          ('AF', 'SALAAM', 250, 'AFN', 23142, 462, 415, 0, FALSE, NOW()),
+          ('AF', 'SALAAM', 500, 'AFN', 23152, 923, 830, 0, FALSE, NOW()),
+          ('AF', 'SALAAM', 1000, 'AFN', 23172, 1845, 1660, 0, FALSE, NOW())
+          ON CONFLICT (country, operator, amount, currency)
+          DO UPDATE SET
+            product_id = EXCLUDED.product_id,
+            price_eur_cents = EXCLUDED.price_eur_cents,
+            wholesale_price_eur_cents = EXCLUDED.wholesale_price_eur_cents,
+            bonus_amount = 0,
+            active = FALSE,
+            updated_at = NOW();
+          INSERT INTO schema_migrations (version)
+          VALUES ('014_afghanistan_catalog_seed')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 014 completed: seeded requested denominations for all five Afghanistan networks; all products remain inactive pending verification.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 014_afghanistan_catalog_seed is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
