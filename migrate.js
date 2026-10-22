@@ -597,6 +597,42 @@ async function runMigration() {
           ('AF', 'SALAAM', 250, 'AFN', 23142, 462, 415),
           ('AF', 'SALAAM', 500, 'AFN', 23152, 923, 830),
           ('AF', 'SALAAM', 1000, 'AFN', 23172, 1845, 1660)`;
+        // Fail closed if a provider product ID is already attached to a
+        // different catalog row while the seed's natural key also exists.
+        // Updating either row in that situation could violate the globally
+        // unique product_id constraint or silently remap an unrelated product.
+        const productIdConflicts = await client.query(`
+          SELECT seed.product_id, seed.operator, seed.amount,
+                 p.id AS conflicting_row_id, p.operator AS existing_operator,
+                 p.amount AS existing_amount, p.country AS existing_country
+          FROM (${seedValues}) AS seed(country, operator, amount, currency, product_id, retail_cents, wholesale_cents)
+          JOIN product_catalog AS p ON p.product_id = seed.product_id
+          WHERE NOT (
+            p.country = seed.country
+            AND LOWER(p.operator) = LOWER(seed.operator)
+            AND p.amount = seed.amount
+            AND p.currency = seed.currency
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM product_catalog AS natural_row
+            WHERE natural_row.country = seed.country
+              AND LOWER(natural_row.operator) = LOWER(seed.operator)
+              AND natural_row.amount = seed.amount
+              AND natural_row.currency = seed.currency
+              AND natural_row.id <> p.id
+          )
+          LIMIT 10
+        `);
+        if (productIdConflicts.rowCount > 0) {
+          const summary = productIdConflicts.rows.map((row) =>
+            `product_id=${row.product_id} seed=${row.operator}/${row.amount}AFN conflicts_with_row=${row.conflicting_row_id} (${row.existing_country}/${row.existing_operator}/${row.existing_amount})`
+          ).join('; ');
+          throw new Error(
+            `Migration 014 stopped safely: provider product ID conflicts need manual catalog reconciliation: ${summary}`
+          );
+        }
+
         // First reconcile by the natural key. This has priority over a matching
         // product ID so one seed row cannot update two legacy rows at once.
         await client.query(`
