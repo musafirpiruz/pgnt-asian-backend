@@ -95,7 +95,7 @@ test('customer order-status API exposes refund state without exposing the refund
 
 test('an ambiguous Stripe refund exception is surfaced as needs_review, not success', () => {
   assert.match(refundRoute, /UPDATE refunds SET status = 'needs_review'/);
-  assert.match(refundRoute, /Stripe outcome is not confirmed/);
+  assert.match(refundRoute, /refund outcome is not confirmed/);
 });
 
 test('refund operation holds the order lock and creates a pending audit row before contacting Stripe', () => {
