@@ -10,6 +10,7 @@ on:
       - ui/homepage-redesign
       - feature/vip-support-screen
       - ui/optional-profile-in-settings
+      - ui/standard-five-step-homepage
       - fix/persist-order-history-secure-tokens
       - fix/referral-first-topup-rewards
       - fix/android-internet-permission
