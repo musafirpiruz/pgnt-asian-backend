@@ -48,6 +48,28 @@ ALTER TABLE pricing_settings
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 
+
+
+-- Supported customer payment currencies. EUR remains the only active currency
+-- until fresh FX rates, Stripe fee settings, and checkout tests are verified.
+CREATE TABLE IF NOT EXISTS payment_currency_settings (
+  currency CHAR(3) PRIMARY KEY CHECK (currency IN ('EUR', 'USD', 'GBP')),
+  rate_per_eur NUMERIC(18,8) CHECK (rate_per_eur IS NULL OR rate_per_eur > 0),
+  active BOOLEAN NOT NULL DEFAULT FALSE,
+  rate_source TEXT,
+  rate_updated_at TIMESTAMPTZ,
+  stripe_fee_percent NUMERIC(6,3) NOT NULL DEFAULT 1.500
+    CHECK (stripe_fee_percent >= 0 AND stripe_fee_percent < 100),
+  stripe_fixed_fee_minor INTEGER NOT NULL DEFAULT 25
+    CHECK (stripe_fixed_fee_minor >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (currency <> 'EUR' OR rate_per_eur = 1 OR rate_per_eur IS NULL)
+);
+
+INSERT INTO payment_currency_settings (currency, rate_per_eur, active, rate_source, rate_updated_at)
+VALUES ('EUR', 1, TRUE, 'base-currency', NOW()), ('USD', NULL, FALSE, NULL, NULL), ('GBP', NULL, FALSE, NULL, NULL)
+ON CONFLICT (currency) DO NOTHING;
+
 -- =========================================================
 -- 2. PRODUCT CATALOG
 -- =========================================================
