@@ -2604,12 +2604,14 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 </head>
 <body>
 <h1>PGNT ASIAN TOPUP</h1>
-<p>Read-only DT One check for Afghanistan ATOMA, product 7194 (115 AFN). This does not create a top-up or enable the product.</p>
+<p>Read-only DT One product check. Enter any supported DT One product ID to verify provider details and saved database pricing. This does not create a top-up or enable the product.</p>
 <form id="check">
+<label for="productIdInput">DT One product ID</label>
+<input id="productIdInput" type="number" min="1" step="1" value="7194" required>
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify product 7194</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="operatorSearch">Afghanistan network</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks (Afghanistan)</option><option value="ROSHAN">Roshan</option><option value="ETISALAT">Etisalat</option><option value="AWCC">AWCC</option><option value="SALAAM">Salaam</option><option value="ATOMA">ATOMA</option></select><button type="button" id="discover">Find Afghanistan products</button>
+<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="operatorSearch">Afghanistan network</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks (Afghanistan)</option><option value="ROSHAN">Roshan</option><option value="ETISALAT">Etisalat</option><option value="AWCC">AWCC</option><option value="SALAAM">Salaam</option><option value="ATOMA">ATOMA</option></select><button type="button" id="discover">Find Afghanistan products</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2762,15 +2764,15 @@ loadSupportTickets.addEventListener('click',refreshSupportTickets);
 
 form.addEventListener('submit',async event=>{
  event.preventDefault();
- result.textContent='Checking DT One pre-production…';
+ const productId=String(document.getElementById('productIdInput').value||'').trim();
+ if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ result.textContent='Checking DT One pre-production for product '+productId+'…';
  try{
-  const response=await fetch('/api/admin/dtone/products/7194',{headers:{'x-admin-api-key':key.value},cache:'no-store'});
-  const data=await response.json();
+  const data=await adminRequest('/api/admin/dtone/products/'+encodeURIComponent(productId));
   result.textContent=JSON.stringify(data,null,2);
- }catch(_){
-  result.textContent='Could not contact the backend. Please try again later.';
- }
- key.value='';
+ }catch(error){
+  result.textContent='Could not verify DT One product: '+error.message;
+ }finally{key.value='';}
 });
 loadPricing.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
@@ -2807,8 +2809,10 @@ savePricing.addEventListener('click',async()=>{
 });
 checkDatabase.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
- result.textContent='Reading saved product and pricing settings…';
- try{const data=await adminRequest('/api/admin/catalog/7194/pricing');result.textContent=JSON.stringify(data,null,2);}
+ const productId=String(document.getElementById('productIdInput').value||'').trim();
+ if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ result.textContent='Reading saved product '+productId+' and pricing settings…';
+ try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/pricing');result.textContent=JSON.stringify(data,null,2);}
  catch(error){result.textContent='Could not verify database pricing: '+error.message;}
  finally{key.value='';}
 });
