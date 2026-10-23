@@ -2765,7 +2765,7 @@ loadSupportTickets.addEventListener('click',refreshSupportTickets);
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Checking DT One pre-production for product '+productId+'…';
  try{
   const data=await adminRequest('/api/admin/dtone/products/'+encodeURIComponent(productId));
