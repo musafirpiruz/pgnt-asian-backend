@@ -2611,7 +2611,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><label for="operatorSearch">Afghanistan network</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks (Afghanistan)</option><option value="ROSHAN">Roshan</option><option value="ETISALAT">Etisalat</option><option value="AWCC">AWCC</option><option value="SALAAM">Salaam</option><option value="ATOMA">ATOMA</option></select><button type="button" id="discover">Find Afghanistan products</button>
+<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><label for="operatorSearch">Afghanistan network</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks (Afghanistan)</option><option value="ROSHAN">Roshan</option><option value="ETISALAT">Etisalat</option><option value="AWCC">AWCC</option><option value="SALAAM">Salaam</option><option value="ATOMA">ATOMA</option></select><button type="button" id="discover">Find Afghanistan products</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2805,6 +2805,16 @@ savePricing.addEventListener('click',async()=>{
   loadedCountryPricing=data.pricing;
   result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
  }catch(error){result.textContent='Could not save pricing: '+error.message;}
+ finally{key.value='';}
+});
+document.getElementById('importCatalogProduct').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const productId=String(document.getElementById('productIdInput').value||'').trim();
+ if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!confirm('Import this verified provider product into the local catalog as DISABLED? No payment or top-up will be performed.')) return;
+ result.textContent='Verifying provider product and importing it as disabled…';
+ try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/import',{method:'POST'});result.textContent=JSON.stringify(data,null,2);}
+ catch(error){result.textContent='Could not import catalog product: '+error.message;}
  finally{key.value='';}
 });
 checkDatabase.addEventListener('click',async()=>{
@@ -3028,6 +3038,98 @@ app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) =
       productId,
       error: 'Could not reach DT One to verify this product.',
     });
+  }
+});
+
+
+// Import one verified DT One product into the local catalog as DISABLED.
+// This is an explicit admin action; it never activates products or creates transactions.
+app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ error: 'A valid product ID is required.' });
+  }
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One credentials are not configured.' });
+  }
+  try {
+    const response = await fetch(`${DTONE_API_BASE_URL}/v1/products/${productId}`, {
+      method: 'GET',
+      headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+    const responseText = await response.text();
+    let providerProduct = null;
+    try { providerProduct = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+    if (!response.ok || !providerProduct || Number(providerProduct.id) !== productId) {
+      return res.status(response.status === 404 ? 404 : 502).json({
+        imported: false, error: 'DT One could not verify this product in the configured environment.',
+        productId, providerStatus: response.status,
+      });
+    }
+    const iso = String(providerProduct.operator?.country?.iso_code || '').toUpperCase();
+    const countryMap = { AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' };
+    const country = countryMap[iso];
+    const operator = String(providerProduct.operator?.name || '').trim();
+    const currency = String(providerProduct.destination?.unit || providerProduct.benefits?.[0]?.amount?.unit || '').toUpperCase();
+    const amountValue = Number(providerProduct.destination?.amount ?? providerProduct.benefits?.[0]?.amount?.base);
+    const retailEur = Number(providerProduct.prices?.retail?.amount);
+    const wholesaleEur = Number(providerProduct.prices?.wholesale?.amount);
+    if (!country || !operator || !Number.isFinite(amountValue) || amountValue <= 0 ||
+        !/^[A-Z]{3}$/.test(currency) || !Number.isFinite(retailEur) || retailEur <= 0 ||
+        !Number.isFinite(wholesaleEur) || wholesaleEur <= 0) {
+      return res.status(422).json({ imported: false, error: 'Provider product is missing a supported country, denomination, currency, retail price, or wholesale price.', productId });
+    }
+    if (currency !== countryCurrency(country)) {
+      return res.status(422).json({ imported: false, error: 'Product currency does not match the configured currency for this country.', productId, country, currency });
+    }
+    const retailCents = Math.round(retailEur * 100);
+    const wholesaleCents = Math.round(wholesaleEur * 100);
+    if (retailCents <= 0 || wholesaleCents <= 0) {
+      return res.status(422).json({ imported: false, error: 'Provider EUR prices are invalid.', productId });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const existingId = await client.query(
+        'SELECT id, product_id, country, operator, amount, currency, active FROM product_catalog WHERE product_id = $1 FOR UPDATE',
+        [productId]
+      );
+      if (existingId.rowCount === 1) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ imported: false, alreadyRegistered: true, error: 'This DT One product ID is already registered. No database values were changed.', product: existingId.rows[0] });
+      }
+      const existingDenomination = await client.query(
+        'SELECT id, product_id, country, operator, amount, currency, active FROM product_catalog WHERE country = $1 AND LOWER(operator) = LOWER($2) AND amount = $3 AND currency = $4 FOR UPDATE',
+        [country, operator, amountValue, currency]
+      );
+      if (existingDenomination.rowCount > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ imported: false, conflict: true, error: 'A product with this network and denomination already exists under another product ID. Manual review is required; no data was changed.', existingProduct: existingDenomination.rows[0], proposedProductId: productId });
+      }
+      const inserted = await client.query(
+        `INSERT INTO product_catalog
+          (country, operator, amount, currency, product_id, price_eur_cents,
+           wholesale_price_eur_cents, bonus_amount, active, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 0, FALSE, NOW())
+         RETURNING id, country, operator, amount, currency, product_id,
+                   price_eur_cents, wholesale_price_eur_cents, active`,
+        [country, operator, amountValue, currency, productId, retailCents, wholesaleCents]
+      );
+      await client.query('COMMIT');
+      return res.status(201).json({
+        imported: true, readOnlyProviderLookup: true, transactionCreated: false, activationChanged: false,
+        product: inserted.rows[0],
+        note: 'Product was added to the local catalog as disabled. Verify pricing and test the full flow before any manual activation.',
+      });
+    } catch (dbError) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw dbError;
+    } finally { client.release(); }
+  } catch (error) {
+    console.error('Admin catalog product import failed:', error.message);
+    return res.status(500).json({ imported: false, error: 'Could not import the verified product into the local catalog.' });
   }
 });
 
