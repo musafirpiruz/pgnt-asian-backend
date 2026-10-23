@@ -2830,9 +2830,14 @@ discover.addEventListener('click',async()=>{
   const wholesaleOf=(p)=>p?.prices?.wholesale?.amount;
   const retailOf=(p)=>p?.prices?.retail?.amount;
   const eur=(value)=>value!=null&&Number.isFinite(Number(value))?'€'+Number(value).toFixed(2):'—';
+  const denominationKey=(p)=>[operatorOf(p).trim().toUpperCase(),amountOf(p),unitOf(p).trim().toUpperCase()].join('|');
+  const denominationCounts=new Map();
+  for(const p of products){const k=denominationKey(p);denominationCounts.set(k,(denominationCounts.get(k)||0)+1);}
+  const duplicateDenominations=[...denominationCounts.values()].filter(n=>n>1).length;
   result.innerHTML='<section style="background:#f7f7f7;border:1px solid #ddd;border-radius:10px;padding:14px;margin:12px 0">'+
    '<h2 style="margin:0 0 8px">Afghanistan DT One catalog</h2>'+
    '<p><b>Environment:</b> '+esc(data.environment)+' · <b>Products:</b> '+esc(data.resultCount)+' · <b>Provider pages checked:</b> '+esc(data.providerPagesChecked)+'</p>'+
+   '<p><b>Repeated network/amount combinations:</b> '+duplicateDenominations+'. These are flagged for review only; products are not automatically removed.</p>'+
    '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
    '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
    '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 120, 6153" style="width:100%;padding:12px;font:inherit">'+
@@ -2842,7 +2847,8 @@ discover.addEventListener('click',async()=>{
    '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Product</th>'+
    '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Wholesale</th>'+
    '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Retail</th>'+
-   '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">DT One ID</th></tr></thead><tbody id="catalogRows"></tbody></table></div>'+
+   '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">DT One ID</th>'+
+   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Review</th></tr></thead><tbody id="catalogRows"></tbody></table></div>'+
    '<p style="color:#555;font-size:13px">Retail minus wholesale is not net profit; Stripe fees and the app fee still need to be included.</p></section>';
   const filter=document.getElementById('catalogFilter');
   const rows=document.getElementById('catalogRows');
@@ -2856,8 +2862,9 @@ discover.addEventListener('click',async()=>{
     '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(p?.name||((amountOf(p)+' '+unitOf(p)).trim()))+'<br><small>'+esc(amountOf(p)+' '+unitOf(p))+'</small></td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(wholesaleOf(p))+'</td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(retailOf(p))+'</td>'+
-    '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+esc(p?.id)+'</td></tr>').join('');
-   if(!matches.length)rows.innerHTML='<tr><td colspan="5" style="padding:12px">No products match that search.</td></tr>';
+    '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+esc(p?.id)+'</td>'+
+    '<td style="padding:8px;border-bottom:1px solid #eee">'+(denominationCounts.get(denominationKey(p))>1?'<b>Check duplicate</b>':'—')+'</td></tr>').join('');
+   if(!matches.length)rows.innerHTML='<tr><td colspan="6" style="padding:12px">No products match that search.</td></tr>';
   };
   filter.addEventListener('input',renderRows);
   renderRows();
