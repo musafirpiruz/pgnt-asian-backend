@@ -2821,7 +2821,46 @@ discover.addEventListener('click',async()=>{
   if(selectedOperator!=='ALL')params.set('operator',selectedOperator);
   const response=await fetch('/api/admin/dtone/products?'+params.toString(),{headers:{'x-admin-api-key':key.value},cache:'no-store'});
   const data=await response.json();
-  result.textContent=JSON.stringify(data,null,2);
+  if(!response.ok||!data.verified){result.textContent=JSON.stringify(data,null,2);return;}
+  const products=Array.isArray(data.products)?data.products:[];
+  const esc=(value)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const operatorOf=(p)=>p?.operator?.name||'Unknown operator';
+  const amountOf=(p)=>p?.destination?.amount??p?.benefits?.[0]?.amount?.base??'—';
+  const unitOf=(p)=>p?.destination?.unit||p?.benefits?.[0]?.unit||'';
+  const wholesaleOf=(p)=>p?.prices?.wholesale?.amount;
+  const retailOf=(p)=>p?.prices?.retail?.amount;
+  const eur=(value)=>value!=null&&Number.isFinite(Number(value))?'€'+Number(value).toFixed(2):'—';
+  result.innerHTML='<section style="background:#f7f7f7;border:1px solid #ddd;border-radius:10px;padding:14px;margin:12px 0">'+
+   '<h2 style="margin:0 0 8px">Afghanistan DT One catalog</h2>'+
+   '<p><b>Environment:</b> '+esc(data.environment)+' · <b>Products:</b> '+esc(data.resultCount)+' · <b>Provider pages checked:</b> '+esc(data.providerPagesChecked)+'</p>'+
+   '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
+   '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
+   '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 120, 6153" style="width:100%;padding:12px;font:inherit">'+
+   '<p id="catalogCount" style="margin:10px 0"></p>'+
+   '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr>'+
+   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Network</th>'+
+   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Product</th>'+
+   '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Wholesale</th>'+
+   '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Retail</th>'+
+   '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">DT One ID</th></tr></thead><tbody id="catalogRows"></tbody></table></div>'+
+   '<p style="color:#555;font-size:13px">Retail minus wholesale is not net profit; Stripe fees and the app fee still need to be included.</p></section>';
+  const filter=document.getElementById('catalogFilter');
+  const rows=document.getElementById('catalogRows');
+  const count=document.getElementById('catalogCount');
+  const renderRows=()=>{
+   const q=filter.value.trim().toLowerCase();
+   const matches=products.filter(p=>[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q));
+   count.textContent='Showing '+Math.min(matches.length,100)+' of '+matches.length+' matching products (maximum 100 displayed at once).';
+   rows.innerHTML=matches.slice(0,100).map(p=>'<tr>'+
+    '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(operatorOf(p))+'</td>'+
+    '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(p?.name||((amountOf(p)+' '+unitOf(p)).trim()))+'<br><small>'+esc(amountOf(p)+' '+unitOf(p))+'</small></td>'+
+    '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(wholesaleOf(p))+'</td>'+
+    '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(retailOf(p))+'</td>'+
+    '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+esc(p?.id)+'</td></tr>').join('');
+   if(!matches.length)rows.innerHTML='<tr><td colspan="5" style="padding:12px">No products match that search.</td></tr>';
+  };
+  filter.addEventListener('input',renderRows);
+  renderRows();
  }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
  key.value='';
 });
