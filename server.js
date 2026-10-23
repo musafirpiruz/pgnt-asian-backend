@@ -1891,7 +1891,7 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
     // the read-only lookup by DT One's transaction ID; never create/resubmit.
     if (response.status === 404 && local.rows[0]?.dtone_transaction_id) {
       const providerTransactionId = String(local.rows[0].dtone_transaction_id);
-      if (/^\\d+$/.test(providerTransactionId)) {
+      if (/^\d+$/.test(providerTransactionId)) {
         response = await fetch(
           `${DTONE_API_BASE_URL}/v1/transactions/${encodeURIComponent(providerTransactionId)}`,
           {
@@ -2765,7 +2765,7 @@ loadSupportTickets.addEventListener('click',refreshSupportTickets);
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Checking DT One pre-production for product '+productId+'…';
  try{
   const data=await adminRequest('/api/admin/dtone/products/'+encodeURIComponent(productId));
@@ -2810,7 +2810,7 @@ savePricing.addEventListener('click',async()=>{
 document.getElementById('importCatalogProduct').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  if(!confirm('Import this verified provider product into the local catalog as DISABLED? No payment or top-up will be performed.')) return;
  result.textContent='Verifying provider product and importing it as disabled…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/import',{method:'POST'});result.textContent=JSON.stringify(data,null,2);}
@@ -2820,7 +2820,7 @@ document.getElementById('importCatalogProduct').addEventListener('click',async()
 checkDatabase.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Reading saved product '+productId+' and pricing settings…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/pricing');result.textContent=JSON.stringify(data,null,2);}
  catch(error){result.textContent='Could not verify database pricing: '+error.message;}
