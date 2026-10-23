@@ -3019,7 +3019,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
           Authorization: getDtOneAuthHeader(),
           Accept: 'application/json',
         },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(45000),
       });
 
       const responseText = await response.text();
