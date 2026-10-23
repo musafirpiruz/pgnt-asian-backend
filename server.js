@@ -3107,7 +3107,15 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
           || benefitAmounts.includes(amountQuery)
           || productAmounts.includes(amountQuery)
           || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
-        const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
+        const operatorAliases = {
+          ROSHAN: ['ROSHAN'],
+          ETISALAT: ['ETISALAT'],
+          AWCC: ['AWCC', 'AFGHAN WIRELESS', 'AFGHAN WIRELESS COMMUNICATION', 'AFGHAN WIRELESS COMMUNICATION COMPANY'],
+          SALAAM: ['SALAAM', 'SALAM'],
+          ATOMA: ['ATOMA'],
+        };
+        const requestedAliases = operatorAliases[operatorQuery] || [operatorQuery];
+        const isRequestedOperator = !operatorQuery || requestedAliases.some((alias) => operatorName.includes(alias));
         const isLikelyRelevant = isRequestedOperator && mentionsAmount;
         if (countryCode === countryIsoCode && isLikelyRelevant) {
           const id = product?.id;
