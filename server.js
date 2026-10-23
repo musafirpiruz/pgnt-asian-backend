@@ -3019,7 +3019,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
           Authorization: getDtOneAuthHeader(),
           Accept: 'application/json',
         },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(45000),
       });
 
       const responseText = await response.text();
@@ -3095,10 +3095,26 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       note: 'Read-only search across up to twenty pages (maximum 2,000 provider records). With no operator filter, all Afghanistan products returned by those pages are included. Results are candidates; confirm operator, denomination, and pre-production availability before mapping. No product is activated and no transaction is created.',
     });
   } catch (error) {
-    console.error('DT One product discovery failed:', error.message);
+    const errorName = String(error?.name || 'Error').slice(0, 80);
+    const errorCode = String(error?.cause?.code || error?.code || '').slice(0, 80);
+    const isTimeout = errorName === 'TimeoutError' || errorName === 'AbortError' || errorCode === 'UND_ERR_CONNECT_TIMEOUT';
+    console.error('DT One product discovery transport error', JSON.stringify({
+      name: errorName,
+      code: errorCode || null,
+      message: String(error?.message || 'Unknown error').slice(0, 240),
+      baseUrl: DTONE_API_BASE_URL,
+    }));
     return res.status(502).json({
       verified: false,
-      error: 'Could not reach DT One product discovery endpoint.',
+      error: isTimeout
+        ? 'DT One request timed out. Check DT One pre-production availability and Render outbound connectivity.'
+        : 'Could not reach DT One product discovery endpoint.',
+      diagnostic: {
+        type: isTimeout ? 'timeout' : 'connection_or_request_error',
+        errorName,
+        errorCode: errorCode || null,
+        configuredEnvironment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      },
     });
   }
 });
