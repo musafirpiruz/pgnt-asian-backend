@@ -2618,7 +2618,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><label for="operatorSearch">Afghanistan network</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks (Afghanistan)</option><option value="ROSHAN">Roshan</option><option value="ETISALAT">Etisalat</option><option value="AWCC">AWCC</option><option value="SALAAM">Salaam</option><option value="ATOMA">ATOMA</option></select><button type="button" id="discover">Find Afghanistan products</button>
+<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><label for="catalogCountry">Destination country</label><select id="catalogCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="operatorSearch">Network (optional)</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks in selected country</option></select><button type="button" id="discover">Find products in selected country</button>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -2878,12 +2878,20 @@ checkDatabase.addEventListener('click',async()=>{
  catch(error){result.textContent='Could not verify database pricing: '+error.message;}
  finally{key.value='';}
 });
+const catalogCountry=document.getElementById('catalogCountry');
+const operatorSearch=document.getElementById('operatorSearch');
+const countryNames={AFG:'Afghanistan',PAK:'Pakistan',IND:'India',BGD:'Bangladesh'};
+const operatorOptions={AFG:['ROSHAN','ETISALAT','AWCC','SALAAM','ATOMA'],PAK:['JAZZ','ZONG','TELENOR','UFONE'],IND:['AIRTEL','JIO','VI','BSNL'],BGD:['GRAMEENPHONE','ROBI','BANGLALINK','TELETALK']};
+function refreshCatalogOperators(){const country=catalogCountry.value;operatorSearch.replaceChildren(new Option('All networks in selected country','ALL'));for(const name of (operatorOptions[country]||[]))operatorSearch.add(new Option(name,name));}
+catalogCountry.addEventListener('change',refreshCatalogOperators);
+refreshCatalogOperators();
 discover.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  result.textContent='Searching DT One pre-production catalog…';
  try{
-  const selectedOperator=document.getElementById('operatorSearch').value;
-  const params=new URLSearchParams({country_iso_code:'AFG'});
+  const selectedCountry=catalogCountry.value;
+  const selectedOperator=operatorSearch.value;
+  const params=new URLSearchParams({country_iso_code:selectedCountry});
   if(selectedOperator!=='ALL')params.set('operator',selectedOperator);
   const response=await fetch('/api/admin/dtone/products?'+params.toString(),{headers:{'x-admin-api-key':key.value},cache:'no-store'});
   const data=await response.json();
@@ -2895,7 +2903,8 @@ discover.addEventListener('click',async()=>{
   const unitOf=(p)=>p?.destination?.unit||p?.benefits?.[0]?.amount?.unit||p?.benefits?.[0]?.unit||'';
   const targetAmounts=[100,150,200,250,500,1000];
   const numericAmount=(p)=>{const n=Number(amountOf(p));return Number.isFinite(n)?n:null;};
-  const isTargetAmount=(p)=>{const n=numericAmount(p);const unit=String(unitOf(p)||'').toUpperCase();return targetAmounts.includes(n)&&(unit===''||unit.includes('AFN'));};
+  const localCurrency={AFG:'AFN',PAK:'PKR',IND:'INR',BGD:'BDT'}[selectedCountry]||'';
+  const isTargetAmount=(p)=>{const n=numericAmount(p);const unit=String(unitOf(p)||'').toUpperCase();return selectedCountry!=='AFG'||(targetAmounts.includes(n)&&(unit===''||unit.includes(localCurrency)));};
   const wholesaleOf=(p)=>p?.prices?.wholesale?.amount;
   const retailOf=(p)=>p?.prices?.retail?.amount;
   const eur=(value)=>value!=null&&Number.isFinite(Number(value))?'€'+Number(value).toFixed(2):'—';
@@ -2919,12 +2928,12 @@ discover.addEventListener('click',async()=>{
     }).join('')+'</tr>';
   }).join('');
   result.innerHTML='<section style="background:#f7f7f7;border:1px solid #ddd;border-radius:10px;padding:14px;margin:12px 0">'+
-   '<h2 style="margin:0 0 8px">Afghanistan DT One catalog</h2>'+
+   '<h2 style="margin:0 0 8px">'+esc(countryNames[selectedCountry]||selectedCountry)+' DT One catalog</h2>'+
    '<p><b>Environment:</b> '+esc(data.environment)+' · <b>Products:</b> '+esc(data.resultCount)+' · <b>Provider pages checked:</b> '+esc(data.providerPagesChecked)+'</p>'+
    '<p><b>Repeated network/amount combinations:</b> '+duplicateDenominations+'. These are flagged for review only; products are not automatically removed.</p>'+
    '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
    '<h3>Target denomination coverage (provider results)</h3>'+
-   '<p style="color:#555;font-size:13px">Counts are based only on products returned by the configured DT One catalog search. A dash means no matching product was found in this result set; it does not prove the operator never offers that denomination.</p>'+
+   '<p style="color:#555;font-size:13px">Counts are based only on products returned by the configured DT One catalog search. A dash means no matching product was found in this result set; it does not prove the operator never offers that denomination. Confirm local currency and provider amounts before import.</p>'+
    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th style="text-align:left;padding:7px;border-bottom:1px solid #ddd">Network</th>'+targetAmounts.map(n=>'<th style="padding:7px;border-bottom:1px solid #ddd">'+n+' AFN</th>').join('')+'</tr></thead><tbody>'+coverageRows+'</tbody></table></div>'+
    '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
    '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 150, 6153" style="width:100%;padding:12px;font:inherit">'+
