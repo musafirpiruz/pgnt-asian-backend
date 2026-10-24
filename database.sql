@@ -629,6 +629,35 @@ WHERE fee_cents IS NULL
 
 
 -- =========================================================
+-- 25. ADMIN-CONTROLLED PER-OPERATOR FEES
+-- Fee values are EUR cents and percentage points; defaults do not
+-- override existing country fees until an operator row is configured.
+-- =========================================================
+
+CREATE TABLE IF NOT EXISTS operator_pricing_settings (
+  id BIGSERIAL PRIMARY KEY,
+  country TEXT NOT NULL CHECK (country IN ('AF','PK','IN','BD')),
+  operator TEXT NOT NULL,
+  fee_eur_cents INTEGER NOT NULL DEFAULT 0 CHECK (fee_eur_cents >= 0 AND fee_eur_cents <= 100000),
+  fee_percent NUMERIC(7,4) NOT NULL DEFAULT 0 CHECK (fee_percent >= 0 AND fee_percent <= 100),
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (country, operator)
+);
+
+CREATE INDEX IF NOT EXISTS idx_operator_pricing_country_active
+ON operator_pricing_settings (country, active);
+
+DROP TRIGGER IF EXISTS trg_operator_pricing_updated
+ON operator_pricing_settings;
+
+CREATE TRIGGER trg_operator_pricing_updated
+BEFORE UPDATE ON operator_pricing_settings
+FOR EACH ROW
+EXECUTE FUNCTION pgnt_set_updated_at();
+
+-- =========================================================
 -- 21. FINAL INDEXES
 -- =========================================================
 
