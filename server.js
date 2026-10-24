@@ -707,6 +707,24 @@ async function getProduct(client, productId, requestedCountry = null, operator =
 
 // Calculate the final customer price.
 // The price and fee are both in EUR cents.
+// Optional operator fee overrides replace, rather than stack on, the country app fee.
+async function resolveProductPricing(client, country, operator, product, pricing) {
+  const name = String(operator || product?.name || '').trim();
+  if (!name) return pricing;
+  const result = await client.query(
+    `SELECT fee_eur_cents, fee_percent, active FROM operator_pricing_settings
+     WHERE country = $1 AND LOWER(operator) = LOWER($2) LIMIT 1`,
+    [normalizeCountry(country), name]
+  );
+  if (result.rowCount !== 1 || result.rows[0].active !== true) return pricing;
+  const fixed = requireNonNegativeInteger(result.rows[0].fee_eur_cents, 'operator fixed fee');
+  const percent = Number(result.rows[0].fee_percent);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('Invalid operator fee percentage.');
+  const wholesale = requirePositiveInteger(product.wholesalePriceCents, 'DT One wholesale price in EUR cents');
+  return { ...pricing, feeCents: fixed + Math.ceil(wholesale * percent / 100), operatorFeeCents: fixed,
+    operatorFeePercent: percent, operatorPricingApplied: true };
+}
+
 function calculateFinalPrice(product, pricing) {
   // An enabled production product must have a verified DT One wholesale
   // cost. Never silently treat an old retail/display price as wholesale.
@@ -796,15 +814,9 @@ async function getProductQuote(productId, country) {
       );
     }
 
-    const pricing = await getPricingSettings(
-      client,
-      country
-    );
-
-    const price = calculateFinalPrice(
-      product,
-      pricing
-    );
+    const basePricing = await getPricingSettings(client, country);
+    const pricing = await resolveProductPricing(client, country, product.name, product, basePricing);
+    const price = calculateFinalPrice(product, pricing);
 
     return {
       productId: product.id,
@@ -847,7 +859,8 @@ app.get('/api/pricing/quote', async (req, res) => {
   const client = await pool.connect();
   try {
     const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
-    const pricing = await getPricingSettings(client, country);
+    const basePricing = await getPricingSettings(client, country);
+    const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
     return res.json({
       productId: product.id,
@@ -943,15 +956,9 @@ app.post('/api/payments/checkout', async (req, res) => {
       );
     }
 
-    const pricing = await getPricingSettings(
-      client,
-      input.country
-    );
-
-    const price = calculateFinalPrice(
-      product,
-      pricing
-    );
+    const basePricing = await getPricingSettings(client, input.country);
+    const pricing = await resolveProductPricing(client, input.country, product.name, product, basePricing);
+    const price = calculateFinalPrice(product, pricing);
 
     // Referral attribution is server-validated and tied to a stable
     // client-generated install identifier. This is abuse friction, not
@@ -2643,6 +2650,14 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Selected country pricing settings active</label>
 <button type="button" id="savePricing">Save selected country pricing settings</button>
 <small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
+<h2>Operator fee controls</h2>
+<p>Set a fixed EUR fee and an additional percentage for each network. These settings replace the country-wide app fee when enabled. New quotes only; no payment or top-up is performed.</p>
+<label for="operatorPricingCountry">Country</label>
+<select id="operatorPricingCountry" style="width:100%;padding:12px;font:inherit">
+<option value="AF">Afghanistan</option><option value="PK">Pakistan</option><option value="IN">India</option><option value="BD">Bangladesh</option></select>
+<button type="button" id="loadOperatorPricing">Load network fees</button>
+<div id="operatorPricingRows" style="display:grid;gap:12px;margin-top:12px"></div>
+<small>To save: enter the admin API key, load network fees, change values, then press Save on that network. Keep a network inactive to use the country-wide fee.</small>
 <h2>Customer Support Tickets</h2>
 <p>Review customer requests, prioritize urgent issues, reply to customers, and update ticket status. This page does not issue refunds or change payment/top-up outcomes.</p>
 <label for="ticketStatusFilter">Ticket status filter</label>
@@ -2807,6 +2822,43 @@ savePricing.addEventListener('click',async()=>{
  }catch(error){result.textContent='Could not save pricing: '+error.message;}
  finally{key.value='';}
 });
+const operatorPricingCountry=document.getElementById('operatorPricingCountry');
+const operatorPricingRows=document.getElementById('operatorPricingRows');
+const operatorNames={AF:['AWCC','Roshan','Etisalat','Salaam','ATOMA'],PK:['Jazz','Zong','Telenor','Ufone'],IN:['Airtel','Jio','Vi','BSNL'],BD:['Grameenphone','Robi','Banglalink','Teletalk']};
+document.getElementById('loadOperatorPricing').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ operatorPricingRows.replaceChildren();
+ result.textContent='Loading network fees…';
+ try{
+  const data=await adminRequest('/api/admin/operator-pricing?country='+encodeURIComponent(operatorPricingCountry.value));
+  for(const item of data.operators||[]){
+   const card=document.createElement('section');card.style.cssText='border:1px solid #bbb;border-radius:10px;padding:12px;display:grid;gap:8px';
+   const heading=document.createElement('strong');heading.textContent=item.operator;card.appendChild(heading);
+   const feeLabel=document.createElement('label');feeLabel.textContent='Fixed fee (EUR)';
+   const fee=document.createElement('input');fee.type='number';fee.min='0';fee.max='1000';fee.step='0.01';fee.value=(Number(item.fee_eur_cents)/100).toFixed(2);feeLabel.appendChild(fee);card.appendChild(feeLabel);
+   const percentLabel=document.createElement('label');percentLabel.textContent='Extra fee (%)';
+   const percent=document.createElement('input');percent.type='number';percent.min='0';percent.max='100';percent.step='0.01';percent.value=Number(item.fee_percent);percentLabel.appendChild(percent);card.appendChild(percentLabel);
+   const activeLabel=document.createElement('label');activeLabel.style.cssText='display:flex;gap:8px;align-items:center';
+   const active=document.createElement('input');active.type='checkbox';active.style.width='auto';active.checked=item.active===true;activeLabel.append(active,' Use this network-specific fee');card.appendChild(activeLabel);
+   const save=document.createElement('button');save.type='button';save.textContent='Save '+item.operator+' settings';
+   save.addEventListener('click',async()=>{
+    if(!key.value){result.textContent='Enter the admin API key first.';return;}
+    const feeValue=Number(fee.value),percentValue=Number(percent.value);
+    if(!Number.isFinite(feeValue)||feeValue<0||feeValue>1000||!Number.isFinite(percentValue)||percentValue<0||percentValue>100){result.textContent='Check fee values for '+item.operator+'.';return;}
+    if(!confirm('Save fee settings for '+item.operator+' in '+operatorPricingCountry.value+'?'))return;
+    result.textContent='Saving '+item.operator+' fee settings…';
+    try{
+     const saved=await adminRequest('/api/admin/operator-pricing/'+encodeURIComponent(operatorPricingCountry.value)+'/'+encodeURIComponent(item.operator),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(feeValue*100),feePercent:percentValue,active:active.checked})});
+     result.textContent=JSON.stringify({saved:true,operatorPricing:saved.operatorPricing,note:saved.note},null,2);
+    }catch(error){result.textContent='Could not save '+item.operator+': '+error.message;}
+   });
+   card.appendChild(save);operatorPricingRows.appendChild(card);
+  }
+  result.textContent='Loaded '+(data.operators||[]).length+' network settings for '+data.country+'. Review carefully before saving.';
+ }catch(error){result.textContent='Could not load network fees: '+error.message;}
+ finally{key.value='';}
+});
+operatorPricingCountry.addEventListener('change',()=>operatorPricingRows.replaceChildren());
 document.getElementById('importCatalogProduct').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
@@ -2839,8 +2891,11 @@ discover.addEventListener('click',async()=>{
   const products=Array.isArray(data.products)?data.products:[];
   const esc=(value)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const operatorOf=(p)=>p?.operator?.name||'Unknown operator';
-  const amountOf=(p)=>p?.destination?.amount??p?.benefits?.[0]?.amount?.base??'—';
-  const unitOf=(p)=>p?.destination?.unit||p?.benefits?.[0]?.unit||'';
+  const amountOf=(p)=>p?.destination?.amount??p?.benefits?.[0]?.amount?.total_excluding_tax??p?.benefits?.[0]?.amount?.base??'—';
+  const unitOf=(p)=>p?.destination?.unit||p?.benefits?.[0]?.amount?.unit||p?.benefits?.[0]?.unit||'';
+  const targetAmounts=[100,150,200,250,500,1000];
+  const numericAmount=(p)=>{const n=Number(amountOf(p));return Number.isFinite(n)?n:null;};
+  const isTargetAmount=(p)=>{const n=numericAmount(p);const unit=String(unitOf(p)||'').toUpperCase();return targetAmounts.includes(n)&&(unit===''||unit.includes('AFN'));};
   const wholesaleOf=(p)=>p?.prices?.wholesale?.amount;
   const retailOf=(p)=>p?.prices?.retail?.amount;
   const eur=(value)=>value!=null&&Number.isFinite(Number(value))?'€'+Number(value).toFixed(2):'—';
@@ -2848,15 +2903,37 @@ discover.addEventListener('click',async()=>{
   const denominationCounts=new Map();
   for(const p of products){const k=denominationKey(p);denominationCounts.set(k,(denominationCounts.get(k)||0)+1);}
   const duplicateDenominations=[...denominationCounts.values()].filter(n=>n>1).length;
+  const networkAliases={
+   AWCC:['AWCC','AFGHAN WIRELESS'],
+   Roshan:['ROSHAN'],
+   Etisalat:['ETISALAT'],
+   Salaam:['SALAAM','SALAM'],
+   ATOMA:['ATOMA']
+  };
+  const coverageRows=Object.entries(networkAliases).map(([network,aliases])=>{
+   const networkProducts=products.filter(p=>aliases.some(alias=>operatorOf(p).toUpperCase().includes(alias)));
+   return '<tr><th style="text-align:left;padding:7px;border-bottom:1px solid #ddd">'+esc(network)+'</th>'+
+    targetAmounts.map(amount=>{
+     const found=networkProducts.filter(p=>numericAmount(p)===amount&&isTargetAmount(p));
+     return '<td style="padding:7px;text-align:center;border-bottom:1px solid #ddd">'+(found.length?'<span title="DT One product ID(s): '+esc(found.map(p=>p.id).join(', '))+'">'+found.length+' found</span>':'—')+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
   result.innerHTML='<section style="background:#f7f7f7;border:1px solid #ddd;border-radius:10px;padding:14px;margin:12px 0">'+
    '<h2 style="margin:0 0 8px">Afghanistan DT One catalog</h2>'+
    '<p><b>Environment:</b> '+esc(data.environment)+' · <b>Products:</b> '+esc(data.resultCount)+' · <b>Provider pages checked:</b> '+esc(data.providerPagesChecked)+'</p>'+
    '<p><b>Repeated network/amount combinations:</b> '+duplicateDenominations+'. These are flagged for review only; products are not automatically removed.</p>'+
    '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
+   '<h3>Target denomination coverage (provider results)</h3>'+
+   '<p style="color:#555;font-size:13px">Counts are based only on products returned by the configured DT One catalog search. A dash means no matching product was found in this result set; it does not prove the operator never offers that denomination.</p>'+
+   '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th style="text-align:left;padding:7px;border-bottom:1px solid #ddd">Network</th>'+targetAmounts.map(n=>'<th style="padding:7px;border-bottom:1px solid #ddd">'+n+' AFN</th>').join('')+'</tr></thead><tbody>'+coverageRows+'</tbody></table></div>'+
    '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
-   '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 120, 6153" style="width:100%;padding:12px;font:inherit">'+
+   '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 150, 6153" style="width:100%;padding:12px;font:inherit">'+
+   '<fieldset style="margin:10px 0;padding:10px;border:1px solid #ddd"><legend>Target denominations (AFN)</legend>'+targetAmounts.map(n=>'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" class="targetAmountFilter" value="'+n+'" checked style="width:auto">'+n+'</label>').join('')+'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" id="showOtherAmounts" style="width:auto">Show other denominations</label></fieldset>'+
    '<p id="catalogCount" style="margin:10px 0"></p>'+
+   '<button type="button" id="bulkImportDisabled" style="background:#333">Import selected products as DISABLED</button>'+
+   '<p style="color:#555;font-size:13px">Bulk import re-verifies each selected product with DT One and uses the existing safe import endpoint. Every imported product stays disabled. Conflicts are skipped and reported.</p>'+
    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr>'+
+   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Select</th>'+
    '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Network</th>'+
    '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Product</th>'+
    '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Wholesale</th>'+
@@ -2869,19 +2946,42 @@ discover.addEventListener('click',async()=>{
   const count=document.getElementById('catalogCount');
   const renderRows=()=>{
    const q=filter.value.trim().toLowerCase();
-   const matches=products.filter(p=>[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q));
+   const selectedAmounts=[...document.querySelectorAll('.targetAmountFilter:checked')].map(el=>Number(el.value));
+   const showOther=document.getElementById('showOtherAmounts').checked;
+   const matches=products.filter(p=>{const textMatch=[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q);const n=numericAmount(p);const targetMatch=showOther||(targetAmounts.includes(n)&&selectedAmounts.includes(n)&&isTargetAmount(p));return textMatch&&targetMatch;});
    count.textContent='Showing '+Math.min(matches.length,100)+' of '+matches.length+' matching products (maximum 100 displayed at once).';
    rows.innerHTML=matches.slice(0,100).map(p=>'<tr>'+
+    '<td style="padding:8px;border-bottom:1px solid #eee"><input type="checkbox" class="bulkProductSelect" data-product-id="'+esc(p?.id)+'" aria-label="Select product '+esc(p?.id)+'" style="width:auto"></td>'+
     '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(operatorOf(p))+'</td>'+
     '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(p?.name||((amountOf(p)+' '+unitOf(p)).trim()))+'<br><small>'+esc(amountOf(p)+' '+unitOf(p))+'</small></td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(wholesaleOf(p))+'</td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(retailOf(p))+'</td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+esc(p?.id)+'</td>'+
     '<td style="padding:8px;border-bottom:1px solid #eee">'+(denominationCounts.get(denominationKey(p))>1?'<b>Check duplicate</b>':'—')+'</td></tr>').join('');
-   if(!matches.length)rows.innerHTML='<tr><td colspan="6" style="padding:12px">No products match that search.</td></tr>';
+   if(!matches.length)rows.innerHTML='<tr><td colspan="7" style="padding:12px">No products match that search.</td></tr>';
   };
   filter.addEventListener('input',renderRows);
+  document.querySelectorAll('.targetAmountFilter').forEach(el=>el.addEventListener('change',renderRows));
+  document.getElementById('showOtherAmounts').addEventListener('change',renderRows);
   renderRows();
+  document.getElementById('bulkImportDisabled').addEventListener('click',async()=>{
+   if(!key.value){result.textContent='Enter the admin API key first.';return;}
+   const ids=[...document.querySelectorAll('.bulkProductSelect:checked')].map(el=>String(el.dataset.productId||'')).filter(id=>/^[1-9]\\d*$/.test(id));
+   if(!ids.length){result.textContent='Select at least one product to import.';return;}
+   if(ids.length>100){result.textContent='Select no more than 100 products at a time.';return;}
+   if(!confirm('Import '+ids.length+' selected DT One products into the local catalog as DISABLED? Products will be re-verified one by one. No payment or top-up will be performed.'))return;
+   const button=document.getElementById('bulkImportDisabled');button.disabled=true;
+   const outcomes=[];
+   try{
+    for(let i=0;i<ids.length;i++){
+     const id=ids[i];result.textContent='Verifying and importing product '+id+' ('+(i+1)+'/'+ids.length+')…';
+     try{const item=await adminRequest('/api/admin/catalog/'+encodeURIComponent(id)+'/import',{method:'POST'});outcomes.push({productId:id,imported:Boolean(item.imported),alreadyRegistered:Boolean(item.alreadyRegistered),error:item.error||null,product:item.product||null});}
+     catch(error){outcomes.push({productId:id,imported:false,error:error.message});}
+    }
+    const imported=outcomes.filter(x=>x.imported).length;const skipped=outcomes.length-imported;
+    result.textContent=JSON.stringify({bulkImportComplete:true,selected:ids.length,importedDisabled:imported,skippedOrFailed:skipped,activationChanged:false,transactionsCreated:false,results:outcomes},null,2);
+   }finally{button.disabled=false;key.value='';}
+  });
  }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
  key.value='';
 });
@@ -3368,6 +3468,81 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
 
 // Admin pricing overview.
 // Prices and fees are returned in EUR cents.
+// Known operators are seeded for convenience, then augmented from the real
+// local catalog so new networks in any supported country appear automatically.
+const SUPPORTED_OPERATOR_PRICING = {
+  AF: ['AWCC', 'Roshan', 'Etisalat', 'Salaam', 'ATOMA'],
+  PK: ['Jazz', 'Zong', 'Telenor', 'Ufone'],
+  IN: ['Airtel', 'Jio', 'Vi', 'BSNL'],
+  BD: ['Grameenphone', 'Robi', 'Banglalink', 'Teletalk'],
+};
+
+app.get('/api/admin/operator-pricing', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const country = normalizeCountry(req.query.country || 'AF');
+  if (!isValidCountry(country)) return res.status(400).json({ error: 'Unsupported country.' });
+  try {
+    const [savedResult, catalogResult] = await Promise.all([
+      pool.query(`SELECT country, operator, fee_eur_cents, fee_percent, active, updated_at
+        FROM operator_pricing_settings WHERE country = $1 ORDER BY operator`, [country]),
+      pool.query(`SELECT DISTINCT operator FROM product_catalog
+        WHERE country = $1 AND operator IS NOT NULL AND BTRIM(operator) <> ''
+        ORDER BY operator`, [country]),
+    ]);
+    const saved = new Map(savedResult.rows.map(row => [String(row.operator).toLowerCase(), row]));
+    const names = new Map();
+    for (const operator of SUPPORTED_OPERATOR_PRICING[country] || []) names.set(operator.toLowerCase(), operator);
+    for (const row of catalogResult.rows) {
+      const operator = String(row.operator).trim();
+      if (operator) names.set(operator.toLowerCase(), operator);
+    }
+    for (const row of savedResult.rows) {
+      const operator = String(row.operator).trim();
+      if (operator) names.set(operator.toLowerCase(), operator);
+    }
+    const operators = [...names.values()].sort((a, b) => a.localeCompare(b)).map(operator =>
+      saved.get(operator.toLowerCase()) || { country, operator, fee_eur_cents: 0, fee_percent: 0, active: false, updated_at: null });
+    return res.json({ paymentCurrency: 'EUR', country, operators,
+      note: 'Includes known operators and operators found in the catalog. An active operator fee replaces the country-wide app fee; otherwise country settings apply.' });
+  } catch (error) {
+    console.error('Admin operator pricing query failed:', error.message);
+    return res.status(500).json({ error: 'Could not load operator pricing settings.' });
+  }
+});
+
+app.put('/api/admin/operator-pricing/:country/:operator', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const country = normalizeCountry(req.params.country);
+  const requested = String(req.params.operator || '').trim();
+  if (!isValidCountry(country) || !requested || requested.length > 120) {
+    return res.status(400).json({ error: 'Unsupported country or operator.' });
+  }
+  const body = req.body || {}, feeCents = Number(body.feeEurCents), feePercent = Number(body.feePercent);
+  if (!Number.isSafeInteger(feeCents) || feeCents < 0 || feeCents > 100000) return res.status(400).json({ error: 'feeEurCents must be an integer from 0 to 100000.' });
+  if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 100) return res.status(400).json({ error: 'feePercent must be between 0 and 100.' });
+  if (typeof body.active !== 'boolean') return res.status(400).json({ error: 'active must be true or false.' });
+  try {
+    const known = await pool.query(`SELECT operator FROM product_catalog
+      WHERE country = $1 AND LOWER(BTRIM(operator)) = LOWER($2) LIMIT 1`, [country, requested]);
+    const seeded = (SUPPORTED_OPERATOR_PRICING[country] || []).find(name => name.toLowerCase() === requested.toLowerCase());
+    const savedExisting = await pool.query(`SELECT operator FROM operator_pricing_settings
+      WHERE country = $1 AND LOWER(operator) = LOWER($2) LIMIT 1`, [country, requested]);
+    const operator = String(known.rows[0]?.operator || savedExisting.rows[0]?.operator || seeded || '').trim();
+    if (!operator) return res.status(400).json({ error: 'This operator is not known for the selected country. Import or map a verified catalog product first.' });
+    const result = await pool.query(`INSERT INTO operator_pricing_settings
+      (country, operator, fee_eur_cents, fee_percent, active, updated_at) VALUES ($1,$2,$3,$4,$5,NOW())
+      ON CONFLICT (country, operator) DO UPDATE SET fee_eur_cents=EXCLUDED.fee_eur_cents,
+      fee_percent=EXCLUDED.fee_percent, active=EXCLUDED.active, updated_at=NOW()
+      RETURNING country, operator, fee_eur_cents, fee_percent, active, updated_at`,
+      [country, operator, feeCents, feePercent, body.active]);
+    return res.json({ paymentCurrency: 'EUR', operatorPricing: result.rows[0],
+      note: 'Applies to new quotes and checkouts only; existing transactions are unchanged.' });
+  } catch (error) {
+    console.error('Admin operator pricing update failed:', error.message);
+    return res.status(500).json({ error: 'Could not save operator pricing settings.' });
+  }
+});
+
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({
