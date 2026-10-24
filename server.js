@@ -3468,6 +3468,8 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
 
 // Admin pricing overview.
 // Prices and fees are returned in EUR cents.
+// Known operators are seeded for convenience, then augmented from the real
+// local catalog so new networks in any supported country appear automatically.
 const SUPPORTED_OPERATOR_PRICING = {
   AF: ['AWCC', 'Roshan', 'Etisalat', 'Salaam', 'ATOMA'],
   PK: ['Jazz', 'Zong', 'Telenor', 'Ufone'],
@@ -3480,12 +3482,28 @@ app.get('/api/admin/operator-pricing', requireAdmin, async (req, res) => {
   const country = normalizeCountry(req.query.country || 'AF');
   if (!isValidCountry(country)) return res.status(400).json({ error: 'Unsupported country.' });
   try {
-    const result = await pool.query(`SELECT country, operator, fee_eur_cents, fee_percent, active, updated_at
-      FROM operator_pricing_settings WHERE country = $1 ORDER BY operator`, [country]);
-    const saved = new Map(result.rows.map(row => [String(row.operator).toLowerCase(), row]));
-    return res.json({ paymentCurrency: 'EUR', country, operators: (SUPPORTED_OPERATOR_PRICING[country] || []).map(operator =>
-      saved.get(operator.toLowerCase()) || { country, operator, fee_eur_cents: 0, fee_percent: 0, active: false, updated_at: null }),
-      note: 'An active operator fee replaces the country-wide app fee; otherwise country settings apply.' });
+    const [savedResult, catalogResult] = await Promise.all([
+      pool.query(`SELECT country, operator, fee_eur_cents, fee_percent, active, updated_at
+        FROM operator_pricing_settings WHERE country = $1 ORDER BY operator`, [country]),
+      pool.query(`SELECT DISTINCT operator FROM product_catalog
+        WHERE country = $1 AND operator IS NOT NULL AND BTRIM(operator) <> ''
+        ORDER BY operator`, [country]),
+    ]);
+    const saved = new Map(savedResult.rows.map(row => [String(row.operator).toLowerCase(), row]));
+    const names = new Map();
+    for (const operator of SUPPORTED_OPERATOR_PRICING[country] || []) names.set(operator.toLowerCase(), operator);
+    for (const row of catalogResult.rows) {
+      const operator = String(row.operator).trim();
+      if (operator) names.set(operator.toLowerCase(), operator);
+    }
+    for (const row of savedResult.rows) {
+      const operator = String(row.operator).trim();
+      if (operator) names.set(operator.toLowerCase(), operator);
+    }
+    const operators = [...names.values()].sort((a, b) => a.localeCompare(b)).map(operator =>
+      saved.get(operator.toLowerCase()) || { country, operator, fee_eur_cents: 0, fee_percent: 0, active: false, updated_at: null });
+    return res.json({ paymentCurrency: 'EUR', country, operators,
+      note: 'Includes known operators and operators found in the catalog. An active operator fee replaces the country-wide app fee; otherwise country settings apply.' });
   } catch (error) {
     console.error('Admin operator pricing query failed:', error.message);
     return res.status(500).json({ error: 'Could not load operator pricing settings.' });
@@ -3496,13 +3514,21 @@ app.put('/api/admin/operator-pricing/:country/:operator', requireAdmin, async (r
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const country = normalizeCountry(req.params.country);
   const requested = String(req.params.operator || '').trim();
-  const operator = (SUPPORTED_OPERATOR_PRICING[country] || []).find(name => name.toLowerCase() === requested.toLowerCase());
-  if (!isValidCountry(country) || !operator) return res.status(400).json({ error: 'Unsupported country or operator.' });
+  if (!isValidCountry(country) || !requested || requested.length > 120) {
+    return res.status(400).json({ error: 'Unsupported country or operator.' });
+  }
   const body = req.body || {}, feeCents = Number(body.feeEurCents), feePercent = Number(body.feePercent);
   if (!Number.isSafeInteger(feeCents) || feeCents < 0 || feeCents > 100000) return res.status(400).json({ error: 'feeEurCents must be an integer from 0 to 100000.' });
   if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 100) return res.status(400).json({ error: 'feePercent must be between 0 and 100.' });
   if (typeof body.active !== 'boolean') return res.status(400).json({ error: 'active must be true or false.' });
   try {
+    const known = await pool.query(`SELECT operator FROM product_catalog
+      WHERE country = $1 AND LOWER(BTRIM(operator)) = LOWER($2) LIMIT 1`, [country, requested]);
+    const seeded = (SUPPORTED_OPERATOR_PRICING[country] || []).find(name => name.toLowerCase() === requested.toLowerCase());
+    const savedExisting = await pool.query(`SELECT operator FROM operator_pricing_settings
+      WHERE country = $1 AND LOWER(operator) = LOWER($2) LIMIT 1`, [country, requested]);
+    const operator = String(known.rows[0]?.operator || savedExisting.rows[0]?.operator || seeded || '').trim();
+    if (!operator) return res.status(400).json({ error: 'This operator is not known for the selected country. Import or map a verified catalog product first.' });
     const result = await pool.query(`INSERT INTO operator_pricing_settings
       (country, operator, fee_eur_cents, fee_percent, active, updated_at) VALUES ($1,$2,$3,$4,$5,NOW())
       ON CONFLICT (country, operator) DO UPDATE SET fee_eur_cents=EXCLUDED.fee_eur_cents,
