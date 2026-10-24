@@ -2855,9 +2855,9 @@ discover.addEventListener('click',async()=>{
    '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
    '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
    '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 120, 6153" style="width:100%;padding:12px;font:inherit">'+
-   '<p id="catalogCount" style="margin:10px 0"></p>'+
+   '<p id="catalogCount" style="margin:10px 0"></p>'+\n   '<button type="button" id="bulkImportDisabled" style="background:#333">Import selected products as DISABLED</button>'+\n   '<p style="color:#555;font-size:13px">Bulk import re-verifies each selected product with DT One and uses the existing safe import endpoint. Every imported product stays disabled. Conflicts are skipped and reported.</p>'+
    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr>'+
-   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Network</th>'+
+   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Select</th>'+\n   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Network</th>'+
    '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Product</th>'+
    '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Wholesale</th>'+
    '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Retail</th>'+
@@ -2872,16 +2872,34 @@ discover.addEventListener('click',async()=>{
    const matches=products.filter(p=>[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q));
    count.textContent='Showing '+Math.min(matches.length,100)+' of '+matches.length+' matching products (maximum 100 displayed at once).';
    rows.innerHTML=matches.slice(0,100).map(p=>'<tr>'+
-    '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(operatorOf(p))+'</td>'+
+    '<td style="padding:8px;border-bottom:1px solid #eee"><input type="checkbox" class="bulkProductSelect" data-product-id="'+esc(p?.id)+'" aria-label="Select product '+esc(p?.id)+'" style="width:auto"></td>'+\n    '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(operatorOf(p))+'</td>'+
     '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(p?.name||((amountOf(p)+' '+unitOf(p)).trim()))+'<br><small>'+esc(amountOf(p)+' '+unitOf(p))+'</small></td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(wholesaleOf(p))+'</td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(retailOf(p))+'</td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+esc(p?.id)+'</td>'+
     '<td style="padding:8px;border-bottom:1px solid #eee">'+(denominationCounts.get(denominationKey(p))>1?'<b>Check duplicate</b>':'—')+'</td></tr>').join('');
-   if(!matches.length)rows.innerHTML='<tr><td colspan="6" style="padding:12px">No products match that search.</td></tr>';
+   if(!matches.length)rows.innerHTML='<tr><td colspan="7" style="padding:12px">No products match that search.</td></tr>';
   };
   filter.addEventListener('input',renderRows);
   renderRows();
+  document.getElementById('bulkImportDisabled').addEventListener('click',async()=>{
+   if(!key.value){result.textContent='Enter the admin API key first.';return;}
+   const ids=[...document.querySelectorAll('.bulkProductSelect:checked')].map(el=>String(el.dataset.productId||'')).filter(id=>/^[1-9]\\d*$/.test(id));
+   if(!ids.length){result.textContent='Select at least one product to import.';return;}
+   if(ids.length>100){result.textContent='Select no more than 100 products at a time.';return;}
+   if(!confirm('Import '+ids.length+' selected DT One products into the local catalog as DISABLED? Products will be re-verified one by one. No payment or top-up will be performed.'))return;
+   const button=document.getElementById('bulkImportDisabled');button.disabled=true;
+   const outcomes=[];
+   try{
+    for(let i=0;i<ids.length;i++){
+     const id=ids[i];result.textContent='Verifying and importing product '+id+' ('+(i+1)+'/'+ids.length+')…';
+     try{const item=await adminRequest('/api/admin/catalog/'+encodeURIComponent(id)+'/import',{method:'POST'});outcomes.push({productId:id,imported:Boolean(item.imported),alreadyRegistered:Boolean(item.alreadyRegistered),error:item.error||null,product:item.product||null});}
+     catch(error){outcomes.push({productId:id,imported:false,error:error.message});}
+    }
+    const imported=outcomes.filter(x=>x.imported).length;const skipped=outcomes.length-imported;
+    result.textContent=JSON.stringify({bulkImportComplete:true,selected:ids.length,importedDisabled:imported,skippedOrFailed:skipped,activationChanged:false,transactionsCreated:false,results:outcomes},null,2);
+   }finally{button.disabled=false;key.value='';}
+  });
  }catch(_){result.textContent='Could not contact the backend. Please try again later.';}
  key.value='';
 });
