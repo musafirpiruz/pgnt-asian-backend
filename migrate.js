@@ -121,6 +121,34 @@ async function runMigration() {
     }
 
 
+    // Version 009 adds admin-controlled per-operator fee settings.
+    const operatorFeeVersion = "009_operator_pricing_settings";
+    const operatorFeeCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [operatorFeeVersion]
+    );
+    if (operatorFeeCheck.rows.length === 0) {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS operator_pricing_settings (
+          id BIGSERIAL PRIMARY KEY,
+          country TEXT NOT NULL CHECK (country IN ('AF','PK','IN','BD')),
+          operator TEXT NOT NULL,
+          fee_eur_cents INTEGER NOT NULL DEFAULT 0 CHECK (fee_eur_cents >= 0 AND fee_eur_cents <= 100000),
+          fee_percent NUMERIC(7,4) NOT NULL DEFAULT 0 CHECK (fee_percent >= 0 AND fee_percent <= 100),
+          active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (country, operator)
+        );
+        CREATE INDEX IF NOT EXISTS idx_operator_pricing_country_active
+          ON operator_pricing_settings (country, active);
+        INSERT INTO schema_migrations (version)
+        VALUES ('009_operator_pricing_settings')
+        ON CONFLICT (version) DO NOTHING;
+      `);
+      console.log("Migration 009_operator_pricing_settings completed successfully.");
+    }
+
     // Version 008 adds per-order status access-token hashes.
     const orderTokenVersion = "008_order_access_token";
     const orderTokenCheck = await client.query(
