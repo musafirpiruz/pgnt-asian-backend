@@ -2650,6 +2650,14 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label style="display:flex;gap:8px;align-items:center"><input id="pricingActive" type="checkbox" style="width:auto"> Selected country pricing settings active</label>
 <button type="button" id="savePricing">Save selected country pricing settings</button>
 <small>Save changes country pricing settings only. This does not activate the ATOMA product or perform a payment. Check the displayed values before saving.</small>
+<h2>Operator fee controls</h2>
+<p>Set a fixed EUR fee and an additional percentage for each network. These settings replace the country-wide app fee when enabled. New quotes only; no payment or top-up is performed.</p>
+<label for="operatorPricingCountry">Country</label>
+<select id="operatorPricingCountry" style="width:100%;padding:12px;font:inherit">
+<option value="AF">Afghanistan</option><option value="PK">Pakistan</option><option value="IN">India</option><option value="BD">Bangladesh</option></select>
+<button type="button" id="loadOperatorPricing">Load network fees</button>
+<div id="operatorPricingRows" style="display:grid;gap:12px;margin-top:12px"></div>
+<small>To save: enter the admin API key, load network fees, change values, then press Save on that network. Keep a network inactive to use the country-wide fee.</small>
 <h2>Customer Support Tickets</h2>
 <p>Review customer requests, prioritize urgent issues, reply to customers, and update ticket status. This page does not issue refunds or change payment/top-up outcomes.</p>
 <label for="ticketStatusFilter">Ticket status filter</label>
@@ -2814,6 +2822,43 @@ savePricing.addEventListener('click',async()=>{
  }catch(error){result.textContent='Could not save pricing: '+error.message;}
  finally{key.value='';}
 });
+const operatorPricingCountry=document.getElementById('operatorPricingCountry');
+const operatorPricingRows=document.getElementById('operatorPricingRows');
+const operatorNames={AF:['AWCC','Roshan','Etisalat','Salaam','ATOMA'],PK:['Jazz','Zong','Telenor','Ufone'],IN:['Airtel','Jio','Vi','BSNL'],BD:['Grameenphone','Robi','Banglalink','Teletalk']};
+document.getElementById('loadOperatorPricing').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ operatorPricingRows.replaceChildren();
+ result.textContent='Loading network fees…';
+ try{
+  const data=await adminRequest('/api/admin/operator-pricing?country='+encodeURIComponent(operatorPricingCountry.value));
+  for(const item of data.operators||[]){
+   const card=document.createElement('section');card.style.cssText='border:1px solid #bbb;border-radius:10px;padding:12px;display:grid;gap:8px';
+   const heading=document.createElement('strong');heading.textContent=item.operator;card.appendChild(heading);
+   const feeLabel=document.createElement('label');feeLabel.textContent='Fixed fee (EUR)';
+   const fee=document.createElement('input');fee.type='number';fee.min='0';fee.max='1000';fee.step='0.01';fee.value=(Number(item.fee_eur_cents)/100).toFixed(2);feeLabel.appendChild(fee);card.appendChild(feeLabel);
+   const percentLabel=document.createElement('label');percentLabel.textContent='Extra fee (%)';
+   const percent=document.createElement('input');percent.type='number';percent.min='0';percent.max='100';percent.step='0.01';percent.value=Number(item.fee_percent);percentLabel.appendChild(percent);card.appendChild(percentLabel);
+   const activeLabel=document.createElement('label');activeLabel.style.cssText='display:flex;gap:8px;align-items:center';
+   const active=document.createElement('input');active.type='checkbox';active.style.width='auto';active.checked=item.active===true;activeLabel.append(active,' Use this network-specific fee');card.appendChild(activeLabel);
+   const save=document.createElement('button');save.type='button';save.textContent='Save '+item.operator+' settings';
+   save.addEventListener('click',async()=>{
+    if(!key.value){result.textContent='Enter the admin API key first.';return;}
+    const feeValue=Number(fee.value),percentValue=Number(percent.value);
+    if(!Number.isFinite(feeValue)||feeValue<0||feeValue>1000||!Number.isFinite(percentValue)||percentValue<0||percentValue>100){result.textContent='Check fee values for '+item.operator+'.';return;}
+    if(!confirm('Save fee settings for '+item.operator+' in '+operatorPricingCountry.value+'?'))return;
+    result.textContent='Saving '+item.operator+' fee settings…';
+    try{
+     const saved=await adminRequest('/api/admin/operator-pricing/'+encodeURIComponent(operatorPricingCountry.value)+'/'+encodeURIComponent(item.operator),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(feeValue*100),feePercent:percentValue,active:active.checked})});
+     result.textContent=JSON.stringify({saved:true,operatorPricing:saved.operatorPricing,note:saved.note},null,2);
+    }catch(error){result.textContent='Could not save '+item.operator+': '+error.message;}
+   });
+   card.appendChild(save);operatorPricingRows.appendChild(card);
+  }
+  result.textContent='Loaded '+(data.operators||[]).length+' network settings for '+data.country+'. Review carefully before saving.';
+ }catch(error){result.textContent='Could not load network fees: '+error.message;}
+ finally{key.value='';}
+});
+operatorPricingCountry.addEventListener('change',()=>operatorPricingRows.replaceChildren());
 document.getElementById('importCatalogProduct').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
