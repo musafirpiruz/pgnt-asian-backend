@@ -707,6 +707,24 @@ async function getProduct(client, productId, requestedCountry = null, operator =
 
 // Calculate the final customer price.
 // The price and fee are both in EUR cents.
+// Optional operator fee overrides replace, rather than stack on, the country app fee.
+async function resolveProductPricing(client, country, operator, product, pricing) {
+  const name = String(operator || product?.name || '').trim();
+  if (!name) return pricing;
+  const result = await client.query(
+    `SELECT fee_eur_cents, fee_percent, active FROM operator_pricing_settings
+     WHERE country = $1 AND LOWER(operator) = LOWER($2) LIMIT 1`,
+    [normalizeCountry(country), name]
+  );
+  if (result.rowCount !== 1 || result.rows[0].active !== true) return pricing;
+  const fixed = requireNonNegativeInteger(result.rows[0].fee_eur_cents, 'operator fixed fee');
+  const percent = Number(result.rows[0].fee_percent);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('Invalid operator fee percentage.');
+  const wholesale = requirePositiveInteger(product.wholesalePriceCents, 'DT One wholesale price in EUR cents');
+  return { ...pricing, feeCents: fixed + Math.ceil(wholesale * percent / 100), operatorFeeCents: fixed,
+    operatorFeePercent: percent, operatorPricingApplied: true };
+}
+
 function calculateFinalPrice(product, pricing) {
   // An enabled production product must have a verified DT One wholesale
   // cost. Never silently treat an old retail/display price as wholesale.
@@ -796,15 +814,9 @@ async function getProductQuote(productId, country) {
       );
     }
 
-    const pricing = await getPricingSettings(
-      client,
-      country
-    );
-
-    const price = calculateFinalPrice(
-      product,
-      pricing
-    );
+    const basePricing = await getPricingSettings(client, country);
+    const pricing = await resolveProductPricing(client, country, product.name, product, basePricing);
+    const price = calculateFinalPrice(product, pricing);
 
     return {
       productId: product.id,
@@ -847,7 +859,8 @@ app.get('/api/pricing/quote', async (req, res) => {
   const client = await pool.connect();
   try {
     const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
-    const pricing = await getPricingSettings(client, country);
+    const basePricing = await getPricingSettings(client, country);
+    const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
     return res.json({
       productId: product.id,
@@ -943,15 +956,9 @@ app.post('/api/payments/checkout', async (req, res) => {
       );
     }
 
-    const pricing = await getPricingSettings(
-      client,
-      input.country
-    );
-
-    const price = calculateFinalPrice(
-      product,
-      pricing
-    );
+    const basePricing = await getPricingSettings(client, input.country);
+    const pricing = await resolveProductPricing(client, input.country, product.name, product, basePricing);
+    const price = calculateFinalPrice(product, pricing);
 
     // Referral attribution is server-validated and tied to a stable
     // client-generated install identifier. This is abuse friction, not
@@ -3416,6 +3423,55 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
 
 // Admin pricing overview.
 // Prices and fees are returned in EUR cents.
+const SUPPORTED_OPERATOR_PRICING = {
+  AF: ['AWCC', 'Roshan', 'Etisalat', 'Salaam', 'ATOMA'],
+  PK: ['Jazz', 'Zong', 'Telenor', 'Ufone'],
+  IN: ['Airtel', 'Jio', 'Vi', 'BSNL'],
+  BD: ['Grameenphone', 'Robi', 'Banglalink', 'Teletalk'],
+};
+
+app.get('/api/admin/operator-pricing', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const country = normalizeCountry(req.query.country || 'AF');
+  if (!isValidCountry(country)) return res.status(400).json({ error: 'Unsupported country.' });
+  try {
+    const result = await pool.query(`SELECT country, operator, fee_eur_cents, fee_percent, active, updated_at
+      FROM operator_pricing_settings WHERE country = $1 ORDER BY operator`, [country]);
+    const saved = new Map(result.rows.map(row => [String(row.operator).toLowerCase(), row]));
+    return res.json({ paymentCurrency: 'EUR', country, operators: (SUPPORTED_OPERATOR_PRICING[country] || []).map(operator =>
+      saved.get(operator.toLowerCase()) || { country, operator, fee_eur_cents: 0, fee_percent: 0, active: false, updated_at: null }),
+      note: 'An active operator fee replaces the country-wide app fee; otherwise country settings apply.' });
+  } catch (error) {
+    console.error('Admin operator pricing query failed:', error.message);
+    return res.status(500).json({ error: 'Could not load operator pricing settings.' });
+  }
+});
+
+app.put('/api/admin/operator-pricing/:country/:operator', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const country = normalizeCountry(req.params.country);
+  const requested = String(req.params.operator || '').trim();
+  const operator = (SUPPORTED_OPERATOR_PRICING[country] || []).find(name => name.toLowerCase() === requested.toLowerCase());
+  if (!isValidCountry(country) || !operator) return res.status(400).json({ error: 'Unsupported country or operator.' });
+  const body = req.body || {}, feeCents = Number(body.feeEurCents), feePercent = Number(body.feePercent);
+  if (!Number.isSafeInteger(feeCents) || feeCents < 0 || feeCents > 100000) return res.status(400).json({ error: 'feeEurCents must be an integer from 0 to 100000.' });
+  if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 100) return res.status(400).json({ error: 'feePercent must be between 0 and 100.' });
+  if (typeof body.active !== 'boolean') return res.status(400).json({ error: 'active must be true or false.' });
+  try {
+    const result = await pool.query(`INSERT INTO operator_pricing_settings
+      (country, operator, fee_eur_cents, fee_percent, active, updated_at) VALUES ($1,$2,$3,$4,$5,NOW())
+      ON CONFLICT (country, operator) DO UPDATE SET fee_eur_cents=EXCLUDED.fee_eur_cents,
+      fee_percent=EXCLUDED.fee_percent, active=EXCLUDED.active, updated_at=NOW()
+      RETURNING country, operator, fee_eur_cents, fee_percent, active, updated_at`,
+      [country, operator, feeCents, feePercent, body.active]);
+    return res.json({ paymentCurrency: 'EUR', operatorPricing: result.rows[0],
+      note: 'Applies to new quotes and checkouts only; existing transactions are unchanged.' });
+  } catch (error) {
+    console.error('Admin operator pricing update failed:', error.message);
+    return res.status(500).json({ error: 'Could not save operator pricing settings.' });
+  }
+});
+
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({
