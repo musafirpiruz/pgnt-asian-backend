@@ -2875,7 +2875,8 @@ discover.addEventListener('click',async()=>{
    const matches=products.filter(p=>[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q));
    count.textContent='Showing '+Math.min(matches.length,100)+' of '+matches.length+' matching products (maximum 100 displayed at once).';
    rows.innerHTML=matches.slice(0,100).map(p=>'<tr>'+
-    '<td style="padding:8px;border-bottom:1px solid #eee"><input type="checkbox" class="bulkProductSelect" data-product-id="'+esc(p?.id)+'" aria-label="Select product '+esc(p?.id)+'" style="width:auto"></td>'+\n    '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(operatorOf(p))+'</td>'+
+    '<td style="padding:8px;border-bottom:1px solid #eee"><input type="checkbox" class="bulkProductSelect" data-product-id="'+esc(p?.id)+'" aria-label="Select product '+esc(p?.id)+'" style="width:auto"></td>'+
+    '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(operatorOf(p))+'</td>'+
     '<td style="padding:8px;border-bottom:1px solid #eee">'+esc(p?.name||((amountOf(p)+' '+unitOf(p)).trim()))+'<br><small>'+esc(amountOf(p)+' '+unitOf(p))+'</small></td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(wholesaleOf(p))+'</td>'+
     '<td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+eur(retailOf(p))+'</td>'+
