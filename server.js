@@ -2855,9 +2855,12 @@ discover.addEventListener('click',async()=>{
    '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
    '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
    '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 120, 6153" style="width:100%;padding:12px;font:inherit">'+
-   '<p id="catalogCount" style="margin:10px 0"></p>'+\n   '<button type="button" id="bulkImportDisabled" style="background:#333">Import selected products as DISABLED</button>'+\n   '<p style="color:#555;font-size:13px">Bulk import re-verifies each selected product with DT One and uses the existing safe import endpoint. Every imported product stays disabled. Conflicts are skipped and reported.</p>'+
+   '<p id="catalogCount" style="margin:10px 0"></p>'+
+   '<button type="button" id="bulkImportDisabled" style="background:#333">Import selected products as DISABLED</button>'+
+   '<p style="color:#555;font-size:13px">Bulk import re-verifies each selected product with DT One and uses the existing safe import endpoint. Every imported product stays disabled. Conflicts are skipped and reported.</p>'+
    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr>'+
-   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Select</th>'+\n   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Network</th>'+
+   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Select</th>'+
+   '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Network</th>'+
    '<th style="text-align:left;padding:8px;border-bottom:1px solid #ccc">Product</th>'+
    '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Wholesale</th>'+
    '<th style="text-align:right;padding:8px;border-bottom:1px solid #ccc">Retail</th>'+
