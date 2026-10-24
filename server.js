@@ -2912,13 +2912,9 @@ discover.addEventListener('click',async()=>{
   const denominationCounts=new Map();
   for(const p of products){const k=denominationKey(p);denominationCounts.set(k,(denominationCounts.get(k)||0)+1);}
   const duplicateDenominations=[...denominationCounts.values()].filter(n=>n>1).length;
-  const networkAliases={
-   AWCC:['AWCC','AFGHAN WIRELESS'],
-   Roshan:['ROSHAN'],
-   Etisalat:['ETISALAT'],
-   Salaam:['SALAAM','SALAM'],
-   ATOMA:['ATOMA']
-  };
+  const networkAliases=selectedCountry==='AFG'?{
+   AWCC:['AWCC','AFGHAN WIRELESS'],Roshan:['ROSHAN'],Etisalat:['ETISALAT'],Salaam:['SALAAM','SALAM'],ATOMA:['ATOMA']
+  }:selectedCountry==='PAK'?{Jazz:['JAZZ'],Zong:['ZONG'],Telenor:['TELENOR'],Ufone:['UFONE']}:selectedCountry==='IND'?{Airtel:['AIRTEL'],Jio:['JIO'],Vi:['VODAFONE','VI'],BSNL:['BSNL']}:{Grameenphone:['GRAMEENPHONE'],Robi:['ROBI'],Banglalink:['BANGLALINK'],Teletalk:['TELETALK']};
   const coverageRows=Object.entries(networkAliases).map(([network,aliases])=>{
    const networkProducts=products.filter(p=>aliases.some(alias=>operatorOf(p).toUpperCase().includes(alias)));
    return '<tr><th style="text-align:left;padding:7px;border-bottom:1px solid #ddd">'+esc(network)+'</th>'+
@@ -2934,10 +2930,10 @@ discover.addEventListener('click',async()=>{
    '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
    '<h3>Target denomination coverage (provider results)</h3>'+
    '<p style="color:#555;font-size:13px">Counts are based only on products returned by the configured DT One catalog search. A dash means no matching product was found in this result set; it does not prove the operator never offers that denomination. Confirm local currency and provider amounts before import.</p>'+
-   '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th style="text-align:left;padding:7px;border-bottom:1px solid #ddd">Network</th>'+targetAmounts.map(n=>'<th style="padding:7px;border-bottom:1px solid #ddd">'+n+' AFN</th>').join('')+'</tr></thead><tbody>'+coverageRows+'</tbody></table></div>'+
+   '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th style="text-align:left;padding:7px;border-bottom:1px solid #ddd">Network</th>'+targetAmounts.map(n=>'<th style="padding:7px;border-bottom:1px solid #ddd">'+n+' '+esc(localCurrency)+'</th>').join('')+'</tr></thead><tbody>'+coverageRows+'</tbody></table></div>'+
    '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
    '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 150, 6153" style="width:100%;padding:12px;font:inherit">'+
-   '<fieldset style="margin:10px 0;padding:10px;border:1px solid #ddd"><legend>Target denominations (AFN)</legend>'+targetAmounts.map(n=>'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" class="targetAmountFilter" value="'+n+'" checked style="width:auto">'+n+'</label>').join('')+'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" id="showOtherAmounts" style="width:auto">Show other denominations</label></fieldset>'+
+   '<fieldset style="margin:10px 0;padding:10px;border:1px solid #ddd"><legend>Target denominations ('+esc(localCurrency)+')</legend>'+targetAmounts.map(n=>'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" class="targetAmountFilter" value="'+n+'" checked style="width:auto">'+n+'</label>').join('')+'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" id="showOtherAmounts" '+(selectedCountry==='AFG'?'':'checked')+' style="width:auto">Show other denominations</label></fieldset>'+
    '<p id="catalogCount" style="margin:10px 0"></p>'+
    '<button type="button" id="bulkImportDisabled" style="background:#333">Import selected products as DISABLED</button>'+
    '<p style="color:#555;font-size:13px">Bulk import re-verifies each selected product with DT One and uses the existing safe import endpoint. Every imported product stays disabled. Conflicts are skipped and reported.</p>'+
