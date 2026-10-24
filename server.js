@@ -2878,7 +2878,7 @@ discover.addEventListener('click',async()=>{
    const q=filter.value.trim().toLowerCase();
    const selectedAmounts=[...document.querySelectorAll('.targetAmountFilter:checked')].map(el=>Number(el.value));
    const showOther=document.getElementById('showOtherAmounts').checked;
-   const matches=products.filter(p=>{const textMatch=[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q);const n=numericAmount(p);const targetMatch=showOther||(!targetAmounts.includes(n)&&selectedAmounts.length===0)||(targetAmounts.includes(n)&&selectedAmounts.includes(n)&&isTargetAmount(p));return textMatch&&targetMatch;});
+   const matches=products.filter(p=>{const textMatch=[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q);const n=numericAmount(p);const targetMatch=showOther||(targetAmounts.includes(n)&&selectedAmounts.includes(n)&&isTargetAmount(p));return textMatch&&targetMatch;});
    count.textContent='Showing '+Math.min(matches.length,100)+' of '+matches.length+' matching products (maximum 100 displayed at once).';
    rows.innerHTML=matches.slice(0,100).map(p=>'<tr>'+
     '<td style="padding:8px;border-bottom:1px solid #eee"><input type="checkbox" class="bulkProductSelect" data-product-id="'+esc(p?.id)+'" aria-label="Select product '+esc(p?.id)+'" style="width:auto"></td>'+
