@@ -2839,8 +2839,11 @@ discover.addEventListener('click',async()=>{
   const products=Array.isArray(data.products)?data.products:[];
   const esc=(value)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const operatorOf=(p)=>p?.operator?.name||'Unknown operator';
-  const amountOf=(p)=>p?.destination?.amount??p?.benefits?.[0]?.amount?.base??'—';
-  const unitOf=(p)=>p?.destination?.unit||p?.benefits?.[0]?.unit||'';
+  const amountOf=(p)=>p?.destination?.amount??p?.benefits?.[0]?.amount?.total_excluding_tax??p?.benefits?.[0]?.amount?.base??'—';
+  const unitOf=(p)=>p?.destination?.unit||p?.benefits?.[0]?.amount?.unit||p?.benefits?.[0]?.unit||'';
+  const targetAmounts=[100,150,200,250,500,1000];
+  const numericAmount=(p)=>{const n=Number(amountOf(p));return Number.isFinite(n)?n:null;};
+  const isTargetAmount=(p)=>{const n=numericAmount(p);const unit=String(unitOf(p)||'').toUpperCase();return targetAmounts.includes(n)&&(unit===''||unit.includes('AFN'));};
   const wholesaleOf=(p)=>p?.prices?.wholesale?.amount;
   const retailOf=(p)=>p?.prices?.retail?.amount;
   const eur=(value)=>value!=null&&Number.isFinite(Number(value))?'€'+Number(value).toFixed(2):'—';
@@ -2854,7 +2857,8 @@ discover.addEventListener('click',async()=>{
    '<p><b>Repeated network/amount combinations:</b> '+duplicateDenominations+'. These are flagged for review only; products are not automatically removed.</p>'+
    '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
    '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
-   '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 120, 6153" style="width:100%;padding:12px;font:inherit">'+
+   '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 150, 6153" style="width:100%;padding:12px;font:inherit">'+
+   '<fieldset style="margin:10px 0;padding:10px;border:1px solid #ddd"><legend>Target denominations (AFN)</legend>'+targetAmounts.map(n=>'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" class="targetAmountFilter" value="'+n+'" checked style="width:auto">'+n+'</label>').join('')+'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" id="showOtherAmounts" style="width:auto">Show other denominations</label></fieldset>'+
    '<p id="catalogCount" style="margin:10px 0"></p>'+
    '<button type="button" id="bulkImportDisabled" style="background:#333">Import selected products as DISABLED</button>'+
    '<p style="color:#555;font-size:13px">Bulk import re-verifies each selected product with DT One and uses the existing safe import endpoint. Every imported product stays disabled. Conflicts are skipped and reported.</p>'+
@@ -2872,7 +2876,9 @@ discover.addEventListener('click',async()=>{
   const count=document.getElementById('catalogCount');
   const renderRows=()=>{
    const q=filter.value.trim().toLowerCase();
-   const matches=products.filter(p=>[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q));
+   const selectedAmounts=[...document.querySelectorAll('.targetAmountFilter:checked')].map(el=>Number(el.value));
+   const showOther=document.getElementById('showOtherAmounts').checked;
+   const matches=products.filter(p=>{const textMatch=[operatorOf(p),p?.name,amountOf(p),unitOf(p),p?.id].join(' ').toLowerCase().includes(q);const n=numericAmount(p);const targetMatch=showOther||(!targetAmounts.includes(n)&&selectedAmounts.length===0)||(targetAmounts.includes(n)&&selectedAmounts.includes(n)&&isTargetAmount(p));return textMatch&&targetMatch;});
    count.textContent='Showing '+Math.min(matches.length,100)+' of '+matches.length+' matching products (maximum 100 displayed at once).';
    rows.innerHTML=matches.slice(0,100).map(p=>'<tr>'+
     '<td style="padding:8px;border-bottom:1px solid #eee"><input type="checkbox" class="bulkProductSelect" data-product-id="'+esc(p?.id)+'" aria-label="Select product '+esc(p?.id)+'" style="width:auto"></td>'+
@@ -2885,6 +2891,8 @@ discover.addEventListener('click',async()=>{
    if(!matches.length)rows.innerHTML='<tr><td colspan="7" style="padding:12px">No products match that search.</td></tr>';
   };
   filter.addEventListener('input',renderRows);
+  document.querySelectorAll('.targetAmountFilter').forEach(el=>el.addEventListener('change',renderRows));
+  document.getElementById('showOtherAmounts').addEventListener('change',renderRows);
   renderRows();
   document.getElementById('bulkImportDisabled').addEventListener('click',async()=>{
    if(!key.value){result.textContent='Enter the admin API key first.';return;}
