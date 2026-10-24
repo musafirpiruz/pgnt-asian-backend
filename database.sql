@@ -649,13 +649,7 @@ CREATE TABLE IF NOT EXISTS operator_pricing_settings (
 CREATE INDEX IF NOT EXISTS idx_operator_pricing_country_active
 ON operator_pricing_settings (country, active);
 
-DROP TRIGGER IF EXISTS trg_operator_pricing_updated
-ON operator_pricing_settings;
-
-CREATE TRIGGER trg_operator_pricing_updated
-BEFORE UPDATE ON operator_pricing_settings
-FOR EACH ROW
-EXECUTE FUNCTION pgnt_set_updated_at();
+-- updated_at is set explicitly by the admin API; no trigger is required.
 
 -- =========================================================
 -- 21. FINAL INDEXES
