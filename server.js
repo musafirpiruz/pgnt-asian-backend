@@ -2851,11 +2851,29 @@ discover.addEventListener('click',async()=>{
   const denominationCounts=new Map();
   for(const p of products){const k=denominationKey(p);denominationCounts.set(k,(denominationCounts.get(k)||0)+1);}
   const duplicateDenominations=[...denominationCounts.values()].filter(n=>n>1).length;
+  const networkAliases={
+   AWCC:['AWCC','AFGHAN WIRELESS'],
+   Roshan:['ROSHAN'],
+   Etisalat:['ETISALAT'],
+   Salaam:['SALAAM','SALAM'],
+   ATOMA:['ATOMA']
+  };
+  const coverageRows=Object.entries(networkAliases).map(([network,aliases])=>{
+   const networkProducts=products.filter(p=>aliases.some(alias=>operatorOf(p).toUpperCase().includes(alias)));
+   return '<tr><th style="text-align:left;padding:7px;border-bottom:1px solid #ddd">'+esc(network)+'</th>'+
+    targetAmounts.map(amount=>{
+     const found=networkProducts.filter(p=>numericAmount(p)===amount&&isTargetAmount(p));
+     return '<td style="padding:7px;text-align:center;border-bottom:1px solid #ddd">'+(found.length?'<span title="DT One product ID(s): '+esc(found.map(p=>p.id).join(', '))+'">'+found.length+' found</span>':'—')+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
   result.innerHTML='<section style="background:#f7f7f7;border:1px solid #ddd;border-radius:10px;padding:14px;margin:12px 0">'+
    '<h2 style="margin:0 0 8px">Afghanistan DT One catalog</h2>'+
    '<p><b>Environment:</b> '+esc(data.environment)+' · <b>Products:</b> '+esc(data.resultCount)+' · <b>Provider pages checked:</b> '+esc(data.providerPagesChecked)+'</p>'+
    '<p><b>Repeated network/amount combinations:</b> '+duplicateDenominations+'. These are flagged for review only; products are not automatically removed.</p>'+
    '<p style="color:#555">Read-only pre-production data. No product activation or transaction was performed.</p>'+
+   '<h3>Target denomination coverage (provider results)</h3>'+
+   '<p style="color:#555;font-size:13px">Counts are based only on products returned by the configured DT One catalog search. A dash means no matching product was found in this result set; it does not prove the operator never offers that denomination.</p>'+
+   '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th style="text-align:left;padding:7px;border-bottom:1px solid #ddd">Network</th>'+targetAmounts.map(n=>'<th style="padding:7px;border-bottom:1px solid #ddd">'+n+' AFN</th>').join('')+'</tr></thead><tbody>'+coverageRows+'</tbody></table></div>'+
    '<label for="catalogFilter">Search by network, product name, AFN amount or ID</label>'+
    '<input id="catalogFilter" type="search" placeholder="e.g. Roshan, 150, 6153" style="width:100%;padding:12px;font:inherit">'+
    '<fieldset style="margin:10px 0;padding:10px;border:1px solid #ddd"><legend>Target denominations (AFN)</legend>'+targetAmounts.map(n=>'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" class="targetAmountFilter" value="'+n+'" checked style="width:auto">'+n+'</label>').join('')+'<label style="display:inline-flex;align-items:center;gap:5px;margin:5px 12px 5px 0"><input type="checkbox" id="showOtherAmounts" style="width:auto">Show other denominations</label></fieldset>'+
