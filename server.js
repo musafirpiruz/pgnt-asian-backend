@@ -3561,6 +3561,7 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
       `SELECT
          country,
          fee_eur_cents,
+         COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
          afn_per_eur,
          bonus_percent,
          stripe_fee_percent,
