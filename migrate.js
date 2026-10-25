@@ -493,6 +493,38 @@ async function runMigration() {
 
 
 
+    // Version 012 adds a country-neutral local-currency rate column.
+    // Copy each country's existing saved value as-is; never infer or overwrite rates.
+    const localCurrencyRateVersion = "012_country_local_currency_rates";
+    const localCurrencyRateCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [localCurrencyRateVersion]
+    );
+    if (localCurrencyRateCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE pricing_settings
+            ADD COLUMN IF NOT EXISTS local_currency_per_eur NUMERIC(12,4)
+              CHECK (local_currency_per_eur IS NULL OR local_currency_per_eur > 0);
+          UPDATE pricing_settings
+             SET local_currency_per_eur = afn_per_eur
+           WHERE local_currency_per_eur IS NULL
+             AND afn_per_eur IS NOT NULL;
+          INSERT INTO schema_migrations (version)
+          VALUES ('012_country_local_currency_rates')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 012_country_local_currency_rates completed; existing rate values preserved.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 012_country_local_currency_rates is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
