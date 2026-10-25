@@ -548,6 +548,7 @@ async function getPricingSettings(client, country) {
     `SELECT
        country,
        fee_eur_cents,
+       COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
        afn_per_eur,
        bonus_percent,
        stripe_fee_percent,
@@ -580,9 +581,9 @@ async function getPricingSettings(client, country) {
     'fee in EUR cents'
   );
 
-  const afnPerEur = Number(settings.afn_per_eur);
-  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0) {
-    throw new Error('Invalid AFN/EUR exchange rate.');
+  const localCurrencyPerEur = Number(settings.local_currency_per_eur);
+  if (!Number.isFinite(localCurrencyPerEur) || localCurrencyPerEur <= 0) {
+    throw new Error('Invalid local-currency-per-EUR exchange rate.');
   }
 
   const bonusPercent = Number(settings.bonus_percent);
@@ -603,7 +604,7 @@ async function getPricingSettings(client, country) {
     country: code,
     currency: 'EUR',
     feeCents,
-    afnPerEur,
+    localCurrencyPerEur,
     bonusPercent,
     stripeFeePercent,
     stripeFixedFeeCents,
@@ -2799,24 +2800,24 @@ loadPricing.addEventListener('click',async()=>{
   if(!saved)throw new Error('No pricing settings found for '+selectedCountry+'. Run the latest backend migration first.');
   loadedCountryPricing=saved;
   feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
-  afnRate.value=Number(saved.afn_per_eur);
+  afnRate.value=Number(saved.local_currency_per_eur ?? saved.afn_per_eur);
   bonusPercent.value=Number(saved.bonus_percent);
   stripeFeePercent.value=Number(saved.stripe_fee_percent);
   stripeFixedFee.value=(Number(saved.stripe_fixed_fee_cents)/100).toFixed(2);
   pricingActive.checked=saved.active===true;
-  result.textContent=JSON.stringify({loaded:true,country:saved.country,localCurrency:countryCurrencies[saved.country],appFeeEur:Number(saved.fee_eur_cents)/100,localCurrencyPerEur:Number(saved.afn_per_eur),legacyBonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
+  result.textContent=JSON.stringify({loaded:true,country:saved.country,localCurrency:countryCurrencies[saved.country],appFeeEur:Number(saved.fee_eur_cents)/100,localCurrencyPerEur:Number(saved.local_currency_per_eur ?? saved.afn_per_eur),legacyBonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
  }catch(error){result.textContent='Could not load pricing: '+error.message;}
 });
 savePricing.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  if(!loadedCountryPricing||loadedCountryPricing.country!==pricingCountry.value){result.textContent='First load the selected country settings and review them.';return;}
  const fee=Number(feeEur.value),rate=Number(afnRate.value),bonus=Number(bonusPercent.value),stripeRate=Number(stripeFeePercent.value),stripeFixed=Number(stripeFixedFee.value);
- if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100||!Number.isFinite(stripeRate)||stripeRate<0||stripeRate>=100||!Number.isFinite(stripeFixed)||stripeFixed<0||stripeFixed>100){result.textContent='Check app fee, exchange rate, legacy bonus, and Stripe fee values.';return;}
+ if(!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(rate)||rate<=0||!Number.isFinite(bonus)||bonus<0||bonus>100||!Number.isFinite(stripeRate)||stripeRate<0||stripeRate>=100||!Number.isFinite(stripeFixed)||stripeFixed<0||stripeFixed>100){result.textContent='Check app fee, local-currency-per-EUR rate, and Stripe fee values.';return;}
  const selectedCountry=pricingCountry.value;
  if(!confirm('Save '+selectedCountry+' pricing settings? App fee: €'+fee.toFixed(2)+', '+countryCurrencies[selectedCountry]+'/EUR: '+rate+', estimated Stripe fee: '+stripeRate+'% + €'+stripeFixed.toFixed(2)+'. General bonus remains disabled. This will not activate any product.'))return;
  result.textContent='Saving selected country pricing settings…';
  try{
-  const data=await adminRequest('/api/admin/pricing/'+selectedCountry,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),afnPerEur:rate,bonusPercent:0,stripeFeePercent:stripeRate,stripeFixedFeeCents:Math.round(stripeFixed*100),active:pricingActive.checked})});
+  const data=await adminRequest('/api/admin/pricing/'+selectedCountry,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({feeEurCents:Math.round(fee*100),localCurrencyPerEur:rate,bonusPercent:0,stripeFeePercent:stripeRate,stripeFixedFeeCents:Math.round(stripeFixed*100),active:pricingActive.checked})});
   loadedCountryPricing=data.pricing;
   result.textContent=JSON.stringify({saved:true,pricing:data.pricing,note:data.note},null,2);
  }catch(error){result.textContent='Could not save pricing: '+error.message;}
@@ -3606,7 +3607,11 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
 
   const body = req.body || {};
   const feeCents = Number(body.feeEurCents);
-  const afnPerEur = Number(body.afnPerEur);
+  // Accept the legacy request key for older admin clients, but store the
+  // value in the country-neutral field. The value is never auto-converted.
+  const localCurrencyPerEur = Number(
+    body.localCurrencyPerEur ?? body.afnPerEur
+  );
   const bonusPercent = Number(body.bonusPercent);
   const stripeFeePercent = Number(body.stripeFeePercent);
   const stripeFixedFeeCents = Number(body.stripeFixedFeeCents);
@@ -3621,8 +3626,8 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
     });
   }
 
-  if (!Number.isFinite(afnPerEur) || afnPerEur <= 0 || afnPerEur > 1000000) {
-    return res.status(400).json({ error: 'afnPerEur must be a positive number no greater than 1000000.' });
+  if (!Number.isFinite(localCurrencyPerEur) || localCurrencyPerEur <= 0 || localCurrencyPerEur > 1000000) {
+    return res.status(400).json({ error: 'localCurrencyPerEur must be a positive number no greater than 1000000.' });
   }
 
   if (
@@ -3651,22 +3656,24 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO pricing_settings (
-         country, fee_eur_cents, afn_per_eur, bonus_percent,
+         country, fee_eur_cents, local_currency_per_eur, afn_per_eur, bonus_percent,
          stripe_fee_percent, stripe_fixed_fee_cents, active, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       VALUES ($1, $2, $3, $3, $4, $5, $6, $7, NOW())
        ON CONFLICT (country)
        DO UPDATE SET
          fee_eur_cents = EXCLUDED.fee_eur_cents,
+         local_currency_per_eur = EXCLUDED.local_currency_per_eur,
          afn_per_eur = EXCLUDED.afn_per_eur,
          bonus_percent = EXCLUDED.bonus_percent,
          stripe_fee_percent = EXCLUDED.stripe_fee_percent,
          stripe_fixed_fee_cents = EXCLUDED.stripe_fixed_fee_cents,
          active = EXCLUDED.active,
          updated_at = NOW()
-       RETURNING country, fee_eur_cents, afn_per_eur, bonus_percent,
-                 stripe_fee_percent, stripe_fixed_fee_cents, active, updated_at`,
-      [country, feeCents, afnPerEur, bonusPercent, stripeFeePercent, stripeFixedFeeCents, body.active]
+       RETURNING country, fee_eur_cents, local_currency_per_eur,
+                 afn_per_eur, bonus_percent, stripe_fee_percent,
+                 stripe_fixed_fee_cents, active, updated_at`,
+      [country, feeCents, localCurrencyPerEur, bonusPercent, stripeFeePercent, stripeFixedFeeCents, body.active]
     );
 
     return res.json({
