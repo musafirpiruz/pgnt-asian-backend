@@ -4216,10 +4216,14 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
       [orderId, Number(order.charge_cents), reason]
     );
 
+    // Persist the unique reservation BEFORE calling Stripe. If Stripe succeeds
+    // but a later database write fails, the reservation survives and blocks a
+    // blind second refund attempt until reconciliation.
+    await client.query('COMMIT');
+    transactionOpen = false;
+
     let refund;
     try {
-      // Stable idempotency key plus the open row lock prevents concurrent
-      // admin requests and callback status changes during this operation.
       refund = await stripe.refunds.create(
         {
           payment_intent: order.stripe_payment_intent_id,
@@ -4229,18 +4233,35 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
         { idempotencyKey: `pgnt-refund-${orderId}` }
       );
     } catch (stripeError) {
-      await client.query(
-        `UPDATE refunds SET status = 'needs_review', reason = $1 WHERE order_id = $2`,
-        [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
-      );
-      await client.query('COMMIT');
-      transactionOpen = false;
+      // Keep the durable reservation even if reconciliation-state persistence
+      // fails; the existing pending row still prevents automatic retries.
+      try {
+        await client.query('BEGIN');
+        transactionOpen = true;
+        await client.query(
+          `UPDATE refunds SET status = 'needs_review', reason = $1 WHERE order_id = $2`,
+          [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
+        );
+        await client.query('COMMIT');
+        transactionOpen = false;
+      } catch (stateError) {
+        if (transactionOpen) {
+          try { await client.query('ROLLBACK'); } catch (_) {}
+          transactionOpen = false;
+        }
+        console.error('Could not persist Stripe refund reconciliation state:', stateError.message);
+      }
       console.error('Stripe refund outcome requires reconciliation:', stripeError.message);
       return res.status(502).json({
         error: 'Stripe refund outcome is not confirmed. Check Stripe Dashboard before any retry.',
       });
     }
 
+    // Persist Stripe's response in a separate transaction. A database failure
+    // leaves the committed pending reservation in place rather than deleting
+    // evidence of a possibly successful external refund.
+    await client.query('BEGIN');
+    transactionOpen = true;
     await client.query(
       `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
          status = $3, reason = $4 WHERE order_id = $5`,
