@@ -33,6 +33,10 @@ test('dashboard route serves the separate HTML with no-store and restrictive CSP
   assert.match(server, /admin-panel\.html/);
 });
 
+test('DT One status lookup rejects whitespace in external IDs', () => {
+  assert.ok(server.includes("/\\s/.test(externalId)"));
+});
+
 test('every dashboard data endpoint is a GET protected by admin authentication', () => {
   assert.ok(server.includes("app.get('/api/admin/orders/review', requireAdmin,"));
   assert.ok(server.includes("app.get('/api/admin/orders/:orderId/payment-status', requireAdmin,"));
