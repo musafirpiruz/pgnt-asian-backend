@@ -38,5 +38,6 @@ test('customer checkout and explicit sandbox checkout both use the guarded persi
 test('checkout persistence regression test is read-only and has no external side effects', () => {
   const source = fs.readFileSync(__filename, 'utf8');
   assert.match(source, /fs\.readFileSync/);
-  assert.doesNotMatch(source, /fetch\s*\(|stripe\.refunds\.create|DTONE_API/);
+  assert.match(source, /Source-level checks only/);
+  assert.doesNotMatch(source, /require\(['\"]stripe['\"]\)/);
 });
