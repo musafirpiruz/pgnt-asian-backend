@@ -2062,6 +2062,45 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     const order = result.rows[0];
 
+    // A durable refund reservation wins over later provider callbacks. Once an
+    // admin has reserved a refund, a delayed success callback must not race the
+    // Stripe refund and turn the same order into a delivered top-up.
+    const refundReservation = await client.query(
+      `SELECT status FROM refunds WHERE order_id = $1 LIMIT 1`,
+      [orderId]
+    );
+    if (refundReservation.rowCount === 1) {
+      // Persist a minimal reconciliation record before acknowledging this
+      // callback. Do not store the raw provider payload, which may contain PII.
+      // Deduplicate per order as well as provider transaction/status, so an ID reused across orders cannot hide review evidence.
+      const refundStatus = String(refundReservation.rows[0].status || 'unknown');
+      const reviewEventId = crypto.createHash('sha256')
+        .update(`${orderId}:${providerTransactionId}:${providerStatus}`, 'utf8')
+        .digest('hex');
+      await client.query(
+        `INSERT INTO webhook_events (provider, event_id, payload)
+         VALUES ('dtone-refund-review', $1, $2::jsonb)
+         ON CONFLICT (provider, event_id) DO NOTHING`,
+        [reviewEventId, JSON.stringify({
+          orderId,
+          providerTransactionId,
+          providerStatus,
+          refundStatus,
+        })]
+      );
+      await client.query('COMMIT');
+      console.warn('DT One callback recorded for reconciliation; order state unchanged due to refund reservation.', {
+        normalizedProviderStatus: providerStatus,
+        refundStatus,
+      });
+      return res.status(200).json({
+        received: true,
+        status: 'refund_review',
+        ignored: true,
+        recordedForReview: true,
+      });
+    }
+
     // Ordinary customer orders must have verified Stripe payment evidence
     // before a provider callback can change their state. The only exception is
     // the isolated ATOMA-SANDBOX-TEST route, which is explicitly pre-production
@@ -4110,9 +4149,9 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
   let transactionOpen = false;
 
   try {
-    // Keep the order lock until Stripe has returned and both database
-    // records have been updated. A DT One callback cannot change the order
-    // to completed between our eligibility check and refund finalization.
+    // Lock and validate the order, then commit the unique refund reservation
+    // before the external Stripe call. The reservation blocks a concurrent
+    // refund request even after this transaction releases the order lock.
     await client.query('BEGIN');
     transactionOpen = true;
 
@@ -4216,57 +4255,23 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
       [orderId, Number(order.charge_cents), reason]
     );
 
-    let refund;
-    try {
-      // Stable idempotency key plus the open row lock prevents concurrent
-      // admin requests and callback status changes during this operation.
-      refund = await stripe.refunds.create(
-        {
-          payment_intent: order.stripe_payment_intent_id,
-          reason: 'requested_by_customer',
-          metadata: { orderId, adminReason: reason },
-        },
-        { idempotencyKey: `pgnt-refund-${orderId}` }
-      );
-    } catch (stripeError) {
-      await client.query(
-        `UPDATE refunds SET status = 'needs_review', reason = $1 WHERE order_id = $2`,
-        [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
-      );
-      await client.query('COMMIT');
-      transactionOpen = false;
-      console.error('Stripe refund outcome requires reconciliation:', stripeError.message);
+    // Persist the unique reservation BEFORE calling Stripe. If Stripe succeeds
+    // but a later database write fails, the reservation survives and blocks a
+    // blind second refund attempt until reconciliation.
+    await client.query('COMMIT');
+    transactionOpen = false;
+
+    const outcome = await executeReservedRefund({
+      client, stripe, order, orderId, reason,
+    });
+    if (outcome.kind === 'needs_review') {
       return res.status(502).json({
         error: 'Stripe refund outcome is not confirmed. Check Stripe Dashboard before any retry.',
       });
     }
-
-    await client.query(
-      `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
-         status = $3, reason = $4 WHERE order_id = $5`,
-      [refund.id, refund.amount, refund.status, reason, orderId]
-    );
-
-    if (refund.status === 'succeeded') {
-      await client.query(
-        `UPDATE orders SET status = 'refunded',
-           refunded_at = COALESCE(refunded_at, NOW()), updated_at = NOW()
-         WHERE order_id = $1 AND status = 'topup_review'`,
-        [orderId]
-      );
-    } else {
-      await client.query(
-        `UPDATE orders SET status = 'topup_review', updated_at = NOW()
-         WHERE order_id = $1 AND status = 'topup_review'`,
-        [orderId]
-      );
-    }
-
-    await client.query('COMMIT');
-    transactionOpen = false;
     return res.status(200).json({
-      orderId, refundId: refund.id, status: refund.status,
-      amountCents: refund.amount, currency: refund.currency,
+      orderId, refundId: outcome.refund.id, status: outcome.refund.status,
+      amountCents: outcome.refund.amount, currency: outcome.refund.currency,
     });
   } catch (error) {
     if (transactionOpen) {

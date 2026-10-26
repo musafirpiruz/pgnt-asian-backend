@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const refundFlow = fs.readFileSync(path.join(__dirname, '..', 'refund-flow.js'), 'utf8');
 const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
 
 const callbackStart = server.indexOf("app.post('/api/dtone/callback'");
@@ -45,7 +46,7 @@ test('refund is admin-only and verifies the canonical paid EUR PaymentIntent', (
 test('completed top-ups and existing ambiguous refunds cannot be refunded again', () => {
   assert.match(refundRoute, /order\.status === 'completed' \|\| order\.status === 'refunded'/);
   assert.match(refundRoute, /A refund record already exists\. Reconcile it in Stripe Dashboard before retrying/);
-  assert.match(refundRoute, /idempotencyKey: `pgnt-refund-\$\{orderId\}`/);
+  assert.match(refundFlow, /idempotencyKey: `pgnt-refund-\$\{orderId\}`/);
 });
 
 test('customer app maps review and refund outcomes to visible transaction states', () => {
@@ -77,7 +78,7 @@ test('customer order-status API exposes refund state without exposing the refund
 });
 
 test('ambiguous Stripe refund outcome is marked for reconciliation, not assumed pending or successful', () => {
-  assert.match(refundRoute, /UPDATE refunds SET status = 'needs_review'/);
+  assert.match(refundFlow, /UPDATE refunds SET status = 'needs_review'/);
   assert.match(refundRoute, /Stripe refund outcome is not confirmed/);
 });
 
@@ -111,4 +112,22 @@ test('refund status labels are localized for all six supported app languages', (
     assert.match(block, /'refunded':/);
     assert.match(block, /'refundNeedsReview':/);
   }
+});
+
+
+test('refund reservation is committed before the external Stripe refund request', () => {
+  const reservationInsert = refundRoute.indexOf("INSERT INTO refunds (order_id, amount_cents, status, reason)");
+  const reservationCommit = refundRoute.indexOf("await client.query('COMMIT')", reservationInsert);
+  const stripeCall = refundRoute.indexOf("executeReservedRefund", reservationInsert);
+  assert.ok(reservationInsert >= 0, 'durable reservation insert must exist');
+  assert.ok(reservationCommit > reservationInsert, 'reservation must commit before Stripe is called');
+  assert.ok(stripeCall > reservationCommit, 'Stripe call must follow the durable reservation commit');
+  assert.match(refundFlow, /initial reservation was committed by the route before this helper/);
+});
+
+test('DT One callbacks cannot change an order after a refund reservation exists', () => {
+  assert.match(callback, /SELECT status FROM refunds WHERE order_id = \$1 LIMIT 1/);
+  assert.match(callback, /if \(refundReservation\.rowCount === 1\)/);
+  assert.match(callback, /status: 'refund_review'/);
+  assert.match(callback, /ignored: true/);
 });
