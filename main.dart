@@ -220,11 +220,11 @@ String statusLabel(
     case TransactionStatus.underReview:
       return 'Under review';
     case TransactionStatus.refundPending:
-      return 'Refund pending';
+      return tr(languageCode, 'refundPending');
     case TransactionStatus.refunded:
-      return 'Refunded';
+      return tr(languageCode, 'refunded');
     case TransactionStatus.refundNeedsReview:
-      return 'Refund needs review';
+      return tr(languageCode, 'refundNeedsReview');
   }
 }
 
@@ -398,6 +398,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'بریالۍ',
     'failed': 'ناکامه',
     'review': 'تر ارزونې لاندې',
+    'refundPending': 'د بېرته ورکړې په تمه',
+    'refunded': 'پیسې بېرته ورکړل شوې',
+    'refundNeedsReview': 'د بېرته ورکړې ارزونه اړینه ده',
     'getHelp': 'مرسته وغواړئ',
     'faq': 'عامې پوښتنې',
     'contactSupport': 'له ملاتړ سره اړیکه',
@@ -447,6 +450,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'موفق',
     'failed': 'ناموفق',
     'review': 'در حال بررسی',
+    'refundPending': 'در انتظار بازپرداخت',
+    'refunded': 'بازپرداخت شد',
+    'refundNeedsReview': 'نیاز به بررسی بازپرداخت',
     'getHelp': 'دریافت کمک',
     'faq': 'پرسش‌های متداول',
     'contactSupport': 'تماس با پشتیبانی',
@@ -496,6 +502,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'Successful',
     'failed': 'Failed',
     'review': 'Under Review',
+    'refundPending': 'Refund pending',
+    'refunded': 'Refunded',
+    'refundNeedsReview': 'Refund needs review',
     'getHelp': 'Get Help',
     'faq': 'Frequently Asked Questions',
     'contactSupport': 'Contact Support',
@@ -545,6 +554,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'کامیاب',
     'failed': 'ناکام',
     'review': 'جائزے کے تحت',
+    'refundPending': 'رقم واپسی زیرِ انتظار',
+    'refunded': 'رقم واپس کر دی گئی',
+    'refundNeedsReview': 'رقم واپسی کا جائزہ درکار ہے',
     'getHelp': 'مدد حاصل کریں',
     'faq': 'عام سوالات',
     'contactSupport': 'سپورٹ سے رابطہ کریں',
@@ -594,6 +606,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'सफल',
     'failed': 'विफल',
     'review': 'जाँच जारी है',
+    'refundPending': 'रिफंड लंबित',
+    'refunded': 'रिफंड हो गया',
+    'refundNeedsReview': 'रिफंड की समीक्षा आवश्यक',
     'getHelp': 'मदद लें',
     'faq': 'अक्सर पूछे जाने वाले प्रश्न',
     'contactSupport': 'सपोर्ट से संपर्क करें',
@@ -643,6 +658,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'সফল',
     'failed': 'ব্যর্থ',
     'review': 'পর্যালোচনাধীন',
+    'refundPending': 'রিফান্ড অপেক্ষমাণ',
+    'refunded': 'রিফান্ড সম্পন্ন',
+    'refundNeedsReview': 'রিফান্ড পর্যালোচনা প্রয়োজন',
     'getHelp': 'সাহায্য নিন',
     'faq': 'সাধারণ প্রশ্ন',
     'contactSupport': 'সাপোর্টে যোগাযোগ করুন',
