@@ -81,6 +81,22 @@ test('non-succeeded Stripe response is recorded without marking order refunded',
   assert.ok(!client.calls.some(c => c.sql.startsWith('UPDATE orders SET status = \'refunded\'')));
 });
 
+test('failed Stripe refund response is held for reconciliation and not reported as completed', async () => {
+  const client = fakeClient();
+  const stripe = { refunds: { async create() {
+    return { id: 're_failed', amount: 268, status: 'failed', currency: 'eur' };
+  } } };
+  const result = await executeReservedRefund({
+    client, stripe, order, orderId: 'order-failed', reason: 'failed topup', logger: quietLogger,
+  });
+  assert.equal(result.kind, 'needs_review');
+  const refundUpdate = client.calls.find(c => c.sql.startsWith('UPDATE refunds SET stripe_refund_id'));
+  assert.equal(refundUpdate.params[2], 'needs_review');
+  assert.match(refundUpdate.params[3], /status failed; manual reconciliation required/);
+  assert.ok(client.calls.some(c => c.sql.startsWith("UPDATE orders SET status = 'topup_review'")));
+  assert.ok(!client.calls.some(c => c.sql.startsWith("UPDATE orders SET status = 'refunded'")));
+});
+
 test('successful Stripe response with a partial amount is held for reconciliation', async () => {
   const client = fakeClient();
   const stripe = { refunds: { async create() {
