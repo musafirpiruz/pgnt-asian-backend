@@ -4117,9 +4117,30 @@ app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req
       lte: orderCreatedSeconds + windowSeconds,
     };
 
+    // Scan up to five pages per resource (500 records maximum each).
+    // Return pagination flags so the report never implies the window was fully
+    // scanned when Stripe reports more records than the bounded scan covered.
+    async function listCandidates(listResource) {
+      const data = [];
+      let startingAfter;
+      let hasMore = false;
+      for (let page = 0; page < 5; page += 1) {
+        const pageResult = await listResource.list({
+          limit: 100,
+          created,
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        });
+        data.push(...pageResult.data);
+        hasMore = pageResult.has_more;
+        if (!hasMore || pageResult.data.length === 0) break;
+        startingAfter = pageResult.data[pageResult.data.length - 1].id;
+      }
+      return { data, hasMore };
+    }
+
     const [sessions, intents] = await Promise.all([
-      stripe.checkout.sessions.list({ limit: 100, created }),
-      stripe.paymentIntents.list({ limit: 100, created }),
+      listCandidates(stripe.checkout.sessions),
+      listCandidates(stripe.paymentIntents),
     ]);
 
     const sessionCandidates = sessions.data
@@ -4172,12 +4193,12 @@ app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req
       },
       checkoutSessions: {
         returned: sessionCandidates.length,
-        hasMoreInWindow: sessions.has_more,
+        hasMoreInWindow: sessions.hasMore,
         candidates: sessionCandidates,
       },
       paymentIntents: {
         returned: intentCandidates.length,
-        hasMoreInWindow: intents.has_more,
+        hasMoreInWindow: intents.hasMore,
         candidates: intentCandidates,
       },
       safety: {
