@@ -2072,9 +2072,9 @@ app.post('/api/dtone/callback', async (req, res) => {
     if (refundReservation.rowCount === 1) {
       // Persist a minimal reconciliation record before acknowledging this
       // callback. Do not store the raw provider payload, which may contain PII.
-      // A repeated transaction/status pair is deduplicated by the unique key.
+      // Deduplicate per order as well as provider transaction/status, so an ID reused across orders cannot hide review evidence.
       const refundStatus = String(refundReservation.rows[0].status || 'unknown');
-      const reviewEventId = `${providerTransactionId}:${providerStatus}`.slice(0, 255);
+      const reviewEventId = `${orderId}:${providerTransactionId}:${providerStatus}`.slice(0, 255);
       await client.query(
         `INSERT INTO webhook_events (provider, event_id, payload)
          VALUES ('dtone-refund-review', $1, $2::jsonb)
