@@ -122,7 +122,7 @@ test('refund reservation is committed before the external Stripe refund request'
   assert.ok(reservationInsert >= 0, 'durable reservation insert must exist');
   assert.ok(reservationCommit > reservationInsert, 'reservation must commit before Stripe is called');
   assert.ok(stripeCall > reservationCommit, 'Stripe call must follow the durable reservation commit');
-  assert.match(refundRoute, /leaves the committed pending reservation in place rather than deleting/);
+  assert.match(refundFlow, /leaves the committed pending reservation in place rather than deleting/);
 });
 
 test('DT One callbacks cannot change an order after a refund reservation exists', () => {
