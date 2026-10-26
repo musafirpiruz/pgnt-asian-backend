@@ -13,6 +13,7 @@ on:
       - fix/persist-order-history-secure-tokens
       - fix/referral-first-topup-rewards
       - fix/android-internet-permission
+      - fix/refund-statuses-mainline
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -89,9 +90,9 @@ jobs:
           cd "$GITHUB_WORKSPACE"
 
           if [ ! -d android ]; then
-            flutter create \
-              --platforms=android \
-              --project-name=pgnt_asian_topup \
+            flutter create \\
+              --platforms=android \\
+              --project-name=pgnt_asian_topup \\
               .
           fi
 
@@ -119,8 +120,8 @@ jobs:
           ]
           for permission in required:
               if permission not in text:
-                  tag = f'    <uses-permission android:name="{permission}" />\n'
-                  match = re.search(r"(?m)^\s*<application\b", text)
+                  tag = f'    <uses-permission android:name="{permission}" />\\n'
+                  match = re.search(r"(?m)^\\s*<application\\b", text)
                   if not match:
                       raise SystemExit("ERROR: <application> tag not found in AndroidManifest.xml")
                   text = text[:match.start()] + tag + text[match.start():]
@@ -142,7 +143,7 @@ jobs:
 
       - name: Build release APK
         run: |
-          flutter build apk --release \
+          flutter build apk --release \\
             --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
 
       - name: Verify APK
