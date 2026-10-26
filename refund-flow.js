@@ -79,7 +79,9 @@ async function executeReservedRefund({ client, stripe, order, orderId, reason, l
 
     await client.query('COMMIT');
     transactionOpen = false;
-    return { kind: needsReview ? 'needs_review' : 'completed', refund };
+    if (needsReview) return { kind: 'needs_review', refund };
+    if (normalizedRefundStatus === 'pending') return { kind: 'pending', refund };
+    return { kind: 'completed', refund };
   } catch (error) {
     if (transactionOpen) {
       try { await client.query('ROLLBACK'); } catch (_) {}
