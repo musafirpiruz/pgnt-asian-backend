@@ -89,3 +89,28 @@ test('read-only payment status does not verify association when Stripe objects a
   assert.match(paymentStatusRoute, /Boolean\(session \|\| paymentIntent\)/);
   assert.match(paymentStatusRoute, /const associationVerified/);
 });
+
+
+const dtoneCallbackStart = server.indexOf("app.post('/api/dtone/callback'");
+const dtoneCallbackEnd = server.indexOf("\napp.", dtoneCallbackStart + 1);
+const dtoneCallbackRoute = dtoneCallbackStart >= 0
+  ? server.slice(dtoneCallbackStart, dtoneCallbackEnd > dtoneCallbackStart ? dtoneCallbackEnd : undefined)
+  : '';
+
+test('DT One callbacks blocked by a refund reservation are durably recorded for reconciliation without raw payload', () => {
+  const reservationGuard = dtoneCallbackRoute.indexOf('if (refundReservation.rowCount === 1)');
+  const auditInsert = dtoneCallbackRoute.indexOf("INSERT INTO webhook_events (provider, event_id, payload)");
+  const commit = dtoneCallbackRoute.indexOf("await client.query('COMMIT')", reservationGuard);
+  const acknowledgement = dtoneCallbackRoute.indexOf('recordedForReview: true', reservationGuard);
+  assert.notEqual(reservationGuard, -1);
+  assert.notEqual(auditInsert, -1);
+  assert.notEqual(commit, -1);
+  assert.notEqual(acknowledgement, -1);
+  assert.ok(reservationGuard < auditInsert && auditInsert < commit && commit < acknowledgement,
+    'callback review evidence must be persisted before the callback is acknowledged');
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /ON CONFLICT \(provider, event_id\) DO NOTHING/);
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /providerTransactionId/);
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /providerStatus/);
+  assert.doesNotMatch(dtoneCallbackRoute.slice(reservationGuard, commit), /JSON\.stringify\(body\)/,
+    'do not persist the raw provider payload, which may contain personal data');
+});
