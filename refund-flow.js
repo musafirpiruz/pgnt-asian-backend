@@ -36,6 +36,18 @@ async function executeReservedRefund({ client, stripe, order, orderId, reason, l
     return { kind: 'needs_review' };
   }
 
+  // Do not mark the order refunded unless Stripe confirms a full EUR refund
+  // matching the original captured charge. A prior partial refund or an
+  // unexpected currency must be reconciled manually rather than treated as paid back.
+  const refundMatchesOrder =
+    Number(refund.amount) === Number(order.charge_cents) &&
+    String(refund.currency || '').toLowerCase() === 'eur';
+  const needsReview = !refundMatchesOrder;
+  const persistedStatus = needsReview ? 'needs_review' : refund.status;
+  const persistedReason = needsReview
+    ? `Stripe refund mismatch: expected ${Number(order.charge_cents)} EUR cents; received ${Number(refund.amount)} ${String(refund.currency || 'unknown').toUpperCase()}. Manual reconciliation required.`
+    : reason;
+
   let transactionOpen = false;
   try {
     await client.query('BEGIN');
@@ -43,10 +55,10 @@ async function executeReservedRefund({ client, stripe, order, orderId, reason, l
     await client.query(
       `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
          status = $3, reason = $4 WHERE order_id = $5`,
-      [refund.id, refund.amount, refund.status, reason, orderId]
+      [refund.id, refund.amount, persistedStatus, persistedReason, orderId]
     );
 
-    if (refund.status === 'succeeded') {
+    if (refund.status === 'succeeded' && !needsReview) {
       await client.query(
         `UPDATE orders SET status = 'refunded',
            refunded_at = COALESCE(refunded_at, NOW()), updated_at = NOW()
@@ -63,7 +75,7 @@ async function executeReservedRefund({ client, stripe, order, orderId, reason, l
 
     await client.query('COMMIT');
     transactionOpen = false;
-    return { kind: 'completed', refund };
+    return { kind: needsReview ? 'needs_review' : 'completed', refund };
   } catch (error) {
     if (transactionOpen) {
       try { await client.query('ROLLBACK'); } catch (_) {}
