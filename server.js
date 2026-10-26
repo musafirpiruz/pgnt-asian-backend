@@ -4230,7 +4230,7 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
       );
     } catch (stripeError) {
       await client.query(
-        `UPDATE refunds SET status = 'pending', reason = $1 WHERE order_id = $2`,
+        `UPDATE refunds SET status = 'needs_review', reason = $1 WHERE order_id = $2`,
         [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
       );
       await client.query('COMMIT');
@@ -4308,9 +4308,10 @@ app.get('/api/orders/:orderId/status', async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT order_id, country, currency, charge_cents, status,
-              created_at, updated_at, order_access_token_hash
-       FROM orders WHERE order_id = $1 LIMIT 1`,
+      `SELECT o.order_id, o.country, o.currency, o.charge_cents, o.status,
+              o.created_at, o.updated_at, o.order_access_token_hash,
+              (SELECT r.status FROM refunds r WHERE r.order_id = o.order_id LIMIT 1) AS refund_status
+       FROM orders o WHERE o.order_id = $1 LIMIT 1`,
       [orderId]
     );
 
@@ -4332,6 +4333,7 @@ app.get('/api/orders/:orderId/status', async (req, res) => {
       amountCents: Number(order.charge_cents),
       amountFormatted: formatEuro(Number(order.charge_cents)),
       status: order.status,
+      refundStatus: order.refund_status || null,
       createdAt: order.created_at,
       updatedAt: order.updated_at,
     });
