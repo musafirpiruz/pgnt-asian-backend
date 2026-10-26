@@ -4269,7 +4269,8 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
         error: 'Stripe refund outcome is not confirmed. Check Stripe Dashboard before any retry.',
       });
     }
-    return res.status(200).json({
+    const responseStatus = outcome.kind === 'pending' ? 202 : 200;
+    return res.status(responseStatus).json({
       orderId, refundId: outcome.refund.id, status: outcome.refund.status,
       amountCents: outcome.refund.amount, currency: outcome.refund.currency,
     });
