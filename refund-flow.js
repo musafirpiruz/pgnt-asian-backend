@@ -42,11 +42,15 @@ async function executeReservedRefund({ client, stripe, order, orderId, reason, l
   const refundMatchesOrder =
     Number(refund.amount) === Number(order.charge_cents) &&
     String(refund.currency || '').toLowerCase() === 'eur';
-  const needsReview = !refundMatchesOrder;
-  const persistedStatus = needsReview ? 'needs_review' : refund.status;
-  const persistedReason = needsReview
+  const normalizedRefundStatus = String(refund.status || '').toLowerCase();
+  const needsReview = !refundMatchesOrder ||
+    !['succeeded', 'pending'].includes(normalizedRefundStatus);
+  const persistedStatus = needsReview ? 'needs_review' : normalizedRefundStatus;
+  const persistedReason = !refundMatchesOrder
     ? `Stripe refund mismatch: expected ${Number(order.charge_cents)} EUR cents; received ${Number(refund.amount)} ${String(refund.currency || 'unknown').toUpperCase()}. Manual reconciliation required.`
-    : reason;
+    : needsReview
+      ? `Stripe refund returned status ${normalizedRefundStatus || 'unknown'}; manual reconciliation required.`
+      : reason;
 
   let transactionOpen = false;
   try {
