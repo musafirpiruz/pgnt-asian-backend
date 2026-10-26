@@ -1871,7 +1871,7 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
   }
 
   const externalId = String(req.query.external_id || '').trim();
-  if (!externalId || externalId.length > 40 || /\\s/.test(externalId)) {
+  if (!externalId || externalId.length > 40 || /\s/.test(externalId)) {
     return res.status(400).json({ error: 'A valid external_id is required.' });
   }
 
