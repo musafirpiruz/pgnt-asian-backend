@@ -2074,7 +2074,9 @@ app.post('/api/dtone/callback', async (req, res) => {
       // callback. Do not store the raw provider payload, which may contain PII.
       // Deduplicate per order as well as provider transaction/status, so an ID reused across orders cannot hide review evidence.
       const refundStatus = String(refundReservation.rows[0].status || 'unknown');
-      const reviewEventId = `${orderId}:${providerTransactionId}:${providerStatus}`.slice(0, 255);
+      const reviewEventId = crypto.createHash('sha256')
+        .update(`${orderId}:${providerTransactionId}:${providerStatus}`, 'utf8')
+        .digest('hex');
       await client.query(
         `INSERT INTO webhook_events (provider, event_id, payload)
          VALUES ('dtone-refund-review', $1, $2::jsonb)
