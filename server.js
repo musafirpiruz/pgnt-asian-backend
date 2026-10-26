@@ -2062,6 +2062,26 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     const order = result.rows[0];
 
+    // A durable refund reservation wins over later provider callbacks. Once an
+    // admin has reserved a refund, a delayed success callback must not race the
+    // Stripe refund and turn the same order into a delivered top-up.
+    const refundReservation = await client.query(
+      `SELECT status FROM refunds WHERE order_id = $1 LIMIT 1`,
+      [orderId]
+    );
+    if (refundReservation.rowCount === 1) {
+      await client.query('COMMIT');
+      console.warn('DT One callback acknowledged without changing an order with a refund reservation.', {
+        normalizedProviderStatus: providerStatus,
+        refundStatus: String(refundReservation.rows[0].status || 'unknown'),
+      });
+      return res.status(200).json({
+        received: true,
+        status: 'refund_review',
+        ignored: true,
+      });
+    }
+
     // Ordinary customer orders must have verified Stripe payment evidence
     // before a provider callback can change their state. The only exception is
     // the isolated ATOMA-SANDBOX-TEST route, which is explicitly pre-production
