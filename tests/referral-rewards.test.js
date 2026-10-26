@@ -137,7 +137,7 @@ test('duplicate completed DT One callbacks reconcile a missing referral reward w
 
 test('Stripe session persistence failure does not release a reservation that may still be payable', () => {
   const sessionCreated = checkout.indexOf('stripeSessionCreated = true');
-  const persistSession = checkout.indexOf('SET stripe_session_id = $1', sessionCreated);
+  const persistSession = checkout.indexOf('await persistStripeCheckoutSession(orderId, session.id);', sessionCreated);
   const catchStart = checkout.indexOf('} catch (error) {', persistSession);
   const cleanup = checkout.indexOf('if (orderId && !transactionOpen && !stripeSessionCreated)', catchStart);
   assert.ok(sessionCreated >= 0 && persistSession > sessionCreated && catchStart > persistSession);
