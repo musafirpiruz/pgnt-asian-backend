@@ -200,6 +200,29 @@ function getCountryCurrency(countryCode) {
   return COUNTRY_CURRENCIES[country] || null;
 }
 
+// Persist the exact Stripe Checkout Session even if a webhook advances the
+// order status before this request finishes. Never overwrite a different session.
+async function persistStripeCheckoutSession(orderId, sessionId) {
+  const saved = await pool.query(
+    `UPDATE orders
+     SET stripe_session_id = $1, updated_at = NOW()
+     WHERE order_id = $2
+       AND (stripe_session_id IS NULL OR stripe_session_id = $1)`,
+    [sessionId, orderId]
+  );
+
+  if (saved.rowCount === 1) return;
+
+  const current = await pool.query(
+    'SELECT stripe_session_id FROM orders WHERE order_id = $1 LIMIT 1',
+    [orderId]
+  );
+  if (current.rowCount === 1 && current.rows[0].stripe_session_id === sessionId) {
+    return; // Idempotent: the exact session was already stored.
+  }
+  throw new Error('Could not safely associate the Stripe Checkout Session with its order.');
+}
+
 function formatEuro(cents) {
   if (!Number.isSafeInteger(cents) || cents < 0) {
     throw new Error('Invalid EUR amount in cents.');
@@ -1097,14 +1120,7 @@ app.post('/api/payments/checkout', async (req, res) => {
     );
     stripeSessionCreated = true;
 
-    await pool.query(
-      `UPDATE orders
-       SET stripe_session_id = $1,
-           updated_at = NOW()
-       WHERE order_id = $2
-         AND status = 'awaiting_payment'`,
-      [session.id, orderId]
-    );
+    await persistStripeCheckoutSession(orderId, session.id);
 
     return res.status(201).json({
       orderId,
@@ -1243,11 +1259,7 @@ app.post('/api/admin/stripe-dtone/sandbox-checkout', express.json(), requireAdmi
       cancel_url: urls.cancelUrl,
     }, { idempotencyKey: `stripe-dtone-sandbox-${orderId}` });
 
-    await pool.query(
-      `UPDATE orders SET stripe_session_id = $1, updated_at = NOW()
-       WHERE order_id = $2 AND status = 'awaiting_payment'`,
-      [session.id, orderId]
-    );
+    await persistStripeCheckoutSession(orderId, session.id);
     return res.status(201).json({
       sandboxOnly: true,
       orderId,
