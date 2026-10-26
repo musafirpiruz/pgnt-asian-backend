@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ps">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PGNT ASIAN TOPUP — ساده اډمین</title>
+<style>
+:root{color-scheme:light;--red:#7a0c10;--gold:#d4b896;--ink:#202124;--muted:#5f6368;--line:#e2e5e9;--bg:#f6f7f9;--green:#176b3a;--amber:#8a5700}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{background:var(--red);color:white;padding:20px 16px;border-bottom:4px solid var(--gold)}header,main{width:100%}header .wrap,main{max-width:900px;margin:auto}h1{font-size:1.35rem;margin:0}header p{margin:6px 0 0;color:#f5e9e9;font-size:.95rem}
+main{padding:16px;display:grid;gap:14px}.card{background:white;border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 2px 8px #00000008}
+h2{font-size:1.08rem;margin:0 0 8px}p{margin:6px 0}.muted,small{color:var(--muted)}label{display:block;font-weight:600;margin:10px 0 5px}
+input,select,button{font:inherit;min-height:44px;border-radius:9px}input,select{width:100%;padding:10px;border:1px solid #bfc5cc;background:white}
+button{border:0;padding:10px 14px;background:var(--red);color:white;font-weight:650;cursor:pointer}button.secondary{background:#eef0f2;color:var(--ink);border:1px solid var(--line)}button:disabled{opacity:.55;cursor:wait}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{flex:1 1 180px}.status{padding:10px 12px;border-radius:9px;background:#eef0f2;margin-top:10px;overflow-wrap:anywhere}.status.ok{background:#e9f5ed;color:var(--green)}.status.warn{background:#fff4dc;color:var(--amber)}.status.error{background:#fff0f0;color:#9b1c1c}
+.order{border:1px solid var(--line);border-radius:12px;padding:13px;margin-top:10px;display:grid;gap:8px}.order-top{display:flex;gap:8px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}.pill{display:inline-block;border-radius:999px;background:#f0f1f3;padding:3px 9px;font-size:.82rem;overflow-wrap:anywhere}.order-id{font-size:.86rem;overflow-wrap:anywhere}.order-actions{display:flex;gap:8px;flex-wrap:wrap}.order-actions button{flex:1 1 150px;font-size:.92rem}.detail{border-top:1px solid var(--line);padding-top:9px;margin-top:3px}.detail dl{display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,2fr);gap:5px 12px;margin:8px 0;font-size:.93rem}.detail dt{color:var(--muted)}.detail dd{margin:0;overflow-wrap:anywhere}.empty{padding:14px;border:1px dashed #c6cbd1;border-radius:10px;color:var(--muted)}details{margin-top:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f6f7;padding:10px;border-radius:8px;max-height:280px;overflow:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.price{border:1px solid var(--line);border-radius:10px;padding:12px}.price strong{display:block;font-size:1.1rem}.safe{border-left:4px solid var(--gold);padding:10px 12px;background:#fffaf0;border-radius:6px;font-size:.92rem}
+@media(min-width:700px){main{padding:22px 16px}.card{padding:20px}} 
+</style>
+</head>
+<body>
+<header><div class="wrap"><h1>PGNT ASIAN TOPUP</h1><p>ساده اډمین — د فرمایشونو او تادیاتو کتنه</p></div></header>
+<main>
+<section class="card">
+<h2>۱. خوندي ننوتل</h2>
+<p class="muted">د اډمین API کیلي دلته ولیکئ. کیلي په دې پاڼه کې د کار تر پای پورې پاتې کېږي؛ په موبایل یا براوزر کې نه ساتل کېږي.</p>
+<label for="adminKey">Admin API key</label>
+<input id="adminKey" type="password" autocomplete="off" placeholder="خپله اډمین کیلي ولیکئ">
+<div class="actions"><button id="loadQueue">د کتنې فرمایشونه ښکاره کړه</button><button class="secondary" id="loadPricing">د بیو او فیسونو کتنه</button><button class="secondary" id="clearKey">کیلي پاکه کړه</button></div>
+<div id="notice" class="status" role="status" aria-live="polite">د پیل لپاره کیلي ولیکئ او «د کتنې فرمایشونه ښکاره کړه» کېکاږئ.</div>
+</section>
+<section class="card">
+<h2>۲. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
+<p class="muted">یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.</p>
+<div id="queue"><div class="empty">تر اوسه فرمایشونه نه دي لوستل شوي.</div></div>
+</section>
+<section class="card">
+<h2>۳. د بیو او فیسونو لنډ راپور</h2>
+<p class="muted">دا برخه یوازې اوسني ثبت شوي تنظیمات ښيي؛ هېڅ ارزښت نه بدلوي.</p>
+<div id="pricing"><div class="empty">د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.</div></div>
+</section>
+<section class="card">
+<h2>د خوندیتوب یادونه</h2>
+<div class="safe">که د Stripe یا DT One حالت روښانه نه وي، بیا تادیه یا بیا Top-up مه کوئ. لومړی د دواړو حالتونه وګورئ. دا پاڼه یوازې د کتنې لپاره ده؛ Refund او نور مالي بدلونونه پکې نشته.</div>
+</section>
+</main>
+<script>
+'use strict';
+const keyInput=document.getElementById('adminKey');
+const notice=document.getElementById('notice');
+const queue=document.getElementById('queue');
+const pricing=document.getElementById('pricing');
+const loadQueueButton=document.getElementById('loadQueue');
+const loadPricingButton=document.getElementById('loadPricing');
+function setNotice(message,type=''){notice.className='status'+(type?' '+type:'');notice.textContent=message;}
+function escapeText(value){return String(value??'—');}
+function moneyEur(cents){const n=Number(cents);return Number.isFinite(n)?new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(n/100):'—';}
+async function adminRequest(url){
+ const key=keyInput.value.trim();
+ if(!key)throw new Error('لومړی د اډمین API کیلي ولیکئ.');
+ const response=await fetch(url,{method:'GET',headers:{'x-admin-api-key':key,'Accept':'application/json'},cache:'no-store'});
+ const raw=await response.text();let data={};
+ try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('سرور د لوستلو وړ ځواب ورنه کړ (HTTP '+response.status+').');}
+ if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
+ return data;
+}
+function addField(dl,label,value){const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=escapeText(value);dl.append(dt,dd);}
+function showDetails(container,data){
+ const wrap=document.createElement('div');wrap.className='detail';
+ const dl=document.createElement('dl');
+ const labels={
+  localOrderStatus:'د فرمایش حالت',stripeSessionFound:'Stripe Session وموندل شو',stripeSessionStatus:'Stripe Session حالت',
+  stripePaymentStatus:'د Stripe تادیې حالت',stripePaymentIntentStatus:'PaymentIntent حالت',
+  amountTotal:'د Stripe Session اندازه (cents)',amountReceived:'ترلاسه شوې اندازه (cents)',stripeCurrency:'د Stripe اسعار',
+  paymentCurrency:'د تادیې اسعار',topupCurrency:'د Top-up اسعار',livemode:'Live mode',associationVerified:'د تادیې او فرمایش اړیکه تایید',
+  stripeSessionId:'Stripe Session ID',stripePaymentIntentId:'Stripe PaymentIntent ID',providerHttpStatus:'د DT One ځواب کوډ',
+  status:'د DT One حالت',status_class:'د DT One حالت ډول',id:'DT One Transaction ID',external_id:'External ID',note:'یادونه',nextStep:'راتلونکی ګام',error:'خطا'
+ };
+ const fields=['localOrderStatus','stripeSessionFound','stripeSessionStatus','stripePaymentStatus','stripePaymentIntentStatus','amountTotal','amountReceived','stripeCurrency','paymentCurrency','topupCurrency','livemode','associationVerified','stripeSessionId','stripePaymentIntentId','providerHttpStatus','status','status_class','id','external_id','note','nextStep','error'];
+ for(const field of fields){if(data[field]!==undefined&&data[field]!==null)addField(dl,labels[field]||field,data[field]);}
+ if(data.localOrder){for(const [k,v] of Object.entries(data.localOrder)){if(v!==null&&v!==undefined)addField(dl,'محلي '+k,v);}}
+ if(Array.isArray(data.transactions)){data.transactions.forEach((tx,i)=>{addField(dl,'د DT One معامله '+(i+1),[tx.id,tx.status,tx.status_class].filter(Boolean).join(' — ')||'—');});}
+ if(Array.isArray(data.stripePaymentIntents)){data.stripePaymentIntents.forEach((tx,i)=>{addField(dl,'Stripe تادیه '+(i+1),[tx.id,tx.status,tx.amountReceived,tx.currency].filter(v=>v!==null&&v!==undefined).join(' — ')||'—');});}
+ wrap.append(dl);
+ const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='بشپړ تخنیکي معلومات (اختیاري)';const pre=document.createElement('pre');pre.textContent=JSON.stringify(data,null,2);details.append(summary,pre);wrap.append(details);container.append(wrap);
+}
+async function checkOrder(orderId,kind,container,button){
+ if(button)button.disabled=true;
+ try{
+  setNotice(kind==='stripe'?'د Stripe تادیه یوازې د کتنې لپاره ارزول کېږي…':'د DT One معامله یوازې د کتنې لپاره ارزول کېږي…');
+  const url=kind==='stripe'?'/api/admin/orders/'+encodeURIComponent(orderId)+'/payment-status':'/api/admin/dtone/transaction-status?external_id='+encodeURIComponent(orderId);
+  const data=await adminRequest(url);
+  showDetails(container,data);
+  setNotice(kind==='stripe'?'د Stripe د کتنې ځواب ترلاسه شو. د «associationVerified» او payment status ارزښتونه وګورئ.':'د DT One د کتنې ځواب ترلاسه شو. د معاملې حالت وګورئ.');
+ }catch(error){showDetails(container,{error:error.message});setNotice(error.message,'error');}
+ finally{if(button)button.disabled=false;}
+}
+function makeOrderCard(order){
+ const card=document.createElement('article');card.className='order';
+ const top=document.createElement('div');top.className='order-top';
+ const title=document.createElement('strong');title.textContent=(order.operator||'نامعلوم شبکه')+' · '+escapeText(order.amount)+' '+escapeText(order.currency);
+ const status=document.createElement('span');status.className='pill';status.textContent=escapeText(order.status);
+ top.append(title,status);card.append(top);
+ const meta=document.createElement('p');meta.className='muted';meta.textContent='د کتنې دلیل: '+escapeText(order.review_reason)+' · DT One: '+escapeText(order.dtone_status||'نامعلوم');card.append(meta);
+ const id=document.createElement('div');id.className='order-id';id.textContent='Order ID: '+order.order_id;card.append(id);
+ const copy=document.createElement('button');copy.type='button';copy.className='secondary';copy.textContent='Order ID کاپي کړه';copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(order.order_id);setNotice('Order ID کاپي شو.','ok');}catch(_){setNotice('Order ID پورته په متن کې ښکاري؛ په لاس یې کاپي کړئ.','warn');}});card.append(copy);
+ const actions=document.createElement('div');actions.className='order-actions';
+ const stripeButton=document.createElement('button');stripeButton.type='button';stripeButton.textContent='Stripe تادیه وګوره';
+ const dtoneButton=document.createElement('button');dtoneButton.type='button';dtoneButton.className='secondary';dtoneButton.textContent='DT One حالت وګوره';
+ actions.append(stripeButton,dtoneButton);card.append(actions);
+ const stripeResult=document.createElement('div');const dtoneResult=document.createElement('div');
+ stripeButton.addEventListener('click',()=>checkOrder(order.order_id,'stripe',stripeResult,stripeButton));
+ dtoneButton.addEventListener('click',()=>checkOrder(order.order_id,'dtone',dtoneResult,dtoneButton));
+ card.append(stripeResult,dtoneResult);
+ return card;
+}
+loadQueueButton.addEventListener('click',async()=>{
+ loadQueueButton.disabled=true;queue.replaceChildren();setNotice('د کتنې فرمایشونه لوستل کېږي…');
+ try{
+  const data=await adminRequest('/api/admin/orders/review');
+  const orders=Array.isArray(data.orders)?data.orders:[];
+  const summary=document.createElement('p');summary.className='status ok';summary.textContent='د کتنې فرمایشونه: '+orders.length+' · اتومات تکرار: '+(data.automaticRetry===false?'بند':'وګورئ');
+  queue.append(summary);
+  if(!orders.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='اوس مهال د کتنې فرمایش نشته.';queue.append(empty);}
+  else orders.forEach(order=>queue.append(makeOrderCard(order)));
+  setNotice('بریالی: '+orders.length+' فرمایشونه ولوستل شول. د هر فرمایش لپاره د Stripe او DT One حالت جلا وګورئ.','ok');
+ }catch(error){const empty=document.createElement('div');empty.className='status error';empty.textContent=error.message;queue.append(empty);setNotice(error.message,'error');}
+ finally{loadQueueButton.disabled=false;}
+});
+loadPricingButton.addEventListener('click',async()=>{
+ loadPricingButton.disabled=true;pricing.replaceChildren();setNotice('د ثبت شوو بیو او فیسونو تنظیمات لوستل کېږي…');
+ try{
+  const data=await adminRequest('/api/admin/pricing');
+  const rows=Array.isArray(data.pricing)?data.pricing:[];
+  if(!rows.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='د بیو تنظیمات ونه موندل شول.';pricing.append(empty);}
+  else{const grid=document.createElement('div');grid.className='grid';
+   const currencies={AF:'AFN',PK:'PKR',IN:'INR',BD:'BDT'};
+   rows.forEach(row=>{const box=document.createElement('div');box.className='price';
+    const h=document.createElement('h3');h.textContent=({AF:'افغانستان',PK:'پاکستان',IN:'هند',BD:'بنګله دېش'})[row.country]||row.country;
+    const fee=document.createElement('strong');fee.textContent=moneyEur(row.fee_eur_cents)+' app fee';
+    const rate=document.createElement('p');rate.textContent='د اسعارو مرجع: '+escapeText(row.local_currency_per_eur??row.afn_per_eur)+' '+(currencies[row.country]||'')+' / EUR';
+    const stripe=document.createElement('p');stripe.textContent='اټکلي Stripe فیس: '+escapeText(row.stripe_fee_percent)+'% + '+moneyEur(row.stripe_fixed_fee_cents);
+    const active=document.createElement('span');active.className='pill';active.textContent=row.active===true?'فعال':'غیرفعال';
+    box.append(h,fee,rate,stripe,active);grid.append(box);});
+   pricing.append(grid);
+  }
+  setNotice('د بیو او فیسونو راپور ولوستل شو. هېڅ تنظیمات نه دي بدل شوي.','ok');
+ }catch(error){const empty=document.createElement('div');empty.className='status error';empty.textContent=error.message;pricing.append(empty);setNotice(error.message,'error');}
+ finally{loadPricingButton.disabled=false;}
+});
+document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
+</script>
+</body>
+</html>
