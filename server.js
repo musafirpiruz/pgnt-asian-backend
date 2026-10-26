@@ -4070,6 +4070,161 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
   }
 });
 
+
+// Read-only Stripe candidate report for an order whose exact Stripe reference
+// was not found. Candidates are evidence for manual review only: this route
+// NEVER links a payment, updates an order, refunds, or triggers DT One.
+app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req, res) => {
+  if (!pool || !stripe) {
+    return res.status(503).json({ error: 'Payment service is not configured.' });
+  }
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT order_id, status, charge_cents, currency,
+              stripe_session_id, stripe_payment_intent_id, created_at
+       FROM orders
+       WHERE order_id = $1
+       LIMIT 1`,
+      [orderId]
+    );
+
+    if (result.rowCount !== 1) {
+      return res.status(404).json({
+        error: 'Local order not found. Candidate scan requires an existing order.',
+        orderId,
+        lookup: 'read_only',
+      });
+    }
+
+    const order = result.rows[0];
+    const createdMs = new Date(order.created_at).getTime();
+    if (!Number.isFinite(createdMs)) {
+      return res.status(500).json({ error: 'Order creation time is invalid.' });
+    }
+
+    // Deliberately broad enough to account for delayed customer checkout, but
+    // bounded to avoid an unbounded scan. Stripe timestamps are Unix seconds.
+    const windowSeconds = 24 * 60 * 60;
+    const orderCreatedSeconds = Math.floor(createdMs / 1000);
+    const created = {
+      gte: Math.max(0, orderCreatedSeconds - windowSeconds),
+      lte: orderCreatedSeconds + windowSeconds,
+    };
+
+    // Scan up to five pages per resource (500 records maximum each).
+    // Return pagination flags so the report never implies the window was fully
+    // scanned when Stripe reports more records than the bounded scan covered.
+    async function listCandidates(listResource) {
+      const data = [];
+      let startingAfter;
+      let hasMore = false;
+      for (let page = 0; page < 5; page += 1) {
+        const pageResult = await listResource.list({
+          limit: 100,
+          created,
+          ...(startingAfter ? { starting_after: startingAfter } : {}),
+        });
+        data.push(...pageResult.data);
+        hasMore = pageResult.has_more;
+        if (!hasMore || pageResult.data.length === 0) break;
+        startingAfter = pageResult.data[pageResult.data.length - 1].id;
+      }
+      return { data, hasMore };
+    }
+
+    const [sessions, intents] = await Promise.all([
+      listCandidates(stripe.checkout.sessions),
+      listCandidates(stripe.paymentIntents),
+    ]);
+
+    const allSessionCandidates = sessions.data
+      .filter((item) => item.currency === 'eur')
+      .map((item) => ({
+        id: item.id,
+        created: item.created,
+        amountTotal: item.amount_total ?? null,
+        currency: item.currency || null,
+        status: item.status || null,
+        paymentStatus: item.payment_status || null,
+        livemode: item.livemode,
+        clientReferenceMatches: item.client_reference_id === orderId,
+        metadataOrderIdMatches: item.metadata?.orderId === orderId,
+        exactOrderReference: item.client_reference_id === orderId || item.metadata?.orderId === orderId,
+      }));
+
+    const allIntentCandidates = intents.data
+      .filter((item) => item.currency === 'eur')
+      .map((item) => ({
+        id: item.id,
+        created: item.created,
+        amount: item.amount,
+        amountReceived: item.amount_received,
+        currency: item.currency || null,
+        status: item.status || null,
+        livemode: item.livemode,
+        metadataOrderIdMatches: item.metadata?.orderId === orderId,
+        exactOrderReference: item.metadata?.orderId === orderId,
+      }));
+
+    const sessionCandidates = allSessionCandidates.slice(0, 30);
+    const intentCandidates = allIntentCandidates.slice(0, 30);
+
+    return res.status(200).json({
+      lookup: 'read_only_candidate_report',
+      order: {
+        orderId: order.order_id,
+        status: order.status,
+        chargeCents: Number(order.charge_cents),
+        paymentCurrency: 'EUR',
+        topupCurrency: order.currency,
+        createdAt: order.created_at,
+        savedCheckoutSessionId: order.stripe_session_id || null,
+        savedPaymentIntentId: order.stripe_payment_intent_id || null,
+      },
+      searchWindow: {
+        from: new Date(created.gte * 1000).toISOString(),
+        to: new Date(created.lte * 1000).toISOString(),
+        hoursEachSide: 24,
+      },
+      checkoutSessions: {
+        scannedRecords: sessions.data.length,
+        totalEurCandidatesFound: allSessionCandidates.length,
+        returned: sessionCandidates.length,
+        candidatesTruncated: allSessionCandidates.length > sessionCandidates.length,
+        hasMoreInWindow: sessions.hasMore,
+        candidates: sessionCandidates,
+      },
+      paymentIntents: {
+        scannedRecords: intents.data.length,
+        totalEurCandidatesFound: allIntentCandidates.length,
+        returned: intentCandidates.length,
+        candidatesTruncated: allIntentCandidates.length > intentCandidates.length,
+        hasMoreInWindow: intents.hasMore,
+        candidates: intentCandidates,
+      },
+      safety: {
+        automaticAssociation: false,
+        databaseModified: false,
+        refundCreated: false,
+        dtOneCalled: false,
+        note: 'Candidates are not proof of payment ownership. Do not associate any candidate unless Stripe order references or event evidence establish an exact match.',
+      },
+    });
+  } catch (error) {
+    console.error('Admin Stripe candidate report failed:', error.message);
+    return res.status(502).json({
+      error: 'Could not build the read-only Stripe candidate report.',
+      lookup: 'read_only_candidate_report',
+    });
+  }
+});
+
 app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({

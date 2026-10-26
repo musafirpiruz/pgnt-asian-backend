@@ -41,3 +41,20 @@ test('checkout persistence regression test is read-only and has no external side
   assert.match(source, /Source-level checks only/);
   assert.doesNotMatch(source, /require\(['\"]stripe['\"]\)/);
 });
+
+
+test('Stripe candidate report is admin-only, time-bounded, EUR-only, and read-only', () => {
+  const routeStart = server.indexOf("app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin");
+  const routeEnd = server.indexOf("\napp.get('/api/admin/orders/review'", routeStart);
+  assert.notEqual(routeStart, -1, 'candidate report route must exist');
+  assert.ok(routeEnd > routeStart, 'candidate report route must be bounded');
+  const route = server.slice(routeStart, routeEnd);
+  assert.match(route, /const created = \{/);
+  assert.match(route, /24 \* 60 \* 60/);
+  assert.match(route, /item\.currency === 'eur'/);
+  assert.match(route, /automaticAssociation:\s*false/);
+  assert.match(route, /databaseModified:\s*false/);
+  assert.match(route, /refundCreated:\s*false/);
+  assert.match(route, /dtOneCalled:\s*false/);
+  assert.doesNotMatch(route, /UPDATE orders|stripe\.refunds\.create|DTONE_API_BASE_URL/);
+});
