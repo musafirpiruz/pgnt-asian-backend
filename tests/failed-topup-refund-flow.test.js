@@ -55,7 +55,7 @@ test('customer app maps review and refund outcomes to visible transaction states
     ? app.slice(statusStart, statusEnd)
     : '';
   assert.notEqual(statusStart, -1, 'client status mapper must exist');
-  assert.match(mapper, /case 'refunded':/);
+  assert.match(mapper, /value\?\.toString\(\)\.toLowerCase\(\) == 'refunded'/);
   assert.match(mapper, /case 'topup_review':/);
   assert.match(mapper, /return TransactionStatus\.underReview/);
   assert.match(mapper, /return TransactionStatus\.failed/);
