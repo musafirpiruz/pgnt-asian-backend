@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const refundFlow = fs.readFileSync(path.join(__dirname, '..', 'refund-flow.js'), 'utf8');
 const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
 
 const callbackStart = server.indexOf("app.post('/api/dtone/callback'");
