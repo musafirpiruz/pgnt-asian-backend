@@ -76,7 +76,9 @@ test('non-succeeded Stripe response is recorded without marking order refunded',
   const result = await executeReservedRefund({
     client, stripe, order, orderId: 'order-1', reason: 'failed topup', logger: quietLogger,
   });
-  assert.equal(result.kind, 'completed');
+  assert.equal(result.kind, 'pending');
+  const refundUpdate = client.calls.find(c => c.sql.startsWith('UPDATE refunds SET stripe_refund_id'));
+  assert.equal(refundUpdate.params[2], 'pending');
   assert.ok(client.calls.some(c => c.sql.startsWith('UPDATE orders SET status = \'topup_review\'')));
   assert.ok(!client.calls.some(c => c.sql.startsWith('UPDATE orders SET status = \'refunded\'')));
 });
