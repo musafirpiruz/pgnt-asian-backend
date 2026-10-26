@@ -111,7 +111,9 @@ test('DT One callbacks blocked by a refund reservation are durably recorded for 
   assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /ON CONFLICT \(provider, event_id\) DO NOTHING/);
   assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /providerTransactionId/);
   assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /providerStatus/);
-  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /`\$\{orderId\}:\$\{providerTransactionId\}:\$\{providerStatus\}`/,
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /crypto\.createHash\('sha256'\)/,
+    'review event keys should be fixed-length hashes');
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /\.update\(`\$\{orderId\}:\$\{providerTransactionId\}:\$\{providerStatus\}`/,
     'review event deduplication must be scoped to the order as well as the provider event');
   assert.doesNotMatch(dtoneCallbackRoute.slice(reservationGuard, commit), /JSON\.stringify\(body\)/,
     'do not persist the raw provider payload, which may contain personal data');
