@@ -10,6 +10,7 @@ const path = require('node:path');
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const routeStart = server.indexOf("app.post('/api/admin/orders/:orderId/refund'");
 const route = routeStart >= 0 ? server.slice(routeStart) : '';
+const refundFlow = fs.readFileSync(path.join(__dirname, '..', 'refund-flow.js'), 'utf8');
 
 test('admin refund route exists and is admin-protected', () => {
   assert.notEqual(routeStart, -1, 'refund route must exist');
@@ -38,13 +39,13 @@ test('refund route does not accept an order without a stored PaymentIntent assoc
 
 test('refund route records/reuses refund state and uses Stripe idempotency', () => {
   assert.match(route, /refund/i);
-  assert.match(route, /idempotencyKey|idempotency_key/);
+  assert.match(refundFlow, /idempotencyKey|idempotency_key/);
   assert.match(route, /pending/);
 });
 
 test('completed or already-refunded orders are explicitly rejected before any Stripe refund request', () => {
   const guard = route.indexOf("order.status === 'completed' || order.status === 'refunded'");
-  const create = route.indexOf('stripe.refunds.create');
+  const create = route.indexOf('executeReservedRefund');
   assert.notEqual(guard, -1);
   assert.notEqual(create, -1);
   assert.ok(guard < create, 'completed/refunded guard must run before Stripe refund creation');
@@ -67,7 +68,7 @@ test('an existing pending or ambiguous refund record blocks an automatic retry',
 });
 
 test('Stripe refund uses a stable per-order idempotency key', () => {
-  assert.ok(route.includes('pgnt-refund-${orderId}'));
+  assert.ok(refundFlow.includes('pgnt-refund-${orderId}'));
 });
 
 test('refund guard is source-only: this test file never invokes external services', () => {
