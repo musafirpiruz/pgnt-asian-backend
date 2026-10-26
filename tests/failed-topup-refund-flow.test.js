@@ -78,7 +78,7 @@ test('customer order-status API exposes refund state without exposing the refund
 });
 
 test('ambiguous Stripe refund outcome is marked for reconciliation, not assumed pending or successful', () => {
-  assert.match(refundRoute, /UPDATE refunds SET status = 'needs_review'/);
+  assert.match(refundFlow, /UPDATE refunds SET status = 'needs_review'/);
   assert.match(refundRoute, /Stripe refund outcome is not confirmed/);
 });
 
@@ -118,7 +118,7 @@ test('refund status labels are localized for all six supported app languages', (
 test('refund reservation is committed before the external Stripe refund request', () => {
   const reservationInsert = refundRoute.indexOf("INSERT INTO refunds (order_id, amount_cents, status, reason)");
   const reservationCommit = refundRoute.indexOf("await client.query('COMMIT')", reservationInsert);
-  const stripeCall = refundRoute.indexOf("stripe.refunds.create", reservationInsert);
+  const stripeCall = refundRoute.indexOf("executeReservedRefund", reservationInsert);
   assert.ok(reservationInsert >= 0, 'durable reservation insert must exist');
   assert.ok(reservationCommit > reservationInsert, 'reservation must commit before Stripe is called');
   assert.ok(stripeCall > reservationCommit, 'Stripe call must follow the durable reservation commit');
