@@ -4143,7 +4143,7 @@ app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req
       listCandidates(stripe.paymentIntents),
     ]);
 
-    const sessionCandidates = sessions.data
+    const allSessionCandidates = sessions.data
       .filter((item) => item.currency === 'eur')
       .map((item) => ({
         id: item.id,
@@ -4156,10 +4156,9 @@ app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req
         clientReferenceMatches: item.client_reference_id === orderId,
         metadataOrderIdMatches: item.metadata?.orderId === orderId,
         exactOrderReference: item.client_reference_id === orderId || item.metadata?.orderId === orderId,
-      }))
-      .slice(0, 30);
+      }));
 
-    const intentCandidates = intents.data
+    const allIntentCandidates = intents.data
       .filter((item) => item.currency === 'eur')
       .map((item) => ({
         id: item.id,
@@ -4171,8 +4170,10 @@ app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req
         livemode: item.livemode,
         metadataOrderIdMatches: item.metadata?.orderId === orderId,
         exactOrderReference: item.metadata?.orderId === orderId,
-      }))
-      .slice(0, 30);
+      }));
+
+    const sessionCandidates = allSessionCandidates.slice(0, 30);
+    const intentCandidates = allIntentCandidates.slice(0, 30);
 
     return res.status(200).json({
       lookup: 'read_only_candidate_report',
@@ -4192,12 +4193,18 @@ app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req
         hoursEachSide: 24,
       },
       checkoutSessions: {
+        scannedRecords: sessions.data.length,
+        totalEurCandidatesFound: allSessionCandidates.length,
         returned: sessionCandidates.length,
+        candidatesTruncated: allSessionCandidates.length > sessionCandidates.length,
         hasMoreInWindow: sessions.hasMore,
         candidates: sessionCandidates,
       },
       paymentIntents: {
+        scannedRecords: intents.data.length,
+        totalEurCandidatesFound: allIntentCandidates.length,
         returned: intentCandidates.length,
+        candidatesTruncated: allIntentCandidates.length > intentCandidates.length,
         hasMoreInWindow: intents.hasMore,
         candidates: intentCandidates,
       },
