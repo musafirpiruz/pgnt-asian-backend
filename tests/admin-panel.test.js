@@ -34,10 +34,10 @@ test('dashboard route serves the separate HTML with no-store and restrictive CSP
 });
 
 test('every dashboard data endpoint is a GET protected by admin authentication', () => {
-  assert.match(server, /app\.get\\('\/api\/admin\/orders\/review', requireAdmin,/);
-  assert.match(server, /app\.get\\('\/api\/admin\/orders\/:orderId\/payment-status', requireAdmin,/);
-  assert.match(server, /app\.get\\('\/api\/admin\/dtone\/transaction-status', requireAdmin,/);
-  assert.match(server, /app\.get\\('\/api\/admin\/pricing', requireAdmin,/);
+  assert.ok(server.includes("app.get('/api/admin/orders/review', requireAdmin,"));
+  assert.ok(server.includes("app.get('/api/admin/orders/:orderId/payment-status', requireAdmin,"));
+  assert.ok(server.includes("app.get('/api/admin/dtone/transaction-status', requireAdmin,"));
+  assert.ok(server.includes("app.get('/api/admin/pricing', requireAdmin,"));
 });
 
 test('admin key is not persisted in browser storage', () => {
