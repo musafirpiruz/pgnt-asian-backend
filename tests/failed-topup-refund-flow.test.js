@@ -65,3 +65,25 @@ test('these regression checks never call external payment or top-up services', (
   const source = fs.readFileSync(__filename, 'utf8');
   assert.doesNotMatch(source, /fetch\s*\(|stripe\.refunds\.create\s*\(/);
 });
+
+
+test('customer order-status API exposes refund state without exposing the refund reason', () => {
+  const statusStart = server.indexOf("app.get('/api/orders/:orderId/status'");
+  const statusRoute = statusStart >= 0 ? server.slice(statusStart) : '';
+  assert.notEqual(statusStart, -1);
+  assert.match(statusRoute, /AS refund_status/);
+  assert.match(statusRoute, /refundStatus: order\.refund_status \|\| null/);
+  assert.doesNotMatch(statusRoute, /reason: order\.refund/);
+});
+
+test('ambiguous Stripe refund outcome is marked for reconciliation, not assumed pending or successful', () => {
+  assert.match(refundRoute, /UPDATE refunds SET status = 'needs_review'/);
+  assert.match(refundRoute, /Stripe refund outcome is not confirmed/);
+});
+
+test('customer app distinguishes pending, completed and review-required refunds', () => {
+  assert.match(app, /TransactionStatus\.refundPending/);
+  assert.match(app, /TransactionStatus\.refunded/);
+  assert.match(app, /TransactionStatus\.refundNeedsReview/);
+  assert.match(app, /refundStatus: decoded\['refundStatus'\]/);
+});
