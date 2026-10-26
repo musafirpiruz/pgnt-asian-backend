@@ -2070,15 +2070,32 @@ app.post('/api/dtone/callback', async (req, res) => {
       [orderId]
     );
     if (refundReservation.rowCount === 1) {
+      // Persist a minimal reconciliation record before acknowledging this
+      // callback. Do not store the raw provider payload, which may contain PII.
+      // A repeated transaction/status pair is deduplicated by the unique key.
+      const refundStatus = String(refundReservation.rows[0].status || 'unknown');
+      const reviewEventId = `${providerTransactionId}:${providerStatus}`.slice(0, 255);
+      await client.query(
+        `INSERT INTO webhook_events (provider, event_id, payload)
+         VALUES ('dtone-refund-review', $1, $2::jsonb)
+         ON CONFLICT (provider, event_id) DO NOTHING`,
+        [reviewEventId, JSON.stringify({
+          orderId,
+          providerTransactionId,
+          providerStatus,
+          refundStatus,
+        })]
+      );
       await client.query('COMMIT');
-      console.warn('DT One callback acknowledged without changing an order with a refund reservation.', {
+      console.warn('DT One callback recorded for reconciliation; order state unchanged due to refund reservation.', {
         normalizedProviderStatus: providerStatus,
-        refundStatus: String(refundReservation.rows[0].status || 'unknown'),
+        refundStatus,
       });
       return res.status(200).json({
         received: true,
         status: 'refund_review',
         ignored: true,
+        recordedForReview: true,
       });
     }
 
@@ -4130,9 +4147,9 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
   let transactionOpen = false;
 
   try {
-    // Keep the order lock until Stripe has returned and both database
-    // records have been updated. A DT One callback cannot change the order
-    // to completed between our eligibility check and refund finalization.
+    // Lock and validate the order, then commit the unique refund reservation
+    // before the external Stripe call. The reservation blocks a concurrent
+    // refund request even after this transaction releases the order lock.
     await client.query('BEGIN');
     transactionOpen = true;
 
