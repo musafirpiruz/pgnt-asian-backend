@@ -94,8 +94,10 @@ const integrationTest = test(
       );
       assert.equal(concurrentReservations.rowCount, 1);
     } finally {
-      try { await client.query('DELETE FROM refunds WHERE order_id = ANY($1::uuid[])', [[orderId, concurrentOrderId]]); } catch (_) {}
-      try { await client.query('DELETE FROM orders WHERE order_id = ANY($1::uuid[])', [[orderId, concurrentOrderId]]); } catch (_) {}
+      // order_id is varchar in this schema, so use text[] rather than uuid[].
+      // Cleanup must work reliably instead of silently leaving test rows behind.
+      try { await client.query('DELETE FROM refunds WHERE order_id = ANY($1::text[])', [[orderId, concurrentOrderId]]); } catch (_) {}
+      try { await client.query('DELETE FROM orders WHERE order_id = ANY($1::text[])', [[orderId, concurrentOrderId]]); } catch (_) {}
       concurrentClient.release();
       client.release();
       await pool.end();
