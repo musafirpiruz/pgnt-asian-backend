@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { executeReservedRefund } = require('../refund-flow');
 
-const order = { stripe_payment_intent_id: 'pi_test_123' };
+const order = { stripe_payment_intent_id: 'pi_test_123', charge_cents: 268 };
 const quietLogger = { error() {} };
 
 function fakeClient({ failOn = null } = {}) {
@@ -79,4 +79,33 @@ test('non-succeeded Stripe response is recorded without marking order refunded',
   assert.equal(result.kind, 'completed');
   assert.ok(client.calls.some(c => c.sql.startsWith('UPDATE orders SET status = \'topup_review\'')));
   assert.ok(!client.calls.some(c => c.sql.startsWith('UPDATE orders SET status = \'refunded\'')));
+});
+
+test('successful Stripe response with a partial amount is held for reconciliation', async () => {
+  const client = fakeClient();
+  const stripe = { refunds: { async create() {
+    return { id: 're_partial', amount: 100, status: 'succeeded', currency: 'eur' };
+  } } };
+  const result = await executeReservedRefund({
+    client, stripe, order, orderId: 'order-partial', reason: 'failed topup', logger: quietLogger,
+  });
+  assert.equal(result.kind, 'needs_review');
+  const refundUpdate = client.calls.find(c => c.sql.startsWith('UPDATE refunds SET stripe_refund_id'));
+  assert.equal(refundUpdate.params[2], 'needs_review');
+  assert.ok(client.calls.some(c => c.sql.startsWith("UPDATE orders SET status = 'topup_review'")));
+  assert.ok(!client.calls.some(c => c.sql.startsWith("UPDATE orders SET status = 'refunded'")));
+});
+
+test('successful Stripe response in a non-EUR currency is held for reconciliation', async () => {
+  const client = fakeClient();
+  const stripe = { refunds: { async create() {
+    return { id: 're_wrong_currency', amount: 268, status: 'succeeded', currency: 'usd' };
+  } } };
+  const result = await executeReservedRefund({
+    client, stripe, order, orderId: 'order-currency', reason: 'failed topup', logger: quietLogger,
+  });
+  assert.equal(result.kind, 'needs_review');
+  const refundUpdate = client.calls.find(c => c.sql.startsWith('UPDATE refunds SET stripe_refund_id'));
+  assert.equal(refundUpdate.params[2], 'needs_review');
+  assert.ok(!client.calls.some(c => c.sql.startsWith("UPDATE orders SET status = 'refunded'")));
 });
