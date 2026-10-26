@@ -14,7 +14,6 @@ on:
       - fix/referral-first-topup-rewards
       - fix/android-internet-permission
       - fix/refund-statuses-mainline
-      - fix/refund-statuses-mainline
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
