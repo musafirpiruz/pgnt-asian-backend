@@ -112,3 +112,21 @@ test('refund status labels are localized for all six supported app languages', (
     assert.match(block, /'refundNeedsReview':/);
   }
 });
+
+
+test('refund reservation is committed before the external Stripe refund request', () => {
+  const reservationInsert = refundRoute.indexOf("INSERT INTO refunds (order_id, amount_cents, status, reason)");
+  const reservationCommit = refundRoute.indexOf("await client.query('COMMIT')", reservationInsert);
+  const stripeCall = refundRoute.indexOf("stripe.refunds.create", reservationInsert);
+  assert.ok(reservationInsert >= 0, 'durable reservation insert must exist');
+  assert.ok(reservationCommit > reservationInsert, 'reservation must commit before Stripe is called');
+  assert.ok(stripeCall > reservationCommit, 'Stripe call must follow the durable reservation commit');
+  assert.match(refundRoute, /A database failure leaves the committed pending reservation in place/);
+});
+
+test('DT One callbacks cannot change an order after a refund reservation exists', () => {
+  assert.match(callback, /SELECT status FROM refunds WHERE order_id = \$1 LIMIT 1/);
+  assert.match(callback, /if \(refundReservation\.rowCount === 1\)/);
+  assert.match(callback, /status: 'refund_review'/);
+  assert.match(callback, /ignored: true/);
+});
