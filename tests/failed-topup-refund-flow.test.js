@@ -87,3 +87,28 @@ test('customer app distinguishes pending, completed and review-required refunds'
   assert.match(app, /TransactionStatus\.refundNeedsReview/);
   assert.match(app, /refundStatus: decoded\['refundStatus'\]/);
 });
+
+
+test('refund status labels are localized for all six supported app languages', () => {
+  const labelStart = app.indexOf('String statusLabel(');
+  const labelEnd = app.indexOf('// Transaction data model', labelStart);
+  const labels = labelStart >= 0 && labelEnd > labelStart
+    ? app.slice(labelStart, labelEnd)
+    : '';
+  assert.match(labels, /tr\(languageCode, 'refundPending'\)/);
+  assert.match(labels, /tr\(languageCode, 'refunded'\)/);
+  assert.match(labels, /tr\(languageCode, 'refundNeedsReview'\)/);
+
+  const translationStart = app.indexOf('const Map<String, Map<String, String>> translations = {');
+  assert.notEqual(translationStart, -1);
+  const translationMap = app.slice(translationStart);
+  for (const language of ['ps', 'fa', 'en', 'ur', 'hi', 'bn']) {
+    const languageStart = translationMap.indexOf(`'${language}': {`);
+    assert.notEqual(languageStart, -1, `missing translations for ${language}`);
+    const nextLanguage = translationMap.indexOf("\n  '", languageStart + 1);
+    const block = translationMap.slice(languageStart, nextLanguage >= 0 ? nextLanguage : undefined);
+    assert.match(block, /'refundPending':/);
+    assert.match(block, /'refunded':/);
+    assert.match(block, /'refundNeedsReview':/);
+  }
+});
