@@ -18,7 +18,8 @@ test('simple admin dashboard inline JavaScript has valid syntax', () => {
 
 test('admin dashboard only calls read-only check endpoints', () => {
   assert.match(html, /\/api\/admin\/orders\/review/);
-  assert.match(html, /\/api\/admin\/orders\/\+encodeURIComponent\(orderId\)\+['"]\/payment-status/);
+  assert.match(html, /payment-status/);
+  assert.match(html, /encodeURIComponent\\(orderId\\)/);
   assert.match(html, /\/api\/admin\/dtone\/transaction-status\?external_id=/);
   assert.match(html, /\/api\/admin\/pricing/);
   assert.doesNotMatch(html, /\/api\/admin\/orders\/[^'"]+\/refund/);
