@@ -46,7 +46,7 @@ test('refund is admin-only and verifies the canonical paid EUR PaymentIntent', (
 test('completed top-ups and existing ambiguous refunds cannot be refunded again', () => {
   assert.match(refundRoute, /order\.status === 'completed' \|\| order\.status === 'refunded'/);
   assert.match(refundRoute, /A refund record already exists\. Reconcile it in Stripe Dashboard before retrying/);
-  assert.match(refundRoute, /idempotencyKey: `pgnt-refund-\$\{orderId\}`/);
+  assert.match(refundFlow, /idempotencyKey: `pgnt-refund-\$\{orderId\}`/);
 });
 
 test('customer app maps review and refund outcomes to visible transaction states', () => {
