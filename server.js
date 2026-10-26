@@ -3925,7 +3925,45 @@ app.get('/api/admin/orders/:orderId/payment-status', requireAdmin, async (req, r
       orderCreatedAt: order.created_at,
     };
 
-    if (order.stripe_session_id) {
+    // If an admin supplies a known Checkout Session ID, use that exact object
+    // even when the local order exists but its session ID was not persisted.
+    // Never associate it unless Stripe's own order references match exactly.
+    const suppliedSessionId = String(req.query.session_id || '').trim();
+    if (suppliedSessionId && !order.stripe_session_id) {
+      if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(suppliedSessionId)) {
+        return res.status(400).json({
+          error: 'Invalid Stripe Checkout Session ID.',
+          lookup: 'read_only',
+          orderId,
+        });
+      }
+      const exactSession = await stripe.checkout.sessions.retrieve(
+        suppliedSessionId,
+        { expand: ['payment_intent'] }
+      );
+      const sessionOrderId = exactSession.metadata?.orderId || exactSession.client_reference_id;
+      if (sessionOrderId !== orderId ||
+          (exactSession.client_reference_id && exactSession.client_reference_id !== orderId) ||
+          (exactSession.metadata?.orderId && exactSession.metadata.orderId !== orderId)) {
+        return res.status(409).json({
+          error: 'Stripe Checkout Session does not exactly match the requested order ID.',
+          lookup: 'read_only',
+          orderId,
+          stripeSessionId: exactSession.id,
+          clientReferenceMatches: exactSession.client_reference_id === orderId,
+          metadataOrderIdMatches: exactSession.metadata?.orderId === orderId,
+          note: 'No local order or payment was changed.',
+        });
+      }
+      session = exactSession;
+      if (session.payment_intent && typeof session.payment_intent === 'object') {
+        paymentIntent = session.payment_intent;
+      } else if (typeof session.payment_intent === 'string') {
+        paymentIntent = await stripe.paymentIntents.retrieve(session.payment_intent);
+      }
+    }
+
+    if (!session && order.stripe_session_id) {
       session = await stripe.checkout.sessions.retrieve(
         order.stripe_session_id,
         { expand: ['payment_intent'] }
