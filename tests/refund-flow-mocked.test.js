@@ -127,3 +127,33 @@ test('successful Stripe response in a non-EUR currency is held for reconciliatio
   assert.equal(refundUpdate.params[2], 'needs_review');
   assert.ok(!client.calls.some(c => c.sql.startsWith("UPDATE orders SET status = 'refunded'")));
 });
+
+
+test('database COMMIT failure after Stripe success preserves the committed reservation for reconciliation', async () => {
+  let commitAttempts = 0;
+  const client = fakeClient({
+    failOn: sql => {
+      if (sql === 'COMMIT') {
+        commitAttempts++;
+        return true;
+      }
+      return false;
+    },
+  });
+  let stripeCalls = 0;
+  const stripe = { refunds: { async create() {
+    stripeCalls++;
+    return { id: 're_commit_failure', amount: 268, status: 'succeeded', currency: 'eur' };
+  } } };
+
+  await assert.rejects(executeReservedRefund({
+    client, stripe, order, orderId: 'order-commit-failure',
+    reason: 'failed topup', logger: quietLogger,
+  }), /injected database failure/);
+
+  assert.equal(stripeCalls, 1, 'Stripe refund request should have been made once');
+  assert.equal(commitAttempts, 1);
+  assert.ok(client.calls.some(call => call.sql === 'ROLLBACK'));
+  assert.ok(client.calls.every(call => !call.sql.startsWith('DELETE FROM refunds')),
+    'finalization failure must never delete the already-committed reservation');
+});
