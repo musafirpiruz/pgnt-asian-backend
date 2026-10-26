@@ -4242,72 +4242,17 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
     await client.query('COMMIT');
     transactionOpen = false;
 
-    let refund;
-    try {
-      refund = await stripe.refunds.create(
-        {
-          payment_intent: order.stripe_payment_intent_id,
-          reason: 'requested_by_customer',
-          metadata: { orderId, adminReason: reason },
-        },
-        { idempotencyKey: `pgnt-refund-${orderId}` }
-      );
-    } catch (stripeError) {
-      // Keep the durable reservation even if reconciliation-state persistence
-      // fails; the existing pending row still prevents automatic retries.
-      try {
-        await client.query('BEGIN');
-        transactionOpen = true;
-        await client.query(
-          `UPDATE refunds SET status = 'needs_review', reason = $1 WHERE order_id = $2`,
-          [`Stripe outcome needs reconciliation: ${String(stripeError.message || 'unknown error').slice(0, 350)}`, orderId]
-        );
-        await client.query('COMMIT');
-        transactionOpen = false;
-      } catch (stateError) {
-        if (transactionOpen) {
-          try { await client.query('ROLLBACK'); } catch (_) {}
-          transactionOpen = false;
-        }
-        console.error('Could not persist Stripe refund reconciliation state:', stateError.message);
-      }
-      console.error('Stripe refund outcome requires reconciliation:', stripeError.message);
+    const outcome = await executeReservedRefund({
+      client, stripe, order, orderId, reason,
+    });
+    if (outcome.kind === 'needs_review') {
       return res.status(502).json({
         error: 'Stripe refund outcome is not confirmed. Check Stripe Dashboard before any retry.',
       });
     }
-
-    // Persist Stripe's response in a separate transaction. A database failure
-    // leaves the committed pending reservation in place rather than deleting
-    // evidence of a possibly successful external refund.
-    await client.query('BEGIN');
-    transactionOpen = true;
-    await client.query(
-      `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
-         status = $3, reason = $4 WHERE order_id = $5`,
-      [refund.id, refund.amount, refund.status, reason, orderId]
-    );
-
-    if (refund.status === 'succeeded') {
-      await client.query(
-        `UPDATE orders SET status = 'refunded',
-           refunded_at = COALESCE(refunded_at, NOW()), updated_at = NOW()
-         WHERE order_id = $1 AND status = 'topup_review'`,
-        [orderId]
-      );
-    } else {
-      await client.query(
-        `UPDATE orders SET status = 'topup_review', updated_at = NOW()
-         WHERE order_id = $1 AND status = 'topup_review'`,
-        [orderId]
-      );
-    }
-
-    await client.query('COMMIT');
-    transactionOpen = false;
     return res.status(200).json({
-      orderId, refundId: refund.id, status: refund.status,
-      amountCents: refund.amount, currency: refund.currency,
+      orderId, refundId: outcome.refund.id, status: outcome.refund.status,
+      amountCents: outcome.refund.amount, currency: outcome.refund.currency,
     });
   } catch (error) {
     if (transactionOpen) {
