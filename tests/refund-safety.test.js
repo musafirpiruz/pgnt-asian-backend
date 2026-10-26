@@ -54,7 +54,7 @@ test('completed or already-refunded orders are explicitly rejected before any St
 
 test('a failed Stripe PaymentIntent lookup returns without starting a refund', () => {
   const lookup = route.indexOf('stripe.paymentIntents.retrieve');
-  const create = route.indexOf('stripe.refunds.create');
+  const create = route.indexOf('executeReservedRefund');
   assert.notEqual(lookup, -1);
   assert.notEqual(create, -1);
   assert.ok(lookup < create);
