@@ -2592,6 +2592,15 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
   }
 });
 
+// Simple mobile-friendly admin check dashboard. The page itself is public,
+// but all data endpoints require the admin API key. Read-only checks only.
+app.get('/admin', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  return res.sendFile(require('path').join(__dirname, 'admin-panel.html'));
+});
+
 app.get('/admin-dtone-check', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
