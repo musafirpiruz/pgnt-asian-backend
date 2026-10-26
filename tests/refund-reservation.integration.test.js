@@ -12,7 +12,9 @@ const integrationTest = test(
   async () => {
     const pool = new Pool({ connectionString: databaseUrl });
     const client = await pool.connect();
+    const concurrentClient = await pool.connect();
     const orderId = crypto.randomUUID();
+    const concurrentOrderId = crypto.randomUUID();
 
     try {
       await client.query(
@@ -60,9 +62,41 @@ const integrationTest = test(
         error => error && error.code === '23505'
       );
       await client.query('ROLLBACK');
+
+      // Two independent database connections race to reserve the same order.
+      // The database uniqueness constraint must allow exactly one reservation.
+      await client.query(
+        `INSERT INTO orders
+           (order_id, country, operator, phone, amount, currency, product_id,
+            product_price_cents, charge_cents, status, dtone_status)
+         VALUES ($1, 'AF', 'TEST', '+33000000001', 115, 'AFN', 7194,
+                 210, 298, 'topup_review', 'declined')`,
+        [concurrentOrderId]
+      );
+      const reservationAttempts = await Promise.allSettled([
+        client.query(
+          `INSERT INTO refunds (order_id, amount_cents, status, reason)
+           VALUES ($1, 298, 'pending', 'concurrent reservation A')`,
+          [concurrentOrderId]
+        ),
+        concurrentClient.query(
+          `INSERT INTO refunds (order_id, amount_cents, status, reason)
+           VALUES ($1, 298, 'pending', 'concurrent reservation B')`,
+          [concurrentOrderId]
+        ),
+      ]);
+      assert.equal(reservationAttempts.filter(result => result.status === 'fulfilled').length, 1);
+      const rejected = reservationAttempts.filter(result => result.status === 'rejected');
+      assert.equal(rejected.length, 1);
+      assert.equal(rejected[0].reason.code, '23505');
+      const concurrentReservations = await client.query(
+        'SELECT id FROM refunds WHERE order_id = $1', [concurrentOrderId]
+      );
+      assert.equal(concurrentReservations.rowCount, 1);
     } finally {
-      try { await client.query('DELETE FROM refunds WHERE order_id = $1', [orderId]); } catch (_) {}
-      try { await client.query('DELETE FROM orders WHERE order_id = $1', [orderId]); } catch (_) {}
+      try { await client.query('DELETE FROM refunds WHERE order_id = ANY($1::uuid[])', [[orderId, concurrentOrderId]]); } catch (_) {}
+      try { await client.query('DELETE FROM orders WHERE order_id = ANY($1::uuid[])', [[orderId, concurrentOrderId]]); } catch (_) {}
+      concurrentClient.release();
       client.release();
       await pool.end();
     }
