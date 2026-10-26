@@ -49,7 +49,7 @@ test('Stripe candidate report is admin-only, time-bounded, EUR-only, and read-on
   assert.notEqual(routeStart, -1, 'candidate report route must exist');
   assert.ok(routeEnd > routeStart, 'candidate report route must be bounded');
   const route = server.slice(routeStart, routeEnd);
-  assert.match(route, /created:\s*\{/);
+  assert.match(route, /const created = \{/);
   assert.match(route, /24 \* 60 \* 60/);
   assert.match(route, /item\.currency === 'eur'/);
   assert.match(route, /automaticAssociation:\s*false/);
