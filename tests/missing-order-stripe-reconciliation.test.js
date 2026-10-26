@@ -80,7 +80,7 @@ test('existing local order can use a supplied session when its saved session ID 
 
 test('existing-order supplied-session reconciliation remains read-only and validates the session ID', () => {
   const existingOrderBranch = route.slice(route.indexOf('const order = result.rows[0]'));
-  assert.match(existingOrderBranch, /!\/^cs_\(test\|live\)_\[A-Za-z0-9\]\+\$\//);
+  assert.ok(existingOrderBranch.includes("if (!/^cs_(test|live)_[A-Za-z0-9]+$/.test(suppliedSessionId))"));
   assert.match(existingOrderBranch, /No local order or payment was changed/);
   assert.doesNotMatch(existingOrderBranch, /UPDATE orders/i);
   assert.doesNotMatch(existingOrderBranch, /INSERT INTO orders/i);
