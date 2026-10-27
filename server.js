@@ -4145,10 +4145,15 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
   const reason = String(req.body?.reason || 'Top-up failed; admin reviewed')
     .trim()
     .slice(0, 500);
-  const client = await pool.connect();
+  let client = null;
   let transactionOpen = false;
 
   try {
+    // Acquire the connection inside the guarded block so pool exhaustion or
+    // connection failures become a controlled API response, not an unhandled
+    // rejected async route in Express 4.
+    client = await pool.connect();
+
     // Lock and validate the order, then commit the unique refund reservation
     // before the external Stripe call. The reservation blocks a concurrent
     // refund request even after this transaction releases the order lock.
@@ -4282,7 +4287,7 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
     console.error('Admin refund processing failed:', error.message);
     return res.status(500).json({ error: 'Refund processing failed; reconcile Stripe Dashboard before retrying.' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
