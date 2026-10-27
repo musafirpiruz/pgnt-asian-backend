@@ -16,7 +16,9 @@ class StripeRouteMock {
         amount_received: 268,
         livemode: false,
         metadata: {
-          orderId: process.env.STRIPE_MOCK_METADATA_ORDER_ID || 'intentionally-wrong-order-id',
+          orderId: paymentIntentId === 'pi_ci_match_existing_reservation'
+            ? process.env.STRIPE_MOCK_MATCH_ORDER_ID
+            : (process.env.STRIPE_MOCK_METADATA_ORDER_ID || 'intentionally-wrong-order-id'),
         },
       }),
     };
