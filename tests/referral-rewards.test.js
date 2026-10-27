@@ -175,3 +175,18 @@ test('admin page exposes referral code creation, activation, and reporting contr
   assert.match(page, /rewardEurCents:7/);
   assert.match(page, /starts disabled/);
 });
+
+test('unused referral codes can only be deleted when disabled and without attribution or ledger history', () => {
+  assert.match(server, /app\.delete\('\/api\/admin\/referrals\/codes\/:code', requireAdmin/);
+  const start = server.indexOf("app.delete('/api/admin/referrals/codes/:code'");
+  const end = server.indexOf("app.get('/admin-dtone-check'", start);
+  const route = start >= 0 && end > start ? server.slice(start, end) : '';
+  assert.match(route, /active === true/);
+  assert.match(route, /referral_attributions/);
+  assert.match(route, /referral_ledger/);
+  assert.match(route, /cannot be deleted/);
+  assert.match(route, /BEGIN/);
+  assert.match(route, /COMMIT/);
+  assert.match(server, /Delete unused code/);
+  assert.match(server, /method:'DELETE'/);
+});
