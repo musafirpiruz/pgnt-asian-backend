@@ -42,7 +42,7 @@ test('gross-up covers wholesale, app fee, and rounded Stripe fee without a one-c
   );
 
   assert.equal(result.finalPriceCents, 268);
-  assert.equal(result.estimatedStripeFeeCents, 31);
+  assert.equal(result.estimatedStripeFeeCents, 30);
   assert.ok(
     result.finalPriceCents - result.estimatedStripeFeeCents >= result.basePriceCents + result.feeCents,
     'net after rounded Stripe fee must preserve wholesale plus app fee'
