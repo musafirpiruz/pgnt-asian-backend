@@ -156,7 +156,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
 
     // Simulate a database failure after the local Stripe mock confirms success.
     // The committed pending reservation must survive, and a retry must be blocked.
-    await db.query(`CREATE OR REPLACE FUNCTION ci_fail_refund_finalization() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN RAISE EXCEPTION 'CI simulated refund finalization failure'; END; $`);
+    await db.query("CREATE OR REPLACE FUNCTION ci_fail_refund_finalization() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''CI simulated refund finalization failure''; END;'");
     await db.query(`CREATE TRIGGER ci_fail_refund_finalization BEFORE UPDATE ON refunds FOR EACH ROW WHEN (NEW.order_id = '${seededOrderIds[5]}') EXECUTE FUNCTION ci_fail_refund_finalization()`);
 
     const finalizationFailure = await fetch(`${baseUrl}/api/admin/orders/${seededOrderIds[5]}/refund`, {
