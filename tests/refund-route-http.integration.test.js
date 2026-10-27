@@ -184,9 +184,9 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
       'SELECT order_id, COUNT(*)::int AS count FROM refunds WHERE order_id = ANY($1::text[]) GROUP BY order_id',
       [seededOrderIds]
     );
-    assert.equal(reservations.rows.length, 1, 'only the intentionally pre-seeded reservation may exist');
-    assert.equal(reservations.rows[0].order_id, seededOrderIds[4]);
-    assert.equal(reservations.rows[0].count, 1, 'a second reservation must not be created');
+    assert.equal(reservations.rows.length, 2, 'only the pre-seeded reservation and the durable failed-finalization reservation may exist');
+    assert.deepEqual(reservations.rows.map(row => row.order_id).sort(), [seededOrderIds[4], seededOrderIds[5]].sort());
+    assert.ok(reservations.rows.every(row => row.count === 1), 'each order must have exactly one reservation');
   } finally {
     await db.query('DROP TRIGGER IF EXISTS ci_fail_refund_finalization ON refunds').catch(() => {});
     await db.query('DROP FUNCTION IF EXISTS ci_fail_refund_finalization()').catch(() => {});
