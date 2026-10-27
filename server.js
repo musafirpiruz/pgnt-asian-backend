@@ -2561,7 +2561,7 @@ app.post('/api/admin/referrals/codes', requireAdmin, async (req, res) => {
   const maxRewards = body.maxRewards === undefined || body.maxRewards === null || body.maxRewards === '' ? null : Number(body.maxRewards);
   if (!/^[A-Z0-9_-]{4,40}$/.test(code)) return res.status(400).json({ error: 'Code must be 4-40 characters: letters, numbers, _ or -.' });
   if (!ownerName || ownerName.length > 120) return res.status(400).json({ error: 'A valid ownerName is required.' });
-  if (!Number.isSafeInteger(rewardEurCents) || rewardEurCents < 0 || rewardEurCents > 10000) return res.status(400).json({ error: 'rewardEurCents must be 0-10000.' });
+  if (!Number.isSafeInteger(rewardEurCents) || rewardEurCents !== 7) return res.status(400).json({ error: 'Referral rewards are fixed at €0.07 (7 euro cents).' });
   if (maxRewards !== null && (!Number.isSafeInteger(maxRewards) || maxRewards < 0)) return res.status(400).json({ error: 'maxRewards must be a non-negative integer.' });
   try {
     const result = await pool.query(
@@ -2610,11 +2610,11 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
 
   if (body.rewardEurCents !== undefined) {
     const reward = Number(body.rewardEurCents);
-    if (!Number.isSafeInteger(reward) || reward < 0 || reward > 10000) {
-      return res.status(400).json({ error: 'rewardEurCents must be 0-10000.' });
+    if (!Number.isSafeInteger(reward) || reward !== 7) {
+      return res.status(400).json({ error: 'Referral rewards are fixed at €0.07 (7 euro cents).' });
     }
-    values.push(reward);
-    fields.push(`reward_eur_cents = $${values.length}`);
+    values.push(7);
+    fields.push('reward_eur_cents = ' + String.fromCharCode(36) + values.length);
   }
 
   if (body.maxRewards !== undefined) {
