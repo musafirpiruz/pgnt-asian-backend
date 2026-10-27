@@ -527,6 +527,58 @@ async function runMigration() {
       console.log("Migration 012_country_local_currency_rates is already applied.");
     }
 
+
+    // Version 013 guarantees one refund reservation per order on databases
+    // created before the refunds table's UNIQUE(order_id) constraint existed.
+    // Do not delete or rewrite financial records if duplicates are found:
+    // fail safely and require manual reconciliation first.
+    const refundUniquenessVersion = "013_refund_order_uniqueness";
+    const refundUniquenessCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [refundUniquenessVersion]
+    );
+    if (refundUniquenessCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          DO $migration$
+          BEGIN
+            IF EXISTS (
+              SELECT 1
+              FROM refunds
+              GROUP BY order_id
+              HAVING COUNT(*) > 1
+            ) THEN
+              RAISE EXCEPTION
+                'Migration 013 stopped: duplicate refunds.order_id records require manual financial reconciliation';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_constraint
+              WHERE conrelid = 'refunds'::regclass
+                AND contype = 'u'
+                AND pg_get_constraintdef(oid) = 'UNIQUE (order_id)'
+            ) THEN
+              ALTER TABLE refunds
+                ADD CONSTRAINT refunds_order_id_unique UNIQUE (order_id);
+            END IF;
+          END
+          $migration$;
+          INSERT INTO schema_migrations (version)
+          VALUES ('013_refund_order_uniqueness')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 013_refund_order_uniqueness completed; duplicate financial rows are never auto-deleted.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 013_refund_order_uniqueness is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"

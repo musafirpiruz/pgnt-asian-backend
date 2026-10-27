@@ -10,10 +10,22 @@ const path = require('node:path');
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const routeStart = server.indexOf("app.post('/api/admin/orders/:orderId/refund'");
 const route = routeStart >= 0 ? server.slice(routeStart) : '';
+const refundFlow = fs.readFileSync(path.join(__dirname, '..', 'refund-flow.js'), 'utf8');
 
 test('admin refund route exists and is admin-protected', () => {
   assert.notEqual(routeStart, -1, 'refund route must exist');
   assert.match(route.slice(0, 300), /requireAdmin/);
+});
+
+test('refund route handles database connection acquisition failures inside its error boundary', () => {
+  const connection = route.indexOf('client = await pool.connect()');
+  const guardedTry = route.indexOf('  try {');
+  const finallyRelease = route.indexOf('if (client) client.release()');
+  assert.notEqual(connection, -1, 'refund route must acquire a database connection');
+  assert.notEqual(guardedTry, -1, 'refund route must have an error boundary');
+  assert.notEqual(finallyRelease, -1, 'connection release must tolerate acquisition failure');
+  assert.ok(guardedTry < connection, 'connection acquisition must be inside the try block');
+  assert.match(route, /if \(transactionOpen\) \{[\s\S]*?client\.query\('ROLLBACK'\)/);
 });
 
 test('refund route requires a reviewed order and final DT One failure', () => {
@@ -31,6 +43,22 @@ test('refund route verifies the canonical Stripe PaymentIntent before refunding'
   assert.match(route, /livemode/);
 });
 
+test('refund route checks exact PaymentIntent identity, order metadata, amount, currency, status, and environment before reserving a refund', () => {
+  const verificationStart = route.indexOf('if (\n      paymentIntent.id !== order.stripe_payment_intent_id');
+  const reservation = route.indexOf("INSERT INTO refunds (order_id, amount_cents, status, reason)");
+  assert.notEqual(verificationStart, -1, 'all Stripe payment checks must be grouped in the route');
+  assert.notEqual(reservation, -1, 'refund reservation insert must exist');
+  const verification = route.slice(verificationStart, reservation);
+  assert.match(verification, /paymentIntent\.id !== order\.stripe_payment_intent_id/);
+  assert.match(verification, /paymentIntent\.metadata\?\.orderId !== orderId/);
+  assert.match(verification, /paymentIntent\.status !== 'succeeded'/);
+  assert.match(verification, /paymentIntent\.currency !== 'eur'/);
+  assert.match(verification, /paymentIntent\.amount_received !== Number\(order\.charge_cents\)/);
+  assert.match(verification, /paymentIntent\.livemode !== !stripeIsTest/);
+  assert.ok(verificationStart < reservation, 'verification must happen before a refund reservation is created');
+  assert.match(verification, /No refund was started/);
+});
+
 test('refund route does not accept an order without a stored PaymentIntent association', () => {
   assert.match(route, /stripe_payment_intent_id/);
   assert.match(route, /PaymentIntent/);
@@ -38,13 +66,13 @@ test('refund route does not accept an order without a stored PaymentIntent assoc
 
 test('refund route records/reuses refund state and uses Stripe idempotency', () => {
   assert.match(route, /refund/i);
-  assert.match(route, /idempotencyKey|idempotency_key/);
+  assert.match(refundFlow, /idempotencyKey|idempotency_key/);
   assert.match(route, /pending/);
 });
 
 test('completed or already-refunded orders are explicitly rejected before any Stripe refund request', () => {
   const guard = route.indexOf("order.status === 'completed' || order.status === 'refunded'");
-  const create = route.indexOf('stripe.refunds.create');
+  const create = route.indexOf('executeReservedRefund');
   assert.notEqual(guard, -1);
   assert.notEqual(create, -1);
   assert.ok(guard < create, 'completed/refunded guard must run before Stripe refund creation');
@@ -53,7 +81,7 @@ test('completed or already-refunded orders are explicitly rejected before any St
 
 test('a failed Stripe PaymentIntent lookup returns without starting a refund', () => {
   const lookup = route.indexOf('stripe.paymentIntents.retrieve');
-  const create = route.indexOf('stripe.refunds.create');
+  const create = route.indexOf('executeReservedRefund');
   assert.notEqual(lookup, -1);
   assert.notEqual(create, -1);
   assert.ok(lookup < create);
@@ -67,7 +95,7 @@ test('an existing pending or ambiguous refund record blocks an automatic retry',
 });
 
 test('Stripe refund uses a stable per-order idempotency key', () => {
-  assert.ok(route.includes('pgnt-refund-${orderId}'));
+  assert.ok(refundFlow.includes('pgnt-refund-${orderId}'));
 });
 
 test('refund guard is source-only: this test file never invokes external services', () => {
@@ -87,4 +115,33 @@ test('read-only payment status does not verify association when Stripe objects a
   assert.notEqual(paymentStatusStart, -1, 'payment-status route must exist');
   assert.match(paymentStatusRoute, /Boolean\(session \|\| paymentIntent\)/);
   assert.match(paymentStatusRoute, /const associationVerified/);
+});
+
+
+const dtoneCallbackStart = server.indexOf("app.post('/api/dtone/callback'");
+const dtoneCallbackEnd = server.indexOf("\napp.", dtoneCallbackStart + 1);
+const dtoneCallbackRoute = dtoneCallbackStart >= 0
+  ? server.slice(dtoneCallbackStart, dtoneCallbackEnd > dtoneCallbackStart ? dtoneCallbackEnd : undefined)
+  : '';
+
+test('DT One callbacks blocked by a refund reservation are durably recorded for reconciliation without raw payload', () => {
+  const reservationGuard = dtoneCallbackRoute.indexOf('if (refundReservation.rowCount === 1)');
+  const auditInsert = dtoneCallbackRoute.indexOf("INSERT INTO webhook_events (provider, event_id, payload)");
+  const commit = dtoneCallbackRoute.indexOf("await client.query('COMMIT')", reservationGuard);
+  const acknowledgement = dtoneCallbackRoute.indexOf('recordedForReview: true', reservationGuard);
+  assert.notEqual(reservationGuard, -1);
+  assert.notEqual(auditInsert, -1);
+  assert.notEqual(commit, -1);
+  assert.notEqual(acknowledgement, -1);
+  assert.ok(reservationGuard < auditInsert && auditInsert < commit && commit < acknowledgement,
+    'callback review evidence must be persisted before the callback is acknowledged');
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /ON CONFLICT \(provider, event_id\) DO NOTHING/);
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /providerTransactionId/);
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /providerStatus/);
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /crypto\.createHash\('sha256'\)/,
+    'review event keys should be fixed-length hashes');
+  assert.match(dtoneCallbackRoute.slice(reservationGuard, commit), /\.update\(`\$\{orderId\}:\$\{providerTransactionId\}:\$\{providerStatus\}`/,
+    'review event deduplication must be scoped to the order as well as the provider event');
+  assert.doesNotMatch(dtoneCallbackRoute.slice(reservationGuard, commit), /JSON\.stringify\(body\)/,
+    'do not persist the raw provider payload, which may contain personal data');
 });

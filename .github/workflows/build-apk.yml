@@ -13,6 +13,7 @@ on:
       - fix/persist-order-history-secure-tokens
       - fix/referral-first-topup-rewards
       - fix/android-internet-permission
+      - fix/refund-statuses-mainline
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'

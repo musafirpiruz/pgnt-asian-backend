@@ -201,6 +201,9 @@ enum TransactionStatus {
   successful,
   failed,
   underReview,
+  refundPending,
+  refunded,
+  refundNeedsReview,
 }
 
 String statusLabel(
@@ -216,6 +219,12 @@ String statusLabel(
       return 'Failed';
     case TransactionStatus.underReview:
       return 'Under review';
+    case TransactionStatus.refundPending:
+      return tr(languageCode, 'refundPending');
+    case TransactionStatus.refunded:
+      return tr(languageCode, 'refunded');
+    case TransactionStatus.refundNeedsReview:
+      return tr(languageCode, 'refundNeedsReview');
   }
 }
 
@@ -389,6 +398,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'بریالۍ',
     'failed': 'ناکامه',
     'review': 'تر ارزونې لاندې',
+    'refundPending': 'د بېرته ورکړې په تمه',
+    'refunded': 'پیسې بېرته ورکړل شوې',
+    'refundNeedsReview': 'د بېرته ورکړې ارزونه اړینه ده',
     'getHelp': 'مرسته وغواړئ',
     'faq': 'عامې پوښتنې',
     'contactSupport': 'له ملاتړ سره اړیکه',
@@ -438,6 +450,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'موفق',
     'failed': 'ناموفق',
     'review': 'در حال بررسی',
+    'refundPending': 'در انتظار بازپرداخت',
+    'refunded': 'بازپرداخت شد',
+    'refundNeedsReview': 'نیاز به بررسی بازپرداخت',
     'getHelp': 'دریافت کمک',
     'faq': 'پرسش‌های متداول',
     'contactSupport': 'تماس با پشتیبانی',
@@ -487,6 +502,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'Successful',
     'failed': 'Failed',
     'review': 'Under Review',
+    'refundPending': 'Refund pending',
+    'refunded': 'Refunded',
+    'refundNeedsReview': 'Refund needs review',
     'getHelp': 'Get Help',
     'faq': 'Frequently Asked Questions',
     'contactSupport': 'Contact Support',
@@ -536,6 +554,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'کامیاب',
     'failed': 'ناکام',
     'review': 'جائزے کے تحت',
+    'refundPending': 'رقم واپسی زیرِ انتظار',
+    'refunded': 'رقم واپس کر دی گئی',
+    'refundNeedsReview': 'رقم واپسی کا جائزہ درکار ہے',
     'getHelp': 'مدد حاصل کریں',
     'faq': 'عام سوالات',
     'contactSupport': 'سپورٹ سے رابطہ کریں',
@@ -585,6 +606,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'सफल',
     'failed': 'विफल',
     'review': 'जाँच जारी है',
+    'refundPending': 'रिफंड लंबित',
+    'refunded': 'रिफंड हो गया',
+    'refundNeedsReview': 'रिफंड की समीक्षा आवश्यक',
     'getHelp': 'मदद लें',
     'faq': 'अक्सर पूछे जाने वाले प्रश्न',
     'contactSupport': 'सपोर्ट से संपर्क करें',
@@ -634,6 +658,9 @@ const Map<String, Map<String, String>> translations = {
     'successful': 'সফল',
     'failed': 'ব্যর্থ',
     'review': 'পর্যালোচনাধীন',
+    'refundPending': 'রিফান্ড অপেক্ষমাণ',
+    'refunded': 'রিফান্ড সম্পন্ন',
+    'refundNeedsReview': 'রিফান্ড পর্যালোচনা প্রয়োজন',
     'getHelp': 'সাহায্য নিন',
     'faq': 'সাধারণ প্রশ্ন',
     'contactSupport': 'সাপোর্টে যোগাযোগ করুন',
@@ -997,13 +1024,25 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   String t(String key) => tr(languageCode, key);
 
-  TransactionStatus _statusFromServer(dynamic value) {
+  TransactionStatus _statusFromServer(
+    dynamic value, {
+    dynamic refundStatus,
+  }) {
+    final refund = refundStatus?.toString().trim().toLowerCase();
+    if (refund == 'succeeded' || value?.toString().toLowerCase() == 'refunded') {
+      return TransactionStatus.refunded;
+    }
+    if (refund == 'pending') {
+      return TransactionStatus.refundPending;
+    }
+    if (refund != null && refund.isNotEmpty) {
+      return TransactionStatus.refundNeedsReview;
+    }
     switch (value?.toString().toLowerCase()) {
       case 'completed':
         return TransactionStatus.successful;
       case 'failed':
       case 'declined':
-      case 'refunded':
         return TransactionStatus.failed;
       case 'topup_review':
       case 'review':
@@ -1026,7 +1065,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (response.statusCode != 200) return;
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic>) return;
-      final nextStatus = _statusFromServer(decoded['status']);
+      final nextStatus = _statusFromServer(
+        decoded['status'],
+        refundStatus: decoded['refundStatus'],
+      );
       if (!mounted) return;
       final index = transactions.indexWhere((item) => item.orderId == orderId);
       if (index < 0) return;
@@ -1070,7 +1112,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final status = matches.first.status;
       if (status == TransactionStatus.successful ||
           status == TransactionStatus.failed ||
-          status == TransactionStatus.underReview) {
+          status == TransactionStatus.underReview ||
+          status == TransactionStatus.refundPending ||
+          status == TransactionStatus.refunded ||
+          status == TransactionStatus.refundNeedsReview) {
         return;
       }
     }
