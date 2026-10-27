@@ -144,3 +144,19 @@ test('Stripe session persistence failure does not release a reservation that may
   assert.ok(cleanup > catchStart);
   assert.ok(checkout.indexOf('Keep the reservation when Stripe returned a session') > catchStart);
 });
+
+test('admin referral code creation and updates enforce the fixed €0.07 reward', () => {
+  const createStart = server.indexOf("app.post('/api/admin/referrals/codes'");
+  const listStart = server.indexOf("app.get('/api/admin/referrals'", createStart);
+  const updateStart = server.indexOf("app.patch('/api/admin/referrals/codes/:code'");
+  const pageStart = server.indexOf("app.get('/admin-dtone-check'", updateStart);
+  const createRoute = createStart >= 0 && listStart > createStart ? server.slice(createStart, listStart) : '';
+  const updateRoute = updateStart >= 0 && pageStart > updateStart ? server.slice(updateStart, pageStart) : '';
+  assert.notEqual(createStart, -1);
+  assert.notEqual(updateStart, -1);
+  assert.match(createRoute, /rewardEurCents !== 7/);
+  assert.match(createRoute, /fixed at €0\.07/);
+  assert.match(updateRoute, /reward !== 7/);
+  assert.match(updateRoute, /fixed at €0\.07/);
+  assert.match(createRoute, /VALUES \(\$1,\$2,\$3,\$4,\$5,FALSE\)/);
+});
