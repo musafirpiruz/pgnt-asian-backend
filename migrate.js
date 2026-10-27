@@ -14,26 +14,28 @@ if (!DATABASE_URL) {
 }
 
 const pool = new Pool({
-  connectionString:
-    DATABASE_URL,
-
+  connectionString: DATABASE_URL,
   ssl:
-    process.env.NODE_ENV ===
-    "production"
-      ? {
-          rejectUnauthorized: false,
-        }
+    process.env.NODE_ENV === "production"
+      ? { rejectUnauthorized: false }
       : false,
+
+  // Fail quickly and report a useful error instead of letting Render
+  // wait until its port-scan timeout when PostgreSQL is unreachable.
+  connectionTimeoutMillis: 10000,
+  query_timeout: 60000,
+  statement_timeout: 60000,
 });
 
 async function runMigration() {
-  const client =
-    await pool.connect();
+  let client;
 
   try {
-    console.log(
-      "Starting PGNT database migration..."
-    );
+    console.log("Starting PGNT database migration...");
+    console.log("Connecting to PostgreSQL (connection timeout: 10 seconds)...");
+
+    client = await pool.connect();
+    console.log("PostgreSQL connection established; checking migrations.");
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -536,13 +538,13 @@ async function runMigration() {
 
     process.exitCode = 1;
   } finally {
-    try {
-      await client.query(
-        "SELECT pg_advisory_unlock(738291);"
-      );
-    } catch (_) {}
+    if (client) {
+      try {
+        await client.query("SELECT pg_advisory_unlock(738291);");
+      } catch (_) {}
 
-    client.release();
+      client.release();
+    }
 
     await pool.end();
   }
