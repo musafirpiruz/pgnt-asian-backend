@@ -31,7 +31,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
 }, async () => {
   const port = await reserveLocalPort();
   const db = new Pool({ connectionString: databaseUrl, max: 3 });
-  const seededOrderIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  const seededOrderIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
   const adminKey = 'ci-refund-route-test-admin-key';
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
     env: {
@@ -45,6 +45,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
       NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${path.join(__dirname, 'stripe-route-mock.js')}`].filter(Boolean).join(' '),
       STRIPE_MOCK_METADATA_ORDER_ID: 'intentionally-wrong-order-id',
       STRIPE_MOCK_MATCH_ORDER_ID: seededOrderIds[4],
+      STRIPE_MOCK_FINALIZATION_FAILURE_ORDER_ID: seededOrderIds[5],
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -101,7 +102,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
     // Seed ineligible orders in the isolated CI database. Both must be rejected
     // before Stripe PaymentIntent retrieval, so these requests cannot create refunds.
     await db.query(
-      "INSERT INTO orders (order_id, country, operator, phone, amount, currency, product_id, product_price_cents, fee_cents, bonus_amount, charge_cents, status, stripe_payment_intent_id, dtone_status) VALUES ($1, 'AF', 'CI-TEST', '+33000000000', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_not_final', 'processing'), ($2, 'AF', 'CI-TEST', '+33000000001', 115, 'AFN', 999999, 268, 0, 0, 268, 'completed', 'pi_ci_completed', 'completed'), ($3, 'AF', 'CI-TEST', '+33000000002', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', NULL, 'declined'), ($4, 'AF', 'CI-TEST', '+33000000003', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_mismatched_metadata', 'declined'), ($5, 'AF', 'CI-TEST', '+33000000004', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_match_existing_reservation', 'declined')",
+      "INSERT INTO orders (order_id, country, operator, phone, amount, currency, product_id, product_price_cents, fee_cents, bonus_amount, charge_cents, status, stripe_payment_intent_id, dtone_status) VALUES ($1, 'AF', 'CI-TEST', '+33000000000', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_not_final', 'processing'), ($2, 'AF', 'CI-TEST', '+33000000001', 115, 'AFN', 999999, 268, 0, 0, 268, 'completed', 'pi_ci_completed', 'completed'), ($3, 'AF', 'CI-TEST', '+33000000002', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', NULL, 'declined'), ($4, 'AF', 'CI-TEST', '+33000000003', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_mismatched_metadata', 'declined'), ($5, 'AF', 'CI-TEST', '+33000000004', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_match_existing_reservation', 'declined'), ($6, 'AF', 'CI-TEST', '+33000000005', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_finalization_failure', 'declined')",
       seededOrderIds
     );
     await db.query(
@@ -153,6 +154,32 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
     assert.match((await existingReservationRequest.json()).error, /refund record already exists/i);
     assert.doesNotMatch(logs, /STRIPE_REFUNDS_CREATE_CALLED/, 'the Stripe refund endpoint must never be called in these guard tests');
 
+    // Simulate a database failure after the local Stripe mock confirms success.
+    // The committed pending reservation must survive, and a retry must be blocked.
+    await db.query(`CREATE OR REPLACE FUNCTION ci_fail_refund_finalization() RETURNS trigger LANGUAGE plpgsql AS $ BEGIN RAISE EXCEPTION 'CI simulated refund finalization failure'; END; $`);
+    await db.query(`CREATE TRIGGER ci_fail_refund_finalization BEFORE UPDATE ON refunds FOR EACH ROW WHEN (NEW.order_id = '${seededOrderIds[5]}') EXECUTE FUNCTION ci_fail_refund_finalization()`);
+
+    const finalizationFailure = await fetch(`${baseUrl}/api/admin/orders/${seededOrderIds[5]}/refund`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({ reason: 'CI simulated finalization failure' }),
+    });
+    assert.equal(finalizationFailure.status, 500, 'database finalization failure after Stripe success must return a reconciliation error');
+    assert.match((await finalizationFailure.json()).error, /reconcile Stripe Dashboard before retrying/i);
+    assert.equal((logs.match(/STRIPE_REFUNDS_CREATE_CALLED/g) || []).length, 1, 'the first request must invoke only the local Stripe refund mock once');
+    const retainedReservation = await db.query('SELECT status FROM refunds WHERE order_id = $1', [seededOrderIds[5]]);
+    assert.equal(retainedReservation.rowCount, 1, 'the pre-committed reservation must survive finalization failure');
+    assert.equal(retainedReservation.rows[0].status, 'pending', 'failed finalization must leave the durable reservation pending for reconciliation');
+
+    const retryAfterFailure = await fetch(`${baseUrl}/api/admin/orders/${seededOrderIds[5]}/refund`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({ reason: 'CI retry must be blocked' }),
+    });
+    assert.equal(retryAfterFailure.status, 409, 'a retry must be blocked by the retained reservation');
+    assert.match((await retryAfterFailure.json()).error, /refund record already exists/i);
+    assert.equal((logs.match(/STRIPE_REFUNDS_CREATE_CALLED/g) || []).length, 1, 'retry must not create a second Stripe refund');
+
     const reservations = await db.query(
       'SELECT order_id, COUNT(*)::int AS count FROM refunds WHERE order_id = ANY($1::text[]) GROUP BY order_id',
       [seededOrderIds]
@@ -161,6 +188,8 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
     assert.equal(reservations.rows[0].order_id, seededOrderIds[4]);
     assert.equal(reservations.rows[0].count, 1, 'a second reservation must not be created');
   } finally {
+    await db.query('DROP TRIGGER IF EXISTS ci_fail_refund_finalization ON refunds').catch(() => {});
+    await db.query('DROP FUNCTION IF EXISTS ci_fail_refund_finalization()').catch(() => {});
     await db.query('DELETE FROM refunds WHERE order_id = ANY($1::text[])', [seededOrderIds]).catch(() => {});
     await db.query('DELETE FROM orders WHERE order_id = ANY($1::text[])', [seededOrderIds]).catch(() => {});
     await db.end();
