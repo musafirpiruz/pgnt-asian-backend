@@ -25,13 +25,13 @@ async function reserveLocalPort() {
   return port;
 }
 
-test('refund HTTP route enforces admin auth and safely rejects invalid or unknown orders', {
+test('refund HTTP route enforces admin auth and rejects invalid, unknown, and ineligible orders', {
   skip: !databaseUrl ? 'DATABASE_URL is not configured; requires isolated PostgreSQL test database' : false,
   timeout: 45000,
 }, async () => {
   const port = await reserveLocalPort();
   const db = new Pool({ connectionString: databaseUrl, max: 3 });
-  const seededOrderIds = [randomUUID(), randomUUID()];
+  const seededOrderIds = [randomUUID(), randomUUID(), randomUUID()];
   const adminKey = 'ci-refund-route-test-admin-key';
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
     env: {
@@ -98,7 +98,7 @@ test('refund HTTP route enforces admin auth and safely rejects invalid or unknow
     // Seed ineligible orders in the isolated CI database. Both must be rejected
     // before Stripe PaymentIntent retrieval, so these requests cannot create refunds.
     await db.query(
-      "INSERT INTO orders (order_id, country, operator, phone, amount, currency, product_id, product_price_cents, fee_cents, bonus_amount, charge_cents, status, stripe_payment_intent_id, dtone_status) VALUES ($1, 'AF', 'CI-TEST', '+33000000000', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_not_final', 'processing'), ($2, 'AF', 'CI-TEST', '+33000000001', 115, 'AFN', 999999, 268, 0, 0, 268, 'completed', 'pi_ci_completed', 'completed')",
+      "INSERT INTO orders (order_id, country, operator, phone, amount, currency, product_id, product_price_cents, fee_cents, bonus_amount, charge_cents, status, stripe_payment_intent_id, dtone_status) VALUES ($1, 'AF', 'CI-TEST', '+33000000000', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_not_final', 'processing'), ($2, 'AF', 'CI-TEST', '+33000000001', 115, 'AFN', 999999, 268, 0, 0, 268, 'completed', 'pi_ci_completed', 'completed'), ($3, 'AF', 'CI-TEST', '+33000000002', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', NULL, 'declined')",
       seededOrderIds
     );
 
@@ -117,6 +117,14 @@ test('refund HTTP route enforces admin auth and safely rejects invalid or unknow
     });
     assert.equal(completed.status, 409, 'completed orders must not be refunded');
     assert.match((await completed.json()).error, /already completed or refunded/i);
+
+    const missingPaymentIntent = await fetch(`${baseUrl}/api/admin/orders/${seededOrderIds[2]}/refund`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({ reason: 'CI test only' }),
+    });
+    assert.equal(missingPaymentIntent.status, 409, 'orders without a stored PaymentIntent must be rejected');
+    assert.match((await missingPaymentIntent.json()).error, /no verified Stripe PaymentIntent/i);
 
     const reservations = await db.query(
       'SELECT COUNT(*)::int AS count FROM refunds WHERE order_id = ANY($1::text[])',
