@@ -168,7 +168,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
     assert.match((await finalizationFailure.json()).error, /reconcile Stripe Dashboard before retrying/i);
     // Child-process stdout/stderr arrives asynchronously; wait briefly before checking mock-call evidence.
     await new Promise(resolve => setTimeout(resolve, 100));
-    assert.equal((logs.match(/STRIPE_REFUNDS_CREATE_CALLED/g) || []).length, 1, 'the first request must invoke only the local Stripe refund mock once');
+    assert.equal((logs.match(/STRIPE_REFUNDS_CREATE_CALLED/g) || []).length, 1, `the first request must invoke only the local Stripe refund mock once; child logs:\n${logs}`);
     const retainedReservation = await db.query('SELECT status FROM refunds WHERE order_id = $1', [seededOrderIds[5]]);
     assert.equal(retainedReservation.rowCount, 1, 'the pre-committed reservation must survive finalization failure');
     assert.equal(retainedReservation.rows[0].status, 'pending', 'failed finalization must leave the durable reservation pending for reconciliation');
