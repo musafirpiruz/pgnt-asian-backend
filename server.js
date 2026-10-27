@@ -2614,7 +2614,7 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
       return res.status(400).json({ error: 'Referral rewards are fixed at €0.07 (7 euro cents).' });
     }
     values.push(7);
-    fields.push('reward_eur_cents = 
+    fields.push('reward_eur_cents = ' + String.fromCharCode(36) + values.length);
   }
 
   if (body.maxRewards !== undefined) {
