@@ -17,6 +17,17 @@ test('admin refund route exists and is admin-protected', () => {
   assert.match(route.slice(0, 300), /requireAdmin/);
 });
 
+test('refund route handles database connection acquisition failures inside its error boundary', () => {
+  const connection = route.indexOf('client = await pool.connect()');
+  const guardedTry = route.indexOf('  try {');
+  const finallyRelease = route.indexOf('if (client) client.release()');
+  assert.notEqual(connection, -1, 'refund route must acquire a database connection');
+  assert.notEqual(guardedTry, -1, 'refund route must have an error boundary');
+  assert.notEqual(finallyRelease, -1, 'connection release must tolerate acquisition failure');
+  assert.ok(guardedTry < connection, 'connection acquisition must be inside the try block');
+  assert.match(route, /if \(transactionOpen\) \{[\s\S]*?client\.query\('ROLLBACK'\)/);
+});
+
 test('refund route requires a reviewed order and final DT One failure', () => {
   assert.match(route, /topup_review/);
   assert.match(route, /declined/);
