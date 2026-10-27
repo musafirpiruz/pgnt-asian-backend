@@ -2644,6 +2644,53 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
   }
 });
 
+app.delete('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.code || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{4,40}$/.test(code)) {
+    return res.status(400).json({ error: 'Invalid referral code.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const found = await client.query(
+      'SELECT code, active FROM referral_codes WHERE code = $1 FOR UPDATE',
+      [code]
+    );
+    if (!found.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Referral code not found.' });
+    }
+    if (found.rows[0].active === true) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Deactivate the referral code before deleting it.' });
+    }
+    const usage = await client.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM referral_attributions WHERE referral_code = $1) AS attributions,
+         (SELECT COUNT(*)::int FROM referral_ledger WHERE referral_code = $1) AS ledger_entries`,
+      [code]
+    );
+    if (Number(usage.rows[0].attributions) > 0 || Number(usage.rows[0].ledger_entries) > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Referral code has attribution or reward history and cannot be deleted. Deactivate it instead.',
+        attributions: Number(usage.rows[0].attributions),
+        ledgerEntries: Number(usage.rows[0].ledger_entries)
+      });
+    }
+    await client.query('DELETE FROM referral_codes WHERE code = $1', [code]);
+    await client.query('COMMIT');
+    return res.json({ deleted: true, code });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Referral code deletion failed:', error.message);
+    return res.status(500).json({ error: 'Could not safely delete referral code.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/admin-dtone-check', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
