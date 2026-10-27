@@ -25,7 +25,7 @@ jobs:
           node --version
           npm --version
       - name: Install current dependencies for diagnostic audit
-        run: npm install --ignore-scripts --no-audit
+        run: npm install --ignore-scripts
       - name: Capture Render-style npm install audit summary
         shell: bash
         run: |
