@@ -2683,7 +2683,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <input id="orderId" autocomplete="off" placeholder="Paste orderId from the result">
 <label for="stripeSessionId">Stripe Checkout Session ID (optional; from Stripe event)</label>
 <input id="stripeSessionId" autocomplete="off" placeholder="cs_test_… or cs_live_…">
-<button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
+<button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkStripeCandidates">Check additional Stripe evidence (read-only)</button><small>Scans bounded Stripe records and saved webhook evidence. It never links payments, refunds, or submits a top-up.</small><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
 <button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
 </form>
 <hr>
@@ -3096,6 +3096,20 @@ runStripeDtoneSandbox.addEventListener('click',async()=>{
   }
  }catch(error){result.textContent='Could not create sandbox checkout: '+error.message;}
  finally{key.value='';runStripeDtoneSandbox.disabled=false;confirmStripeDtoneSandbox.checked=false;}
+});
+document.getElementById('checkStripeCandidates').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const id=orderId.value.trim();
+ if(!id){result.textContent='Enter the existing order ID first.';return;}
+ if(!/^[0-9a-f-]{36}$/i.test(id)){result.textContent='Enter a valid order UUID.';return;}
+ const button=document.getElementById('checkStripeCandidates');
+ result.textContent='Checking additional Stripe evidence and saved webhook events (read-only)…';
+ button.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/orders/'+encodeURIComponent(id)+'/stripe-candidates');
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not load additional Stripe evidence: '+error.message;}
+ finally{key.value='';button.disabled=false;}
 });
 checkStripePaymentStatus.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
