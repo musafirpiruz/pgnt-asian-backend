@@ -4209,6 +4209,7 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
     const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
     if (
       paymentIntent.id !== order.stripe_payment_intent_id ||
+      paymentIntent.metadata?.orderId !== orderId ||
       paymentIntent.status !== 'succeeded' ||
       paymentIntent.currency !== 'eur' ||
       paymentIntent.amount_received !== Number(order.charge_cents) ||
