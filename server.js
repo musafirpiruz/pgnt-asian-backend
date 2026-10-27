@@ -2685,6 +2685,9 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <input id="stripeSessionId" autocomplete="off" placeholder="cs_test_… or cs_live_…">
 <button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkStripeCandidates">Check additional Stripe evidence (read-only)</button><small>Scans bounded Stripe records and saved webhook evidence. It never links payments, refunds, or submits a top-up.</small><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
 <button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
+<label for="archiveReason">Archive note (required)</label><input id="archiveReason" autocomplete="off" placeholder="Stripe checked: no payment; DT One final DECLINED">
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmNoStripePayment" type="checkbox" style="width:auto"> I checked Stripe Dashboard and confirmed no payment was collected for this sandbox order</label>
+<button type="button" id="archiveDeclinedSandbox">Archive declined sandbox order (keeps history)</button>
 </form>
 <hr>
 <h2>Stripe + DT One end-to-end sandbox</h2>
@@ -3055,6 +3058,23 @@ runSandbox.addEventListener('click',async()=>{
   result.textContent=JSON.stringify(data,null,2);
  }catch(error){result.textContent='Sandbox test did not confirm success. Details: '+error.message;}
  finally{key.value='';runSandbox.disabled=false;confirmSandbox.checked=false;}
+});
+
+document.getElementById('archiveDeclinedSandbox').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const id=orderId.value.trim();
+ if(!/^[0-9a-f-]{36}$/i.test(id)){result.textContent='Enter a valid order UUID first.';return;}
+ if(!document.getElementById('confirmNoStripePayment').checked){result.textContent='Confirm that you checked Stripe Dashboard and no payment was collected.';return;}
+ const reason=document.getElementById('archiveReason').value.trim();
+ if(reason.length<12){result.textContent='Enter a review note (at least 12 characters).';return;}
+ if(!confirm('Archive this declined ATOMA sandbox order? It will be hidden from the review queue, not deleted. This does not change payment status, issue a refund, or resubmit a top-up.'))return;
+ const button=document.getElementById('archiveDeclinedSandbox');
+ button.disabled=true;result.textContent='Archiving sandbox order while retaining history…';
+ try{
+  const data=await adminRequest('/api/admin/orders/'+encodeURIComponent(id)+'/archive-declined-sandbox',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmNoStripePayment:true,reason})});
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Archive failed: '+error.message;}
+ finally{key.value='';button.disabled=false;document.getElementById('confirmNoStripePayment').checked=false;}
 });
 loadReviewQueue.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
@@ -4352,6 +4372,8 @@ app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
          dtone_transaction_id,
          dtone_status,
          dtone_error,
+         archived_at,
+         archived_reason,
          created_at,
          updated_at,
          CASE
@@ -4364,7 +4386,8 @@ app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
            ELSE 'review_required'
          END AS review_reason
        FROM orders
-       WHERE status = 'topup_review'
+       WHERE archived_at IS NULL
+         AND (status = 'topup_review'
           OR (
             status = 'processing_topup'
             AND updated_at < NOW() - INTERVAL '5 minutes'
@@ -4372,7 +4395,7 @@ app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
           OR (
             status = 'topup_submitted'
             AND updated_at < NOW() - INTERVAL '15 minutes'
-          )
+          ))
        ORDER BY updated_at ASC
        LIMIT 100`
     );
@@ -4396,6 +4419,67 @@ app.get('/api/admin/orders/review', requireAdmin, async (req, res) => {
     return res.status(500).json({
       error: 'Could not load review queue.',
     });
+  }
+});
+
+
+// Archive only a declined ATOMA sandbox order after an admin explicitly confirms
+// that Stripe Dashboard was checked and no payment was collected. Never deletes
+// the order, changes its financial status, issues a refund, or calls DT One.
+app.post('/api/admin/orders/:orderId/archive-declined-sandbox', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const orderId = String(req.params.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'Invalid order ID.' });
+  }
+  if (req.body?.confirmNoStripePayment !== true) {
+    return res.status(400).json({ error: 'Explicit confirmation that Stripe Dashboard was checked and no payment was collected is required.' });
+  }
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
+  if (reason.length < 12) {
+    return res.status(400).json({ error: 'Provide a review note explaining how payment absence and DT One decline were verified.' });
+  }
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const found = await client.query(
+      `SELECT order_id, operator, status, charge_cents, stripe_session_id,
+              stripe_payment_intent_id, dtone_status, archived_at
+         FROM orders WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    if (found.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+    const order = found.rows[0];
+    if (order.archived_at) {
+      await client.query('COMMIT');
+      return res.json({ archived: true, alreadyArchived: true, orderId, financialStatusChanged: false, deleted: false });
+    }
+    if (order.operator !== 'ATOMA-SANDBOX-TEST' || order.status !== 'topup_review' || String(order.dtone_status || '').toUpperCase() !== 'DECLINED') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Only ATOMA sandbox orders in topup_review with DT One DECLINED can be archived.' });
+    }
+    if (order.stripe_session_id || order.stripe_payment_intent_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Stripe identifiers are present. Resolve payment evidence first; this order cannot be archived by this endpoint.' });
+    }
+    await client.query(
+      `UPDATE orders
+          SET archived_at = NOW(), archived_reason = $2, updated_at = NOW()
+        WHERE order_id = $1 AND archived_at IS NULL`,
+      [orderId, reason]
+    );
+    await client.query('COMMIT');
+    return res.json({ archived: true, orderId, financialStatusChanged: false, deleted: false, refundCreated: false, dtOneCalled: false, note: 'Order history is retained. Admin confirmation of no Stripe payment and DT One DECLINED was recorded.' });
+  } catch (error) {
+    if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
+    console.error('Sandbox order archive failed:', error.message);
+    return res.status(500).json({ error: 'Could not archive sandbox order. Confirm the archive migration is applied.' });
+  } finally {
+    if (client) client.release();
   }
 });
 
