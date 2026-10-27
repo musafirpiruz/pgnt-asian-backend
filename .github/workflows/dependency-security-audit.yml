@@ -18,8 +18,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Resolve dependencies for diagnostic audit
-        run: npm install --package-lock-only --ignore-scripts --no-audit
+      - name: Install current dependencies for diagnostic audit
+        run: npm install --ignore-scripts --no-audit
       - name: Report dependency vulnerabilities
         shell: bash
         run: |
