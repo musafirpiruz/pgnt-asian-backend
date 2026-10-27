@@ -1,0 +1,46 @@
+name: Dependency Security Audit (diagnostic)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Resolve dependencies for diagnostic audit
+        run: npm install --package-lock-only --ignore-scripts --no-audit
+      - name: Report dependency vulnerabilities
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > npm-audit-report.json
+          audit_exit=$?
+          node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("npm-audit-report.json", "utf8"));
+            console.log("Vulnerability counts:", JSON.stringify(p.metadata?.vulnerabilities ?? {}, null, 2));
+            for (const [name, item] of Object.entries(p.vulnerabilities ?? {})) {
+              console.log("\\nPACKAGE:", name);
+              console.log("SEVERITY:", item.severity);
+              console.log("DIRECT:", item.isDirect);
+              console.log("RANGE:", item.range);
+              console.log("FIX AVAILABLE:", JSON.stringify(item.fixAvailable ?? false));
+              for (const via of item.via ?? []) {
+                if (typeof via === "object") console.log("ADVISORY:", JSON.stringify({title: via.title, url: via.url, range: via.range, fixAvailable: via.fixAvailable}));
+                else console.log("VIA:", via);
+              }
+              console.log("DEPENDENCY PATHS:", JSON.stringify(item.nodes ?? []));
+            }
+          '
+          echo "npm audit exit code: $audit_exit (diagnostic only; no dependency upgrades applied)"
