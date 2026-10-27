@@ -4213,7 +4213,7 @@ app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => 
       paymentIntent.status !== 'succeeded' ||
       paymentIntent.currency !== 'eur' ||
       paymentIntent.amount_received !== Number(order.charge_cents) ||
-      paymentIntent.livemode === stripeIsTest
+      paymentIntent.livemode !== !stripeIsTest
     ) {
       await client.query('ROLLBACK');
       transactionOpen = false;
