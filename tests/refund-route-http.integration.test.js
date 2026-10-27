@@ -31,7 +31,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
 }, async () => {
   const port = await reserveLocalPort();
   const db = new Pool({ connectionString: databaseUrl, max: 3 });
-  const seededOrderIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  const seededOrderIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
   const adminKey = 'ci-refund-route-test-admin-key';
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
     env: {
@@ -44,6 +44,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
       NODE_ENV: 'test',
       NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${path.join(__dirname, 'stripe-route-mock.js')}`].filter(Boolean).join(' '),
       STRIPE_MOCK_METADATA_ORDER_ID: 'intentionally-wrong-order-id',
+      STRIPE_MOCK_MATCH_ORDER_ID: seededOrderIds[4],
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -100,8 +101,12 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
     // Seed ineligible orders in the isolated CI database. Both must be rejected
     // before Stripe PaymentIntent retrieval, so these requests cannot create refunds.
     await db.query(
-      "INSERT INTO orders (order_id, country, operator, phone, amount, currency, product_id, product_price_cents, fee_cents, bonus_amount, charge_cents, status, stripe_payment_intent_id, dtone_status) VALUES ($1, 'AF', 'CI-TEST', '+33000000000', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_not_final', 'processing'), ($2, 'AF', 'CI-TEST', '+33000000001', 115, 'AFN', 999999, 268, 0, 0, 268, 'completed', 'pi_ci_completed', 'completed'), ($3, 'AF', 'CI-TEST', '+33000000002', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', NULL, 'declined'), ($4, 'AF', 'CI-TEST', '+33000000003', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_mismatched_metadata', 'declined')",
+      "INSERT INTO orders (order_id, country, operator, phone, amount, currency, product_id, product_price_cents, fee_cents, bonus_amount, charge_cents, status, stripe_payment_intent_id, dtone_status) VALUES ($1, 'AF', 'CI-TEST', '+33000000000', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_not_final', 'processing'), ($2, 'AF', 'CI-TEST', '+33000000001', 115, 'AFN', 999999, 268, 0, 0, 268, 'completed', 'pi_ci_completed', 'completed'), ($3, 'AF', 'CI-TEST', '+33000000002', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', NULL, 'declined'), ($4, 'AF', 'CI-TEST', '+33000000003', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_mismatched_metadata', 'declined'), ($5, 'AF', 'CI-TEST', '+33000000004', 115, 'AFN', 999999, 268, 0, 0, 268, 'topup_review', 'pi_ci_match_existing_reservation', 'declined')",
       seededOrderIds
+    );
+    await db.query(
+      "INSERT INTO refunds (order_id, amount_cents, status, reason) VALUES ($1, 268, 'pending', 'CI pre-existing reservation')",
+      [seededOrderIds[4]]
     );
 
     const nonFinal = await fetch(`${baseUrl}/api/admin/orders/${seededOrderIds[0]}/refund`, {
@@ -139,11 +144,22 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
     assert.match((await mismatchedPaymentIntent.json()).error, /Stripe payment verification did not match this order/i);
     assert.doesNotMatch(logs, /STRIPE_REFUNDS_CREATE_CALLED/, 'Stripe refunds.create must not be called for a mismatched PaymentIntent');
 
+    const existingReservationRequest = await fetch(`${baseUrl}/api/admin/orders/${seededOrderIds[4]}/refund`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({ reason: 'CI test only' }),
+    });
+    assert.equal(existingReservationRequest.status, 409, 'an existing pending reservation must block a second refund attempt');
+    assert.match((await existingReservationRequest.json()).error, /refund record already exists/i);
+    assert.doesNotMatch(logs, /STRIPE_REFUNDS_CREATE_CALLED/, 'the Stripe refund endpoint must never be called in these guard tests');
+
     const reservations = await db.query(
-      'SELECT COUNT(*)::int AS count FROM refunds WHERE order_id = ANY($1::text[])',
+      'SELECT order_id, COUNT(*)::int AS count FROM refunds WHERE order_id = ANY($1::text[]) GROUP BY order_id',
       [seededOrderIds]
     );
-    assert.equal(reservations.rows[0].count, 0, 'ineligible requests must not create refund reservations');
+    assert.equal(reservations.rows.length, 1, 'only the intentionally pre-seeded reservation may exist');
+    assert.equal(reservations.rows[0].order_id, seededOrderIds[4]);
+    assert.equal(reservations.rows[0].count, 1, 'a second reservation must not be created');
   } finally {
     await db.query('DELETE FROM refunds WHERE order_id = ANY($1::text[])', [seededOrderIds]).catch(() => {});
     await db.query('DELETE FROM orders WHERE order_id = ANY($1::text[])', [seededOrderIds]).catch(() => {});
