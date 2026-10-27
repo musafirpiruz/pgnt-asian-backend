@@ -2644,6 +2644,84 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
   }
 });
 
+// Delete only referral codes with no historical or financial references.
+// If any attribution, ledger entry, or order references the code, preserve history
+// and deactivate it instead. The whole decision is serialized in one DB transaction.
+app.delete('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.code || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{4,40}$/.test(code)) {
+    return res.status(400).json({ error: 'Invalid referral code.' });
+  }
+
+  let client;
+  let transactionOpen = false;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionOpen = true;
+
+    const locked = await client.query(
+      'SELECT code, active FROM referral_codes WHERE code = $1 FOR UPDATE',
+      [code]
+    );
+    if (locked.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(404).json({ error: 'Referral code not found.' });
+    }
+
+    const counts = await client.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM referral_attributions WHERE referral_code = $1) AS attributions,
+         (SELECT COUNT(*)::int FROM referral_ledger WHERE referral_code = $1) AS ledger_entries,
+         (SELECT COUNT(*)::int FROM orders WHERE referral_code = $1) AS orders`,
+      [code]
+    );
+    const references = {
+      attributions: Number(counts.rows[0].attributions),
+      ledgerEntries: Number(counts.rows[0].ledger_entries),
+      orders: Number(counts.rows[0].orders),
+    };
+    const hasHistory = Object.values(references).some((count) => count > 0);
+
+    if (hasHistory) {
+      const archived = await client.query(
+        'UPDATE referral_codes SET active = FALSE WHERE code = $1 RETURNING code, active',
+        [code]
+      );
+      await client.query('COMMIT');
+      transactionOpen = false;
+      return res.json({
+        deleted: false,
+        archived: true,
+        reason: 'Referral history exists; the code was disabled and historical records were preserved.',
+        references,
+        referral: archived.rows[0],
+      });
+    }
+
+    const deleted = await client.query(
+      'DELETE FROM referral_codes WHERE code = $1 RETURNING code',
+      [code]
+    );
+    if (deleted.rowCount !== 1) {
+      throw new Error('Referral code changed while deletion was being finalized.');
+    }
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return res.json({ deleted: true, archived: false, references, code: deleted.rows[0].code });
+  } catch (error) {
+    if (transactionOpen && client) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
+    console.error('Referral code delete/archive failed:', error.message);
+    return res.status(500).json({ error: 'Could not safely delete or archive referral code.' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 app.get('/admin-dtone-check', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -3223,7 +3301,18 @@ async function refreshReferralReport(){
      await refreshReferralReport();
     }catch(error){result.textContent='Could not update referral code: '+error.message;toggle.disabled=false;}
    });
-   card.append(toggle);host.append(card);
+   const remove=makeTicketElement('button','Delete / archive code');
+   remove.type='button';remove.addEventListener('click',async()=>{
+    if(!key.value){result.textContent='Enter the admin API key again before deleting or archiving a code.';return;}
+    if(!confirm('Remove '+ref.code+'? If any attribution, ledger, or order history exists, the code will only be disabled and history preserved.'))return;
+    remove.disabled=true;
+    try{
+     const outcome=await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'DELETE'});
+     result.textContent=JSON.stringify(outcome,null,2);
+     await refreshReferralReport();
+    }catch(error){result.textContent='Could not delete/archive referral code: '+error.message;remove.disabled=false;}
+   });
+   card.append(toggle);card.append(remove);host.append(card);
   }
   host.append(makeTicketElement('small',data.rewardRule||'Rewards are fixed at €0.07 and remain pending until admin approval.'));
  }catch(error){host.replaceChildren(makeTicketElement('p','Could not load referral report: '+error.message));}
