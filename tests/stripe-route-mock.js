@@ -18,15 +18,17 @@ class StripeRouteMock {
         metadata: {
           orderId: paymentIntentId === 'pi_ci_match_existing_reservation'
             ? process.env.STRIPE_MOCK_MATCH_ORDER_ID
-            : (process.env.STRIPE_MOCK_METADATA_ORDER_ID || 'intentionally-wrong-order-id'),
+            : paymentIntentId === 'pi_ci_finalization_failure'
+              ? process.env.STRIPE_MOCK_FINALIZATION_FAILURE_ORDER_ID
+              : (process.env.STRIPE_MOCK_METADATA_ORDER_ID || 'intentionally-wrong-order-id'),
         },
       }),
     };
     this.refunds = {
       create: async () => {
-        console.error('STRIPE_REFUNDS_CREATE_CALLED: test guard failed');
+        console.error('STRIPE_REFUNDS_CREATE_CALLED: isolated local mock only');
         return {
-          id: 're_ci_should_not_be_created',
+          id: 're_ci_mock_success_then_db_failure',
           amount: 268,
           currency: 'eur',
           status: 'succeeded',
