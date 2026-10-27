@@ -32,6 +32,22 @@ test('refund route verifies the canonical Stripe PaymentIntent before refunding'
   assert.match(route, /livemode/);
 });
 
+test('refund route checks exact PaymentIntent identity, order metadata, amount, currency, status, and environment before reserving a refund', () => {
+  const verificationStart = route.indexOf('if (\n      paymentIntent.id !== order.stripe_payment_intent_id');
+  const reservation = route.indexOf("INSERT INTO refunds (order_id, amount_cents, status, reason)");
+  assert.notEqual(verificationStart, -1, 'all Stripe payment checks must be grouped in the route');
+  assert.notEqual(reservation, -1, 'refund reservation insert must exist');
+  const verification = route.slice(verificationStart, reservation);
+  assert.match(verification, /paymentIntent\.id !== order\.stripe_payment_intent_id/);
+  assert.match(verification, /paymentIntent\.metadata\?\.orderId !== orderId/);
+  assert.match(verification, /paymentIntent\.status !== 'succeeded'/);
+  assert.match(verification, /paymentIntent\.currency !== 'eur'/);
+  assert.match(verification, /paymentIntent\.amount_received !== Number\(order\.charge_cents\)/);
+  assert.match(verification, /paymentIntent\.livemode !== !stripeIsTest/);
+  assert.ok(verificationStart < reservation, 'verification must happen before a refund reservation is created');
+  assert.match(verification, /No refund was started/);
+});
+
 test('refund route does not accept an order without a stored PaymentIntent association', () => {
   assert.match(route, /stripe_payment_intent_id/);
   assert.match(route, /PaymentIntent/);
