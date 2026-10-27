@@ -175,3 +175,32 @@ test('admin page exposes referral code creation, activation, and reporting contr
   assert.match(page, /rewardEurCents:7/);
   assert.match(page, /starts disabled/);
 });
+
+
+test('admin referral code deletion requires admin auth and archives codes with any history', () => {
+  const start = server.indexOf("app.delete('/api/admin/referrals/codes/:code'");
+  const end = server.indexOf("app.get('/admin-dtone-check'", start);
+  const route = start >= 0 && end > start ? server.slice(start, end) : '';
+  assert.ok(start >= 0);
+  assert.match(route, /requireAdmin/);
+  assert.match(route, /BEGIN/);
+  assert.match(route, /FOR UPDATE/);
+  assert.match(route, /referral_attributions/);
+  assert.match(route, /referral_ledger/);
+  assert.match(route, /FROM orders WHERE referral_code = \$1/);
+  assert.match(route, /if \(hasHistory\)/);
+  assert.match(route, /SET active = FALSE/);
+  assert.match(route, /DELETE FROM referral_codes WHERE code = \$1/);
+  assert.match(route, /ROLLBACK/);
+  assert.match(route, /client\.release\(\)/);
+  assert.doesNotMatch(route, /DELETE FROM (referral_attributions|referral_ledger|orders)/);
+});
+
+test('referral admin page provides an explicit delete/archive action with history warning', () => {
+  const pageStart = server.indexOf("app.get('/admin-dtone-check'");
+  const pageEnd = server.indexOf('`);\n});', pageStart);
+  const page = pageStart >= 0 && pageEnd > pageStart ? server.slice(pageStart, pageEnd) : '';
+  assert.match(page, /Delete \/ archive code/);
+  assert.match(page, /history exists, the code will only be disabled and history preserved/);
+  assert.match(page, /method:'DELETE'/);
+});
