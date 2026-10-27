@@ -2694,6 +2694,16 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <p>Admin-only test. Uses Stripe test mode and DT One pre-production with a fixed test recipient. A successful test payment submits one sandbox top-up. It does not activate the ATOMA catalog product. Do not use real card details.</p>
 <label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
 <button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
+<h2>Referral code administration</h2>
+<p>Create referral codes, activate or deactivate them, and review attributed installs and reward totals. Every eligible referral reward is fixed at €0.07 after the referred customer’s first successful top-up. New codes are disabled until you activate them.</p>
+<label for="referralCode">Referral code (4–40 letters, numbers, _ or -)</label><input id="referralCode" maxlength="40" autocomplete="off" placeholder="e.g. FRIEND2026">
+<label for="referralOwner">Code owner name</label><input id="referralOwner" maxlength="120" autocomplete="name" placeholder="Owner or partner name">
+<label for="referralContact">Owner contact (optional)</label><input id="referralContact" maxlength="200" autocomplete="off" placeholder="Optional contact reference">
+<label for="referralMaxRewards">Maximum rewards (optional; blank = unlimited)</label><input id="referralMaxRewards" type="number" min="0" step="1" placeholder="e.g. 100">
+<p><strong>Reward per eligible referral: €0.07 (fixed)</strong></p>
+<button type="button" id="createReferralCode">Create referral code (starts disabled)</button>
+<button type="button" id="loadReferralReport">Load referral report</button>
+<div id="referralReport" aria-live="polite"></div>
 <h2>Admin pricing controls</h2>
 <p>Choose any supported country to manage its EUR app fee, local-currency reference rate, and estimated Stripe fees. Reference exchange rates are indicative and must be checked before production. Keep unverified products disabled.</p>
 <label for="pricingCountry">Country pricing</label><select id="pricingCountry" style="width:100%;padding:12px;font:inherit"><option value="AF">Afghanistan (AFN)</option><option value="PK">Pakistan (PKR)</option><option value="IN">India (INR)</option><option value="BD">Bangladesh (BDT)</option></select>
@@ -3166,6 +3176,61 @@ checkLiveDtOneStatus.addEventListener('click',async()=>{
  }catch(error){result.textContent='Could not query DT One live status: '+error.message;}
  finally{key.value='';checkLiveDtOneStatus.disabled=false;}
 });
+
+document.getElementById('createReferralCode').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const code=document.getElementById('referralCode').value.trim().toUpperCase();
+ const ownerName=document.getElementById('referralOwner').value.trim();
+ const ownerContact=document.getElementById('referralContact').value.trim();
+ const maxText=document.getElementById('referralMaxRewards').value.trim();
+ if(!/^[A-Z0-9_-]{4,40}$/.test(code)){result.textContent='Referral code must be 4–40 letters, numbers, _ or -.';return;}
+ if(!ownerName||ownerName.length>120){result.textContent='Enter a valid code owner name.';return;}
+ const payload={code,ownerName,ownerContact,rewardEurCents:7,maxRewards:maxText===''?null:Number(maxText)};
+ if(maxText!==''&&(!Number.isSafeInteger(payload.maxRewards)||payload.maxRewards<0)){result.textContent='Maximum rewards must be a non-negative whole number or blank.';return;}
+ if(!confirm('Create referral code '+code+' with a fixed €0.07 reward? The code will remain DISABLED until you activate it.'))return;
+ const button=document.getElementById('createReferralCode');button.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/referrals/codes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  result.textContent=JSON.stringify({created:true,activationRequired:data.activationRequired,referral:data.referral},null,2);
+  await refreshReferralReport();
+ }catch(error){result.textContent='Could not create referral code: '+error.message;}
+ finally{key.value='';button.disabled=false;}
+});
+async function refreshReferralReport(){
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const host=document.getElementById('referralReport');
+ host.replaceChildren(makeTicketElement('p','Loading referral report…'));
+ const button=document.getElementById('loadReferralReport');button.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/referrals');
+  host.replaceChildren();
+  const rows=Array.isArray(data.referrals)?data.referrals:[];
+  if(!rows.length){host.append(makeTicketElement('p','No referral codes have been created yet.'));return;}
+  for(const ref of rows){
+   const card=makeTicketElement('section',undefined,'ticket-card');
+   card.append(makeTicketElement('h3',ref.code+' — '+ref.owner_name));
+   card.append(makeTicketElement('p','Status: '+(ref.active?'ACTIVE':'DISABLED')+' | Reward: €'+(Number(ref.reward_eur_cents||0)/100).toFixed(2)));
+   card.append(makeTicketElement('p','Attributed installs: '+ref.attributed_installs+' | Eligible rewards: '+ref.reward_eligible+' | Paid rewards: '+ref.rewards_paid));
+   card.append(makeTicketElement('p','Reward ledger total: €'+(Number(ref.reward_total_eur_cents||0)/100).toFixed(2)+' | Cap: '+(ref.max_rewards===null?'unlimited':ref.max_rewards)));
+   const toggle=makeTicketElement('button',ref.active?'Deactivate code':'Activate code');
+   toggle.type='button';toggle.addEventListener('click',async()=>{
+    if(!key.value){result.textContent='Enter the admin API key again before changing a code.';return;}
+    if(!confirm((ref.active?'Deactivate':'Activate')+' referral code '+ref.code+'?'))return;
+    toggle.disabled=true;
+    try{
+     const changed=await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!ref.active})});
+     result.textContent=JSON.stringify({updated:true,referral:changed.referral},null,2);
+     await refreshReferralReport();
+    }catch(error){result.textContent='Could not update referral code: '+error.message;toggle.disabled=false;}
+   });
+   card.append(toggle);host.append(card);
+  }
+  host.append(makeTicketElement('small',data.rewardRule||'Rewards are fixed at €0.07 and remain pending until admin approval.'));
+ }catch(error){host.replaceChildren(makeTicketElement('p','Could not load referral report: '+error.message));}
+ finally{key.value='';button.disabled=false;}
+}
+document.getElementById('loadReferralReport').addEventListener('click',refreshReferralReport);
+
 </script>
 </body>
 </html>`);
