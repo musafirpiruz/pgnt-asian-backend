@@ -123,6 +123,27 @@ async function runMigration() {
     }
 
 
+    // Version 014 adds reversible, audit-preserving archival for declined sandbox orders.
+    const archiveVersion = "014_declined_sandbox_order_archive";
+    const archiveCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [archiveVersion]
+    );
+    if (archiveCheck.rows.length === 0) {
+      await client.query(`
+        ALTER TABLE orders
+          ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS archived_reason TEXT;
+        CREATE INDEX IF NOT EXISTS idx_orders_unarchived_review
+          ON orders (updated_at)
+          WHERE archived_at IS NULL;
+        INSERT INTO schema_migrations (version)
+        VALUES ('014_declined_sandbox_order_archive')
+        ON CONFLICT (version) DO NOTHING;
+      `);
+      console.log("Migration 014_declined_sandbox_order_archive completed successfully.");
+    }
+
     // Version 009 adds admin-controlled per-operator fee settings.
     const operatorFeeVersion = "009_operator_pricing_settings";
     const operatorFeeCheck = await client.query(
