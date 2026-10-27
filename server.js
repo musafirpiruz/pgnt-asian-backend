@@ -781,11 +781,19 @@ function calculateFinalPrice(product, pricing) {
   // and fixed fee are covered while preserving the configured app fee.
   const targetNetCents = basePriceCents + feeCents;
   const stripeRate = pricing.stripeFeePercent / 100;
-  const finalPriceCents = Math.ceil(
+  // Start with the algebraic gross-up, then correct for Stripe's
+  // percentage-fee rounding. The rounded Stripe fee must never reduce
+  // the amount retained below wholesale cost plus the configured app fee.
+  let finalPriceCents = Math.ceil(
     (targetNetCents + pricing.stripeFixedFeeCents) / (1 - stripeRate)
   );
-  const estimatedStripeFeeCents =
+  let estimatedStripeFeeCents =
     Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents;
+  while (finalPriceCents - estimatedStripeFeeCents < targetNetCents) {
+    finalPriceCents += 1;
+    estimatedStripeFeeCents =
+      Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents;
+  }
 
   if (!Number.isSafeInteger(finalPriceCents) || finalPriceCents <= 0) {
     throw new Error('Final price is outside the supported range.');
