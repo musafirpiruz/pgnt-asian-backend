@@ -58,3 +58,18 @@ test('source-level readiness tests do not load Stripe or connect to external ser
   assert.match(source, /fs\.readFileSync/);
   assert.doesNotMatch(source, /require\(['"]stripe['"]\)/);
 });
+
+
+test('sandbox checkout requires Stripe test mode, DT One pre-production, and explicit confirmation', () => {
+  const routeStart = server.indexOf("app.post('/api/admin/stripe-dtone/sandbox-checkout', express.json(), requireAdmin");
+  const routeEnd = server.indexOf("\n// ", routeStart + 1);
+  assert.notEqual(routeStart, -1, 'admin sandbox checkout route must exist');
+  const route = server.slice(routeStart, routeEnd > routeStart ? routeEnd : routeStart + 6000);
+  assert.match(route, /STRIPE_SECRET_KEY\.startsWith\('sk_test_'\)/);
+  assert.match(route, /isDtOnePreproductionConfigured\(\)/);
+  assert.match(route, /req\.body\?\.confirmSandbox !== true/);
+  assert.match(route, /sandboxOnly:\s*true/);
+  assert.match(route, /productRemainsInactive:\s*true/);
+  assert.match(route, /stripe\.checkout\.sessions\.create/);
+  assert.match(route, /Successful payment will submit one DT One pre-production sandbox transaction/);
+});
