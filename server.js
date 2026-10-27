@@ -4143,6 +4143,52 @@ app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req
     }
 
     const order = result.rows[0];
+
+    // Search locally persisted Stripe webhook events for exact order references.
+    // This is read-only and can reveal a paid Checkout event even when the
+    // session ID was not persisted on the order row. Never associate by amount.
+    const webhookEvidenceResult = await pool.query(
+      `SELECT
+         event_id,
+         payload->>'type' AS event_type,
+         payload->>'created' AS event_created,
+         payload #>> '{data,object,id}' AS stripe_object_id,
+         payload #>> '{data,object,object}' AS stripe_object_type,
+         payload #>> '{data,object,client_reference_id}' AS client_reference_id,
+         payload #>> '{data,object,metadata,orderId}' AS metadata_order_id,
+         payload #>> '{data,object,payment_status}' AS payment_status,
+         payload #>> '{data,object,status}' AS object_status,
+         payload #>> '{data,object,amount_total}' AS amount_total,
+         payload #>> '{data,object,amount_received}' AS amount_received,
+         payload #>> '{data,object,currency}' AS currency,
+         payload #>> '{data,object,livemode}' AS livemode
+       FROM webhook_events
+       WHERE provider = 'stripe'
+         AND (
+           payload #>> '{data,object,client_reference_id}' = $1
+           OR payload #>> '{data,object,metadata,orderId}' = $1
+           OR payload #>> '{data,object,payment_intent,metadata,orderId}' = $1
+         )
+       ORDER BY (payload->>'created')::bigint DESC
+       LIMIT 50`,
+      [orderId]
+    );
+    const webhookEvidence = webhookEvidenceResult.rows.map((row) => ({
+      eventId: row.event_id,
+      eventType: row.event_type,
+      eventCreated: row.event_created ? Number(row.event_created) : null,
+      stripeObjectId: row.stripe_object_id || null,
+      stripeObjectType: row.stripe_object_type || null,
+      clientReferenceMatches: row.client_reference_id === orderId,
+      metadataOrderIdMatches: row.metadata_order_id === orderId,
+      paymentStatus: row.payment_status || null,
+      objectStatus: row.object_status || null,
+      amountTotal: row.amount_total === null ? null : Number(row.amount_total),
+      amountReceived: row.amount_received === null ? null : Number(row.amount_received),
+      currency: row.currency || null,
+      livemode: row.livemode === null ? null : row.livemode === 'true',
+    }));
+
     const createdMs = new Date(order.created_at).getTime();
     if (!Number.isFinite(createdMs)) {
       return res.status(500).json({ error: 'Order creation time is invalid.' });
@@ -4226,6 +4272,11 @@ app.get('/api/admin/orders/:orderId/stripe-candidates', requireAdmin, async (req
         createdAt: order.created_at,
         savedCheckoutSessionId: order.stripe_session_id || null,
         savedPaymentIntentId: order.stripe_payment_intent_id || null,
+      },
+      persistedStripeWebhookEvidence: {
+        count: webhookEvidence.length,
+        events: webhookEvidence,
+        note: 'Evidence comes from webhook events already stored locally; absence here does not prove that Stripe never collected a payment.',
       },
       searchWindow: {
         from: new Date(created.gte * 1000).toISOString(),
