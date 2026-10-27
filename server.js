@@ -3259,6 +3259,21 @@ async function refreshReferralReport(){
    card.append(makeTicketElement('p','Status: '+(ref.active?'ACTIVE':'DISABLED')+' | Reward: €'+(Number(ref.reward_eur_cents||0)/100).toFixed(2)));
    card.append(makeTicketElement('p','Attributed installs: '+ref.attributed_installs+' | Eligible rewards: '+ref.reward_eligible+' | Paid rewards: '+ref.rewards_paid));
    card.append(makeTicketElement('p','Reward ledger total: €'+(Number(ref.reward_total_eur_cents||0)/100).toFixed(2)+' | Cap: '+(ref.max_rewards===null?'unlimited':ref.max_rewards)));
+   if(!ref.active && Number(ref.attributed_installs||0)===0 && Number(ref.reward_eligible||0)===0 && Number(ref.rewards_paid||0)===0 && Number(ref.reward_total_eur_cents||0)===0){
+    const remove=makeTicketElement('button','Delete unused code');
+    remove.type='button';
+    remove.addEventListener('click',async()=>{
+     if(!key.value){result.textContent='Enter the admin API key again before deleting a code.';return;}
+     if(!confirm('Permanently delete unused referral code '+ref.code+'? This is allowed only when there is no attribution or reward ledger history.'))return;
+     remove.disabled=true;
+     try{
+      const deleted=await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'DELETE'});
+      result.textContent=JSON.stringify({deleted:true,code:deleted.code},null,2);
+      await refreshReferralReport();
+     }catch(error){result.textContent='Could not delete referral code: '+error.message;remove.disabled=false;}
+    });
+    card.append(remove);
+   }
    const toggle=makeTicketElement('button',ref.active?'Deactivate code':'Activate code');
    toggle.type='button';toggle.addEventListener('click',async()=>{
     if(!key.value){result.textContent='Enter the admin API key again before changing a code.';return;}
