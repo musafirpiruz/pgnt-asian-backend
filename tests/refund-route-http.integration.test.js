@@ -119,13 +119,13 @@ test('refund HTTP route enforces admin auth and safely rejects invalid or unknow
     assert.match((await completed.json()).error, /already completed or refunded/i);
 
     const reservations = await db.query(
-      'SELECT COUNT(*)::int AS count FROM refunds WHERE order_id = ANY($1::uuid[])',
+      'SELECT COUNT(*)::int AS count FROM refunds WHERE order_id = ANY($1::text[])',
       [seededOrderIds]
     );
     assert.equal(reservations.rows[0].count, 0, 'ineligible requests must not create refund reservations');
   } finally {
-    await db.query('DELETE FROM refunds WHERE order_id = ANY($1::uuid[])', [seededOrderIds]).catch(() => {});
-    await db.query('DELETE FROM orders WHERE order_id = ANY($1::uuid[])', [seededOrderIds]).catch(() => {});
+    await db.query('DELETE FROM refunds WHERE order_id = ANY($1::text[])', [seededOrderIds]).catch(() => {});
+    await db.query('DELETE FROM orders WHERE order_id = ANY($1::text[])', [seededOrderIds]).catch(() => {});
     await db.end();
     child.kill('SIGTERM');
     await Promise.race([
