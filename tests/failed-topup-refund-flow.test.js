@@ -37,6 +37,7 @@ test('unknown or pending provider status cannot qualify for a refund', () => {
 test('refund is admin-only and verifies the canonical paid EUR PaymentIntent', () => {
   assert.match(refundRoute.slice(0, 180), /requireAdmin/);
   assert.match(refundRoute, /stripe\.paymentIntents\.retrieve/);
+  assert.match(refundRoute, /paymentIntent\.metadata\?\.orderId !== orderId/);
   assert.match(refundRoute, /paymentIntent\.status !== 'succeeded'/);
   assert.match(refundRoute, /paymentIntent\.currency !== 'eur'/);
   assert.match(refundRoute, /paymentIntent\.amount_received !== Number\(order\.charge_cents\)/);
