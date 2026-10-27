@@ -166,6 +166,8 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
     });
     assert.equal(finalizationFailure.status, 500, 'database finalization failure after Stripe success must return a reconciliation error');
     assert.match((await finalizationFailure.json()).error, /reconcile Stripe Dashboard before retrying/i);
+    // Child-process stdout/stderr arrives asynchronously; wait briefly before checking mock-call evidence.
+    await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal((logs.match(/STRIPE_REFUNDS_CREATE_CALLED/g) || []).length, 1, 'the first request must invoke only the local Stripe refund mock once');
     const retainedReservation = await db.query('SELECT status FROM refunds WHERE order_id = $1', [seededOrderIds[5]]);
     assert.equal(retainedReservation.rowCount, 1, 'the pre-committed reservation must survive finalization failure');
@@ -178,6 +180,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
     });
     assert.equal(retryAfterFailure.status, 409, 'a retry must be blocked by the retained reservation');
     assert.match((await retryAfterFailure.json()).error, /refund record already exists/i);
+    await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal((logs.match(/STRIPE_REFUNDS_CREATE_CALLED/g) || []).length, 1, 'retry must not create a second Stripe refund');
 
     const reservations = await db.query(
