@@ -41,7 +41,7 @@ test('refund is admin-only and verifies the canonical paid EUR PaymentIntent', (
   assert.match(refundRoute, /paymentIntent\.status !== 'succeeded'/);
   assert.match(refundRoute, /paymentIntent\.currency !== 'eur'/);
   assert.match(refundRoute, /paymentIntent\.amount_received !== Number\(order\.charge_cents\)/);
-  assert.match(refundRoute, /paymentIntent\.livemode === stripeIsTest/);
+  assert.match(refundRoute, /paymentIntent\.livemode !== !stripeIsTest/);
 });
 
 test('completed top-ups and existing ambiguous refunds cannot be refunded again', () => {
