@@ -7,7 +7,7 @@ const { executeReservedRefund } = require('../refund-flow');
 const order = { stripe_payment_intent_id: 'pi_test_123', charge_cents: 268 };
 const quietLogger = { error() {} };
 
-function fakeClient({ failOn = null } = {}) {
+function fakeClient({ failOn = null, rowCountFor = null } = {}) {
   const calls = [];
   return {
     calls,
@@ -15,7 +15,7 @@ function fakeClient({ failOn = null } = {}) {
       const normalized = sql.trim().replace(/\s+/g, ' ');
       calls.push({ sql: normalized, params });
       if (failOn && failOn(normalized, params)) throw new Error('injected database failure');
-      return { rowCount: 1, rows: [] };
+      return { rowCount: rowCountFor ? rowCountFor(normalized, params) : 1, rows: [] };
     },
   };
 }
@@ -156,4 +156,38 @@ test('database COMMIT failure after Stripe success preserves the committed reser
   assert.ok(client.calls.some(call => call.sql === 'ROLLBACK'));
   assert.ok(client.calls.every(call => !call.sql.startsWith('DELETE FROM refunds')),
     'finalization failure must never delete the already-committed reservation');
+});
+
+
+test('missing refund reservation row prevents reporting Stripe refund success', async () => {
+  const client = fakeClient({
+    rowCountFor: sql => sql.startsWith('UPDATE refunds SET stripe_refund_id') ? 0 : 1,
+  });
+  const stripe = { refunds: { async create() {
+    return { id: 're_missing_refund_row', amount: 268, status: 'succeeded', currency: 'eur' };
+  } } };
+  await assert.rejects(executeReservedRefund({
+    client, stripe, order, orderId: 'order-missing-refund-row',
+    reason: 'failed topup', logger: quietLogger,
+  }), /Refund reservation disappeared/);
+  assert.ok(client.calls.some(call => call.sql === 'ROLLBACK'));
+  assert.ok(client.calls.every(call => !call.sql.startsWith('DELETE FROM refunds')));
+});
+
+test('missing order row update prevents marking refund finalized', async () => {
+  const client = fakeClient({
+    rowCountFor: sql => sql.startsWith("UPDATE orders SET status = 'refunded'") ? 0 : 1,
+  });
+  let stripeCalls = 0;
+  const stripe = { refunds: { async create() {
+    stripeCalls++;
+    return { id: 're_missing_order_row', amount: 268, status: 'succeeded', currency: 'eur' };
+  } } };
+  await assert.rejects(executeReservedRefund({
+    client, stripe, order, orderId: 'order-missing-order-row',
+    reason: 'failed topup', logger: quietLogger,
+  }), /Order status was not updated/);
+  assert.equal(stripeCalls, 1);
+  assert.ok(client.calls.some(call => call.sql === 'ROLLBACK'));
+  assert.ok(client.calls.every(call => !call.sql.startsWith('DELETE FROM refunds')));
 });

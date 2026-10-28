@@ -56,25 +56,32 @@ async function executeReservedRefund({ client, stripe, order, orderId, reason, l
   try {
     await client.query('BEGIN');
     transactionOpen = true;
-    await client.query(
+    const refundUpdate = await client.query(
       `UPDATE refunds SET stripe_refund_id = $1, amount_cents = $2,
          status = $3, reason = $4 WHERE order_id = $5`,
       [refund.id, refund.amount, persistedStatus, persistedReason, orderId]
     );
+    if (refundUpdate.rowCount !== 1) {
+      throw new Error('Refund reservation disappeared before finalization; reconciliation required.');
+    }
 
-    if (refund.status === 'succeeded' && !needsReview) {
-      await client.query(
+    let orderUpdate;
+    if (normalizedRefundStatus === 'succeeded' && !needsReview) {
+      orderUpdate = await client.query(
         `UPDATE orders SET status = 'refunded',
            refunded_at = COALESCE(refunded_at, NOW()), updated_at = NOW()
          WHERE order_id = $1 AND status = 'topup_review'`,
         [orderId]
       );
     } else {
-      await client.query(
+      orderUpdate = await client.query(
         `UPDATE orders SET status = 'topup_review', updated_at = NOW()
          WHERE order_id = $1 AND status = 'topup_review'`,
         [orderId]
       );
+    }
+    if (orderUpdate.rowCount !== 1) {
+      throw new Error('Order status was not updated during refund finalization; reconciliation required.');
     }
 
     await client.query('COMMIT');
