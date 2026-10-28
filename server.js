@@ -785,7 +785,7 @@ function calculateFinalPrice(product, pricing) {
     throw new Error('Invalid Stripe fee percentage.');
   }
   const stripeFixedFeeCents = requireNonNegativeInteger(
-    stripeFixedFeeCents,
+    pricing.stripeFixedFeeCents,
     'Stripe fixed fee'
   );
 
