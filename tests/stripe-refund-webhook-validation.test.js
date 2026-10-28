@@ -44,7 +44,7 @@ test('mismatched or incomplete refund evidence is recorded for manual review', (
 test('late partial or pending webhook cannot downgrade an already confirmed refund', () => {
   assert.match(handler, /!\['completed', 'refunded'\]\.includes\(order\.status\)/);
   assert.match(handler, /WHEN refunds\.status = 'succeeded' THEN refunds\.status/);
-  assert.match(handler, /WHEN refunds\\.status = 'succeeded'\\s+THEN refunds\\.amount_cents/);
-  assert.match(handler, /WHEN refunds\\.status = 'succeeded'\\s+THEN refunds\\.stripe_refund_id/);
+  assert.match(handler, /WHEN refunds\.status = 'succeeded'\s+THEN refunds\.amount_cents/);
+  assert.match(handler, /WHEN refunds\.status = 'succeeded'\s+THEN refunds\.stripe_refund_id/);
   assert.match(handler, /WHEN refunds\.status = 'succeeded' THEN refunds\.reason/);
 });
