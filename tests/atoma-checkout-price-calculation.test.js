@@ -53,11 +53,11 @@ test('read-only diagnostic separates provider catalog retail from calculated che
   assert.ok(end > start, 'pricing diagnostic must have a bounded section');
   const route = server.slice(start, end);
   assert.match(route, /estimatedCustomerPriceCents:\s*preview\.finalPriceCents/);
-  assert.match(route, /catalogRetailPriceEur:/);
-  assert.match(route, /calculatedPriceMinusCatalogRetailEur:/);
-  assert.match(route, /catalogRetailPriceMatchesCalculatedPrice:/);
+  assert.ok(route.includes('catalogRetailPriceEur:'));
+  assert.ok(route.includes('calculatedPriceMinusCatalogRetailEur:'));
+  assert.ok(route.includes('catalogRetailPriceMatchesCalculatedPrice:'));
   assert.match(route, /readOnly:\s*true/);
-  assert.match(route, /No product, order, payment, or setting was changed/);
+  assert.ok(route.includes('No product, order, payment, or setting was changed'));
   assert.doesNotMatch(route, /UPDATE product_catalog|UPDATE pricing_settings|stripe\.checkout\.sessions\.create|stripe\.refunds\.create/);
 });
 
