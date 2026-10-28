@@ -3363,9 +3363,9 @@ async function refreshReferralReport(){
     if(!ref.active){result.textContent='Activate this referral code before sharing its invite link.';return;}
     try{
      await navigator.clipboard.writeText(inviteUrl);
-     result.textContent='App invite link copied: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
+     result.textContent='App invite link copied: '+inviteUrl+'\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
     }catch(error){
-     result.textContent='Copy was unavailable. Copy this invite link manually: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
+     result.textContent='Copy was unavailable. Copy this invite link manually: '+inviteUrl+'\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
     }
    });
    card.append(copyInvite);
