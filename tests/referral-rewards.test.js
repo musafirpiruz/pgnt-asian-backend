@@ -204,3 +204,10 @@ test('referral admin page provides an explicit delete/archive action with histor
   assert.match(page, /history exists, the code will only be disabled and history preserved/);
   assert.match(page, /method:'DELETE'/);
 });
+
+
+test('checkout rejects legacy or manually edited referral rewards unless exactly €0.07', () => {
+  assert.match(checkout, /Number\(referral\.rows\[0\]\.reward_eur_cents\) !== 7/);
+  assert.match(checkout, /invalid reward configuration/);
+  assert.match(checkout, /referralRewardCents = 7/);
+});
