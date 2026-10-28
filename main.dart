@@ -947,6 +947,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   void _applyReferralUri(Uri uri) {
+    if (!mounted) return;
     // Supported invite links use: pgntasian://referral?code=FRIEND2026
     if (uri.scheme.toLowerCase() != 'pgntasian' ||
         uri.host.toLowerCase() != 'referral') {
