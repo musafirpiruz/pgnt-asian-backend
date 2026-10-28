@@ -114,3 +114,25 @@ test('catalog import refuses to overwrite existing product prices and requires m
   assert.match(route, /Manual review is required; no data was changed/);
   assert.doesNotMatch(route, /UPDATE product_catalog/);
 });
+
+
+test('explicit catalog price refresh is admin-only, confirmed, provider-verified, and disabled-only', () => {
+  const routeStart = server.indexOf("app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), requireAdmin");
+  const routeEnd = server.indexOf('// Import one verified DT One product into the local catalog as DISABLED.', routeStart);
+  assert.notEqual(routeStart, -1, 'safe price refresh route must exist');
+  assert.ok(routeEnd > routeStart, 'price refresh route must be bounded');
+  const route = server.slice(routeStart, routeEnd);
+  assert.match(route, /confirmPriceRefresh !== true/);
+  assert.match(route, /SELECT id, product_id, country, operator, amount, currency, price_eur_cents, wholesale_price_eur_cents, active FROM product_catalog WHERE product_id = \$1 FOR UPDATE/);
+  assert.match(route, /current\.active === true/);
+  assert.match(route, /providerProduct\.prices\?\.retail\?\.amount/);
+  assert.match(route, /providerProduct\.prices\?\.wholesale\?\.amount/);
+  assert.match(route, /identityMismatch: true/);
+  assert.match(route, /SET price_eur_cents = \$1, wholesale_price_eur_cents = \$2, updated_at = NOW\(\)/);
+  assert.match(route, /WHERE id = \$3 AND active = FALSE/);
+  assert.match(route, /activationChanged: false/);
+  assert.match(route, /pricingSettingsChanged: false/);
+  assert.match(route, /transactionCreated: false/);
+  assert.match(route, /paymentCreated: false/);
+  assert.doesNotMatch(route, /UPDATE pricing_settings|stripe\.checkout\.sessions\.create|stripe\.refunds\.create/);
+});
