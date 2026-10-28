@@ -777,15 +777,27 @@ function calculateFinalPrice(product, pricing) {
     );
   }
 
+  // Validate provider fee settings before gross-up. A percentage >= 100,
+  // non-finite percentage, or invalid fixed fee can otherwise produce a
+  // negative/invalid denominator or an unbounded rounding loop.
+  const stripeFeePercent = Number(pricing.stripeFeePercent);
+  if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
+    throw new Error('Invalid Stripe fee percentage.');
+  }
+  const stripeFixedFeeCents = requireNonNegativeInteger(
+    pricing.stripeFixedFeeCents,
+    'Stripe fixed fee'
+  );
+
   // Gross up the customer charge so that the estimated Stripe percentage
   // and fixed fee are covered while preserving the configured app fee.
   const targetNetCents = basePriceCents + feeCents;
-  const stripeRate = pricing.stripeFeePercent / 100;
+  const stripeRate = stripeFeePercent / 100;
   // Start with the algebraic gross-up, then correct for Stripe's
   // percentage-fee rounding. The rounded Stripe fee must never reduce
   // the amount retained below wholesale cost plus the configured app fee.
   let finalPriceCents = Math.ceil(
-    (targetNetCents + pricing.stripeFixedFeeCents) / (1 - stripeRate)
+    (targetNetCents + stripeFixedFeeCents) / (1 - stripeRate)
   );
   let estimatedStripeFeeCents =
     Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents;
@@ -807,8 +819,8 @@ function calculateFinalPrice(product, pricing) {
     basePriceCents,
     feeCents,
     estimatedStripeFeeCents,
-    stripeFeePercent: pricing.stripeFeePercent,
-    stripeFixedFeeCents: pricing.stripeFixedFeeCents,
+    stripeFeePercent,
+    stripeFixedFeeCents,
     finalPriceCents,
     bonusPercent,
     formattedBasePrice: formatEuro(
@@ -2408,9 +2420,7 @@ async function markCheckoutPaymentFailed(session) {
 // This does not initiate a refund.
 async function syncStripeRefundStatus(charge) {
   if (!pool || !charge?.payment_intent) {
-    throw new Error(
-      'Cannot identify the refunded payment.'
-    );
+    throw new Error('Cannot identify the refunded payment.');
   }
 
   const paymentIntentId =
@@ -2419,8 +2429,7 @@ async function syncStripeRefundStatus(charge) {
       : charge.payment_intent.id;
 
   const refundObject =
-    Array.isArray(charge.refunds?.data) &&
-    charge.refunds.data.length > 0
+    Array.isArray(charge.refunds?.data) && charge.refunds.data.length > 0
       ? charge.refunds.data[charge.refunds.data.length - 1]
       : null;
 
@@ -2430,7 +2439,7 @@ async function syncStripeRefundStatus(charge) {
     await client.query('BEGIN');
 
     const orderResult = await client.query(
-      `SELECT order_id, status
+      `SELECT order_id, status, charge_cents
        FROM orders
        WHERE stripe_payment_intent_id = $1
        FOR UPDATE`,
@@ -2439,21 +2448,53 @@ async function syncStripeRefundStatus(charge) {
 
     if (orderResult.rowCount === 0) {
       await client.query('ROLLBACK');
-      console.warn(
-        'Refund received but no matching order was found.'
-      );
+      console.warn('Refund received but no matching order was found.');
       return;
     }
 
     const order = orderResult.rows[0];
-    const fullRefund = charge.refunded === true;
-    const refundStatus = fullRefund
-      ? 'succeeded'
-      : 'partial';
+    const chargeAmount = Number(charge.amount);
+    const refundedAmount = Number(charge.amount_refunded || 0);
+    const orderChargeAmount = Number(order.charge_cents);
+    const currencyMatches = String(charge.currency || '').toLowerCase() === 'eur';
+    const chargeAmountMatches =
+      Number.isSafeInteger(chargeAmount) &&
+      chargeAmount === orderChargeAmount;
+    const refundedAmountIsValid =
+      Number.isSafeInteger(refundedAmount) &&
+      refundedAmount >= 0 &&
+      refundedAmount <= chargeAmount;
+    const refundEvidenceMatches =
+      currencyMatches && chargeAmountMatches && refundedAmountIsValid;
+    const fullRefund =
+      refundEvidenceMatches &&
+      charge.refunded === true &&
+      refundedAmount === orderChargeAmount;
+    const partialRefund =
+      refundEvidenceMatches &&
+      refundedAmount > 0 &&
+      !fullRefund;
+    const refundStatus = !refundEvidenceMatches
+      ? 'needs_review'
+      : fullRefund
+        ? 'succeeded'
+        : partialRefund
+          ? 'partial'
+          : 'pending';
+    const refundReason = !refundEvidenceMatches
+      ? 'Stripe refund webhook amount/currency did not match the verified EUR order; manual reconciliation required'
+      : fullRefund
+        ? 'Stripe webhook confirmed full EUR refund'
+        : partialRefund
+          ? 'Stripe webhook reported partial refund; manual review required'
+          : 'Stripe webhook reported no confirmed refund amount; reconciliation required';
 
-    // Never overwrite a successful DT One fulfillment
-    // status automatically; route financial discrepancies for review.
-    if (order.status !== 'completed') {
+    // Never infer a successful refund from charge.refunded alone. The canonical
+    // Stripe charge must match the saved EUR order amount, and the refunded
+    // amount must be valid and complete before the order can become refunded.
+    // Webhook deliveries can arrive out of order. Never downgrade an
+    // already-refunded order because an older partial-refund event arrived late.
+    if (!['completed', 'refunded'].includes(order.status)) {
       await client.query(
         `UPDATE orders
          SET status = CASE
@@ -2468,14 +2509,15 @@ async function syncStripeRefundStatus(charge) {
          WHERE order_id = $2`,
         [fullRefund, order.order_id]
       );
-    } else {      console.warn(
+    } else {
+      console.warn(
         'Stripe refund observed for a completed top-up; order retained for manual reconciliation.',
         order.order_id
       );
     }
 
-    // Keep the refunds ledger in sync with Stripe webhook truth.
-    // A refund can have originated from the Stripe Dashboard.
+    // Keep the ledger aligned with verified Stripe evidence. Mismatched or
+    // incomplete charge data is held for review rather than marked succeeded.
     await client.query(
       `INSERT INTO refunds (
          order_id, stripe_refund_id, amount_cents, status, reason
@@ -2483,26 +2525,35 @@ async function syncStripeRefundStatus(charge) {
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (order_id)
        DO UPDATE SET
-         stripe_refund_id = COALESCE(EXCLUDED.stripe_refund_id, refunds.stripe_refund_id),
-         amount_cents = EXCLUDED.amount_cents,
-         status = EXCLUDED.status,
-         reason = COALESCE(EXCLUDED.reason, refunds.reason)`,
+         stripe_refund_id = CASE
+           WHEN refunds.status = 'succeeded' THEN refunds.stripe_refund_id
+           ELSE COALESCE(EXCLUDED.stripe_refund_id, refunds.stripe_refund_id)
+         END,
+         amount_cents = CASE
+           WHEN refunds.status = 'succeeded'
+           THEN refunds.amount_cents
+           ELSE EXCLUDED.amount_cents
+         END,
+         status = CASE
+           WHEN refunds.status = 'succeeded' THEN refunds.status
+           ELSE EXCLUDED.status
+         END,
+         reason = CASE
+           WHEN refunds.status = 'succeeded' THEN refunds.reason
+           ELSE EXCLUDED.reason
+         END`,
       [
         order.order_id,
         refundObject?.id || null,
-        Number(charge.amount_refunded || 0),
+        refundedAmount,
         refundStatus,
-        fullRefund
-          ? 'Stripe webhook confirmed full refund'
-          : 'Stripe webhook reported partial refund; manual review required',
+        refundReason,
       ]
     );
 
     await client.query('COMMIT');
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (_) {}
+    try { await client.query('ROLLBACK'); } catch (_) {}
     throw error;
   } finally {
     client.release();
