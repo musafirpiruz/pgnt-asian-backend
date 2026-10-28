@@ -37,7 +37,7 @@ test('a refund is only marked succeeded when the complete verified amount was re
 test('mismatched or incomplete refund evidence is recorded for manual review', () => {
   assert.match(handler, /Stripe refund webhook amount\/currency did not match/);
   assert.match(handler, /ELSE 'topup_review'/);
-  assert.match(handler, /status = EXCLUDED\.status/);
+  assert.match(handler, /status = CASE[\s\S]*?ELSE EXCLUDED\.status[\s\S]*?END/);
   assert.doesNotMatch(handler, /const fullRefund = charge\.refunded === true/);
 });
 
