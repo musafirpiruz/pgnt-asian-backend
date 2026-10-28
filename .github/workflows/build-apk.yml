@@ -148,7 +148,7 @@ jobs:
           text = path.read_text(encoding="utf-8")
           if 'android:scheme="pgntasian"' not in text:
               pattern = re.compile(
-                  r'(<activity\\b(?=[^>]*android:name="[^"]*MainActivity")[^>]*>)(.*?)(</activity>)',
+                  r'(<activity\b(?=[^>]*android:name="[^"]*MainActivity")[^>]*>)(.*?)(</activity>)',
                   re.DOTALL,
               )
               match = pattern.search(text)
