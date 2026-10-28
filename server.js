@@ -3484,8 +3484,20 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
       await client.query('ROLLBACK');
       return res.status(422).json({ refreshed: false, error: 'DT One product currency does not match the supported country currency. No values were changed.', productId });
     }
+    // DT One labels this Afghanistan operator "ATOMA Afghanistan", while
+    // the existing catalog uses the canonical short label "ATOMA". Allow only
+    // this explicit, country-scoped alias; never strip arbitrary country/network
+    // suffixes, which could conceal a genuine operator mismatch.
+    const operatorAliases = Object.freeze({
+      AF: Object.freeze({ 'ATOMA AFGHANISTAN': 'ATOMA' }),
+    });
+    const canonicalOperator = (country, operator) => {
+      const label = String(operator || '').trim().replace(/\\s+/g, ' ').toUpperCase();
+      return operatorAliases[country]?.[label] || label;
+    };
     const sameIdentity = String(current.country).toUpperCase() === providerCountry &&
-      String(current.operator).trim().toLowerCase() === providerOperator.toLowerCase() &&
+      canonicalOperator(String(current.country).toUpperCase(), current.operator) ===
+        canonicalOperator(providerCountry, providerOperator) &&
       Number(current.amount) === providerAmount &&
       String(current.currency).toUpperCase() === providerCurrency;
     if (!sameIdentity) {
