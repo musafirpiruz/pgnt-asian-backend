@@ -2379,7 +2379,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                         ),
                         SizedBox(height: 5),
                         Text(
-                          'FREE • 24/7 help centre',
+                          'Help Centre',
                           style: TextStyle(
                             color: gold,
                             fontWeight: FontWeight.w700,
