@@ -777,15 +777,27 @@ function calculateFinalPrice(product, pricing) {
     );
   }
 
+  // Validate provider fee settings before gross-up. A percentage >= 100,
+  // non-finite percentage, or invalid fixed fee can otherwise produce a
+  // negative/invalid denominator or an unbounded rounding loop.
+  const stripeFeePercent = Number(pricing.stripeFeePercent);
+  if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
+    throw new Error('Invalid Stripe fee percentage.');
+  }
+  const stripeFixedFeeCents = requireNonNegativeInteger(
+    pricing.stripeFixedFeeCents,
+    'Stripe fixed fee'
+  );
+
   // Gross up the customer charge so that the estimated Stripe percentage
   // and fixed fee are covered while preserving the configured app fee.
   const targetNetCents = basePriceCents + feeCents;
-  const stripeRate = pricing.stripeFeePercent / 100;
+  const stripeRate = stripeFeePercent / 100;
   // Start with the algebraic gross-up, then correct for Stripe's
   // percentage-fee rounding. The rounded Stripe fee must never reduce
   // the amount retained below wholesale cost plus the configured app fee.
   let finalPriceCents = Math.ceil(
-    (targetNetCents + pricing.stripeFixedFeeCents) / (1 - stripeRate)
+    (targetNetCents + stripeFixedFeeCents) / (1 - stripeRate)
   );
   let estimatedStripeFeeCents =
     Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents;
@@ -807,8 +819,8 @@ function calculateFinalPrice(product, pricing) {
     basePriceCents,
     feeCents,
     estimatedStripeFeeCents,
-    stripeFeePercent: pricing.stripeFeePercent,
-    stripeFixedFeeCents: pricing.stripeFixedFeeCents,
+    stripeFeePercent,
+    stripeFixedFeeCents,
     finalPriceCents,
     bonusPercent,
     formattedBasePrice: formatEuro(
