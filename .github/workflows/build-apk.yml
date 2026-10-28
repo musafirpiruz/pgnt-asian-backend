@@ -162,7 +162,7 @@ jobs:
                       <data android:scheme="pgntasian" android:host="referral" />
                   </intent-filter>
               '''
-              text = text[:match.start(3)] + intent_filter + "\\n        " + text[match.start(3):]
+              text = text[:match.start(3)] + intent_filter + chr(10) + "        " + text[match.start(3):]
               path.write_text(text, encoding="utf-8")
           if 'android:scheme="pgntasian"' not in path.read_text(encoding="utf-8"):
               raise SystemExit("ERROR: referral deep-link intent filter was not added")
