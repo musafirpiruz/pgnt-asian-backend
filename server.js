@@ -1024,11 +1024,15 @@ app.post('/api/payments/checkout', async (req, res) => {
          FROM referral_codes WHERE code = $1 FOR UPDATE`,
         [referralCode]
       );
-      if (referral.rowCount !== 1 || referral.rows[0].active !== true ||
-          Number(referral.rows[0].reward_eur_cents) <= 0) {
+      if (referral.rowCount !== 1 || referral.rows[0].active !== true) {
         throw new Error('This referral code is invalid or inactive.');
       }
-      referralRewardCents = Number(referral.rows[0].reward_eur_cents);
+      // The reward contract is fixed at €0.07. Fail closed for legacy or
+      // manually edited database rows instead of reserving a different amount.
+      if (Number(referral.rows[0].reward_eur_cents) !== 7) {
+        throw new Error('This referral code has an invalid reward configuration. Please contact support.');
+      }
+      referralRewardCents = 7;
       const cap = referral.rows[0].max_rewards;
       if (cap !== null) {
         const used = await client.query(
