@@ -3396,6 +3396,138 @@ app.get('/api/admin/dtone/products/:productId', requireAdmin, async (req, res) =
 });
 
 
+// Refresh only the provider prices for an existing DISABLED catalog product.
+// Requires an explicit confirmation and verifies the complete product identity with DT One.
+// Does not activate the product, alter pricing settings, or create payments/top-ups.
+app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ refreshed: false, error: 'Database is not configured.' });
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ refreshed: false, error: 'A valid product ID is required.' });
+  }
+  if (req.body?.confirmPriceRefresh !== true) {
+    return res.status(400).json({
+      refreshed: false,
+      confirmationRequired: true,
+      error: 'Explicit price-refresh confirmation is required. Send confirmPriceRefresh: true.',
+    });
+  }
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ refreshed: false, error: 'DT One credentials are not configured.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const currentResult = await client.query(
+      'SELECT id, product_id, country, operator, amount, currency, price_eur_cents, wholesale_price_eur_cents, active FROM product_catalog WHERE product_id = $1 FOR UPDATE',
+      [productId]
+    );
+    if (currentResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ refreshed: false, error: 'Catalog product was not found.' });
+    }
+    const current = currentResult.rows[0];
+    if (current.active === true) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        refreshed: false,
+        activeProductBlocked: true,
+        error: 'Price refresh is allowed only for disabled products. No values were changed.',
+      });
+    }
+
+    const response = await fetch(`${DTONE_API_BASE_URL}/v1/products/${productId}`, {
+      method: 'GET',
+      headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+    const responseText = await response.text();
+    let providerProduct = null;
+    try { providerProduct = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+    if (!response.ok || !providerProduct || Number(providerProduct.id) !== productId) {
+      await client.query('ROLLBACK');
+      return res.status(response.status === 404 ? 404 : 502).json({
+        refreshed: false, error: 'DT One could not verify this product. No catalog values were changed.',
+        productId, providerStatus: response.status,
+      });
+    }
+
+    const iso = String(providerProduct.operator?.country?.iso_code || '').toUpperCase();
+    const countryMap = { AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' };
+    const providerCountry = countryMap[iso];
+    const providerOperator = String(providerProduct.operator?.name || '').trim();
+    const providerCurrency = String(providerProduct.destination?.unit || providerProduct.benefits?.[0]?.amount?.unit || '').toUpperCase();
+    const providerAmount = Number(providerProduct.destination?.amount ?? providerProduct.benefits?.[0]?.amount?.base);
+    const retailEur = Number(providerProduct.prices?.retail?.amount);
+    const wholesaleEur = Number(providerProduct.prices?.wholesale?.amount);
+    if (!providerCountry || !providerOperator || !Number.isFinite(providerAmount) || providerAmount <= 0 ||
+        !/^[A-Z]{3}$/.test(providerCurrency) || !Number.isFinite(retailEur) || retailEur <= 0 ||
+        !Number.isFinite(wholesaleEur) || wholesaleEur <= 0 || retailEur < wholesaleEur) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({
+        refreshed: false, error: 'DT One returned invalid product identity or EUR prices. No catalog values were changed.',
+        productId,
+      });
+    }
+    if (providerCurrency !== countryCurrency(providerCountry)) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ refreshed: false, error: 'DT One product currency does not match the supported country currency. No values were changed.', productId });
+    }
+    const sameIdentity = String(current.country).toUpperCase() === providerCountry &&
+      String(current.operator).trim().toLowerCase() === providerOperator.toLowerCase() &&
+      Number(current.amount) === providerAmount &&
+      String(current.currency).toUpperCase() === providerCurrency;
+    if (!sameIdentity) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        refreshed: false, identityMismatch: true,
+        error: 'DT One product identity differs from the catalog record. Manual review is required; no values were changed.',
+        catalogIdentity: { country: current.country, operator: current.operator, amount: Number(current.amount), currency: current.currency },
+        providerIdentity: { country: providerCountry, operator: providerOperator, amount: providerAmount, currency: providerCurrency },
+      });
+    }
+
+    const retailCents = Math.round(retailEur * 100);
+    const wholesaleCents = Math.round(wholesaleEur * 100);
+    if (retailCents <= 0 || wholesaleCents <= 0 || retailCents < wholesaleCents) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ refreshed: false, error: 'Rounded provider EUR prices are invalid. No values were changed.', productId });
+    }
+    const updated = await client.query(
+      `UPDATE product_catalog
+       SET price_eur_cents = $1, wholesale_price_eur_cents = $2, updated_at = NOW()
+       WHERE id = $3 AND active = FALSE
+       RETURNING id, product_id, country, operator, amount, currency,
+                 price_eur_cents, wholesale_price_eur_cents, active`,
+      [retailCents, wholesaleCents, current.id]
+    );
+    if (updated.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ refreshed: false, error: 'Catalog product changed or was activated during refresh. No values were changed.' });
+    }
+    await client.query('COMMIT');
+    return res.json({
+      refreshed: true,
+      providerVerified: true,
+      activationChanged: false,
+      pricingSettingsChanged: false,
+      transactionCreated: false,
+      paymentCreated: false,
+      previous: { retailPriceEurCents: Number(current.price_eur_cents), wholesalePriceEurCents: Number(current.wholesale_price_eur_cents) },
+      provider: { retailPriceEurCents: retailCents, wholesalePriceEurCents: wholesaleCents },
+      product: updated.rows[0],
+      note: 'Only the disabled catalog product retail and wholesale prices were refreshed from verified DT One values. Review checkout pricing before activation.',
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Admin catalog price refresh failed:', error.message);
+    return res.status(500).json({ refreshed: false, error: 'Could not safely refresh catalog prices.' });
+  } finally {
+    client.release();
+  }
+});
+
 // Import one verified DT One product into the local catalog as DISABLED.
 // This is an explicit admin action; it never activates products or creates transactions.
 app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) => {
