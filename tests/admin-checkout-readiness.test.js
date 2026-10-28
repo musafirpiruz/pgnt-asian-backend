@@ -84,3 +84,33 @@ test('catalog price discrepancy is explicitly reported and cannot be mistaken fo
   assert.match(route, /catalogRetailPriceEur is a separate catalog value/);
   assert.match(route, /any difference must be reviewed before product activation/);
 });
+
+
+test('verified DT One import keeps provider wholesale and retail prices in separate fields and product disabled', () => {
+  const routeStart = server.indexOf("app.post('/api/admin/catalog/:productId/import', requireAdmin");
+  const routeEnd = server.indexOf("\n\n// Read-only product discovery", routeStart);
+  assert.notEqual(routeStart, -1, 'verified catalog import route must exist');
+  assert.ok(routeEnd > routeStart, 'catalog import route must be bounded');
+  const route = server.slice(routeStart, routeEnd);
+
+  assert.match(route, /providerProduct\.prices\?\.retail\?\.amount/);
+  assert.match(route, /providerProduct\.prices\?\.wholesale\?\.amount/);
+  assert.match(route, /price_eur_cents,\s*wholesale_price_eur_cents/);
+  assert.match(route, /\[country, operator, amountValue, currency, productId, retailCents, wholesaleCents\]/);
+  assert.match(route, /VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, 0, FALSE, NOW\(\)\)/);
+  assert.match(route, /activationChanged:\s*false/);
+  assert.match(route, /transactionCreated:\s*false/);
+  assert.match(route, /alreadyRegistered:\s*true/);
+  assert.match(route, /conflict:\s*true/);
+});
+
+test('catalog import refuses to overwrite existing product prices and requires manual conflict review', () => {
+  const routeStart = server.indexOf("app.post('/api/admin/catalog/:productId/import', requireAdmin");
+  const routeEnd = server.indexOf("\n\n// Read-only product discovery", routeStart);
+  const route = server.slice(routeStart, routeEnd);
+
+  assert.match(route, /SELECT id, product_id, country, operator, amount, currency, active FROM product_catalog WHERE product_id = \$1 FOR UPDATE/);
+  assert.match(route, /No database values were changed/);
+  assert.match(route, /Manual review is required; no data was changed/);
+  assert.doesNotMatch(route, /UPDATE product_catalog/);
+});
