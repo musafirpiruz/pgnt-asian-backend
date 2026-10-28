@@ -40,10 +40,10 @@ test('production gross-up uses verified wholesale cost and corrects rounding sho
   assert.notEqual(start, -1, 'production price calculator must exist');
   assert.ok(end > start, 'production calculator must have a bounded section');
   const source = server.slice(start, end);
-  assert.match(source, /product\.wholesalePriceCents/);
-  assert.match(source, /const targetNetCents = basePriceCents \+ feeCents/);
-  assert.match(source, /Math\.ceil\(finalPriceCents \* stripeRate\) \+ pricing\.stripeFixedFeeCents/);
-  assert.match(source, /while \(finalPriceCents - estimatedStripeFeeCents < targetNetCents\)/);
+  assert.ok(source.includes('product.wholesalePriceCents'));
+  assert.ok(source.includes('const targetNetCents = basePriceCents + feeCents'));
+  assert.ok(source.includes('Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents'));
+  assert.ok(source.includes('while (finalPriceCents - estimatedStripeFeeCents < targetNetCents)'));
 });
 
 test('read-only diagnostic separates provider catalog retail from calculated checkout quote', () => {
@@ -52,13 +52,13 @@ test('read-only diagnostic separates provider catalog retail from calculated che
   assert.notEqual(start, -1, 'read-only pricing diagnostic must exist');
   assert.ok(end > start, 'pricing diagnostic must have a bounded section');
   const route = server.slice(start, end);
-  assert.match(route, /estimatedCustomerPriceCents:\s*preview\.finalPriceCents/);
+  assert.ok(route.includes('estimatedCustomerPriceCents: preview.finalPriceCents'));
   assert.ok(route.includes('catalogRetailPriceEur:'));
   assert.ok(route.includes('calculatedPriceMinusCatalogRetailEur:'));
   assert.ok(route.includes('catalogRetailPriceMatchesCalculatedPrice:'));
-  assert.match(route, /readOnly:\s*true/);
+  assert.ok(route.includes('readOnly: true'));
   assert.ok(route.includes('No product, order, payment, or setting was changed'));
-  assert.doesNotMatch(route, /UPDATE product_catalog|UPDATE pricing_settings|stripe\.checkout\.sessions\.create|stripe\.refunds\.create/);
+  assert.ok(!route.includes('UPDATE product_catalog') && !route.includes('UPDATE pricing_settings') && !route.includes('stripe.checkout.sessions.create') && !route.includes('stripe.refunds.create'));
 });
 
 test('rounding invariant holds across representative costs, fees, and Stripe rates', () => {
