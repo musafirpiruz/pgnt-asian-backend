@@ -40,3 +40,10 @@ test('mismatched or incomplete refund evidence is recorded for manual review', (
   assert.match(handler, /status = EXCLUDED\.status/);
   assert.doesNotMatch(handler, /const fullRefund = charge\.refunded === true/);
 });
+
+test('late partial or pending webhook cannot downgrade an already confirmed refund', () => {
+  assert.match(handler, /!\['completed', 'refunded'\]\.includes\(order\.status\)/);
+  assert.match(handler, /refunds\.status = 'succeeded'[\s\S]*?EXCLUDED\.status IN \('pending', 'partial'\)/);
+  assert.match(handler, /THEN refunds\.status[\s\S]*?ELSE EXCLUDED\.status/);
+  assert.match(handler, /THEN refunds\.amount_cents[\s\S]*?ELSE EXCLUDED\.amount_cents/);
+});
