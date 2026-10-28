@@ -21,7 +21,7 @@ test('sandbox route reports unknown outcome when provider accepted but local res
   const pool = {
     async query(sql, params) {
       queryCount++;
-      const normalized = sql.replace(/\\s+/g, ' ').trim();
+      const normalized = sql.replace(/\s+/g, ' ').trim();
       if (normalized.startsWith('SELECT id, product_id, price_eur_cents FROM product_catalog')) {
         return { rowCount: 1, rows: [{ id: 123, product_id: 7194, price_eur_cents: 210 }] };
       }
