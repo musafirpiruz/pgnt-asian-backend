@@ -136,3 +136,12 @@ test('explicit catalog price refresh is admin-only, confirmed, provider-verified
   assert.match(route, /paymentCreated: false/);
   assert.doesNotMatch(route, /UPDATE pricing_settings|stripe\.checkout\.sessions\.create|stripe\.refunds\.create/);
 });
+
+
+test('admin page exposes explicit confirmed price refresh for existing disabled catalog products', () => {
+  assert.match(server, /id="refreshCatalogPrices"/);
+  assert.match(server, /Refresh verified prices for existing disabled product/);
+  assert.match(server, /confirmPriceRefresh:true/);
+  assert.match(server, /\/refresh-prices/);
+  assert.match(server, /Pricing settings will not change; no payment\/top-up will be performed/);
+});
