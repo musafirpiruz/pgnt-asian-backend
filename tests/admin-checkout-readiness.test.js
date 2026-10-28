@@ -73,3 +73,14 @@ test('sandbox checkout requires Stripe test mode, DT One pre-production, and exp
   assert.match(route, /stripe\.checkout\.sessions\.create/);
   assert.match(route, /Successful payment will submit one DT One pre-production sandbox transaction/);
 });
+
+test('catalog price discrepancy is explicitly reported and cannot be mistaken for checkout price', () => {
+  const routeStart = server.indexOf("app.get('/api/admin/catalog/:productId/pricing', requireAdmin");
+  const routeEnd = server.indexOf('\n// Admin pricing overview.', routeStart);
+  const route = server.slice(routeStart, routeEnd);
+  assert.match(route, /catalogRetailPriceEur/);
+  assert.match(route, /calculatedPriceMinusCatalogRetailEur/);
+  assert.match(route, /catalogRetailPriceMatchesCalculatedPrice/);
+  assert.match(route, /catalogRetailPriceEur is a separate catalog value/);
+  assert.match(route, /any difference must be reviewed before product activation/);
+});
