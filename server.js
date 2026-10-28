@@ -3682,14 +3682,18 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
           preview.finalPriceCents > 0 &&
           Number.isSafeInteger(preview.basePriceCents) &&
           preview.basePriceCents > 0;
+        const catalogRetailPriceCents = Number(product.price_eur_cents);
         customerPricePreview = {
           currency: 'EUR',
           estimatedCustomerPriceEur: Number((preview.finalPriceCents / 100).toFixed(2)),
           estimatedCustomerPriceCents: preview.finalPriceCents,
+          catalogRetailPriceEur: Number((catalogRetailPriceCents / 100).toFixed(2)),
+          calculatedPriceMinusCatalogRetailEur: Number(((preview.finalPriceCents - catalogRetailPriceCents) / 100).toFixed(2)),
+          catalogRetailPriceMatchesCalculatedPrice: Number.isSafeInteger(catalogRetailPriceCents) && catalogRetailPriceCents === preview.finalPriceCents,
           wholesaleCostEur: Number((preview.basePriceCents / 100).toFixed(2)),
           appFeeEur: Number((preview.feeCents / 100).toFixed(2)),
           estimatedStripeFeeEur: Number((preview.estimatedStripeFeeCents / 100).toFixed(2)),
-          note: 'Preview only. Actual Stripe fees may differ; this does not enable the product or perform a payment.',
+          note: 'Checkout price is calculated from verified wholesale cost + app fee + estimated Stripe fees. catalogRetailPriceEur is a separate catalog value; any difference must be reviewed before product activation. Preview only; no payment is performed.',
         };
       } catch (previewError) {
         customerPricePreview = { error: 'Could not calculate customer price preview from the saved settings.' };
