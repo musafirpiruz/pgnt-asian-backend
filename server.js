@@ -2408,9 +2408,7 @@ async function markCheckoutPaymentFailed(session) {
 // This does not initiate a refund.
 async function syncStripeRefundStatus(charge) {
   if (!pool || !charge?.payment_intent) {
-    throw new Error(
-      'Cannot identify the refunded payment.'
-    );
+    throw new Error('Cannot identify the refunded payment.');
   }
 
   const paymentIntentId =
@@ -2419,8 +2417,7 @@ async function syncStripeRefundStatus(charge) {
       : charge.payment_intent.id;
 
   const refundObject =
-    Array.isArray(charge.refunds?.data) &&
-    charge.refunds.data.length > 0
+    Array.isArray(charge.refunds?.data) && charge.refunds.data.length > 0
       ? charge.refunds.data[charge.refunds.data.length - 1]
       : null;
 
@@ -2430,7 +2427,7 @@ async function syncStripeRefundStatus(charge) {
     await client.query('BEGIN');
 
     const orderResult = await client.query(
-      `SELECT order_id, status
+      `SELECT order_id, status, charge_cents
        FROM orders
        WHERE stripe_payment_intent_id = $1
        FOR UPDATE`,
@@ -2439,20 +2436,50 @@ async function syncStripeRefundStatus(charge) {
 
     if (orderResult.rowCount === 0) {
       await client.query('ROLLBACK');
-      console.warn(
-        'Refund received but no matching order was found.'
-      );
+      console.warn('Refund received but no matching order was found.');
       return;
     }
 
     const order = orderResult.rows[0];
-    const fullRefund = charge.refunded === true;
-    const refundStatus = fullRefund
-      ? 'succeeded'
-      : 'partial';
+    const chargeAmount = Number(charge.amount);
+    const refundedAmount = Number(charge.amount_refunded || 0);
+    const orderChargeAmount = Number(order.charge_cents);
+    const currencyMatches = String(charge.currency || '').toLowerCase() === 'eur';
+    const chargeAmountMatches =
+      Number.isSafeInteger(chargeAmount) &&
+      chargeAmount === orderChargeAmount;
+    const refundedAmountIsValid =
+      Number.isSafeInteger(refundedAmount) &&
+      refundedAmount >= 0 &&
+      refundedAmount <= chargeAmount;
+    const refundEvidenceMatches =
+      currencyMatches && chargeAmountMatches && refundedAmountIsValid;
+    const fullRefund =
+      refundEvidenceMatches &&
+      charge.refunded === true &&
+      refundedAmount === orderChargeAmount;
+    const partialRefund =
+      refundEvidenceMatches &&
+      refundedAmount > 0 &&
+      !fullRefund;
+    const refundStatus = !refundEvidenceMatches
+      ? 'needs_review'
+      : fullRefund
+        ? 'succeeded'
+        : partialRefund
+          ? 'partial'
+          : 'pending';
+    const refundReason = !refundEvidenceMatches
+      ? 'Stripe refund webhook amount/currency did not match the verified EUR order; manual reconciliation required'
+      : fullRefund
+        ? 'Stripe webhook confirmed full EUR refund'
+        : partialRefund
+          ? 'Stripe webhook reported partial refund; manual review required'
+          : 'Stripe webhook reported no confirmed refund amount; reconciliation required';
 
-    // Never overwrite a successful DT One fulfillment
-    // status automatically; route financial discrepancies for review.
+    // Never infer a successful refund from charge.refunded alone. The canonical
+    // Stripe charge must match the saved EUR order amount, and the refunded
+    // amount must be valid and complete before the order can become refunded.
     if (order.status !== 'completed') {
       await client.query(
         `UPDATE orders
@@ -2468,14 +2495,15 @@ async function syncStripeRefundStatus(charge) {
          WHERE order_id = $2`,
         [fullRefund, order.order_id]
       );
-    } else {      console.warn(
+    } else {
+      console.warn(
         'Stripe refund observed for a completed top-up; order retained for manual reconciliation.',
         order.order_id
       );
     }
 
-    // Keep the refunds ledger in sync with Stripe webhook truth.
-    // A refund can have originated from the Stripe Dashboard.
+    // Keep the ledger aligned with verified Stripe evidence. Mismatched or
+    // incomplete charge data is held for review rather than marked succeeded.
     await client.query(
       `INSERT INTO refunds (
          order_id, stripe_refund_id, amount_cents, status, reason
@@ -2486,23 +2514,19 @@ async function syncStripeRefundStatus(charge) {
          stripe_refund_id = COALESCE(EXCLUDED.stripe_refund_id, refunds.stripe_refund_id),
          amount_cents = EXCLUDED.amount_cents,
          status = EXCLUDED.status,
-         reason = COALESCE(EXCLUDED.reason, refunds.reason)`,
+         reason = EXCLUDED.reason`,
       [
         order.order_id,
         refundObject?.id || null,
-        Number(charge.amount_refunded || 0),
+        refundedAmount,
         refundStatus,
-        fullRefund
-          ? 'Stripe webhook confirmed full refund'
-          : 'Stripe webhook reported partial refund; manual review required',
+        refundReason,
       ]
     );
 
     await client.query('COMMIT');
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (_) {}
+    try { await client.query('ROLLBACK'); } catch (_) {}
     throw error;
   } finally {
     client.release();
