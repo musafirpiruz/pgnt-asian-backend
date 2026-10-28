@@ -48,7 +48,7 @@ test('production gross-up uses verified wholesale cost and corrects rounding sho
 
 test('read-only diagnostic separates provider catalog retail from calculated checkout quote', () => {
   const start = server.indexOf("app.get('/api/admin/catalog/:productId/pricing', requireAdmin");
-  const end = server.indexOf('\\n// Admin pricing overview.', start);
+  const end = server.indexOf('\n// Admin pricing overview.', start);
   assert.notEqual(start, -1, 'read-only pricing diagnostic must exist');
   assert.ok(end > start, 'pricing diagnostic must have a bounded section');
   const route = server.slice(start, end);
