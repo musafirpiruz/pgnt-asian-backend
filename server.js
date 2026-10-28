@@ -2525,23 +2525,21 @@ async function syncStripeRefundStatus(charge) {
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (order_id)
        DO UPDATE SET
-         stripe_refund_id = COALESCE(EXCLUDED.stripe_refund_id, refunds.stripe_refund_id),
+         stripe_refund_id = CASE
+           WHEN refunds.status = 'succeeded' THEN refunds.stripe_refund_id
+           ELSE COALESCE(EXCLUDED.stripe_refund_id, refunds.stripe_refund_id)
+         END,
          amount_cents = CASE
            WHEN refunds.status = 'succeeded'
-             AND EXCLUDED.status IN ('pending', 'partial')
            THEN refunds.amount_cents
            ELSE EXCLUDED.amount_cents
          END,
          status = CASE
-           WHEN refunds.status = 'succeeded'
-             AND EXCLUDED.status IN ('pending', 'partial')
-           THEN refunds.status
+           WHEN refunds.status = 'succeeded' THEN refunds.status
            ELSE EXCLUDED.status
          END,
          reason = CASE
-           WHEN refunds.status = 'succeeded'
-             AND EXCLUDED.status IN ('pending', 'partial')
-           THEN refunds.reason
+           WHEN refunds.status = 'succeeded' THEN refunds.reason
            ELSE EXCLUDED.reason
          END`,
       [
