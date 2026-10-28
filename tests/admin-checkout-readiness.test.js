@@ -128,6 +128,9 @@ test('explicit catalog price refresh is admin-only, confirmed, provider-verified
   assert.match(route, /providerProduct\.prices\?\.retail\?\.amount/);
   assert.match(route, /providerProduct\.prices\?\.wholesale\?\.amount/);
   assert.match(route, /identityMismatch: true/);
+  assert.match(route, /'ATOMA AFGHANISTAN': 'ATOMA'/);
+  assert.match(route, /canonicalOperator\\(providerCountry, providerOperator\\)/);
+  assert.match(route, /never strip arbitrary country\\/network/i);
   assert.match(route, /SET price_eur_cents = \$1, wholesale_price_eur_cents = \$2, updated_at = NOW\(\)/);
   assert.match(route, /WHERE id = \$3 AND active = FALSE/);
   assert.match(route, /activationChanged: false/);
