@@ -2480,7 +2480,9 @@ async function syncStripeRefundStatus(charge) {
     // Never infer a successful refund from charge.refunded alone. The canonical
     // Stripe charge must match the saved EUR order amount, and the refunded
     // amount must be valid and complete before the order can become refunded.
-    if (order.status !== 'completed') {
+    // Webhook deliveries can arrive out of order. Never downgrade an
+    // already-refunded order because an older partial-refund event arrived late.
+    if (!['completed', 'refunded'].includes(order.status)) {
       await client.query(
         `UPDATE orders
          SET status = CASE
@@ -2512,9 +2514,24 @@ async function syncStripeRefundStatus(charge) {
        ON CONFLICT (order_id)
        DO UPDATE SET
          stripe_refund_id = COALESCE(EXCLUDED.stripe_refund_id, refunds.stripe_refund_id),
-         amount_cents = EXCLUDED.amount_cents,
-         status = EXCLUDED.status,
-         reason = EXCLUDED.reason`,
+         amount_cents = CASE
+           WHEN refunds.status = 'succeeded'
+             AND EXCLUDED.status IN ('pending', 'partial')
+           THEN refunds.amount_cents
+           ELSE EXCLUDED.amount_cents
+         END,
+         status = CASE
+           WHEN refunds.status = 'succeeded'
+             AND EXCLUDED.status IN ('pending', 'partial')
+           THEN refunds.status
+           ELSE EXCLUDED.status
+         END,
+         reason = CASE
+           WHEN refunds.status = 'succeeded'
+             AND EXCLUDED.status IN ('pending', 'partial')
+           THEN refunds.reason
+           ELSE EXCLUDED.reason
+         END`,
       [
         order.order_id,
         refundObject?.id || null,
