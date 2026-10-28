@@ -49,6 +49,25 @@ test('gross-up covers wholesale, app fee, and rounded Stripe fee without a one-c
   );
 });
 
+test('DT One wholesale of €1.91 with €0.49 app fee prices to €2.70 at current Stripe fee settings', () => {
+  const result = calculateFinalPrice(
+    { wholesalePriceCents: 191 },
+    {
+      feeCents: 49,
+      bonusPercent: 0,
+      stripeFeePercent: 1.5,
+      stripeFixedFeeCents: 25,
+    }
+  );
+
+  assert.equal(result.finalPriceCents, 270);
+  assert.equal(result.estimatedStripeFeeCents, 30);
+  assert.ok(
+    result.finalPriceCents - result.estimatedStripeFeeCents >= result.basePriceCents + result.feeCents,
+    'net after rounded Stripe fee must preserve the €1.91 wholesale cost plus €0.49 app fee'
+  );
+});
+
 test('price remains unchanged when Stripe fees are zero and no extra gross-up is needed', () => {
   const result = calculateFinalPrice(
     { wholesalePriceCents: 189 },
