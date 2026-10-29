@@ -9,13 +9,19 @@ const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
 test('DT One product discovery supports all four requested country ISO codes', () => {
   for (const code of ['AFG', 'PAK', 'IND', 'BGD']) {
-    assert.match(server, new RegExp(code + ': \'(?:AFN|PKR|INR|BDT)\''));
     assert.match(server, new RegExp('<option value="' + code + '"'));
   }
+  const routeStart = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
+  const routeEnd = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", routeStart);
+  assert.ok(routeStart >= 0 && routeEnd > routeStart);
+  const route = server.slice(routeStart, routeEnd);
+  assert.match(route, /countryIsoCode/);
+  assert.match(route, /operator\?\.country\?\.iso_code/);
 });
 
 test('DT One product discovery allows an omitted amount filter', () => {
-  assert.match(server, /req\.query\.amount === undefined \|\| String\(req\.query\.amount\)\.trim\(\) === '' \? null : Number\(req\.query\.amount\)/);
+  assert.match(server, /req\.query\.amount == null \|\| String\(req\.query\.amount\)\.trim\(\) === ''/);
+  assert.match(server, /\? null\s*: Number\(req\.query\.amount\)/);
   assert.match(server, /amountQuery !== null && \(!Number\.isFinite\(amountQuery\) \|\| amountQuery <= 0\)/);
   assert.match(server, /amountQuery === null \|\| mentionsAmount/);
 });
