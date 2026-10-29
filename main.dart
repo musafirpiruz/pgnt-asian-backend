@@ -539,6 +539,7 @@ const Map<String, Map<String, String>> translations = {
     'save': 'ثبتول',
     'cancel': 'لغوه کول',
     'retry': 'بیا هڅه',
+    'changeCountry': 'د هېواد بدلول',
     'referralCode': 'د بلنې کوډ (اختیاري)',
     'referralHint': 'اختیاري — انعام د چارج له بریالیتوب وروسته ثبتېږي.',
     'invalidReferralCode': 'د بلنې کوډ باید ۴ تر ۴۰ توري، شمېرې، _ یا - ولري.',
@@ -591,6 +592,7 @@ const Map<String, Map<String, String>> translations = {
     'save': 'ذخیره',
     'cancel': 'لغو',
     'retry': 'تلاش دوباره',
+    'changeCountry': 'تغییر کشور',
     'referralCode': 'کد دعوت (اختیاری)',
     'referralHint': 'اختیاری — پاداش پس از شارژ موفق ثبت می‌شود.',
     'invalidReferralCode': 'کد دعوت باید ۴ تا ۴۰ حرف، عدد، _ یا - داشته باشد.',
@@ -643,6 +645,7 @@ const Map<String, Map<String, String>> translations = {
     'save': 'Save',
     'cancel': 'Cancel',
     'retry': 'Retry',
+    'changeCountry': 'Change country',
     'referralCode': 'Referral code (optional)',
     'referralHint': 'Optional — the reward is credited after a successful top-up.',
     'invalidReferralCode': 'Referral code must be 4–40 letters, numbers, _ or -.',
@@ -695,6 +698,7 @@ const Map<String, Map<String, String>> translations = {
     'save': 'محفوظ کریں',
     'cancel': 'منسوخ کریں',
     'retry': 'دوبارہ کوشش',
+    'changeCountry': 'ملک تبدیل کریں',
     'referralCode': 'دعوتی کوڈ (اختیاری)',
     'referralHint': 'اختیاری — کامیاب ریچارج کے بعد انعام درج ہوگا۔',
     'invalidReferralCode': 'دعوتی کوڈ میں ۴ سے ۴۰ حروف، اعداد، _ یا - ہوں۔',
@@ -747,6 +751,7 @@ const Map<String, Map<String, String>> translations = {
     'save': 'सहेजें',
     'cancel': 'रद्द करें',
     'retry': 'फिर कोशिश करें',
+    'changeCountry': 'देश बदलें',
     'referralCode': 'रेफरल कोड (वैकल्पिक)',
     'referralHint': 'वैकल्पिक — सफल रिचार्ज के बाद इनाम दर्ज होगा।',
     'invalidReferralCode': 'रेफरल कोड में 4–40 अक्षर, अंक, _ या - होने चाहिए।',
@@ -799,6 +804,7 @@ const Map<String, Map<String, String>> translations = {
     'save': 'সংরক্ষণ করুন',
     'cancel': 'বাতিল',
     'retry': 'আবার চেষ্টা করুন',
+    'changeCountry': 'দেশ পরিবর্তন করুন',
     'referralCode': 'রেফারেল কোড (ঐচ্ছিক)',
     'referralHint': 'ঐচ্ছিক — সফল রিচার্জের পর পুরস্কার জমা হবে।',
     'invalidReferralCode': 'রেফারেল কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।'
@@ -1019,6 +1025,7 @@ class PgntHomePage extends StatefulWidget {
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
   AppCountry selectedCountry = countries.first;
+  bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   int selectedAmount = 100;
   int selectedTab = 0;
@@ -1532,8 +1539,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           pgntSectionTitle(t('phone'), Icons.phone_android),
           buildPhoneField(),
           const SizedBox(height: 14),
-          buildReferralCodeField(),
-          const SizedBox(height: 14),
+          // Referral attribution is accepted only from an invite deep link; no manual code field.
           pgntSectionTitle(t('selectOperator'), Icons.signal_cellular_alt),
           buildOperatorSelector(),
           const SizedBox(height: 14),
@@ -1601,67 +1607,105 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildCountrySelector() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = (constraints.maxWidth - 12) / 2;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: countries.map((country) {
-            final selected = country.code == selectedCountry.code;
-            return InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => selectCountry(country),
-              child: Container(
-                width: cardWidth,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: selected ? const Color(0xFFFFF1F0) : cardWhite,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: selected ? primaryRed : const Color(0xFFE7DED2),
-                    width: selected ? 1.7 : 1,
-                  ),
-                ),
-                child: Row(
+    Widget countryCard(AppCountry country, double width) {
+      final selected = country.code == selectedCountry.code;
+      return InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          if (selected) {
+            setState(() => showCountryChoices = false);
+          } else {
+            selectCountry(country);
+            setState(() => showCountryChoices = false);
+          }
+        },
+        child: Container(
+          width: width,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFF1F0) : cardWhite,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? primaryRed : const Color(0xFFE7DED2),
+              width: selected ? 1.7 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(country.flag, style: const TextStyle(fontSize: 27)),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(country.flag, style: const TextStyle(fontSize: 27)),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            country.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: selected ? primaryRed : Colors.black87,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            country.currency,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.black54,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      country.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? primaryRed : Colors.black87,
                       ),
                     ),
-                    if (selected)
-                      const Icon(Icons.check_circle, color: primaryRed, size: 18),
+                    const SizedBox(height: 3),
+                    Text(
+                      country.currency,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
+                    ),
                   ],
                 ),
               ),
-            );
-          }).toList(),
+              if (selected)
+                const Icon(Icons.check_circle, color: primaryRed, size: 18),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!showCountryChoices) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              countryCard(selectedCountry, constraints.maxWidth),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => showCountryChoices = true),
+                  icon: const Icon(Icons.public, size: 18),
+                  label: Text(t('changeCountry')),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final cardWidth = (constraints.maxWidth - 12) / 2;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: countries
+                  .map((country) => countryCard(country, cardWidth))
+                  .toList(),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(() => showCountryChoices = false),
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(t('changeCountry')),
+              ),
+            ),
+          ],
         );
       },
     );

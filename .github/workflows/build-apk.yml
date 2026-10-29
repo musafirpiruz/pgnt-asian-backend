@@ -17,6 +17,7 @@ on:
       - fix/operator-brand-cards-current-mainline
       - fix/support-label-current-main
       - feat/referral-deep-link-autofill-mainline
+      - feat/admin-assigned-referral-links-dynamic-countries
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
