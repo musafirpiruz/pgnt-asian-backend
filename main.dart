@@ -1,7 +1,9 @@
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -912,6 +914,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   final TextEditingController referralCodeController =
       TextEditingController();
   static const String _referralInstallIdKey = 'pgnt_referral_install_id_v1';
+  late final AppLinks _appLinks;
+  StreamSubscription<Uri>? _referralLinkSubscription;
   final TextEditingController supportSubjectController =
       TextEditingController();
   final TextEditingController supportMessageController =
@@ -932,6 +936,37 @@ class _PgntHomePageState extends State<PgntHomePage> {
   void initState() {
     super.initState();
     _restoreFuture = _restoreLocalData();
+    _appLinks = AppLinks();
+    _referralLinkSubscription = _appLinks.uriLinkStream.listen(
+      _applyReferralUri,
+      onError: (Object _) {},
+    );
+    _appLinks.getInitialLink().then((uri) {
+      if (uri != null) _applyReferralUri(uri);
+    }).catchError((Object _) {});
+  }
+
+  void _applyReferralUri(Uri uri) {
+    if (!mounted) return;
+    // Supported invite links use: pgntasian://referral?code=FRIEND2026
+    if (uri.scheme.toLowerCase() != 'pgntasian' ||
+        uri.host.toLowerCase() != 'referral') {
+      return;
+    }
+    final code = (uri.queryParameters['code'] ??
+            uri.queryParameters['referralCode'] ?? '')
+        .trim()
+        .toUpperCase();
+    if (!RegExp(r'^[A-Z0-9_-]{4,40}$').hasMatch(code)) return;
+
+    // Never overwrite a different code the user has already entered.
+    final currentCode = referralCodeController.text.trim().toUpperCase();
+    if (currentCode.isEmpty || currentCode == code) {
+      referralCodeController.value = TextEditingValue(
+        text: code,
+        selection: TextSelection.collapsed(offset: code.length),
+      );
+    }
   }
 
   Future<void> _restoreLocalData() async {
@@ -1140,6 +1175,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   @override
   void dispose() {
+    _referralLinkSubscription?.cancel();
     phoneController.dispose();
     referralCodeController.dispose();
     supportSubjectController.dispose();
