@@ -614,29 +614,7 @@ async function runMigration() {
           CREATE TABLE IF NOT EXISTS customer_accounts (
             id BIGSERIAL PRIMARY KEY,
             phone_e164 VARCHAR(16) NOT NULL UNIQUE
-              CHECK (phone_e164 ~ '^\\+[1-9][0-9]{7,14}
-    );
-
-    console.error(
-      error.message
-    );
-
-    process.exitCode = 1;
-  } finally {
-    if (client) {
-      try {
-        await client.query("SELECT pg_advisory_unlock(738291);");
-      } catch (_) {}
-
-      client.release();
-    }
-
-    await pool.end();
-  }
-}
-
-runMigration();
-),
+              CHECK (phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'),
             phone_verified_at TIMESTAMPTZ NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -668,8 +646,7 @@ runMigration();
           CREATE INDEX IF NOT EXISTS idx_phone_auth_events_ip_time
             ON phone_auth_events(ip_hash, event_type, created_at);
 
-          INSERT INTO schema_migrations (version)
-          VALUES ('015_international_phone_auth')
+          INSERT INTO schema_migrations (version) VALUES ('015_international_phone_auth')
           ON CONFLICT (version) DO NOTHING;
         `);
         await client.query("COMMIT");
