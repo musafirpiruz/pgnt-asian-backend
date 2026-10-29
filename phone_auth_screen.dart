@@ -53,12 +53,12 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   Future<void> verify() async {
     final p=phone.text.trim(), c=code.text.trim();
     if (!RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(p) || !RegExp(r'^\d{4,10}$').hasMatch(c)) { setState(()=>error=t('invalid')); return; }
-    setState(()=>{verifying=true,error=null,message=null});
-    try { final d=await request('/api/auth/phone/verify',body:{'phone':p,'code':c}); final token=d['token']?.toString()??''; if(token.length<40) throw Exception(t('bad')); await _authStore.write(key:_authKey,value:token); if(mounted)setState(()=>{accountPhone=d['customer']?['phone']?.toString()??p,message=t('signed'),sent=false}); }
+    setState(() { verifying=true; error=null; message=null; });
+    try { final d=await request('/api/auth/phone/verify',body:{'phone':p,'code':c}); final token=d['token']?.toString()??''; if(token.length<40) throw Exception(t('bad')); await _authStore.write(key:_authKey,value:token); if(mounted) setState(() { accountPhone=d['customer']?['phone']?.toString()??p; message=t('signed'); sent=false; }); }
     catch(e) { if(mounted)setState(()=>error=e.toString().replaceFirst('Exception: ','')); }
-    finally { if(mounted)setState(()=>verifying=false); }
+    finally { if(mounted) setState(() { verifying=false; }); }
   }
-  Future<void> logout() async { final token=await _authStore.read(key:_authKey); try { if(token!=null) await request('/api/auth/logout',body:const {},token:token); } catch (_) {} await _authStore.delete(key:_authKey); if(mounted)setState(()=>{accountPhone=null,sent=false,message=null,error=null}); }
+  Future<void> logout() async { final token=await _authStore.read(key:_authKey); try { if(token!=null) await request('/api/auth/logout',body:const {},token:token); } catch (_) {} await _authStore.delete(key:_authKey); if(mounted) setState(() { accountPhone=null; sent=false; message=null; error=null; }); }
   @override
   void dispose(){phone.dispose();code.dispose();super.dispose();}
   @override
