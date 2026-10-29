@@ -77,6 +77,20 @@ The application must use the backend to retrieve products and create payment req
 
 Never commit passwords, API secrets, database credentials, or webhook signing secrets.
 
+## Simple Admin Check Dashboard
+
+After this change is merged and deployed, open:
+
+`https://pgnt-asian-backend.onrender.com/admin`
+
+1. Enter the admin API key from your secure environment settings.
+2. Select **Load review queue** to list orders that need checking.
+3. For each order, use **Check Stripe payment** and **Check DT One status**.
+4. Use **Pricing and fees** to view saved settings without changing them.
+5. Select **Clear key** when finished.
+
+This page is designed for read-only checks. It does not issue refunds, retry top-ups, create sandbox checkouts, import products, or activate products. The API key is not saved by the page; avoid sharing it or including it in screenshots.
+
 ## Production Checklist
 
 - [ ] Confirm the correct Flutter entry file.
