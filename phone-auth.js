@@ -13,6 +13,12 @@ function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
+function rateLimitLockKeys(eventType, phoneHash, ipHash) {
+  // Acquire the phone and IP locks in a stable order to avoid deadlocks while
+  // serializing all requests that share either identifier.
+  return [`${eventType}:phone:${phoneHash}`, `${eventType}:ip:${ipHash}`].sort();
+}
+
 function registerPhoneAuthRoutes({ app, pool }) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID || '';
   const authToken = process.env.TWILIO_AUTH_TOKEN || '';
@@ -37,12 +43,15 @@ function registerPhoneAuthRoutes({ app, pool }) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      // Serialize attempts for this phone/IP pair to prevent concurrent requests
-      // from bypassing the per-window count check.
-      await client.query(
-        'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
-        [eventType, phoneHash + ':' + ipHash]
-      );
+      // Lock both identifiers: pair-only locking lets concurrent requests using
+      // the same phone from different IPs (or same IP with different phones)
+      // race past the combined rate limit. Stable ordering avoids deadlocks.
+      for (const lockKey of rateLimitLockKeys(eventType, phoneHash, ipHash)) {
+        await client.query(
+          'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+          [eventType, lockKey]
+        );
+      }
       const result = await client.query(
         `SELECT COUNT(*)::int AS count
            FROM phone_auth_events
@@ -259,4 +268,4 @@ function registerPhoneAuthRoutes({ app, pool }) {
   });
 }
 
-module.exports = { registerPhoneAuthRoutes, normalizeE164 };
+module.exports = { registerPhoneAuthRoutes, normalizeE164, rateLimitLockKeys };
