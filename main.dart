@@ -1539,7 +1539,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           pgntSectionTitle(t('phone'), Icons.phone_android),
           buildPhoneField(),
           const SizedBox(height: 14),
-          buildReferralCodeField(),
+          // Referral attribution is accepted only from an invite deep link; no manual code field.
           const SizedBox(height: 14),
           pgntSectionTitle(t('selectOperator'), Icons.signal_cellular_alt),
           buildOperatorSelector(),
