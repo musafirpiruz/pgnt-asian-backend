@@ -800,11 +800,11 @@ function calculateFinalPrice(product, pricing) {
     (targetNetCents + stripeFixedFeeCents) / (1 - stripeRate)
   );
   let estimatedStripeFeeCents =
-    Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents;
+    Math.ceil(finalPriceCents * stripeRate) + stripeFixedFeeCents;
   while (finalPriceCents - estimatedStripeFeeCents < targetNetCents) {
     finalPriceCents += 1;
     estimatedStripeFeeCents =
-      Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents;
+      Math.ceil(finalPriceCents * stripeRate) + stripeFixedFeeCents;
   }
 
   if (!Number.isSafeInteger(finalPriceCents) || finalPriceCents <= 0) {
