@@ -116,6 +116,124 @@ class MobileOperator {
   );
 }
 
+// Brand-inspired compact marks keep operator cards recognizable without
+// relying on emoji artwork. Official image assets can replace these later.
+class OperatorBrandMark extends StatelessWidget {
+  final MobileOperator operator;
+  final double size;
+
+  const OperatorBrandMark({
+    super.key,
+    required this.operator,
+    this.size = 42,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final key = operator.name.toLowerCase();
+    final Color brandColor;
+    final String mark;
+    switch (key) {
+      case 'roshan':
+        brandColor = const Color(0xFFE36B24);
+        mark = 'R';
+        break;
+      case 'etisalat':
+        brandColor = const Color(0xFF65A832);
+        mark = 'e';
+        break;
+      case 'atoma':
+        brandColor = const Color(0xFF512B82);
+        mark = 'A';
+        break;
+      case 'awcc':
+        brandColor = const Color(0xFF1769AA);
+        mark = 'AW';
+        break;
+      case 'salaam':
+        brandColor = const Color(0xFF168447);
+        mark = 'S';
+        break;
+      case 'jazz':
+        brandColor = const Color(0xFFED1C24);
+        mark = 'J';
+        break;
+      case 'zong':
+        brandColor = const Color(0xFF008C45);
+        mark = 'Z';
+        break;
+      case 'ufone':
+        brandColor = const Color(0xFF7A1FA2);
+        mark = 'U';
+        break;
+      case 'telenor':
+        brandColor = const Color(0xFF00A5DF);
+        mark = 'T';
+        break;
+      case 'airtel':
+        brandColor = const Color(0xFFE40000);
+        mark = 'air';
+        break;
+      case 'jio':
+        brandColor = const Color(0xFF0866C6);
+        mark = 'Jio';
+        break;
+      case 'vi':
+        brandColor = const Color(0xFF6B238E);
+        mark = 'Vi';
+        break;
+      case 'grameenphone':
+        brandColor = const Color(0xFF0078BF);
+        mark = 'GP';
+        break;
+      case 'robi':
+        brandColor = const Color(0xFFE32636);
+        mark = 'robi';
+        break;
+      case 'banglalink':
+        brandColor = const Color(0xFFF58220);
+        mark = 'bl';
+        break;
+      default:
+        brandColor = primaryRed;
+        mark = operator.name.isEmpty ? '?' : operator.name[0].toUpperCase();
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: brandColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: brandColor.withOpacity(0.18), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: brandColor.withOpacity(0.16),
+            blurRadius: 7,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            mark,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: size * 0.36,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 Color operatorBrandColor(String name) {
   switch (name) {
     case 'Roshan':
@@ -1498,7 +1616,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 width: cardWidth,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
-                  vertical: 12,
+                  vertical: 10,
                 ),
                 decoration: BoxDecoration(
                   color: selected ? const Color(0xFFFFF1F0) : cardWhite,
@@ -1615,8 +1733,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth < 360 ? 2 : 3;
-        final spacing = 9.0;
+        final columns = 2;
+        final spacing = 8.0;
         final cardWidth =
             (constraints.maxWidth - spacing * (columns - 1)) / columns;
         return Wrap(
@@ -1652,17 +1770,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircleAvatar(
-                      radius: 17,
-                      backgroundColor: operatorBrandColor(item.name),
-                      child: Text(
-                        operatorInitials(item.name),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
+                    OperatorBrandMark(
+                      operator: item,
+                      size: 30,
                     ),
                     const SizedBox(height: 7),
                     Text(
