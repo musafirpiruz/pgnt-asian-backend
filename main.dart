@@ -9,6 +9,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'phone_auth_screen.dart';
 
 const String appName = 'PGNT ASIAN TOPUP';
 
@@ -1472,6 +1473,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Phone account',
+            icon: const Icon(Icons.verified_user_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => PhoneAuthScreen(languageCode: languageCode)),
+            ),
+          ),
           IconButton(
             tooltip: t('settings'),
             icon: const Icon(Icons.settings_outlined),
