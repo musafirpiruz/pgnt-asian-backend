@@ -28,6 +28,8 @@ test('sandbox result is not acknowledged unless the matching local order update 
   assert.ok(source.includes('const savedOrder = await pool.query('));
   assert.ok(source.includes('if (savedOrder.rowCount !== 1) {'));
   assert.ok(source.includes('DT One accepted the sandbox transaction but its result could not be saved'));
+  assert.ok(source.includes("WHERE order_id = $3 AND status IN ('processing_topup', 'topup_submitted')"),
+    'provider response must not overwrite callback terminal/review statuses');
   assert.ok(source.includes("dtone_status = 'sandbox_test_outcome_unknown'"));
   assert.ok(source.includes('do not retry blindly'));
 });
