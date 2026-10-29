@@ -42,7 +42,7 @@ test('production gross-up uses verified wholesale cost and corrects rounding sho
   const source = server.slice(start, end);
   assert.ok(source.includes('product.wholesalePriceCents'));
   assert.ok(source.includes('const targetNetCents = basePriceCents + feeCents'));
-  assert.ok(source.includes('Math.ceil(finalPriceCents * stripeRate) + pricing.stripeFixedFeeCents'));
+  assert.ok(source.includes('Math.ceil(finalPriceCents * stripeRate) + stripeFixedFeeCents'));
   assert.ok(source.includes('while (finalPriceCents - estimatedStripeFeeCents < targetNetCents)'));
 });
 
