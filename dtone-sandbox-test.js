@@ -138,16 +138,23 @@ module.exports = function registerDtOneSandboxTest({
         ? data.status
         : (data?.status?.message || data?.status?.class || 'submitted');
 
-      await pool.query(
+      const savedOrder = await pool.query(
         `UPDATE orders
          SET dtone_transaction_id = COALESCE($1, dtone_transaction_id),
              dtone_status = $2,
              status = CASE WHEN status = 'processing_topup'
                            THEN 'topup_submitted' ELSE status END,
              updated_at = NOW()
-         WHERE order_id = $3 AND status IN ('processing_topup', 'topup_submitted', 'completed', 'topup_review')`,
+         WHERE order_id = $3 AND status IN ('processing_topup', 'topup_submitted')`,
         [providerId === null ? null : String(providerId), String(providerStatus).slice(0, 80), orderId]
       );
+
+      // Do not acknowledge the provider transaction unless its result is durably
+      // saved against the local order. DT One may have accepted it already, so
+      // the catch path marks the outcome unknown and warns against blind retries.
+      if (savedOrder.rowCount !== 1) {
+        throw new Error('DT One accepted the sandbox transaction but its result could not be saved to the expected order.');
+      }
 
       return res.status(202).json({
         created: true,
