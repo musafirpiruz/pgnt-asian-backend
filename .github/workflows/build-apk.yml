@@ -18,8 +18,10 @@ on:
       - fix/support-label-current-main
       - feat/referral-deep-link-autofill-mainline
       - feat/admin-assigned-referral-links-dynamic-countries
+      - feat/flutter-phone-otp-screen
     paths:
       - 'main.dart'
+      - 'phone_auth_screen.dart'
       - 'main_FIXED_FINAL.dart'
       - 'lib/**'
       - 'pubspec.yaml'
@@ -82,6 +84,8 @@ jobs:
             echo "ERROR: No Dart entry file found."
             exit 1
           fi
+
+          if [ -f "phone_auth_screen.dart" ]; then cp phone_auth_screen.dart lib/phone_auth_screen.dart; fi
 
           test -s lib/main.dart
           echo "Flutter source prepared:"
