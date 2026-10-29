@@ -145,7 +145,7 @@ module.exports = function registerDtOneSandboxTest({
              status = CASE WHEN status = 'processing_topup'
                            THEN 'topup_submitted' ELSE status END,
              updated_at = NOW()
-         WHERE order_id = $3 AND status IN ('processing_topup', 'topup_submitted', 'completed', 'topup_review')`,
+         WHERE order_id = $3 AND status IN ('processing_topup', 'topup_submitted')`,
         [providerId === null ? null : String(providerId), String(providerStatus).slice(0, 80), orderId]
       );
 
