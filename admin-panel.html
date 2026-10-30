@@ -79,6 +79,14 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="pricing"><div class="empty">د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.</div></div>
 </section>
 <section class="card">
+<h2>۴. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
+<p class="muted">د DT One د محصول ID ولیکئ. دا برخه د محصول، بیې، اسعارو او تادیې د چمتووالي ستونزې ښيي؛ هېڅ محصول نه فعالوي او هېڅ قیمت نه بدلوي.</p>
+<label for="diagnosticProductId">DT One Product ID</label>
+<input id="diagnosticProductId" inputmode="numeric" autocomplete="off" placeholder="د محصول ID، لکه 7194">
+<div class="actions"><button id="loadDiagnostic">د محصول تشخیص پیل کړه</button></div>
+<div id="diagnostic"><div class="empty">د تشخیص لپاره د محصول ID ولیکئ.</div></div>
+</section>
+<section class="card">
 <h2>د خوندیتوب یادونه</h2>
 <div class="safe">که د Stripe یا DT One حالت روښانه نه وي، بیا تادیه یا بیا Top-up مه کوئ. لومړی د دواړو حالتونه وګورئ. دا پاڼه یوازې د کتنې لپاره ده؛ Refund او نور مالي بدلونونه پکې نشته.</div>
 </section>
@@ -186,6 +194,49 @@ loadPricingButton.addEventListener('click',async()=>{
   setNotice('د بیو او فیسونو راپور ولوستل شو. هېڅ تنظیمات نه دي بدل شوي.','ok');
  }catch(error){const empty=document.createElement('div');empty.className='status error';empty.textContent=error.message;pricing.append(empty);setNotice(error.message,'error');}
  finally{loadPricingButton.disabled=false;}
+});
+document.getElementById('loadDiagnostic').addEventListener('click',async()=>{
+ const button=document.getElementById('loadDiagnostic');
+ const productId=document.getElementById('diagnosticProductId').value.trim();
+ const output=document.getElementById('diagnostic');
+ output.replaceChildren();
+ if(!productId){const empty=document.createElement('div');empty.className='status warn';empty.textContent='لومړی د DT One Product ID ولیکئ.';output.append(empty);return;}
+ button.disabled=true;setNotice('د محصول د قیمت او Checkout چمتووالی یوازې د لوستلو لپاره ارزول کېږي…');
+ try{
+  const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/pricing');
+  const checks=data.checks&&typeof data.checks==='object'?data.checks:{};
+  const labels={
+   wholesalePriceConfigured:'عمده قیمت ثبت دی',
+   catalogRetailPriceConfigured:'پرچون قیمت ثبت دی',
+   dtoneProductMappingConfigured:'د DT One محصول پېژندنه شته',
+   productCountryCurrencyMatches:'هیواد او اسعار سمون لري',
+   pricingSettingsConfigured:'د بیو تنظیمات فعال دي',
+   pricingValuesValid:'د فیسونو او بیو ارزښتونه معتبر دي',
+   productEnabled:'محصول فعال دی',
+   stripeConfigured:'Stripe تنظیم شوی',
+   stripeWebhookConfigured:'Stripe Webhook تنظیم شوی',
+   dtoneConfigured:'DT One تنظیم شوی',
+   paymentAndFulfillmentEnvironmentsCompatible:'د تادیې او Top-up چاپېریالونه برابر دي',
+   priceCalculationValid:'د قیمت محاسبه بریالۍ ده',
+   safeForRealCheckout:'د واقعي Checkout چمتووالی'
+  };
+  const grid=document.createElement('div');grid.className='grid';
+  for(const [name,passed] of Object.entries(checks)){
+   const box=document.createElement('div');box.className='price';
+   const title=document.createElement('strong');title.textContent=labels[name]||name;
+   const state=document.createElement('span');state.className='pill';state.textContent=passed===true?'بریالی':'ستونزه / نه دی تایید شوی';
+   box.append(title,state);grid.append(box);
+  }
+  output.append(grid);
+  const blockers=Array.isArray(data.blockers)?data.blockers:[];
+  const summary=document.createElement('div');summary.className='status '+(blockers.length?'warn':'ok');
+  summary.textContent=blockers.length?'د حل غوښتونکي موارد: '+blockers.map(name=>labels[name]||name).join('، '):'ټولې تخنیکي کتنې بریالۍ دي؛ بیا هم دا د واقعي تادیې یا Top-up تضمین نه دی.';
+  output.append(summary);
+  if(data.customerPricePreview){const preview=document.createElement('div');preview.className='status';preview.textContent='د EUR قیمت مخکتنه: '+JSON.stringify(data.customerPricePreview);output.append(preview);}
+  const details=document.createElement('details');const summaryTitle=document.createElement('summary');summaryTitle.textContent='بشپړ تشخیصي معلومات';const pre=document.createElement('pre');pre.textContent=JSON.stringify(data,null,2);details.append(summaryTitle,pre);output.append(details);
+  setNotice('د محصول تشخیص بشپړ شو. دا یوازې د لوستلو راپور دی؛ هېڅ بدلون نه دی شوی.',blockers.length?'warn':'ok');
+ }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);setNotice(error.message,'error');}
+ finally{button.disabled=false;}
 });
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
 </script>
