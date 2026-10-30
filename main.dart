@@ -1048,6 +1048,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   String? selectedSupportOrderId;
   String supportCategory = 'topup';
   bool isSubmittingSupport = false;
+  final List<Map<String, dynamic>> supportTickets = [];
+  bool isLoadingSupportTickets = false;
 
   static const String _historyStorageKey = 'pgnt_transaction_history_v1';
   static const String _tokensStorageKey = 'pgnt_order_access_tokens_v1';
@@ -2471,6 +2473,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted) return;
       supportSubjectController.clear();
       supportMessageController.clear();
+      await loadSupportTickets();
       showMessage('ستاسو د مرستې غوښتنه ثبت شوه. د ټکټ شمېره: ${(decoded['ticket'] as Map<String, dynamic>)['id']}');
     } catch (error) {
       if (!mounted) return;
@@ -2479,6 +2482,120 @@ class _PgntHomePageState extends State<PgntHomePage> {
     } finally {
       if (mounted) setState(() => isSubmittingSupport = false);
     }
+  }
+
+  Future<void> loadSupportTickets() async {
+    final orderId = selectedSupportOrderId;
+    if (orderId == null) return;
+    final token = _orderAccessTokens[orderId];
+    if (token == null) return;
+    if (mounted) setState(() => isLoadingSupportTickets = true);
+    try {
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl/api/support/tickets/order/$orderId'),
+        headers: {
+          'Accept': 'application/json',
+          'x-order-access-token': token,
+        },
+      ).timeout(const Duration(seconds: 15));
+      final dynamic decoded = jsonDecode(response.body);
+      if (response.statusCode != 200 || decoded is! Map<String, dynamic>) {
+        final detail = decoded is Map<String, dynamic> ? decoded['error'] : null;
+        throw Exception(detail is String ? detail : 'Could not load support requests.');
+      }
+      final rawTickets = decoded['tickets'];
+      if (rawTickets is! List) throw Exception('Invalid support history response.');
+      final loaded = rawTickets
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (!mounted || selectedSupportOrderId != orderId) return;
+      setState(() {
+        supportTickets
+          ..clear()
+          ..addAll(loaded);
+      });
+    } catch (error) {
+      if (mounted) {
+        final detail = error.toString().replaceFirst('Exception: ', '').trim();
+        showMessage(detail.isEmpty ? 'د ټکټونو تاریخچه نه شوه لوستل کېدای.' : detail);
+      }
+    } finally {
+      if (mounted) setState(() => isLoadingSupportTickets = false);
+    }
+  }
+
+  Widget buildSupportTicketHistory() {
+    final hasOrder = selectedSupportOrderId != null &&
+        _orderAccessTokens.containsKey(selectedSupportOrderId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'زما د مرستې غوښتنې',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+            IconButton(
+              tooltip: 'تازه کول',
+              onPressed: !hasOrder || isLoadingSupportTickets ? null : loadSupportTickets,
+              icon: isLoadingSupportTickets
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+        if (!hasOrder)
+          const Text('د ټکټونو د کتلو لپاره خپله معامله انتخاب کړئ.')
+        else if (supportTickets.isEmpty && !isLoadingSupportTickets)
+          const Text('د دې معاملې لپاره د مرستې پخوانی ټکټ نشته. د تازه کولو نښه کېکاږئ.')
+        else
+          ...supportTickets.map((ticket) {
+            final id = ticket['id']?.toString() ?? '—';
+            final status = ticket['status']?.toString() ?? 'open';
+            final category = ticket['category']?.toString() ?? 'other';
+            final subject = ticket['subject']?.toString() ?? 'Support request';
+            final message = ticket['message']?.toString() ?? '';
+            final reply = ticket['admin_reply']?.toString() ?? '';
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('#$id • $subject',
+                              style: const TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                        Chip(label: Text(status)),
+                      ],
+                    ),
+                    Text('ډول: $category'),
+                    const SizedBox(height: 6),
+                    Text(message),
+                    if (reply.trim().isNotEmpty) ...[
+                      const Divider(),
+                      const Text('د ملاتړ ځواب',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      Text(reply),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }),
+      ],
+    );
   }
 
   Widget buildSupport() {
@@ -2634,7 +2751,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 child: Text('${id.substring(0, 8)} • ${item.operatorName}', overflow: TextOverflow.ellipsis),
               );
             }).toList(),
-            onChanged: (value) => setState(() => selectedSupportOrderId = value),
+            onChanged: (value) {
+              setState(() {
+                selectedSupportOrderId = value;
+                supportTickets.clear();
+              });
+              loadSupportTickets();
+            },
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
@@ -2689,6 +2812,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
             label: Text(isSubmittingSupport ? 'ثبتېږي...' : 'د مرستې غوښتنه ولېږئ'),
           ),
         ],
+        const SizedBox(height: 16),
+        buildSupportTicketHistory(),
         const SizedBox(height: 20),
         pgntSectionTitle(
           'Quick help',
