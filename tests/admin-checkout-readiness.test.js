@@ -28,7 +28,9 @@ test('admin catalog pricing readiness reports every required checkout prerequisi
   ]) {
     assert.match(route, new RegExp(check), `readiness must report ${check}`);
   }
-  assert.match(route, /readiness\.safeForRealCheckout\s*=\s*Object\.values\(readiness\)\.every\(Boolean\)/);
+  assert.match(route, /const readinessBlockers = Object\.entries\(readiness\)/);
+  assert.match(route, /readiness\.safeForRealCheckout\s*=\s*readinessBlockers\.length === 0/);
+  assert.match(route, /blockers: readinessBlockers/);
 });
 
 test('safe checkout readiness cannot pass when any prerequisite is false', () => {
