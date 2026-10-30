@@ -57,6 +57,12 @@ test('read-only diagnostic separates provider catalog retail from calculated che
   assert.ok(route.includes('calculatedPriceMinusCatalogRetailEur:'));
   assert.ok(route.includes('catalogRetailPriceMatchesCalculatedPrice:'));
   assert.ok(route.includes('readOnly: true'));
+  assert.ok(route.includes('catalogRetailPriceConfigured'));
+  assert.ok(route.includes('dtoneProductMappingConfigured'));
+  assert.ok(route.includes('productCountryCurrencyMatches'));
+  assert.ok(route.includes('pricingValuesValid'));
+  assert.ok(route.includes('const readinessBlockers = Object.entries(readiness)'));
+  assert.ok(route.includes('blockers: readinessBlockers'));
   assert.ok(route.includes('No product, order, payment, or setting was changed'));
   assert.ok(!route.includes('UPDATE product_catalog') && !route.includes('UPDATE pricing_settings') && !route.includes('stripe.checkout.sessions.create') && !route.includes('stripe.refunds.create'));
 });
