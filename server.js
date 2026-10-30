@@ -3986,11 +3986,28 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
         customerPricePreview = { error: 'Could not calculate customer price preview from the saved settings.' };
       }
     }
+    const normalizedProductCountry = normalizeCountry(product.country);
     const readiness = {
       wholesalePriceConfigured: product.wholesale_price_eur_cents != null &&
         Number.isSafeInteger(Number(product.wholesale_price_eur_cents)) &&
         Number(product.wholesale_price_eur_cents) > 0,
+      catalogRetailPriceConfigured: Number.isSafeInteger(Number(product.price_eur_cents)) &&
+        Number(product.price_eur_cents) > 0,
+      dtoneProductMappingConfigured: product.product_id != null &&
+        String(product.product_id).trim().length > 0,
+      productCountryCurrencyMatches: isValidCountry(normalizedProductCountry) &&
+        product.currency === countryCurrency(normalizedProductCountry),
       pricingSettingsConfigured: pricing !== null && pricing.active === true,
+      pricingValuesValid: pricing !== null &&
+        Number.isSafeInteger(Number(pricing.fee_eur_cents)) &&
+        Number(pricing.fee_eur_cents) >= 0 &&
+        Number.isFinite(Number(pricing.bonus_percent)) &&
+        Number(pricing.bonus_percent) >= 0 &&
+        Number.isFinite(Number(pricing.stripe_fee_percent)) &&
+        Number(pricing.stripe_fee_percent) >= 0 &&
+        Number(pricing.stripe_fee_percent) < 100 &&
+        Number.isSafeInteger(Number(pricing.stripe_fixed_fee_cents)) &&
+        Number(pricing.stripe_fixed_fee_cents) >= 0,
       productEnabled: product.active === true,
       stripeConfigured: Boolean(stripe),
       stripeWebhookConfigured: Boolean(STRIPE_WEBHOOK_SECRET),
@@ -3998,7 +4015,10 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
       paymentAndFulfillmentEnvironmentsCompatible: arePaymentAndFulfillmentEnvironmentsCompatible(),
       priceCalculationValid,
     };
-    readiness.safeForRealCheckout = Object.values(readiness).every(Boolean);
+    const readinessBlockers = Object.entries(readiness)
+      .filter(([, passed]) => passed !== true)
+      .map(([check]) => check);
+    readiness.safeForRealCheckout = readinessBlockers.length === 0;
     return res.json({
       readOnly: true,
       customerPricePreview,
@@ -4016,7 +4036,8 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
         stripeFeeNote: 'Stripe fee is an estimate; actual fees depend on the Stripe account, card and payment method.'
       } : null,
       checks: readiness,
-      note: 'Read-only readiness diagnostics only. A true result does not guarantee provider acceptance, actual Stripe fees, legal readiness, or successful fulfillment. No product, order, payment, or setting was changed.'
+      blockers: readinessBlockers,
+      note: 'Read-only readiness diagnostics only. blockers lists failed checks that must be reviewed. A true result does not guarantee provider acceptance, actual Stripe fees, legal readiness, or successful fulfillment. No product, order, payment, or setting was changed.'
     });
   } catch (error) {
     console.error('Admin catalog pricing verification failed:', error.message);
