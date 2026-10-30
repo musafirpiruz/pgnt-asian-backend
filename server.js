@@ -2606,6 +2606,9 @@ require('./support-routes')({
   requireAdmin,
 });
 
+// International customer phone authentication (Twilio Verify, E.164 numbers).
+require('./phone-auth').registerPhoneAuthRoutes({ app, pool });
+
 
 
 // Small browser page for the owner to run the read-only product check

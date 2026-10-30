@@ -601,6 +601,64 @@ async function runMigration() {
     }
 
 
+    // Version 015 creates persistent customer identities and hashed sessions for international phone login.
+    const phoneAuthVersion = "015_international_phone_auth";
+    const phoneAuthCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [phoneAuthVersion]
+    );
+    if (phoneAuthCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS customer_accounts (
+            id BIGSERIAL PRIMARY KEY,
+            phone_e164 VARCHAR(16) NOT NULL UNIQUE
+              CHECK (phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'),
+            phone_verified_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS customer_sessions (
+            id BIGSERIAL PRIMARY KEY,
+            customer_id BIGINT NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+            token_hash CHAR(64) NOT NULL UNIQUE,
+            expires_at TIMESTAMPTZ NOT NULL,
+            revoked_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_customer_sessions_customer_active
+            ON customer_sessions(customer_id, expires_at)
+            WHERE revoked_at IS NULL;
+
+          CREATE TABLE IF NOT EXISTS phone_auth_events (
+            id BIGSERIAL PRIMARY KEY,
+            event_type VARCHAR(16) NOT NULL CHECK (event_type IN ('send','verify')),
+            phone_hash CHAR(64) NOT NULL,
+            ip_hash CHAR(64) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_phone_auth_events_type_time
+            ON phone_auth_events(event_type, created_at);
+          CREATE INDEX IF NOT EXISTS idx_phone_auth_events_phone_time
+            ON phone_auth_events(phone_hash, event_type, created_at);
+          CREATE INDEX IF NOT EXISTS idx_phone_auth_events_ip_time
+            ON phone_auth_events(ip_hash, event_type, created_at);
+
+          INSERT INTO schema_migrations (version) VALUES ('015_international_phone_auth')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 015_international_phone_auth completed; no existing orders or pricing were changed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 015_international_phone_auth is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
