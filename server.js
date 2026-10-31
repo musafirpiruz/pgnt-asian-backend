@@ -3108,6 +3108,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
     const matchesById = new Map();
     let providerPagesChecked = 0;
     let totalSeen = 0;
+    let truncated = false;
 
     // Check a bounded number of pages to avoid unbounded provider requests.
     for (let page = 1; page <= 5; page += 1) {
@@ -3171,7 +3172,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
         const mentionsAmount = amountQuery !== null && (
           benefitAmounts.includes(amountQuery)
           || productAmounts.includes(amountQuery)
-          || (localCurrency && new RegExp(`\\\\b${amountQuery}\\\\s*${localCurrency}\\\\b|\\\\b${localCurrency}\\\\s*${amountQuery}\\\\b`, 'i').test(name))
+          || (localCurrency && new RegExp(`\\b${amountQuery}\\s*${localCurrency}\\b|\\b${localCurrency}\\s*${amountQuery}\\b`, 'i').test(name))
         );
         const isRequestedOperator = !operatorQuery || operatorName.includes(operatorQuery);
         const isLikelyRelevant = isRequestedOperator && (amountQuery === null || mentionsAmount);
@@ -3182,6 +3183,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       }
 
       if (products.length < 100) break;
+      if (page === 5) truncated = true;
     }
 
     const products = [...matchesById.values()];
@@ -3193,11 +3195,13 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       requestedAmount: amountQuery,
       providerPagesChecked,
       providerProductsSeen: totalSeen,
+      truncated,
+      complete: !truncated,
       resultCount: products.length,
       products,
       catalogActivation: 'unchanged',
       transactionCreated: false,
-      note: 'Read-only search across up to five pages. Results are candidates; confirm operator, denomination, and pre-production availability before mapping.',
+      note: truncated ? 'Partial read-only search: provider pagination reached the five-page safety limit. Results are incomplete candidates; do not treat this list as the full catalog.' : 'Read-only search completed within the five-page safety limit. Results are candidates; confirm operator, denomination, and pre-production availability before mapping.',
     });
   } catch (error) {
     console.error('DT One product discovery failed:', error.message);
