@@ -75,3 +75,30 @@ test('all phone auth routes return 503 and never invoke an SMS provider', async 
     if (response.body.smsSent !== undefined) assert.equal(response.body.smsSent, false);
   }
 });
+
+
+test('current-user endpoint returns only middleware-verified Firebase identity', async () => {
+  const { registerPhoneAuthRoutes } = require('../phone-auth');
+  const handlers = new Map();
+  const app = {
+    post(route, handler) { handlers.set('POST ' + route, handler); },
+    get(route, ...routeHandlers) { handlers.set('GET ' + route, routeHandlers); },
+  };
+  const authMiddleware = (req, res, next) => {
+    req.auth = Object.freeze({ uid: 'firebase-user', phoneNumber: '+33612345678' });
+    next();
+  };
+  registerPhoneAuthRoutes({ app, authMiddleware });
+  const [guard, handler] = handlers.get('GET /api/auth/me');
+  assert.equal(guard, authMiddleware);
+  const response = {
+    body: null,
+    json(value) { this.body = value; return this; },
+  };
+  handler({ auth: { uid: 'firebase-user', phoneNumber: '+33612345678' } }, response);
+  assert.deepEqual(response.body, {
+    authenticated: true,
+    uid: 'firebase-user',
+    phoneNumber: '+33612345678',
+  });
+});
