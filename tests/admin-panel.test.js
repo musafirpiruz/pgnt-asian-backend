@@ -102,3 +102,11 @@ test('referral admin report is read-only and uses the existing admin-authenticat
   assert.match(html, /یوازې لوستل/);
   assert.doesNotMatch(html, /fetch\('\/api\/admin\/referrals'\s*,\s*\{\s*method\s*:\s*'POST'/);
 });
+
+test('referral code creation UI only sends the fixed seven-cent reward and never activates a code', () => {
+  assert.match(html, /createReferralCode/);
+  assert.match(html, /adminPost\('\/api\/admin\/referrals\/codes'/);
+  assert.match(html, /rewardEurCents:7/);
+  assert.match(server, /VALUES \(\$1,\$2,\$3,\$4,\$5,FALSE\)/);
+  assert.doesNotMatch(html, /active\s*:\s*true|rewardEurCents\s*:\s*(?!7\b)\d+/);
+});
