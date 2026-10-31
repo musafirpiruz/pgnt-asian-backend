@@ -979,6 +979,20 @@ app.post('/api/payments/checkout', async (req, res) => {
     });
   }
 
+  // Do not accept client-generated install IDs as proof of a unique customer.
+  // Referral attribution remains disabled until Firebase ID-token verification
+  // and a signed, expiring attribution token are implemented server-side.
+  const hasReferralInput = Boolean(
+    String(req.body?.referralCode || '').trim() ||
+    String(req.body?.referralInstallId || '').trim()
+  );
+  if (hasReferralInput) {
+    return res.status(503).json({
+      code: 'REFERRAL_IDENTITY_VERIFICATION_REQUIRED',
+      error: 'Referral rewards are temporarily unavailable until secure account verification is enabled.',
+    });
+  }
+
   const client = await pool.connect();
   let transactionOpen = false;
   let orderId = null;
