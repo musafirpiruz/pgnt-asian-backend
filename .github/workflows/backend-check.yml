@@ -18,6 +18,9 @@ on:
       - "server.js"
       - "migrate.js"
       - "package.json"
+      - "firebase-auth.js"
+      - "phone-auth.js"
+      - "tests/firebase-auth.test.js"
       - ".github/workflows/backend-check.yml"
 
 jobs:
