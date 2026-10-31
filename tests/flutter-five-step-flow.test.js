@@ -36,3 +36,8 @@ test('custom amount validation is translated in all six app languages', () => {
     assert.match(block, /'invalidAmount':/);
   }
 });
+
+test('review summary refreshes on recipient input and custom amount resets on country change', () => {
+  assert.match(dart, /void handlePhoneChanged\(String value\)\s*\{\s*if \(mounted\) setState\(\(\) \{\}\);/);
+  assert.match(dart, /phoneController\.clear\(\);\s*customAmountController\.clear\(\);/);
+});
