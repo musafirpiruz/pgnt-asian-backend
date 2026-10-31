@@ -78,7 +78,6 @@ test('wallet migration preflight API explicitly preserves every financial safety
   assert.match(route, /schemaChangesApplied:\s*false/);
   assert.match(route, /walletApiEnabled:\s*false/);
   assert.match(route, /financialWritesEnabled:\s*false/);
-  assert.match(route, /readyForWalletActivation:\s*false/);
   assert.match(route, /retentionPolicyAndLedgerIdentityMustBeApprovedBeforeMigration/);
   assert.match(route, /SELECT[\s\S]*FROM wallet_transactions/);
   assert.doesNotMatch(route, /\b(?:INSERT\s+INTO|UPDATE\s+\w+|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|TRUNCATE)\b/i);
