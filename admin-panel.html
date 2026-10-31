@@ -87,6 +87,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="diagnostic"><div class="empty">د تشخیص لپاره د محصول ID ولیکئ.</div></div>
 </section>
 <section class="card">
+<h2>۵. د Wallet او Ledger د Migration خوندیتوب (یوازې لوستل)</h2>
+<p class="muted">دا کتنه د اصلي Database د تکراري Wallet حسابونو، تکراري Ledger حوالو او د مالي تاریخ د حذف کېدو احتمالي خطرونه شمېري. هېڅ Migration، مالي لیکنه یا د Wallet فعالول نه ترسره کوي.</p>
+<div class="actions"><button class="secondary" id="loadWalletPreflight">د Wallet خوندیتوب راپور ولوله</button></div>
+<div id="walletPreflight"><div class="empty">د راپور لپاره پورته تڼۍ کېکاږئ. د اډمین کیلي یوازې د دې پاڼې په حافظه کې کارول کېږي.</div></div>
+</section>
+<section class="card">
 <h2>د خوندیتوب یادونه</h2>
 <div class="safe">که د Stripe یا DT One حالت روښانه نه وي، بیا تادیه یا بیا Top-up مه کوئ. لومړی د دواړو حالتونه وګورئ. دا پاڼه یوازې د کتنې لپاره ده؛ Refund او نور مالي بدلونونه پکې نشته.</div>
 </section>
@@ -237,6 +243,43 @@ document.getElementById('loadDiagnostic').addEventListener('click',async()=>{
   setNotice('د محصول تشخیص بشپړ شو. دا یوازې د لوستلو راپور دی؛ هېڅ بدلون نه دی شوی.',blockers.length?'warn':'ok');
  }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);setNotice(error.message,'error');}
  finally{button.disabled=false;}
+});
+document.getElementById('loadWalletPreflight').addEventListener('click',async()=>{
+ const button=document.getElementById('loadWalletPreflight');
+ const output=document.getElementById('walletPreflight');
+ output.replaceChildren();button.disabled=true;
+ setNotice('د Wallet او Ledger د Migration خوندیتوب راپور لوستل کېږي…');
+ try{
+  const data=await adminRequest('/api/admin/wallets/migration-preflight');
+  const labels={
+   duplicateReferenceGroups:'د تکراري Ledger حوالو ډلې',
+   duplicateWalletOwnerCurrencyGroups:'د تکراري Wallet مالک/اسعارو ډلې',
+   cascadingWalletForeignKeys:'د حذف کېدو له لارې Cascade اړیکې'
+  };
+  const grid=document.createElement('div');grid.className='grid';
+  for(const field of Object.keys(labels)){
+   const box=document.createElement('div');box.className='price';
+   const title=document.createElement('strong');title.textContent=labels[field];
+   const value=document.createElement('p');value.textContent=String(data[field]??'—');
+   box.append(title,value);grid.append(box);
+  }
+  output.append(grid);
+  const risks=data.retentionRisks||{};
+  const riskBox=document.createElement('div');riskBox.className='status '+((risks.walletDeletionCascadesFromUser||risks.ledgerDeletionCascadesFromWallet)?'warn':'ok');
+  riskBox.textContent='د مالي تاریخ د ساتنې خطرونه — د کارن حذف Wallet حذفوي: '+(risks.walletDeletionCascadesFromUser?'هو':'نه')+'؛ د Wallet حذف Ledger حذفوي: '+(risks.ledgerDeletionCascadesFromWallet?'هو':'نه');
+  output.append(riskBox);
+  const blockers=Array.isArray(data.blockers)?data.blockers:[];
+  const blockerBox=document.createElement('div');blockerBox.className='status '+(blockers.length?'warn':'ok');
+  blockerBox.textContent=blockers.length?'د Migration مخکې پاتې خنډونه: '+blockers.join('، '):'په دې تشخیص کې څرګند خنډ ونه موندل شو؛ بیا هم د مالي فعالولو لپاره بشپړه کتنه لازمه ده.';
+  output.append(blockerBox);
+  const safety=document.createElement('div');safety.className='status ok';
+  safety.textContent='Read-only: '+(data.readOnly===true?'هو':'نه')+' · Schema بدل شوی: '+(data.schemaChangesApplied===false?'نه':'نامعلوم')+' · Wallet API فعال: '+(data.walletApiEnabled===false?'نه':'نامعلوم')+' · مالي لیکنې فعالې: '+(data.financialWritesEnabled===false?'نه':'نامعلوم');
+  output.append(safety);
+  const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='بشپړ تخنیکي راپور';const pre=document.createElement('pre');pre.textContent=JSON.stringify(data,null,2);details.append(summary,pre);output.append(details);
+  setNotice('د Wallet د خوندیتوب راپور ولوستل شو. هېڅ Database یا مالي معلومات نه دي بدل شوي.','ok');
+ }catch(error){
+  const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);setNotice(error.message,'error');
+ }finally{button.disabled=false;}
 });
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
 </script>
