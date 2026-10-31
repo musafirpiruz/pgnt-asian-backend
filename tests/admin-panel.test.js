@@ -66,3 +66,30 @@ test('wallet migration preflight dashboard is read-only and uses the ephemeral a
   assert.doesNotMatch(html, /localStorage|sessionStorage|document\\.cookie/);
   assert.ok(server.includes("app.get('/api/admin/wallets/migration-preflight', requireAdmin,"));
 });
+
+
+test('wallet migration preflight API explicitly preserves every financial safety lock', () => {
+  const start = server.indexOf("app.get('/api/admin/wallets/migration-preflight', requireAdmin");
+  const end = server.indexOf("// Customer and admin support-ticket API routes", start);
+  assert.ok(start >= 0 && end > start, 'read-only wallet migration preflight route should exist');
+  const route = server.slice(start, end);
+
+  assert.match(route, /readOnly:\s*true/);
+  assert.match(route, /schemaChangesApplied:\s*false/);
+  assert.match(route, /walletApiEnabled:\s*false/);
+  assert.match(route, /financialWritesEnabled:\s*false/);
+  assert.match(route, /readyForWalletActivation:\s*false/);
+  assert.match(route, /retentionPolicyAndLedgerIdentityMustBeApprovedBeforeMigration/);
+  assert.match(route, /SELECT[\s\S]*FROM wallet_transactions/);
+  assert.doesNotMatch(route, /\b(?:INSERT\s+INTO|UPDATE\s+\w+|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+TABLE|TRUNCATE)\b/i);
+  assert.match(route, /No schema, wallet, ledger, payment, refund, or top-up data was changed/);
+});
+
+test('wallet preflight dashboard requests diagnostics without exposing a write action', () => {
+  const start = html.indexOf('async function loadWalletPreflight');
+  assert.ok(start >= 0, 'wallet preflight loader should exist');
+  const section = html.slice(start, start + 2600);
+  assert.match(section, /\/api\/admin\/wallets\/migration-preflight/);
+  assert.match(section, /method:\s*'GET'/);
+  assert.doesNotMatch(section, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
+});
