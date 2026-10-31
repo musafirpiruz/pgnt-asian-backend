@@ -19,6 +19,7 @@ on:
       - feat/referral-deep-link-autofill-mainline
       - feat/admin-assigned-referral-links-dynamic-countries
       - feat/flutter-support-ticket-history
+      - ui/reapply-five-step-flow-current-main
       - fix/flutter-disable-unverified-referral-ui
     paths:
       - 'main.dart'
