@@ -211,3 +211,15 @@ test('checkout rejects legacy or manually edited referral rewards unless exactly
   assert.match(checkout, /invalid reward configuration/);
   assert.match(checkout, /referralRewardCents = 7/);
 });
+
+test('checkout rejects referral attribution before database or payment work until verified identity is available', () => {
+  const guardStart = checkout.indexOf('const hasReferralInput = Boolean(');
+  const guardEnd = checkout.indexOf('const client = await pool.connect();', guardStart);
+  assert.ok(guardStart >= 0 && guardEnd > guardStart);
+  const guard = checkout.slice(guardStart, guardEnd);
+  assert.match(guard, /REFERRAL_IDENTITY_VERIFICATION_REQUIRED/);
+  assert.match(guard, /temporarily unavailable until secure account verification is enabled/);
+  assert.match(guard, /referralInstallId/);
+  assert.match(guard, /return res\.status\(503\)/);
+  assert.doesNotMatch(guard, /pool\.connect|stripe\.checkout\.sessions\.create|INSERT INTO referral_ledger/);
+});
