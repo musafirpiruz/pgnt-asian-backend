@@ -93,6 +93,18 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="walletPreflight"><div class="empty">د راپور لپاره پورته تڼۍ کېکاږئ. د اډمین کیلي یوازې د دې پاڼې په حافظه کې کارول کېږي.</div></div>
 </section>
 <section class="card">
+<h2>د نوي Referral کوډ جوړول (غیرفعال)</h2>
+<p class="muted">کوډ به یوازې د اډمین تر غوښتنې وروسته جوړ شي، خو په اتومات ډول به غیرفعال پاتې شي. ثابت انعام €0.07 دی. د کوډ فعالول، د انعام منظورول او تادیه په دې برخه کې نشته.</p>
+<label for="newReferralCode">Referral code</label>
+<input id="newReferralCode" maxlength="40" autocomplete="off" placeholder="مثلاً FRIEND2026">
+<label for="newReferralOwner">د کوډ مالک</label>
+<input id="newReferralOwner" maxlength="120" autocomplete="off" placeholder="د مالک نوم">
+<label for="newReferralContact">د مالک اړیکه (اختیاري)</label>
+<input id="newReferralContact" maxlength="254" autocomplete="off" placeholder="Email یا د اړیکې معلومات">
+<div class="actions"><button id="createReferralCode" type="button">غیرفعال کوډ جوړ کړه</button></div>
+<div id="createReferralResult" class="status" role="status" aria-live="polite">کوډ یوازې د اډمین په کلیک جوړېږي او غیرفعال پاتې کېږي.</div>
+</section>
+<section class="card">
 <h2>د Referral کوډونو راپور (یوازې لوستل)</h2>
 <p class="muted">دا راپور د ځانګړو بلنو کوډونو حالت، ثبت شوي دعوتونه او د انعامونو شمېرې ښيي. دلته کوډ نه فعالېږي، انعام نه منظورېږي او هېڅ پیسې نه لېږل کېږي.</p>
 <div class="actions"><button class="secondary" id="loadReferralReport" type="button">د Referral راپور ولوله</button></div>
@@ -118,6 +130,15 @@ async function adminRequest(url){
  const key=keyInput.value.trim();
  if(!key)throw new Error('لومړی د اډمین API کیلي ولیکئ.');
  const response=await fetch(url,{method:'GET',headers:{'x-admin-api-key':key,'Accept':'application/json'},cache:'no-store'});
+ const raw=await response.text();let data={};
+ try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('سرور د لوستلو وړ ځواب ورنه کړ (HTTP '+response.status+').');}
+ if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
+ return data;
+}
+async function adminPost(url,body){
+ const key=keyInput.value.trim();
+ if(!key)throw new Error('لومړی د اډمین API کیلي ولیکئ.');
+ const response=await fetch(url,{method:'POST',headers:{'x-admin-api-key':key,'Accept':'application/json','Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});
  const raw=await response.text();let data={};
  try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('سرور د لوستلو وړ ځواب ورنه کړ (HTTP '+response.status+').');}
  if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
@@ -311,6 +332,26 @@ document.getElementById('loadReferralReport').addEventListener('click',async()=>
   const note=document.createElement('div');note.className='safe';note.textContent=String(data.rewardRule||'د انعامونو وضعیت یوازې د راپور لپاره دی؛ هېڅ انعام نه منظورېږي او نه ورکول کېږي.');output.append(note);
   setNotice('د Referral راپور ترلاسه شو. هېڅ کوډ، بیلانس یا مالي معلومات نه دي بدل شوي.','ok');
  }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);setNotice(error.message,'error');}
+ finally{button.disabled=false;}
+});
+document.getElementById('createReferralCode').addEventListener('click',async()=>{
+ const button=document.getElementById('createReferralCode');
+ const result=document.getElementById('createReferralResult');
+ const code=document.getElementById('newReferralCode').value.trim().toUpperCase();
+ const ownerName=document.getElementById('newReferralOwner').value.trim();
+ const ownerContact=document.getElementById('newReferralContact').value.trim();
+ if(!/^[A-Z0-9_-]{4,40}$/.test(code)){result.className='status error';result.textContent='کوډ باید ۴ تر ۴۰ تورو، شمېرو، _ یا - ولري.';return;}
+ if(!ownerName){result.className='status error';result.textContent='د کوډ د مالک نوم ولیکئ.';return;}
+ button.disabled=true;result.className='status';result.textContent='غیرفعال Referral کوډ جوړېږي…';
+ try{
+  const data=await adminPost('/api/admin/referrals/codes',{code,ownerName,ownerContact:ownerContact||null,rewardEurCents:7});
+  result.className='status ok';
+  result.textContent='کوډ جوړ شو: '+String(data.referral?.code||code)+' · حالت: غیرفعال · انعام: €0.07';
+  document.getElementById('newReferralCode').value='';
+  document.getElementById('newReferralOwner').value='';
+  document.getElementById('newReferralContact').value='';
+  document.getElementById('loadReferralReport').click();
+ }catch(error){result.className='status error';result.textContent=error.message;}
  finally{button.disabled=false;}
 });
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});

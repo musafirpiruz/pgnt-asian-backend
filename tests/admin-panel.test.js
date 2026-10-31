@@ -89,7 +89,8 @@ test('wallet preflight dashboard requests diagnostics without exposing a write a
   assert.ok(start >= 0, 'wallet preflight button handler should exist');
   const handler = html.slice(start, start + 2600);
   const requestStart = html.indexOf('async function adminRequest(url)');
-  const requestHelper = html.slice(requestStart, requestStart + 900);
+  const requestEnd = html.indexOf('async function adminPost(url,body)', requestStart);
+  const requestHelper = html.slice(requestStart, requestEnd);
   assert.ok(handler.includes('/api/admin/wallets/migration-preflight'));
   assert.ok(requestHelper.includes("method:'GET'"));
   assert.doesNotMatch(handler + requestHelper, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
@@ -101,4 +102,12 @@ test('referral admin report is read-only and uses the existing admin-authenticat
   assert.match(server, /app\.get\('\/api\/admin\/referrals', requireAdmin/);
   assert.match(html, /یوازې لوستل/);
   assert.doesNotMatch(html, /fetch\('\/api\/admin\/referrals'\s*,\s*\{\s*method\s*:\s*'POST'/);
+});
+
+test('referral code creation UI only sends the fixed seven-cent reward and never activates a code', () => {
+  assert.match(html, /createReferralCode/);
+  assert.match(html, /adminPost\('\/api\/admin\/referrals\/codes'/);
+  assert.match(html, /rewardEurCents:7/);
+  assert.match(server, /VALUES \(\$1,\$2,\$3,\$4,\$5,FALSE\)/);
+  assert.doesNotMatch(html, /active\s*:\s*true|rewardEurCents\s*:\s*(?!7\b)\d+/);
 });
