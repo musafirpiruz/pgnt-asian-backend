@@ -86,10 +86,12 @@ test('wallet migration preflight API explicitly preserves every financial safety
 });
 
 test('wallet preflight dashboard requests diagnostics without exposing a write action', () => {
-  const start = html.indexOf('async function loadWalletPreflight');
-  assert.ok(start >= 0, 'wallet preflight loader should exist');
-  const section = html.slice(start, start + 2600);
-  assert.match(section, /\/api\/admin\/wallets\/migration-preflight/);
-  assert.match(section, /method:\s*'GET'/);
-  assert.doesNotMatch(section, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
+  const start = html.indexOf("document.getElementById('loadWalletPreflight').addEventListener");
+  assert.ok(start >= 0, 'wallet preflight button handler should exist');
+  const handler = html.slice(start, start + 2600);
+  const requestStart = html.indexOf('async function adminRequest(url)');
+  const requestHelper = html.slice(requestStart, requestStart + 900);
+  assert.match(handler, /\\/api\\/admin\\/wallets\\/migration-preflight/);
+  assert.match(requestHelper, /method:'GET'/);
+  assert.doesNotMatch(handler + requestHelper, /method:\\s*'(?:POST|PUT|PATCH|DELETE)'/);
 });
