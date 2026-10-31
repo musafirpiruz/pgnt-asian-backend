@@ -87,6 +87,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="diagnostic"><div class="empty">د تشخیص لپاره د محصول ID ولیکئ.</div></div>
 </section>
 <section class="card">
+<h2>۵. د Wallet د Migration مخکې تشخیص (یوازې لوستل)</h2>
+<p class="muted">دا راپور د تکراري Ledger مراجعو، تکراري Wallet حسابونو او د مالي تاریخ د حذف کېدو د خطر شمېرې ښيي. یوازې شمېرې ښکاره کوي؛ هېڅ حساب، بیلانس، Ledger یا Database نه بدلوي.</p>
+<div class="actions"><button id="loadWalletPreflight" class="secondary" type="button">د Wallet تشخیص پیل کړه</button></div>
+<div id="walletPreflight"><div class="empty">د راپور لپاره پورته تڼۍ کېکاږئ. اډمین کیلي به یوازې د همدې پاڼې په حافظه کې وکارول شي.</div></div>
+</section>
+<section class="card">
 <h2>د خوندیتوب یادونه</h2>
 <div class="safe">که د Stripe یا DT One حالت روښانه نه وي، بیا تادیه یا بیا Top-up مه کوئ. لومړی د دواړو حالتونه وګورئ. دا پاڼه یوازې د کتنې لپاره ده؛ Refund او نور مالي بدلونونه پکې نشته.</div>
 </section>
@@ -235,6 +241,43 @@ document.getElementById('loadDiagnostic').addEventListener('click',async()=>{
   if(data.customerPricePreview){const preview=document.createElement('div');preview.className='status';preview.textContent='د EUR قیمت مخکتنه: '+JSON.stringify(data.customerPricePreview);output.append(preview);}
   const details=document.createElement('details');const summaryTitle=document.createElement('summary');summaryTitle.textContent='بشپړ تشخیصي معلومات';const pre=document.createElement('pre');pre.textContent=JSON.stringify(data,null,2);details.append(summaryTitle,pre);output.append(details);
   setNotice('د محصول تشخیص بشپړ شو. دا یوازې د لوستلو راپور دی؛ هېڅ بدلون نه دی شوی.',blockers.length?'warn':'ok');
+ }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);setNotice(error.message,'error');}
+ finally{button.disabled=false;}
+});
+document.getElementById('loadWalletPreflight').addEventListener('click',async()=>{
+ const button=document.getElementById('loadWalletPreflight');
+ const output=document.getElementById('walletPreflight');
+ output.replaceChildren();button.disabled=true;
+ setNotice('د Wallet د Migration مخکې تشخیص یوازې د لوستلو لپاره روان دی…');
+ try{
+  const data=await adminRequest('/api/admin/wallets/migration-preflight');
+  const grid=document.createElement('div');grid.className='grid';
+  const items=[
+   ['د تکراري Ledger مراجعو ډلې',data.duplicateReferenceGroups],
+   ['د تکراري Wallet مالک/اسعارو ډلې',data.duplicateWalletOwnerCurrencyGroups],
+   ['د حذف له امله د Cascade اړیکې',data.cascadingWalletForeignKeys],
+   ['د کارن حذف Wallet حذفوي',data.retentionRisks?.walletDeletionCascadesFromUser?'هو':'نه'],
+   ['د Wallet حذف Ledger تاریخ حذفوي',data.retentionRisks?.ledgerDeletionCascadesFromWallet?'هو':'نه']
+  ];
+  items.forEach(([label,value])=>{const box=document.createElement('div');box.className='price';const title=document.createElement('strong');title.textContent=label;const result=document.createElement('span');result.className='pill';result.textContent=String(value??'نامعلوم');box.append(title,result);grid.append(box);});
+  output.append(grid);
+  const checks=data.preflight&&typeof data.preflight==='object'?data.preflight:{};
+  const checkLabels={
+   uniqueTransactionReferenceIndexCandidateSafe:'د Ledger د یکتا مرجع Index لپاره تکرار نشته',
+   walletOwnerCurrencyUniquenessClean:'د Wallet مالک/اسعارو تکرار نشته',
+   retentionForeignKeysRequireReview:'د مالي تاریخ د ساتنې اړیکې بیاکتنې ته اړتیا لري'
+  };
+  const checkGrid=document.createElement('div');checkGrid.className='grid';
+  Object.entries(checks).forEach(([name,value])=>{const box=document.createElement('div');box.className='price';const title=document.createElement('strong');title.textContent=checkLabels[name]||name;const state=document.createElement('span');state.className='pill';state.textContent=value===true?'هو':'نه';box.append(title,state);checkGrid.append(box);});
+  output.append(checkGrid);
+  const blockers=Array.isArray(data.blockers)?data.blockers:[];
+  const warning=document.createElement('div');warning.className='status '+(blockers.length?'warn':'ok');
+  warning.textContent='د بیاکتنې موارد: '+(blockers.length?blockers.join('، '):'هیڅ اضافي مورد نه دی راپور شوی.');
+  output.append(warning);
+  const safety=document.createElement('div');safety.className='safe';
+  safety.textContent='Read-only: '+String(data.readOnly===true)+' · Schema بدلون: '+String(data.schemaChangesApplied===true)+' · Wallet API فعال: '+String(data.walletApiEnabled===true)+' · مالي لیکنې فعالې: '+String(data.financialWritesEnabled===true);
+  output.append(safety);
+  setNotice('د Wallet د تشخیص راپور ترلاسه شو. هېڅ Database یا مالي معلومات نه دي بدل شوي.','ok');
  }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);setNotice(error.message,'error');}
  finally{button.disabled=false;}
 });
