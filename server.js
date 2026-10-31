@@ -3967,6 +3967,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
     const matchesById = new Map();
     let providerPagesChecked = 0;
     let totalSeen = 0;
+    let truncated = false;
 
     // Check a bounded number of pages to avoid unbounded provider requests.
     for (let page = 1; page <= 20; page += 1) {
@@ -4047,6 +4048,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       }
 
       if (products.length < 100) break;
+      if (page === 20) truncated = true;
     }
 
     const products = [...matchesById.values()];
@@ -4058,11 +4060,13 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       requestedAmount: amountQuery,
       providerPagesChecked,
       providerProductsSeen: totalSeen,
+      truncated,
+      complete: !truncated,
       resultCount: products.length,
       products,
       catalogActivation: 'unchanged',
       transactionCreated: false,
-      note: 'Read-only search across up to twenty pages (maximum 2,000 provider records). With no operator filter, all Afghanistan products returned by those pages are included. Results are candidates; confirm operator, denomination, and pre-production availability before mapping. No product is activated and no transaction is created.',
+      note: truncated ? 'Partial read-only search: the twenty-page safety limit was reached. Results are incomplete candidates; do not treat them as the full provider catalog.' : 'Read-only search completed within the twenty-page safety limit. Results are candidates; confirm operator, denomination, and pre-production availability before mapping. No product is activated and no transaction is created.',
     });
   } catch (error) {
     const errorName = String(error?.name || 'Error').slice(0, 80);
