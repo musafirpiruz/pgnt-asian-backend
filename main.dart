@@ -1,7 +1,6 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
@@ -1038,7 +1037,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
       TextEditingController();
   final TextEditingController referralCodeController =
       TextEditingController();
-  static const String _referralInstallIdKey = 'pgnt_referral_install_id_v1';
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _referralLinkSubscription;
   final TextEditingController supportSubjectController =
@@ -1730,20 +1728,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
 
-  Future<String> _getReferralInstallId() async {
-    final preferences = await SharedPreferences.getInstance();
-    final existing = preferences.getString(_referralInstallIdKey);
-    if (existing != null && RegExp(r'^[A-Za-z0-9._:-]{16,128}$').hasMatch(existing)) {
-      return existing;
-    }
-    final random = math.Random.secure();
-    final installId = List<int>.generate(32, (_) => random.nextInt(256))
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
-    await preferences.setString(_referralInstallIdKey, installId);
-    return installId;
-  }
-
   Widget buildPhoneField() {
     final phoneHint = switch (selectedCountry.code) {
       'AF' => '07X XXX XXXX',
@@ -1976,23 +1960,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
       return;
     }
 
-    final referralCode = referralCodeController.text.trim().toUpperCase();
-    if (referralCode.isNotEmpty &&
-        !RegExp(r'^[A-Z0-9_-]{4,40}$').hasMatch(referralCode)) {
-      showMessage(t('invalidReferralCode'));
-      return;
-    }
-
     setState(() => isLoading = true);
 
     try {
       final uri = Uri.parse(
         '$backendBaseUrl/api/payments/checkout',
       );
-      final referralInstallId = referralCode.isEmpty
-          ? null
-          : await _getReferralInstallId();
-
       final response = await http
           .post(
             uri,
@@ -2009,8 +1982,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
-              if (referralCode.isNotEmpty) 'referralCode': referralCode,
-              if (referralInstallId != null) 'referralInstallId': referralInstallId,
             }),
           )
           .timeout(const Duration(seconds: 30));
