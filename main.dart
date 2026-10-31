@@ -1927,6 +1927,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
           onPressed: () => applyAmount(customAmountController.text),
         ),
       ),
+      onChanged: (_) {
+        if (priceQuote != null) {
+          setState(() {
+            priceQuote = null;
+            priceQuoteError = null;
+          });
+        }
+      },
       onSubmitted: applyAmount,
     );
   }
