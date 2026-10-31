@@ -492,6 +492,8 @@ String formatEuroCents(int cents) {
 }
 const Map<String, Map<String, String>> translations = {
   'ps': {
+    'customAmount': "خپل مقدار ولیکئ",
+    'invalidAmount': "مهرباني وکړئ یو سم مثبت مقدار ولیکئ.",
     'home': 'کور',
     'topup': 'موبایل چارج',
     'wallet': 'والټ',
@@ -545,6 +547,8 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'fa': {
+    'customAmount': "مقدار دلخواه را وارد کنید",
+    'invalidAmount': "لطفاً یک مقدار مثبت و معتبر وارد کنید.",
     'home': 'خانه',
     'topup': 'شارژ موبایل',
     'wallet': 'کیف پول',
@@ -598,6 +602,8 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'en': {
+    'customAmount': "Enter your own amount",
+    'invalidAmount': "Enter a valid positive amount.",
     'home': 'Home',
     'topup': 'Mobile Top-up',
     'wallet': 'Wallet',
@@ -651,6 +657,8 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'ur': {
+    'customAmount': "اپنی رقم درج کریں",
+    'invalidAmount': "درست مثبت رقم درج کریں۔",
     'home': 'ہوم',
     'topup': 'موبائل ریچارج',
     'wallet': 'والٹ',
@@ -704,6 +712,8 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'hi': {
+    'customAmount': "अपनी राशि दर्ज करें",
+    'invalidAmount': "मान्य सकारात्मक राशि दर्ज करें।",
     'home': 'होम',
     'topup': 'मोबाइल रिचार्ज',
     'wallet': 'वॉलेट',
@@ -757,6 +767,8 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'bn': {
+    'customAmount': "নিজের পরিমাণ লিখুন",
+    'invalidAmount': "একটি বৈধ ধনাত্মক পরিমাণ লিখুন।",
     'home': 'হোম',
     'topup': 'মোবাইল রিচার্জ',
     'wallet': 'ওয়ালেট',
@@ -1035,6 +1047,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   final TextEditingController phoneController =
       TextEditingController();
+  final TextEditingController customAmountController = TextEditingController();
   final TextEditingController referralCodeController =
       TextEditingController();
   late final AppLinks _appLinks;
@@ -1302,6 +1315,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   void dispose() {
     _referralLinkSubscription?.cancel();
     phoneController.dispose();
+    customAmountController.dispose();
     referralCodeController.dispose();
     supportSubjectController.dispose();
     supportMessageController.dispose();
@@ -1533,21 +1547,25 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const SizedBox(height: 18),
           buildWelcomeCard(),
           const SizedBox(height: 18),
-          pgntSectionTitle(t('selectCountry'), Icons.public),
+          _buildStepHeader(1, t('selectCountry')),
           buildCountrySelector(),
-          const SizedBox(height: 14),
-          pgntSectionTitle(t('phone'), Icons.phone_android),
+          const SizedBox(height: 18),
+          _buildStepHeader(2, t('phone')),
           buildPhoneField(),
-          const SizedBox(height: 14),
-          // Referral attribution is accepted only from an invite deep link; no manual code field.
-          pgntSectionTitle(t('selectOperator'), Icons.signal_cellular_alt),
+          const SizedBox(height: 18),
+          _buildStepHeader(3, t('selectOperator')),
           buildOperatorSelector(),
-          const SizedBox(height: 14),
-          pgntSectionTitle(t('amount'), Icons.payments_outlined),
+          const SizedBox(height: 18),
+          _buildStepHeader(4, t('amount')),
           buildAmountSelector(),
+          const SizedBox(height: 10),
+          buildCustomAmountField(),
           const SizedBox(height: 14),
           buildPriceCard(),
           const SizedBox(height: 18),
+          _buildStepHeader(5, t('review')),
+          buildReviewSummary(),
+          const SizedBox(height: 12),
           buildPaymentButton(),
           const SizedBox(height: 12),
           buildSecureNote(),
@@ -1855,11 +1873,95 @@ class _PgntHomePageState extends State<PgntHomePage> {
             fontWeight: FontWeight.bold,
           ),
           onSelected: (_) {
+            customAmountController.clear();
             setState(() { selectedAmount = amount; priceQuote = null; priceQuoteError = null; });
             loadPriceQuote();
           },
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildStepHeader(int number, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(children: [
+        Container(
+          width: 32, height: 32, alignment: Alignment.center,
+          decoration: const BoxDecoration(color: primaryRed, shape: BoxShape.circle),
+          child: Text('$number', style: const TextStyle(color: brightGold, fontWeight: FontWeight.w900)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primaryRed))),
+      ]),
+    );
+  }
+
+  Widget buildCustomAmountField() {
+    void applyAmount(String raw) {
+      final value = int.tryParse(raw.trim());
+      if (value == null || value <= 0) {
+        showMessage(t('invalidAmount'));
+        return;
+      }
+      setState(() {
+        selectedAmount = value;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+      loadPriceQuote();
+    }
+
+    return TextField(
+      controller: customAmountController,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: '${t('customAmount')} (${selectedCountry.currency})',
+        hintText: t('amount'),
+        prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
+        suffixIcon: IconButton(
+          tooltip: 'Check amount and price',
+          icon: const Icon(Icons.check_circle_outline, color: primaryRed),
+          onPressed: () => applyAmount(customAmountController.text),
+        ),
+      ),
+      onSubmitted: applyAmount,
+    );
+  }
+
+  Widget buildReviewSummary() {
+    final quote = priceQuote;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(children: [
+          _reviewRow(t('selectCountry'), '${selectedCountry.flag} ${selectedCountry.name}'),
+          const Divider(height: 18),
+          _reviewRow(t('phone'), phoneController.text.isEmpty ? '—' : phoneController.text),
+          const Divider(height: 18),
+          _reviewRow(t('selectOperator'), selectedOperator?.name ?? '—'),
+          const Divider(height: 18),
+          _reviewRow(t('amount'), '$selectedAmount ${selectedCountry.currency}'),
+          const Divider(height: 18),
+          _reviewRow(t('total'), quote?['formattedFinalPrice']?.toString() ?? t('priceNote')),
+          if (quote == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(t('priceNote'), style: const TextStyle(color: errorRed, fontSize: 12), textAlign: TextAlign.center),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _reviewRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(color: Colors.black54))),
+        const SizedBox(width: 12),
+        Flexible(child: Text(value, textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w700))),
+      ],
     );
   }
 
