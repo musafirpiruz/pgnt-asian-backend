@@ -2689,6 +2689,84 @@ app.get('/api/admin/wallets/diagnostics', requireAdmin, async (req, res) => {
   }
 });
 
+// Read-only migration preflight: identifies duplicate candidates and cascading
+// foreign keys before any wallet schema migration is designed or applied.
+app.get('/api/admin/wallets/migration-preflight', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+
+  try {
+    const result = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM (
+          SELECT wallet_id, reference_type, reference_id
+          FROM wallet_transactions
+          WHERE reference_type IS NOT NULL AND reference_id IS NOT NULL
+          GROUP BY wallet_id, reference_type, reference_id
+          HAVING COUNT(*) > 1
+        ) duplicates)::bigint AS duplicate_reference_groups,
+        (SELECT COUNT(*) FROM (
+          SELECT user_id, currency
+          FROM wallets
+          GROUP BY user_id, currency
+          HAVING COUNT(*) > 1
+        ) duplicates)::bigint AS duplicate_wallet_owner_currency_groups,
+        (SELECT COUNT(*) FROM pg_constraint
+          WHERE contype = 'f'
+            AND confdeltype = 'c'
+            AND conrelid IN ('wallets'::regclass, 'wallet_transactions'::regclass)
+        )::bigint AS cascading_wallet_foreign_keys,
+        (SELECT COUNT(*) FROM pg_constraint
+          WHERE contype = 'f'
+            AND confdeltype = 'c'
+            AND conrelid = 'wallets'::regclass
+            AND confrelid = 'users'::regclass
+        )::bigint AS wallet_user_cascade_count,
+        (SELECT COUNT(*) FROM pg_constraint
+          WHERE contype = 'f'
+            AND confdeltype = 'c'
+            AND conrelid = 'wallet_transactions'::regclass
+            AND confrelid = 'wallets'::regclass
+        )::bigint AS ledger_wallet_cascade_count
+    `);
+
+    const row = result.rows[0];
+    const duplicateReferenceGroups = Number(row.duplicate_reference_groups);
+    const duplicateWalletGroups = Number(row.duplicate_wallet_owner_currency_groups);
+    const walletUserCascadeCount = Number(row.wallet_user_cascade_count);
+    const ledgerWalletCascadeCount = Number(row.ledger_wallet_cascade_count);
+
+    return res.json({
+      readOnly: true,
+      schemaChangesApplied: false,
+      walletApiEnabled: false,
+      financialWritesEnabled: false,
+      duplicateReferenceGroups,
+      duplicateWalletOwnerCurrencyGroups: duplicateWalletGroups,
+      cascadingWalletForeignKeys: Number(row.cascading_wallet_foreign_keys),
+      retentionRisks: {
+        walletDeletionCascadesFromUser: walletUserCascadeCount > 0,
+        ledgerDeletionCascadesFromWallet: ledgerWalletCascadeCount > 0,
+      },
+      preflight: {
+        uniqueTransactionReferenceIndexCandidateSafe: duplicateReferenceGroups === 0,
+        walletOwnerCurrencyUniquenessClean: duplicateWalletGroups === 0,
+        retentionForeignKeysRequireReview: walletUserCascadeCount > 0 || ledgerWalletCascadeCount > 0,
+      },
+      blockers: [
+        ...(duplicateReferenceGroups > 0 ? ['duplicateTransactionReferenceGroups'] : []),
+        ...(duplicateWalletGroups > 0 ? ['duplicateWalletOwnerCurrencyGroups'] : []),
+        ...(walletUserCascadeCount > 0 ? ['userDeletionCanCascadeToWallets'] : []),
+        ...(ledgerWalletCascadeCount > 0 ? ['walletDeletionCanCascadeToLedgerHistory'] : []),
+        'retentionPolicyAndLedgerIdentityMustBeApprovedBeforeMigration',
+      ],
+      message: 'Read-only preflight only. No schema, wallet, ledger, payment, refund, or top-up data was changed.',
+    });
+  } catch (error) {
+    console.error('Wallet migration preflight failed:', error.message);
+    return res.status(500).json({ error: 'Could not retrieve wallet migration preflight.' });
+  }
+});
+
 // Customer and admin support-ticket API routes. These use per-order access
 // tokens for customer requests and the existing ADMIN_API_KEY for admin actions.
 require('./support-routes')({
