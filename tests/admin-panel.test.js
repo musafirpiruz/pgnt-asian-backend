@@ -94,3 +94,11 @@ test('wallet preflight dashboard requests diagnostics without exposing a write a
   assert.ok(requestHelper.includes("method:'GET'"));
   assert.doesNotMatch(handler + requestHelper, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
 });
+
+test('referral admin report is read-only and uses the existing admin-authenticated GET endpoint', () => {
+  assert.match(html, /loadReferralReport/);
+  assert.match(html, /\/api\/admin\/referrals/);
+  assert.match(server, /app\.get\('\/api\/admin\/referrals', requireAdmin/);
+  assert.match(html, /یوازې لوستل/);
+  assert.doesNotMatch(html, /fetch\('\/api\/admin\/referrals'\s*,\s*\{\s*method\s*:\s*'POST'/);
+});
