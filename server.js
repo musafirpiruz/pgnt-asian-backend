@@ -4027,10 +4027,11 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
           product?.amount?.base,
           typeof product?.amount === 'number' ? product.amount : NaN,
         ].map(Number);
+        const localCurrency = ({ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' })[countryIsoCode];
         const mentionsAmount = amountQuery === null
           || benefitAmounts.includes(amountQuery)
           || productAmounts.includes(amountQuery)
-          || new RegExp(`\\b${amountQuery}\\s*AFN\\b|\\bAFN\\s*${amountQuery}\\b`, 'i').test(name);
+          || (localCurrency && new RegExp(`\\b${amountQuery}\\s*${localCurrency}\\b|\\b${localCurrency}\\s*${amountQuery}\\b`, 'i').test(name));
         const operatorAliases = {
           ROSHAN: ['ROSHAN'],
           ETISALAT: ['ETISALAT'],
