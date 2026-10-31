@@ -891,6 +891,42 @@ async function getProductQuote(productId, country) {
 }
 // Return a server-authoritative quote for the selected country/operator/amount.
 // Quotes may preview inactive, database-mapped products; checkout still requires an enabled product.
+// Public, read-only list of configured payment currencies.
+// Only EUR is eligible for checkout until FX, fees, and checkout support are verified.
+app.get('/api/payment-currencies', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Payment currency service is not configured.' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT currency, rate_per_eur, active
+       FROM payment_currency_settings
+       ORDER BY CASE currency WHEN 'EUR' THEN 1 WHEN 'USD' THEN 2 WHEN 'GBP' THEN 3 ELSE 4 END`
+    );
+    const currencies = result.rows.map((row) => {
+      const currency = String(row.currency || '').trim().toUpperCase();
+      const active = row.active === true;
+      return {
+        currency,
+        ratePerEur: row.rate_per_eur == null ? null : Number(row.rate_per_eur),
+        active,
+        checkoutEnabled: currency === 'EUR' && active,
+      };
+    });
+    return res.json({
+      baseCurrency: 'EUR',
+      checkoutCurrency: 'EUR',
+      currencies,
+      note: 'USD and GBP remain unavailable for checkout until exchange rates, Stripe fees, and end-to-end checkout are verified.',
+    });
+  } catch (error) {
+    console.error('Payment currency availability lookup failed:', error.message);
+    return res.status(503).json({
+      error: 'Payment currency availability is temporarily unavailable.',
+    });
+  }
+});
+
 app.get('/api/pricing/quote', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Pricing service is not configured.' });

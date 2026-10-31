@@ -37,6 +37,8 @@ jobs:
         run: npm install --ignore-scripts
       - name: Apply migrations to isolated PostgreSQL test database
         run: node migrate.js
+      - name: Verify safe payment currency defaults in PostgreSQL
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/payment-currency-settings.integration.sql
       - name: Prepare legacy refunds table without migration 013 uniqueness
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/refund-migration-013-prepare.sql
       - name: Upgrade legacy refunds table with migration 013
