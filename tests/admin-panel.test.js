@@ -91,7 +91,7 @@ test('wallet preflight dashboard requests diagnostics without exposing a write a
   const handler = html.slice(start, start + 2600);
   const requestStart = html.indexOf('async function adminRequest(url)');
   const requestHelper = html.slice(requestStart, requestStart + 900);
-  assert.match(handler, /\\/api\\/admin\\/wallets\\/migration-preflight/);
-  assert.match(requestHelper, /method:'GET'/);
-  assert.doesNotMatch(handler + requestHelper, /method:\\s*'(?:POST|PUT|PATCH|DELETE)'/);
+  assert.ok(handler.includes('/api/admin/wallets/migration-preflight'));
+  assert.ok(requestHelper.includes("method:'GET'"));
+  assert.doesNotMatch(handler + requestHelper, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
 });
