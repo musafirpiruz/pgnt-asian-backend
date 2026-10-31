@@ -55,3 +55,14 @@ test('README explains the simple admin workflow and read-only scope', () => {
   assert.match(readme, /\/admin/);
   assert.match(readme, /does not issue refunds/);
 });
+
+test('wallet migration preflight dashboard is read-only and uses the ephemeral admin key', () => {
+  assert.match(html, /loadWalletPreflight/);
+  assert.match(html, /\/api\/admin\/wallets\/migration-preflight/);
+  assert.match(html, /duplicateReferenceGroups/);
+  assert.match(html, /duplicateWalletOwnerCurrencyGroups/);
+  assert.match(html, /schemaChangesApplied/);
+  assert.match(html, /financialWritesEnabled/);
+  assert.doesNotMatch(html, /localStorage|sessionStorage|document\\.cookie/);
+  assert.ok(server.includes("app.get('/api/admin/wallets/migration-preflight', requireAdmin,"));
+});
