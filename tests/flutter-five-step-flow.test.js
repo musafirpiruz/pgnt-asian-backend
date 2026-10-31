@@ -41,3 +41,10 @@ test('review summary refreshes on recipient input and custom amount resets on co
   assert.match(dart, /void handlePhoneChanged\(String value\)\s*\{\s*if \(mounted\) setState\(\(\) \{\}\);/);
   assert.match(dart, /phoneController\.clear\(\);\s*customAmountController\.clear\(\);/);
 });
+
+test('editing custom amount invalidates the previous server quote immediately', () => {
+  const start = dart.indexOf('Widget buildCustomAmountField()');
+  const end = dart.indexOf('Widget buildReviewSummary()', start);
+  const custom = dart.slice(start, end);
+  assert.match(custom, /onChanged:\s*\(_\)\s*\{[\s\S]*?priceQuote = null/);
+});
