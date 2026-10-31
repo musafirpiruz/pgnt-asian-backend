@@ -3,7 +3,7 @@
 // Firebase Admin SDK adapter boundary for the final authentication phase.
 // The caller must pass Firebase Admin's verifyIdToken function. This module
 // never sends SMS and never initializes Firebase with implicit credentials.
-const E164_PATTERN = /^\\+[1-9]\\d{7,14}$/;
+const E164_PATTERN = /^\+[1-9]\d{7,14}$/;
 
 function createFirebaseAuthMiddleware({
   verifyIdToken,
@@ -28,7 +28,7 @@ function createFirebaseAuthMiddleware({
     const authorization = String(req.get
       ? req.get('authorization') || ''
       : req.headers?.authorization || '').trim();
-    const match = /^Bearer ([^\\s]+)$/i.exec(authorization);
+    const match = /^Bearer ([^\s]+)$/i.exec(authorization);
     if (!match) {
       return res.status(401).json({
         error: 'A valid Firebase bearer token is required.',
