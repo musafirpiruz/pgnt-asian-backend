@@ -2598,6 +2598,97 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+// Read-only wallet integrity diagnostics. This deliberately exposes no
+// customer records and performs no wallet, ledger, payment, or refund writes.
+// Wallet APIs remain disabled until identity binding and ledger safeguards ship.
+app.get('/api/admin/wallets/diagnostics', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+
+  try {
+    const result = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM wallets)::bigint AS wallet_count,
+        (SELECT COUNT(*) FROM wallet_transactions)::bigint AS transaction_count,
+        (SELECT COUNT(*) FROM wallets WHERE balance_cents < 0)::bigint AS negative_wallet_balances,
+        (SELECT COUNT(*) FROM wallet_transactions
+          WHERE balance_before_cents < 0 OR balance_after_cents < 0)::bigint AS negative_ledger_balances,
+        (SELECT COUNT(*) FROM (
+          SELECT wallet_id, reference_type, reference_id
+          FROM wallet_transactions
+          WHERE reference_type IS NOT NULL AND reference_id IS NOT NULL
+          GROUP BY wallet_id, reference_type, reference_id
+          HAVING COUNT(*) > 1
+        ) duplicates)::bigint AS duplicate_references,
+        (SELECT COUNT(*) FROM wallets w
+          LEFT JOIN LATERAL (
+            SELECT wt.balance_after_cents
+            FROM wallet_transactions wt
+            WHERE wt.wallet_id = w.id
+            ORDER BY wt.created_at DESC, wt.id DESC
+            LIMIT 1
+          ) latest ON TRUE
+          WHERE (latest.balance_after_cents IS NULL AND w.balance_cents <> 0)
+             OR (latest.balance_after_cents IS NOT NULL
+                 AND latest.balance_after_cents <> w.balance_cents)
+        )::bigint AS ledger_balance_mismatches,
+        EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE schemaname = current_schema()
+            AND tablename = 'wallets'
+            AND indexdef ILIKE 'CREATE UNIQUE INDEX%'
+            AND indexdef ILIKE '%(user_id, currency)%'
+        ) AS wallet_user_currency_unique,
+        EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE schemaname = current_schema()
+            AND tablename = 'wallet_transactions'
+            AND indexdef ILIKE 'CREATE UNIQUE INDEX%'
+            AND indexdef ILIKE '%wallet_id%'
+            AND indexdef ILIKE '%reference_type%'
+            AND indexdef ILIKE '%reference_id%'
+        ) AS transaction_reference_unique
+    `);
+
+    const row = result.rows[0];
+    const checks = {
+      walletUserCurrencyUnique: row.wallet_user_currency_unique === true,
+      transactionReferenceUnique: row.transaction_reference_unique === true,
+      noNegativeWalletBalances: Number(row.negative_wallet_balances) === 0,
+      noNegativeLedgerBalances: Number(row.negative_ledger_balances) === 0,
+      noDuplicateReferences: Number(row.duplicate_references) === 0,
+      walletLedgerBalancesReconcile: Number(row.ledger_balance_mismatches) === 0,
+    };
+    const blockers = Object.entries(checks)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+
+    return res.json({
+      readOnly: true,
+      walletApiEnabled: false,
+      financialWritesEnabled: false,
+      walletCount: Number(row.wallet_count),
+      transactionCount: Number(row.transaction_count),
+      diagnostics: {
+        negativeWalletBalances: Number(row.negative_wallet_balances),
+        negativeLedgerBalances: Number(row.negative_ledger_balances),
+        duplicateReferences: Number(row.duplicate_references),
+        ledgerBalanceMismatches: Number(row.ledger_balance_mismatches),
+      },
+      checks,
+      readyForWalletActivation: false,
+      blockers: [
+        ...blockers,
+        'authenticatedCustomerWalletApiNotImplemented',
+        'walletFinancialWritesRemainDisabledPendingLedgerDesignAndReview',
+      ],
+      message: 'Diagnostics only. No wallet balance, ledger, payment, refund, or top-up was changed.',
+    });
+  } catch (error) {
+    console.error('Wallet integrity diagnostics failed:', error.message);
+    return res.status(500).json({ error: 'Could not retrieve wallet integrity diagnostics.' });
+  }
+});
+
 // Customer and admin support-ticket API routes. These use per-order access
 // tokens for customer requests and the existing ADMIN_API_KEY for admin actions.
 require('./support-routes')({
