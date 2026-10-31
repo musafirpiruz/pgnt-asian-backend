@@ -63,7 +63,7 @@ test('product-name denomination matching uses the selected country local currenc
     ['Grameenphone 100 BDT', 100, 'BDT'],
   ];
   for (const [name, amount, currency] of cases) {
-    const matcher = new RegExp('\\b' + amount + '\\s*' + currency + '\\\\b|\\\\b' + currency + '\\s*' + amount + '\\b', 'i');
+    const matcher = new RegExp('\\b' + amount + '\\s*' + currency + '\\b|\\b' + currency + '\\s*' + amount + '\\b', 'i');
     assert.equal(matcher.test(name), true, name);
   }
 });
