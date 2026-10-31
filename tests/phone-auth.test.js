@@ -44,3 +44,34 @@ test('phone auth is explicitly deferred and cannot send paid SMS before Firebase
   assert.match(source, /smsSent: false/);
   assert.doesNotMatch(source, /twilio\\.com|TWILIO_ACCOUNT_SID|TWILIO_AUTH_TOKEN|verify\\.twilio\\.com/i);
 });
+
+
+test('all phone auth routes return 503 and never invoke an SMS provider', async () => {
+  const { registerPhoneAuthRoutes } = require('../phone-auth');
+  const handlers = new Map();
+  const app = {
+    post(route, handler) { handlers.set('POST ' + route, handler); },
+    get(route, handler) { handlers.set('GET ' + route, handler); },
+  };
+  registerPhoneAuthRoutes({ app, pool: { connect() { throw new Error('database must not be touched'); } } });
+  const expected = [
+    ['POST /api/auth/phone/send', 'PHONE_AUTH_DEFERRED'],
+    ['POST /api/auth/phone/verify', 'PHONE_AUTH_DEFERRED'],
+    ['GET /api/auth/me', 'PHONE_AUTH_DEFERRED'],
+    ['POST /api/auth/logout', 'PHONE_AUTH_DEFERRED'],
+  ];
+  for (const [route, code] of expected) {
+    const handler = handlers.get(route);
+    assert.equal(typeof handler, 'function', route);
+    const response = {
+      statusCode: null,
+      body: null,
+      status(value) { this.statusCode = value; return this; },
+      json(value) { this.body = value; return this; },
+    };
+    await handler({ body: {}, headers: {}, ip: '127.0.0.1' }, response);
+    assert.equal(response.statusCode, 503, route);
+    assert.equal(response.body.code, code, route);
+    if (response.body.smsSent !== undefined) assert.equal(response.body.smsSent, false);
+  }
+});
