@@ -6,10 +6,10 @@
 // The final Firebase phase will verify Firebase ID tokens server-side; Firebase
 // client SDK will own SMS delivery. No provider credentials are read here.
 
-const E164_PATTERN = /^\\+[1-9]\\d{7,14}$/;
+const E164_PATTERN = /^\+[1-9]\d{7,14}$/;
 
 function normalizeE164(value) {
-  const phone = String(value || '').trim().replace(/[\\s().-]/g, '');
+  const phone = String(value || '').trim().replace(/[\s().-]/g, '');
   return E164_PATTERN.test(phone) ? phone : null;
 }
 
