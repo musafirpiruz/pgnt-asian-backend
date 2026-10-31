@@ -1430,12 +1430,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
       selectedAmount =
           (rechargeAmounts[country.currency] ?? [100]).first;
       phoneController.clear();
+      customAmountController.clear();
       priceQuote = null;
       priceQuoteError = null;
     });
   }
 
   void handlePhoneChanged(String value) {
+    if (mounted) setState(() {});
     if (selectedCountry.code != 'AF') return;
     final detectedName = detectAfghanOperator(value);
     if (detectedName == null) return;
