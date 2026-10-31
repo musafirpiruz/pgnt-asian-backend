@@ -6,6 +6,9 @@ on:
       - "server.js"
       - "migrate.js"
       - "package.json"
+      - "firebase-auth.js"
+      - "phone-auth.js"
+      - "tests/firebase-auth.test.js"
       - ".github/workflows/backend-check.yml"
   push:
     branches:
@@ -31,3 +34,5 @@ jobs:
         run: |
           node --check server.js
           node --check migrate.js
+          node --check firebase-auth.js
+          node --check phone-auth.js
