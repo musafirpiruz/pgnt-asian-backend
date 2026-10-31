@@ -1,6 +1,6 @@
 # Firebase Phone Authentication — final-phase implementation runbook
 
-Status: **implementation plan only; phone sign-in remains disabled**.
+Status: **backend token-verification core implemented in PR #188; Firebase client setup and production configuration remain pending; phone sign-in/SMS remain disabled**.
 
 ## Product decision
 
@@ -51,16 +51,19 @@ Referral attribution must remain unavailable until Firebase token verification i
 - [ ] Do not create a custom SMS sender or store OTP codes locally.
 
 ### Backend
-- [ ] Add the Firebase Admin SDK with a pinned, reviewed dependency version.
-- [ ] Implement a reusable bearer-token middleware using `verifyIdToken(token, true)`.
-- [ ] Fail closed if Firebase project ID or server credentials are missing.
+- [x] Add Firebase Admin SDK `13.10.0`, pinned for the repository's Node.js 20 runtime (Firebase Admin v14 requires Node.js 22+).
+- [x] Implement a reusable bearer-token middleware using `verifyIdToken(token, true)`.
+- [x] Fail closed if Firebase project ID or server credentials are missing; validate the service-account project matches `FIREBASE_PROJECT_ID`.
+- [x] Protect `GET /api/auth/me` with verified Firebase identity and verified E.164 phone claim.
+- [ ] Configure `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` as protected hosting environment variables; never commit credentials.
 - [ ] Derive the customer key only from the verified `uid`.
 - [ ] Require verified identity for referral attribution and customer-private endpoints.
 - [ ] Keep admin authorization separate from customer Firebase authentication.
 - [ ] Return safe error codes without exposing token contents, phone numbers, or credential details.
 
 ### Tests
-- [ ] Unit-test missing, malformed, expired, revoked, wrong-project, and valid tokens.
+- [x] Unit-test missing, malformed, expired, revoked, wrong-project, and valid tokens.
+- [x] Test Firebase Admin credential parsing, project mismatch, missing configuration, and verified `/api/auth/me` identity.
 - [ ] Test missing/invalid E.164 phone claims where phone is required.
 - [ ] Test that client-supplied UID, phone, install ID, or referral owner cannot override verified claims.
 - [ ] Test referral uniqueness, expiry, one-time use, concurrency, duplicate webhook, first-paid-top-up, and refund cases.
@@ -75,4 +78,4 @@ Referral attribution must remain unavailable until Firebase token verification i
 
 ## Current safe state
 
-The current backend intentionally defers phone authentication. This document does not enable Firebase, send SMS, change database state, activate referral codes, or alter production settings.
+The backend token-verification adapter is implemented on the PR #188 branch, but Firebase remains unconfigured until the owner creates/configures the Firebase project and adds the protected Render environment variables. `POST /api/auth/phone/send` and `/verify` intentionally continue returning HTTP 503 with `smsSent: false`; OTP delivery is not enabled. Flutter `firebase_core`/`firebase_auth`, Android Firebase app registration, SHA fingerprints, Firebase Auth Emulator coverage, and end-to-end staging verification remain pending. This work does not send SMS, change database state, activate referral codes, or alter production settings.
