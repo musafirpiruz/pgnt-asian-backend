@@ -93,6 +93,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="walletPreflight"><div class="empty">د راپور لپاره پورته تڼۍ کېکاږئ. د اډمین کیلي یوازې د دې پاڼې په حافظه کې کارول کېږي.</div></div>
 </section>
 <section class="card">
+<h2>د Referral کوډونو راپور (یوازې لوستل)</h2>
+<p class="muted">دا راپور د ځانګړو بلنو کوډونو حالت، ثبت شوي دعوتونه او د انعامونو شمېرې ښيي. دلته کوډ نه فعالېږي، انعام نه منظورېږي او هېڅ پیسې نه لېږل کېږي.</p>
+<div class="actions"><button class="secondary" id="loadReferralReport" type="button">د Referral راپور ولوله</button></div>
+<div id="referralReport"><div class="empty">د راپور د لوستلو لپاره پورته تڼۍ کېکاږئ.</div></div>
+</section>
+<section class="card">
 <h2>د خوندیتوب یادونه</h2>
 <div class="safe">که د Stripe یا DT One حالت روښانه نه وي، بیا تادیه یا بیا Top-up مه کوئ. لومړی د دواړو حالتونه وګورئ. دا پاڼه یوازې د کتنې لپاره ده؛ Refund او نور مالي بدلونونه پکې نشته.</div>
 </section>
@@ -280,6 +286,32 @@ document.getElementById('loadWalletPreflight').addEventListener('click',async()=
  }catch(error){
   const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);setNotice(error.message,'error');
  }finally{button.disabled=false;}
+});
+document.getElementById('loadReferralReport').addEventListener('click',async()=>{
+ const button=document.getElementById('loadReferralReport');
+ const output=document.getElementById('referralReport');
+ output.replaceChildren();button.disabled=true;
+ setNotice('د Referral راپور یوازې د لوستلو لپاره روان دی…');
+ try{
+  const data=await adminRequest('/api/admin/referrals');
+  const referrals=Array.isArray(data.referrals)?data.referrals:[];
+  if(!referrals.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='تر اوسه Referral کوډونه نشته.';output.append(empty);}
+  referrals.forEach(item=>{
+   const card=document.createElement('div');card.className='detail';
+   const title=document.createElement('strong');title.textContent=String(item.code||'—')+' · '+(item.active===true?'فعال':'غیرفعال');card.append(title);
+   const dl=document.createElement('dl');
+   addField(dl,'د کوډ مالک',item.owner_name);
+   addField(dl,'ثابت انعام',moneyEur(item.reward_eur_cents));
+   addField(dl,'ثبت شوي دعوتونه',item.attributed_installs);
+   addField(dl,'د انعام وړ ثبتونه',item.reward_eligible);
+   addField(dl,'ټول ثبت شوي انعامونه',moneyEur(item.reward_total_eur_cents));
+   addField(dl,'تادیه شوي انعامونه',item.rewards_paid);
+   card.append(dl);output.append(card);
+  });
+  const note=document.createElement('div');note.className='safe';note.textContent=String(data.rewardRule||'د انعامونو وضعیت یوازې د راپور لپاره دی؛ هېڅ انعام نه منظورېږي او نه ورکول کېږي.');output.append(note);
+  setNotice('د Referral راپور ترلاسه شو. هېڅ کوډ، بیلانس یا مالي معلومات نه دي بدل شوي.','ok');
+ }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);setNotice(error.message,'error');}
+ finally{button.disabled=false;}
 });
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
 </script>
