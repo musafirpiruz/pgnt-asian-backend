@@ -52,30 +52,30 @@ test('wallet diagnostics disclose counts only and do not return customer identif
 
 test('wallet migration preflight is admin-authenticated and read-only', () => {
   const start = server.indexOf("app.get('/api/admin/wallets/migration-preflight', requireAdmin");
-  const end = server.indexOf('\\n// Customer and admin support-ticket API routes.', start);
+  const end = server.indexOf('\n// Customer and admin support-ticket API routes.', start);
   assert.notEqual(start, -1, 'wallet migration preflight route must exist');
   assert.ok(end > start, 'wallet migration preflight route must be bounded');
   const route = server.slice(start, end);
 
-  assert.match(route, /readOnly:\\s*true/);
-  assert.match(route, /schemaChangesApplied:\\s*false/);
-  assert.match(route, /walletApiEnabled:\\s*false/);
-  assert.match(route, /financialWritesEnabled:\\s*false/);
+  assert.match(route, /readOnly:\s*true/);
+  assert.match(route, /schemaChangesApplied:\s*false/);
+  assert.match(route, /walletApiEnabled:\s*false/);
+  assert.match(route, /financialWritesEnabled:\s*false/);
   assert.match(route, /GROUP BY wallet_id, reference_type, reference_id/);
   assert.match(route, /GROUP BY user_id, currency/);
   assert.match(route, /confdeltype = 'c'/);
   assert.match(route, /retentionPolicyAndLedgerIdentityMustBeApprovedBeforeMigration/);
   assert.match(route, /No schema, wallet, ledger, payment, refund, or top-up data was changed/);
-  assert.doesNotMatch(route, /INSERT\\s+INTO|UPDATE\\s+wallets|UPDATE\\s+wallet_transactions|DELETE\\s+FROM|ALTER\\s+TABLE/i);
+  assert.doesNotMatch(route, /INSERT\s+INTO|UPDATE\s+wallets|UPDATE\s+wallet_transactions|DELETE\s+FROM|ALTER\s+TABLE/i);
 });
 
 test('wallet migration preflight reports aggregate counts without customer identifiers', () => {
   const start = server.indexOf("app.get('/api/admin/wallets/migration-preflight', requireAdmin");
-  const end = server.indexOf('\\n// Customer and admin support-ticket API routes.', start);
+  const end = server.indexOf('\n// Customer and admin support-ticket API routes.', start);
   const route = server.slice(start, end);
 
   assert.match(route, /duplicateReferenceGroups/);
   assert.match(route, /duplicateWalletOwnerCurrencyGroups/);
   assert.match(route, /walletDeletionCanCascadeToLedgerHistory/);
-  assert.doesNotMatch(route, /SELECT\\s+.*phone|SELECT\\s+.*email|RETURNING\\s+.*user_id/is);
+  assert.doesNotMatch(route, /SELECT\s+.*phone|SELECT\s+.*email|RETURNING\s+.*user_id/is);
 });
