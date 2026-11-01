@@ -3375,7 +3375,7 @@ autoBuildCountryCatalog.addEventListener('click',async()=>{
    autoBuildCountryCatalog.textContent='Automatically build selected country catalog (preview first)';
   }
  }catch(error){result.textContent='Automatic country catalog build failed: '+error.message;}
- finally{autoBuildCountryCatalog.disabled=false;key.value='';}
+ finally{autoBuildCountryCatalog.disabled=false;}
 });
 document.getElementById('catalogCountry').addEventListener('change',()=>{
  countryCatalogPreviewReady=false;
@@ -4065,9 +4065,32 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       });
     }
 
+    const detailedProducts = [];
+    const providerList = [...providerById.values()];
+    // Product-list responses can omit authoritative EUR price fields. Verify each
+    // candidate against its DT One detail endpoint before using it for pricing/import.
+    for (let offset = 0; offset < providerList.length; offset += 5) {
+      const batch = providerList.slice(offset, offset + 5);
+      const verifiedBatch = await Promise.all(batch.map(async (listedProduct) => {
+        const detailResponse = await fetch(`${DTONE_API_BASE_URL}/v1/products/${listedProduct.id}`, {
+          method: 'GET',
+          headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+          signal: AbortSignal.timeout(20000),
+        });
+        const detailText = await detailResponse.text();
+        let detail = null;
+        try { detail = detailText ? JSON.parse(detailText) : null; } catch (_) {}
+        if (!detailResponse.ok || !detail || String(detail.id) !== String(listedProduct.id)) {
+          throw new Error(`Could not verify full DT One product details for product ${listedProduct.id}; no catalog rows were changed.`);
+        }
+        return detail;
+      }));
+      detailedProducts.push(...verifiedBatch);
+    }
+
     const candidates = [];
     const rejected = [];
-    for (const item of providerById.values()) {
+    for (const item of detailedProducts) {
       const operator = String(item?.operator?.name || '').trim();
       const currency = String(item?.destination?.unit || item?.benefits?.[0]?.amount?.unit || '').trim().toUpperCase();
       const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
@@ -4165,6 +4188,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         pagesChecked,
         providerProductsSeen,
         uniqueProviderProducts: providerById.size,
+        detailProductsVerified: detailedProducts.length,
         validProducts: candidates.length,
         newProducts: toInsert.length,
         alreadyPresentCount: alreadyPresent.length,
