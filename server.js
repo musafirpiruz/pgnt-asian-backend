@@ -4070,7 +4070,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
     for (const item of providerById.values()) {
       const operator = String(item?.operator?.name || '').trim();
       const currency = String(item?.destination?.unit || item?.benefits?.[0]?.amount?.unit || '').trim().toUpperCase();
-      const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base ?? item?.benefits?.[0]?.amount?.total_excluding_tax);
+      const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
       const retailEur = Number(item?.prices?.retail?.amount);
       const wholesaleEur = Number(item?.prices?.wholesale?.amount);
       if (!operator || currency !== countryCurrency(country) || !Number.isFinite(amount) || amount <= 0 ||
