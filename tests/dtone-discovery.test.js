@@ -144,3 +144,16 @@ test('automatic catalog admin confirmation keeps the admin key available for the
   assert.doesNotMatch(handler, /key\.value\s*=\s*''/);
   assert.match(handler, /countryCatalogPreviewReady&&confirmCountryCatalogImport\.checked/);
 });
+
+
+test('automatic country catalog preview calculates customer EUR pricing for every valid product', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  const route = server.slice(start, end);
+  assert.match(route, /const productPricePreviews = toInsert\.map/);
+  assert.match(route, /wholesaleCostEur:/);
+  assert.match(route, /providerRetailPriceEur:/);
+  assert.match(route, /estimatedStripeFeeEur:/);
+  assert.match(route, /estimatedCustomerPriceEur:/);
+  assert.match(route, /productPricePreviews,/);
+});
