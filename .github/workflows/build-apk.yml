@@ -26,6 +26,7 @@ on:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
       - 'firebase_options.dart'
+      - 'global_phone_auth_gate.dart'
       - 'lib/**'
       - 'pubspec.yaml'
       - '.github/workflows/build-apk.yml'
@@ -75,6 +76,13 @@ jobs:
             exit 1
           fi
           test -s lib/main.dart
+          if [ -f "global_phone_auth_gate.dart" ]; then
+            cp global_phone_auth_gate.dart lib/global_phone_auth_gate.dart
+          elif [ ! -s "lib/global_phone_auth_gate.dart" ]; then
+            echo "ERROR: global phone auth gate file not found."
+            exit 1
+          fi
+          test -s lib/global_phone_auth_gate.dart
           if [ -f "firebase_options.dart" ]; then
             cp firebase_options.dart lib/firebase_options.dart
           elif [ ! -s "lib/firebase_options.dart" ]; then
