@@ -21,6 +21,7 @@ on:
       - i18n/localize-support-faqs
       - ui/five-step-flow-current-main-v2
       - fix/flutter-disable-unverified-referral-ui
+      - feature/firebase-id-token-verification-core
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
