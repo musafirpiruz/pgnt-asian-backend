@@ -3043,7 +3043,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><button type="button" id="refreshCatalogPrices">Refresh verified prices for existing disabled product</button><label for="catalogCountry">Destination country</label><select id="catalogCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="operatorSearch">Network (optional)</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks in selected country</option></select><button type="button" id="discoverOperators">Load network list (read-only)</button><button type="button" id="discover">Find products in selected country</button>
+<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><button type="button" id="refreshCatalogPrices">Refresh verified prices for existing disabled product</button><label for="catalogCountry">Destination country</label><select id="catalogCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="operatorSearch">Network (optional)</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks in selected country</option></select><button type="button" id="discoverOperators">Load network list (read-only)</button><button type="button" id="discover">Find products in selected country</button><button type="button" id="autoBuildCountryCatalog">Automatically build selected country catalog (preview first)</button><label style="display:flex;gap:8px;align-items:center"><input id="confirmCountryCatalogImport" type="checkbox" style="width:auto"> I confirm importing all valid new products for this country as DISABLED</label>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -3110,6 +3110,10 @@ const form=document.getElementById('check');
 const key=document.getElementById('key');
 const result=document.getElementById('result');
 const discover=document.getElementById('discover');
+const autoBuildCountryCatalog=document.getElementById('autoBuildCountryCatalog');
+const confirmCountryCatalogImport=document.getElementById('confirmCountryCatalogImport');
+let countryCatalogPreviewReady=false;
+
 const checkDatabase=document.getElementById('checkDatabase');
 const scenario=document.getElementById('scenario');
 const confirmSandbox=document.getElementById('confirmSandbox');
@@ -3349,6 +3353,40 @@ document.getElementById('discoverOperators').addEventListener('click',async()=>{
   result.textContent=JSON.stringify({environment:data.environment,countryIsoCode:data.countryIsoCode,operatorCount:data.operatorCount,operators:data.operators,transactionCreated:false,catalogActivation:'unchanged'},null,2);
  } catch(error) { result.textContent='Could not load network list: '+error.message; }
  finally { key.value=''; button.disabled=false; }
+});
+autoBuildCountryCatalog.addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const country=document.getElementById('catalogCountry').value;
+ const confirmed=confirmCountryCatalogImport.checked;
+ autoBuildCountryCatalog.disabled=true;
+ try{
+  result.textContent=confirmed?'Importing verified country products as disabled…':'Discovering and calculating all products for the selected country…';
+  const data=await adminRequest('/api/admin/dtone/catalog/sync-country',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({country_iso_code:country,confirmImport:confirmed})
+  });
+  result.textContent=JSON.stringify(data,null,2);
+  if(!confirmed&&data.verified&&data.complete&&data.importRequiresExplicitConfirmation){
+   countryCatalogPreviewReady=true;
+   autoBuildCountryCatalog.textContent='Confirm and import '+data.newProducts+' new products as DISABLED';
+  }else if(confirmed){
+   countryCatalogPreviewReady=false;
+   confirmCountryCatalogImport.checked=false;
+   autoBuildCountryCatalog.textContent='Automatically build selected country catalog (preview first)';
+  }
+ }catch(error){result.textContent='Automatic country catalog build failed: '+error.message;}
+ finally{autoBuildCountryCatalog.disabled=false;key.value='';}
+});
+document.getElementById('catalogCountry').addEventListener('change',()=>{
+ countryCatalogPreviewReady=false;
+ confirmCountryCatalogImport.checked=false;
+ autoBuildCountryCatalog.textContent='Automatically build selected country catalog (preview first)';
+});
+confirmCountryCatalogImport.addEventListener('change',()=>{
+ autoBuildCountryCatalog.disabled=!confirmCountryCatalogImport.checked&&!countryCatalogPreviewReady;
+ if(confirmCountryCatalogImport.checked&&!countryCatalogPreviewReady){
+  result.textContent='First run the preview. The confirmation checkbox is only valid after a complete preview.';
+ }
 });
 discover.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
@@ -3957,6 +3995,230 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
   }
 });
 
+
+// Automatically discover and prepare every valid product for one supported country.
+// Default request is preview-only. Import requires a second explicit admin confirmation.
+// All imported rows stay disabled; no payment, order, refund, or DT One transaction is created.
+app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ verified: false, error: 'Database is not configured.' });
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ verified: false, error: 'DT One credentials are not configured.' });
+  }
+
+  const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
+  const countryMap = Object.freeze({ AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' });
+  const country = countryMap[countryIsoCode];
+  if (!country) {
+    return res.status(400).json({ verified: false, error: 'Choose AFG, PAK, IND, or BGD.' });
+  }
+  const confirmImport = req.body?.confirmImport === true;
+
+  try {
+    const providerById = new Map();
+    let pagesChecked = 0;
+    let providerProductsSeen = 0;
+    const pageSize = 100;
+    const maxPages = 20;
+    let truncated = false;
+
+    for (let page = 1; page <= maxPages; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+      url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('per_page', String(pageSize));
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(45000),
+      });
+      const responseText = await response.text();
+      let data = null;
+      try { data = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+      if (!response.ok) {
+        return res.status(502).json({
+          verified: false, providerStatus: response.status, pagesChecked,
+          error: 'DT One product discovery failed. No catalog rows were changed.',
+        });
+      }
+      const pageProducts = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : null);
+      if (!pageProducts) {
+        return res.status(502).json({
+          verified: false, pagesChecked,
+          error: 'DT One returned an unexpected product-list response. No catalog rows were changed.',
+        });
+      }
+      pagesChecked += 1;
+      providerProductsSeen += pageProducts.length;
+      for (const item of pageProducts) {
+        if (String(item?.operator?.country?.iso_code || '').toUpperCase() !== countryIsoCode) continue;
+        if (item?.id == null) continue;
+        providerById.set(String(item.id), item);
+      }
+      if (pageProducts.length < pageSize) break;
+      if (page === maxPages) truncated = true;
+    }
+
+    if (truncated) {
+      return res.status(409).json({
+        verified: true, complete: false, truncated: true, pagesChecked, providerProductsSeen,
+        error: 'The provider catalog exceeded the 2,000-record safety limit. Narrow the discovery or increase the reviewed limit; no catalog rows were changed.',
+      });
+    }
+
+    const candidates = [];
+    const rejected = [];
+    for (const item of providerById.values()) {
+      const operator = String(item?.operator?.name || '').trim();
+      const currency = String(item?.destination?.unit || item?.benefits?.[0]?.amount?.unit || '').trim().toUpperCase();
+      const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base ?? item?.benefits?.[0]?.amount?.total_excluding_tax);
+      const retailEur = Number(item?.prices?.retail?.amount);
+      const wholesaleEur = Number(item?.prices?.wholesale?.amount);
+      if (!operator || currency !== countryCurrency(country) || !Number.isFinite(amount) || amount <= 0 ||
+          !Number.isFinite(retailEur) || retailEur <= 0 ||
+          !Number.isFinite(wholesaleEur) || wholesaleEur <= 0 || retailEur < wholesaleEur) {
+        rejected.push({ productId: String(item.id), reason: 'Missing or invalid operator, denomination, country currency, retail EUR price, or wholesale EUR price.' });
+        continue;
+      }
+      const retailCents = Math.round(retailEur * 100);
+      const wholesaleCents = Math.round(wholesaleEur * 100);
+      if (!Number.isSafeInteger(retailCents) || retailCents <= 0 || !Number.isSafeInteger(wholesaleCents) || wholesaleCents <= 0) {
+        rejected.push({ productId: String(item.id), reason: 'EUR price cannot be safely represented in cents.' });
+        continue;
+      }
+      candidates.push({
+        productId: String(item.id), operator, amount, currency,
+        retailPriceEur: retailEur, wholesalePriceEur: wholesaleEur,
+        retailCents, wholesaleCents,
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      const existingIds = await client.query(
+        'SELECT product_id FROM product_catalog WHERE country = $1',
+        [country]
+      );
+      const existingIdSet = new Set(existingIds.rows.map(row => String(row.product_id)));
+      const existingDenominations = await client.query(
+        'SELECT product_id, operator, amount, currency, active FROM product_catalog WHERE country = $1',
+        [country]
+      );
+      const byDenomination = new Map(existingDenominations.rows.map(row =>
+        [`${String(row.operator).trim().toLowerCase()}|${Number(row.amount)}|${String(row.currency).toUpperCase()}`, row]
+      ));
+
+      const toInsert = [];
+      const alreadyPresent = [];
+      const conflicts = [];
+      for (const product of candidates) {
+        if (existingIdSet.has(product.productId)) {
+          alreadyPresent.push(product.productId);
+          continue;
+        }
+        const key = `${product.operator.trim().toLowerCase()}|${product.amount}|${product.currency}`;
+        if (byDenomination.has(key)) {
+          conflicts.push({
+            productId: product.productId,
+            existingProductId: String(byDenomination.get(key).product_id),
+            operator: product.operator,
+            amount: product.amount,
+            currency: product.currency,
+            reason: 'Same operator and denomination already exists with a different DT One product ID; manual review required.',
+          });
+          continue;
+        }
+        toInsert.push(product);
+      }
+
+      let pricingPreview = null;
+      try {
+        const pricing = await getPricingSettings(client, country);
+        const totals = toInsert.reduce((acc, product) => {
+          const quote = calculateFinalPrice({ wholesalePriceCents: product.wholesaleCents }, pricing);
+          acc.estimatedCustomerPriceMinCents = acc.estimatedCustomerPriceMinCents === null
+            ? quote.finalPriceCents : Math.min(acc.estimatedCustomerPriceMinCents, quote.finalPriceCents);
+          acc.estimatedCustomerPriceMaxCents = acc.estimatedCustomerPriceMaxCents === null
+            ? quote.finalPriceCents : Math.max(acc.estimatedCustomerPriceMaxCents, quote.finalPriceCents);
+          return acc;
+        }, { estimatedCustomerPriceMinCents: null, estimatedCustomerPriceMaxCents: null });
+        pricingPreview = {
+          paymentCurrency: 'EUR',
+          appFeeEur: Number((pricing.feeCents / 100).toFixed(2)),
+          stripeFeePercent: pricing.stripeFeePercent,
+          stripeFixedFeeEur: Number((pricing.stripeFixedFeeCents / 100).toFixed(2)),
+          ...totals,
+          note: 'Calculated from verified DT One wholesale EUR cost plus saved country fee and estimated Stripe fee. Preview only.',
+        };
+      } catch (_) {
+        pricingPreview = {
+          available: false,
+          note: 'Country pricing is missing, inactive, or invalid. Products can be catalogued disabled, but customer checkout quotes will remain blocked until pricing is configured.',
+        };
+      }
+
+      const summary = {
+        verified: true,
+        complete: true,
+        environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+        countryIsoCode,
+        country,
+        recipientCurrency: countryCurrency(country),
+        pagesChecked,
+        providerProductsSeen,
+        uniqueProviderProducts: providerById.size,
+        validProducts: candidates.length,
+        newProducts: toInsert.length,
+        alreadyPresentCount: alreadyPresent.length,
+        conflictCount: conflicts.length,
+        rejectedCount: rejected.length,
+        alreadyPresent,
+        conflicts,
+        rejected,
+        pricingPreview,
+        importRequiresExplicitConfirmation: true,
+        productsRemainDisabled: true,
+        transactionCreated: false,
+        paymentCreated: false,
+        note: 'Country catalog preview completed. No database rows were changed. Confirm import to add new valid products as disabled.',
+      };
+
+      if (!confirmImport) return res.json(summary);
+
+      await client.query('BEGIN');
+      const imported = [];
+      for (const product of toInsert) {
+        const result = await client.query(
+          `INSERT INTO product_catalog
+            (country, operator, amount, currency, product_id, price_eur_cents,
+             wholesale_price_eur_cents, bonus_amount, active, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 0, FALSE, NOW())
+           ON CONFLICT DO NOTHING
+           RETURNING id, country, operator, amount, currency, product_id,
+                     price_eur_cents, wholesale_price_eur_cents, active`,
+          [country, product.operator, product.amount, product.currency, product.productId,
+            product.retailCents, product.wholesaleCents]
+        );
+        if (result.rowCount === 1) imported.push(result.rows[0]);
+      }
+      await client.query('COMMIT');
+      return res.status(200).json({
+        ...summary,
+        importedCount: imported.length,
+        imported,
+        importConfirmed: true,
+        note: 'Verified country products were added to the local catalog as disabled. Existing products and conflicts were preserved. Review country pricing and product readiness before any manual activation.',
+      });
+    } catch (dbError) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw dbError;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('DT One automatic country catalog sync failed:', error.message);
+    return res.status(500).json({ verified: false, error: 'Could not complete automatic country catalog discovery. No partial import was committed.' });
+  }
+});
 
 // Read-only product discovery in the configured DT One environment.
 // Used to find the correct pre-production product ID; never creates transactions.
