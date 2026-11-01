@@ -4095,8 +4095,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
     const client = await pool.connect();
     try {
       const existingIds = await client.query(
-        'SELECT product_id FROM product_catalog WHERE country = $1',
-        [country]
+        'SELECT product_id FROM product_catalog'
       );
       const existingIdSet = new Set(existingIds.rows.map(row => String(row.product_id)));
       const existingDenominations = await client.query(
