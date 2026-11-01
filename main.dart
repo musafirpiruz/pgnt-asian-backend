@@ -32,9 +32,19 @@ const Color errorRed = Color(0xFFB42318);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+
+  // Firebase phone authentication is intentionally disabled until the
+  // final release phase. Do not let a Firebase configuration/network
+  // initialization failure prevent the existing recharge app from opening.
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (error, stackTrace) {
+    debugPrint('Firebase initialization deferred: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+
   runApp(const PgntAsianApp());
 }
 
