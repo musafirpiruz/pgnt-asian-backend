@@ -4155,21 +4155,31 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       let pricingPreview = null;
       try {
         const pricing = await getPricingSettings(client, country);
-        const totals = toInsert.reduce((acc, product) => {
+        const productPricePreviews = toInsert.map((product) => {
           const quote = calculateFinalPrice({ wholesalePriceCents: product.wholesaleCents }, pricing);
-          acc.estimatedCustomerPriceMinCents = acc.estimatedCustomerPriceMinCents === null
-            ? quote.finalPriceCents : Math.min(acc.estimatedCustomerPriceMinCents, quote.finalPriceCents);
-          acc.estimatedCustomerPriceMaxCents = acc.estimatedCustomerPriceMaxCents === null
-            ? quote.finalPriceCents : Math.max(acc.estimatedCustomerPriceMaxCents, quote.finalPriceCents);
-          return acc;
-        }, { estimatedCustomerPriceMinCents: null, estimatedCustomerPriceMaxCents: null });
+          return {
+            productId: product.productId,
+            operator: product.operator,
+            recipientAmount: product.amount,
+            recipientCurrency: product.currency,
+            wholesaleCostEur: Number((product.wholesaleCents / 100).toFixed(2)),
+            providerRetailPriceEur: Number((product.retailCents / 100).toFixed(2)),
+            appFeeEur: Number((quote.feeCents / 100).toFixed(2)),
+            estimatedStripeFeeEur: Number((quote.estimatedStripeFeeCents / 100).toFixed(2)),
+            estimatedCustomerPriceEur: Number((quote.finalPriceCents / 100).toFixed(2)),
+            estimatedCustomerPriceCents: quote.finalPriceCents,
+          };
+        });
+        const customerPrices = productPricePreviews.map((product) => product.estimatedCustomerPriceCents);
         pricingPreview = {
           paymentCurrency: 'EUR',
           appFeeEur: Number((pricing.feeCents / 100).toFixed(2)),
           stripeFeePercent: pricing.stripeFeePercent,
           stripeFixedFeeEur: Number((pricing.stripeFixedFeeCents / 100).toFixed(2)),
-          ...totals,
-          note: 'Calculated from verified DT One wholesale EUR cost plus saved country fee and estimated Stripe fee. Preview only.',
+          estimatedCustomerPriceMinCents: customerPrices.length ? Math.min(...customerPrices) : null,
+          estimatedCustomerPriceMaxCents: customerPrices.length ? Math.max(...customerPrices) : null,
+          productPricePreviews,
+          note: 'Each candidate price is calculated from verified DT One wholesale EUR cost plus saved country fee and estimated Stripe fee. Preview only.',
         };
       } catch (_) {
         pricingPreview = {
