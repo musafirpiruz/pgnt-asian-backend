@@ -135,6 +135,38 @@ jobs:
           print(f"Verified Android namespace and applicationId: {expected}")
           PY
 
+      - name: Align Android MainActivity package with application ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          expected = "com.pgnt.asian.topup"
+          android = Path("android/app/src/main")
+          candidates = list(android.rglob("MainActivity.kt")) + list(android.rglob("MainActivity.java"))
+          if len(candidates) != 1:
+              raise SystemExit(f"ERROR: expected exactly one MainActivity source, found {len(candidates)}.")
+          source = candidates[0]
+          text = source.read_text(encoding="utf-8")
+          if source.suffix == ".kt":
+              pattern = r"(?m)^package\\s+[^\\s]+"
+              replacement = f"package {expected}"
+          else:
+              pattern = r"(?m)^package\\s+[^;]+;"
+              replacement = f"package {expected};"
+          updated, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f"ERROR: package declaration not found in {source}.")
+          destination = android / "kotlin" / Path(*expected.split(".")) / source.name if source.suffix == ".kt" else android / "java" / Path(*expected.split(".")) / source.name
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          destination.write_text(updated, encoding="utf-8")
+          if source != destination:
+              source.unlink()
+          print(f"Aligned MainActivity package and source path: {destination}")
+          PY
+
       - name: Ensure Android network permissions
         shell: bash
         run: |
