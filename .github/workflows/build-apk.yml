@@ -104,16 +104,16 @@ jobs:
 
           source = gradle.read_text(encoding="utf-8")
           for key in ("namespace", "applicationId"):
-              pattern = rf'(?m)^(\\s*{key}\\s*(?:=\\s*)?)["\\'][^"\\']+["\\']'
-              source, count = re.subn(pattern, rf'\\g<1>"{expected}"', source, count=1)
+              pattern = rf'(?m)^(\s*{key}\s*(?:=\s*)?)["\'][^"\']+["\']'
+              source, count = re.subn(pattern, rf'\g<1>"{expected}"', source, count=1)
               if count != 1:
                   raise SystemExit(f"ERROR: could not safely set {key} in {gradle}.")
 
           gradle.write_text(source, encoding="utf-8")
           check = gradle.read_text(encoding="utf-8")
-          if not re.search(rf'(?m)^\\s*namespace\\s*(?:=\\s*)?["\\']{re.escape(expected)}["\\']', check):
+          if not re.search(rf'(?m)^\s*namespace\s*(?:=\s*)?["\']{re.escape(expected)}["\']', check):
               raise SystemExit("ERROR: namespace verification failed.")
-          if not re.search(rf'(?m)^\\s*applicationId\\s*(?:=\\s*)?["\\']{re.escape(expected)}["\\']', check):
+          if not re.search(rf'(?m)^\s*applicationId\s*(?:=\s*)?["\']{re.escape(expected)}["\']', check):
               raise SystemExit("ERROR: applicationId verification failed.")
           print(f"Verified Android namespace and applicationId: {expected}")
           PY
@@ -135,8 +135,8 @@ jobs:
           ]
           for permission in required:
               if permission not in text:
-                  tag = f'    <uses-permission android:name="{permission}" />\\n'
-                  match = re.search(r"(?m)^\\s*<application\\b", text)
+                  tag = f'    <uses-permission android:name="{permission}" />\n'
+                  match = re.search(r"(?m)^\s*<application\b", text)
                   if not match:
                       raise SystemExit("ERROR: <application> tag not found.")
                   text = text[:match.start()] + tag + text[match.start():]
@@ -154,7 +154,7 @@ jobs:
 
       - name: Build release APK
         run: |
-          flutter build apk --release \\
+          flutter build apk --release \
             --dart-define=BACKEND_BASE_URL=https://pgnt-asian-backend.onrender.com
 
       - name: Verify APK
