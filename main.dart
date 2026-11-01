@@ -4,9 +4,7 @@ import 'dart:convert';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'global_phone_auth_gate.dart';
-import 'firebase_options.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,24 +28,15 @@ const Color cardWhite = Color(0xFFFFFFFF);
 const Color successGreen = Color(0xFF238636);
 const Color errorRed = Color(0xFFB42318);
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase phone authentication is intentionally disabled until the
-  // final release phase. Do not let a Firebase configuration/network
-  // initialization failure prevent the existing recharge app from opening.
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (error, stackTrace) {
-    debugPrint('Firebase initialization deferred: $error');
-    debugPrintStack(stackTrace: stackTrace);
-  }
-
+  // Firebase Phone Authentication is intentionally deferred to the final
+  // release phase. The current app does not need Firebase during startup.
+  // Keeping initialization out of startup prevents Firebase configuration
+  // from crashing the existing recharge experience.
   runApp(const PgntAsianApp());
 }
-
 // Supported countries
 class AppCountry {
   final String code;
