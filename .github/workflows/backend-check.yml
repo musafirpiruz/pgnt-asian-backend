@@ -21,8 +21,11 @@ on:
       - "migrate.js"
       - "package.json"
       - "firebase-auth.js"
+      - "firebase-admin-adapter.js"
       - "phone-auth.js"
       - "tests/firebase-auth.test.js"
+      - "tests/firebase-admin-adapter.test.js"
+      - "tests/phone-auth.test.js"
       - ".github/workflows/backend-check.yml"
 
 jobs:
