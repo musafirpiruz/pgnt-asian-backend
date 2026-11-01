@@ -96,7 +96,7 @@ test('automatic country catalog sync previews before import and requires explici
   assert.match(route, /confirmImport = req\.body\?\.confirmImport === true/);
   assert.match(route, /if \(!confirmImport\) return res\.json\(summary\)/);
   assert.match(route, /importRequiresExplicitConfirmation: true/);
-  assert.match(route, /countryCatalogPreviewReady&&confirmCountryCatalogImport\.checked/);
+  assert.match(server, /countryCatalogPreviewReady&&confirmCountryCatalogImport\.checked/);
 });
 
 test('automatic country catalog sync never activates products or creates transactions', () => {
