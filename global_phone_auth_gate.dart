@@ -19,6 +19,26 @@ class GlobalPhoneAuthGate extends StatelessWidget {
 
   const GlobalPhoneAuthGate({super.key, required this.child});
 
+  Future<bool> _verifyExistingSession(User user) async {
+    final token = await user.getIdToken();
+    if (token == null || token.isEmpty) return false;
+
+    final response = await http
+        .get(
+          Uri.parse('$_authBackendBaseUrl/api/auth/me'),
+          headers: {'Authorization': 'Bearer $token'},
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode == 200) return true;
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await FirebaseAuth.instance.signOut();
+      return false;
+    }
+    // Network/server errors must not silently destroy a valid local session.
+    throw Exception('Account verification is temporarily unavailable.');
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!enabled) return child;
@@ -30,8 +50,50 @@ class GlobalPhoneAuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.data != null) return child;
-        return const GlobalPhoneSignInScreen();
+        final user = snapshot.data;
+        if (user == null) return const GlobalPhoneSignInScreen();
+        return FutureBuilder<bool>(
+          future: _verifyExistingSession(user),
+          builder: (context, verification) {
+            if (verification.connectionState != ConnectionState.done) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (verification.hasError) {
+              return Scaffold(
+                body: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off, size: 42),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Could not verify your account. Check your internet connection and try again.',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: () => (context as Element).markNeedsBuild(),
+                          child: const Text('Try again'),
+                        ),
+                        TextButton(
+                          onPressed: () => FirebaseAuth.instance.signOut(),
+                          child: const Text('Sign out'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+            return verification.data == true
+                ? child
+                : const GlobalPhoneSignInScreen();
+          },
+        );
       },
     );
   }
