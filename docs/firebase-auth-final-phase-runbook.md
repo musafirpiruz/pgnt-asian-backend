@@ -56,25 +56,32 @@ Referral attribution must remain unavailable until Firebase token verification i
 - [x] Fail closed if Firebase project ID or server credentials are missing; validate the service-account project matches `FIREBASE_PROJECT_ID`.
 - [x] Protect `GET /api/auth/me` with verified Firebase identity and verified E.164 phone claim.
 - [ ] Configure `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` as protected hosting environment variables; never commit credentials.
-- [ ] Derive the customer key only from the verified `uid`.
+- [x] The protected `/api/auth/me` route derives its returned customer identity only from the verified `uid`; other customer-private routes still require integration.
 - [ ] Require verified identity for referral attribution and customer-private endpoints.
 - [ ] Keep admin authorization separate from customer Firebase authentication.
-- [ ] Return safe error codes without exposing token contents, phone numbers, or credential details.
+- [x] Firebase middleware returns safe error codes without exposing token contents, phone numbers, or credential details.
 
 ### Tests
 - [x] Unit-test missing, malformed, expired, revoked, wrong-project, and valid tokens.
 - [x] Test Firebase Admin credential parsing, project mismatch, missing configuration, and verified `/api/auth/me` identity.
-- [ ] Test missing/invalid E.164 phone claims where phone is required.
-- [ ] Test that client-supplied UID, phone, install ID, or referral owner cannot override verified claims.
+- [x] Test missing/invalid E.164 phone claims where phone is required.
+- [x] Test that client-supplied UID, phone, or install ID cannot override verified claims on the authenticated identity path; referral owner enforcement remains pending.
 - [ ] Test referral uniqueness, expiry, one-time use, concurrency, duplicate webhook, first-paid-top-up, and refund cases.
 - [ ] Run Firebase Auth Emulator integration tests; do not send real SMS in CI.
-- [ ] Verify all existing deferred-auth tests continue passing until the final-phase switch is approved.
+- [x] Verify existing deferred-auth tests continue passing; SMS endpoints remain HTTP 503 with `smsSent: false`.
 
 ### Release gate
 - [ ] Confirm Firebase project/provider settings and app identifiers.
 - [ ] Configure hosting secrets directly in the hosting dashboard; never expose them in chat.
 - [ ] Complete emulator and staging tests before any production SMS.
 - [ ] Obtain explicit approval before enabling OTP delivery, referral activation, wallet writes, payments, refunds, or live top-ups.
+
+## Latest CI evidence (2026-11-01)
+
+- Backend Syntax Check: passed for commit `1a9a17bc3a92713449d4b402d625b66d05298ec6`.
+- Backend tests, including isolated PostgreSQL migration/regression checks: passed for the same commit.
+- Dependency Security Audit (diagnostic workflow): completed successfully for the same commit. This is a diagnostic audit, not a guarantee that all runtime or production risks are eliminated.
+- The checks validate the repository branch only; they do not prove that Firebase/Render production configuration exists or that a production deployment is healthy.
 
 ## Current safe state
 
