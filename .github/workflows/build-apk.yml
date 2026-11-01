@@ -151,10 +151,10 @@ jobs:
           source = candidates[0]
           text = source.read_text(encoding="utf-8")
           if source.suffix == ".kt":
-              pattern = r"(?m)^package\\s+[^\\s]+"
+              pattern = r"(?m)^package\s+[^\s]+"
               replacement = f"package {expected}"
           else:
-              pattern = r"(?m)^package\\s+[^;]+;"
+              pattern = r"(?m)^package\s+[^;]+;"
               replacement = f"package {expected};"
           updated, count = re.subn(pattern, replacement, text, count=1)
           if count != 1:
