@@ -3357,7 +3357,7 @@ document.getElementById('discoverOperators').addEventListener('click',async()=>{
 autoBuildCountryCatalog.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const country=document.getElementById('catalogCountry').value;
- const confirmed=confirmCountryCatalogImport.checked;
+ const confirmed=countryCatalogPreviewReady&&confirmCountryCatalogImport.checked;
  autoBuildCountryCatalog.disabled=true;
  try{
   result.textContent=confirmed?'Importing verified country products as disabled…':'Discovering and calculating all products for the selected country…';
@@ -3383,9 +3383,9 @@ document.getElementById('catalogCountry').addEventListener('change',()=>{
  autoBuildCountryCatalog.textContent='Automatically build selected country catalog (preview first)';
 });
 confirmCountryCatalogImport.addEventListener('change',()=>{
- autoBuildCountryCatalog.disabled=!confirmCountryCatalogImport.checked&&!countryCatalogPreviewReady;
  if(confirmCountryCatalogImport.checked&&!countryCatalogPreviewReady){
-  result.textContent='First run the preview. The confirmation checkbox is only valid after a complete preview.';
+  confirmCountryCatalogImport.checked=false;
+  result.textContent='First run the preview. Confirmation is available only after a complete provider scan.';
  }
 });
 discover.addEventListener('click',async()=>{
