@@ -126,3 +126,21 @@ test('admin DT One page exposes the automatic country catalog preview and confir
   assert.match(server, /id="confirmCountryCatalogImport"/);
   assert.match(server, /Automatically build selected country catalog/);
 });
+
+
+test('automatic country catalog sync verifies full DT One product details before pricing or import', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  const route = server.slice(start, end);
+  assert.match(route, /\/v1\/products\/\$\{listedProduct\.id\}/);
+  assert.match(route, /detailProductsVerified: detailedProducts\.length/);
+  assert.match(route, /Could not verify full DT One product details/);
+});
+
+test('automatic catalog admin confirmation keeps the admin key available for the second step', () => {
+  const start = server.indexOf("autoBuildCountryCatalog.addEventListener('click'");
+  const end = server.indexOf("document.getElementById('catalogCountry').addEventListener", start);
+  const handler = server.slice(start, end);
+  assert.doesNotMatch(handler, /key\.value\s*=\s*''/);
+  assert.match(handler, /countryCatalogPreviewReady&&confirmCountryCatalogImport\.checked/);
+});
