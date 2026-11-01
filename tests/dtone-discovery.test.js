@@ -78,3 +78,82 @@ test('product discovery explicitly flags a partial result when the page safety l
   assert.match(route, /complete: !truncated/);
   assert.match(route, /Partial read-only search/);
 });
+
+
+test('automatic country catalog discovery supports only the four configured countries', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  assert.ok(start >= 0 && end > start, 'automatic country catalog sync route should exist');
+  const route = server.slice(start, end);
+  for (const code of ['AFG', 'PAK', 'IND', 'BGD']) assert.ok(route.includes(code));
+  assert.match(route, /countryCurrency\(country\)/);
+});
+
+test('automatic country catalog sync previews before import and requires explicit confirmation', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  const route = server.slice(start, end);
+  assert.match(route, /confirmImport = req\.body\?\.confirmImport === true/);
+  assert.match(route, /if \(!confirmImport\) return res\.json\(summary\)/);
+  assert.match(route, /importRequiresExplicitConfirmation: true/);
+  assert.match(server, /countryCatalogPreviewReady&&confirmCountryCatalogImport\.checked/);
+});
+
+test('automatic country catalog sync never activates products or creates transactions', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  const route = server.slice(start, end);
+  assert.match(route, /active, updated_at\)/);
+  assert.match(route, /FALSE, NOW\(\)/);
+  assert.match(route, /productsRemainDisabled: true/);
+  assert.match(route, /transactionCreated: false/);
+  assert.match(route, /paymentCreated: false/);
+  assert.doesNotMatch(route, /UPDATE product_catalog SET active\s*=\s*TRUE|POST.*\/v1\/transactions/i);
+});
+
+test('automatic country catalog sync deduplicates DT One product IDs and denomination conflicts', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  const route = server.slice(start, end);
+  assert.match(route, /existingIdSet\.has\(product\.productId\)/);
+  assert.match(route, /byDenomination\.has\(key\)/);
+  assert.match(route, /ON CONFLICT DO NOTHING/);
+  assert.match(route, /manual review required/);
+});
+
+test('admin DT One page exposes the automatic country catalog preview and confirmation controls', () => {
+  assert.match(server, /id="autoBuildCountryCatalog"/);
+  assert.match(server, /id="confirmCountryCatalogImport"/);
+  assert.match(server, /Automatically build selected country catalog/);
+});
+
+
+test('automatic country catalog sync verifies full DT One product details before pricing or import', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  const route = server.slice(start, end);
+  assert.match(route, /\/v1\/products\/\$\{listedProduct\.id\}/);
+  assert.match(route, /detailProductsVerified: detailedProducts\.length/);
+  assert.match(route, /Could not verify full DT One product details/);
+});
+
+test('automatic catalog admin confirmation keeps the admin key available for the second step', () => {
+  const start = server.indexOf("autoBuildCountryCatalog.addEventListener('click'");
+  const end = server.indexOf("document.getElementById('catalogCountry').addEventListener", start);
+  const handler = server.slice(start, end);
+  assert.doesNotMatch(handler, /key\.value\s*=\s*''/);
+  assert.match(handler, /countryCatalogPreviewReady&&confirmCountryCatalogImport\.checked/);
+});
+
+
+test('automatic country catalog preview calculates customer EUR pricing for every valid product', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  const route = server.slice(start, end);
+  assert.match(route, /const productPricePreviews = toInsert\.map/);
+  assert.match(route, /wholesaleCostEur:/);
+  assert.match(route, /providerRetailPriceEur:/);
+  assert.match(route, /estimatedStripeFeeEur:/);
+  assert.match(route, /estimatedCustomerPriceEur:/);
+  assert.match(route, /productPricePreviews,/);
+});
