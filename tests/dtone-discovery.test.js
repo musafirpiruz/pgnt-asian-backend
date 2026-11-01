@@ -78,3 +78,44 @@ test('product discovery explicitly flags a partial result when the page safety l
   assert.match(route, /complete: !truncated/);
   assert.match(route, /Partial read-only search/);
 });
+
+
+test('DT One operator discovery accepts only the four supported provider country codes', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
+  const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
+  const route = server.slice(start, end);
+  assert.match(route, /new Set\(\['AFG', 'PAK', 'IND', 'BGD'\]\)/);
+  assert.match(route, /supportedOperatorCountries\.has\(countryIsoCode\)/);
+  assert.match(route, /one of AFG, PAK, IND, or BGD/);
+});
+
+test('DT One operator discovery marks a page-limit result as partial', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
+  const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
+  const route = server.slice(start, end);
+  assert.match(route, /const maxPages = 20/);
+  assert.match(route, /const pageSize = 100/);
+  assert.match(route, /if \(page === maxPages\) truncated = true/);
+  assert.match(route, /truncated,/);
+  assert.match(route, /complete: !truncated/);
+  assert.match(route, /Partial read-only operator list/);
+});
+
+test('DT One operator discovery rejects an unexpected successful response shape', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
+  const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
+  const route = server.slice(start, end);
+  assert.match(route, /Array\.isArray\(data\)/);
+  assert.match(route, /Array\.isArray\(data\?\.items\)/);
+  assert.match(route, /unexpected operator-list response/);
+});
+
+test('DT One operator discovery remains GET-only and does not mutate catalog or create transactions', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
+  const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
+  const route = server.slice(start, end);
+  assert.match(route, /method: 'GET'/);
+  assert.match(route, /catalogActivation: 'unchanged'/);
+  assert.match(route, /transactionCreated: false/);
+  assert.doesNotMatch(route, /INSERT INTO product_catalog|UPDATE product_catalog|POST.*\/v1\/transactions/i);
+});
