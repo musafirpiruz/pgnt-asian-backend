@@ -12,12 +12,16 @@ const String _authBackendBaseUrl = String.fromEnvironment(
 );
 
 class GlobalPhoneAuthGate extends StatelessWidget {
+  // Keep OTP delivery and mandatory sign-in disabled until the final Firebase
+  // Console, emulator and staging release gate has been explicitly approved.
+  static const bool enabled = false;
   final Widget child;
 
   const GlobalPhoneAuthGate({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
+    if (!enabled) return child;
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
