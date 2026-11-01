@@ -3958,41 +3958,114 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
 });
 
 
-// Read-only product discovery in the configured DT One environment.
-// Used to find the correct pre-production product ID; never creates transactions.
+// Read-only operator discovery in the configured DT One environment.
+// The result is explicitly marked incomplete if the bounded page limit is reached.
 app.get('/api/admin/dtone/operators', requireAdmin, async (req, res) => {
-  if (!DTONE_API_KEY || !DTONE_API_SECRET) return res.status(503).json({ error: 'DT One credentials are not configured.' });
-  const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
-  if (!/^[A-Z]{3}$/.test(countryIsoCode)) return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ verified: false, error: 'DT One credentials are not configured.' });
+  }
+
+  const countryIsoCode = String(req.query.country_iso_code || 'AFG').trim().toUpperCase();
+  const supportedOperatorCountries = new Set(['AFG', 'PAK', 'IND', 'BGD']);
+  if (!supportedOperatorCountries.has(countryIsoCode)) {
+    return res.status(400).json({
+      verified: false,
+      error: 'country_iso_code must be one of AFG, PAK, IND, or BGD.',
+    });
+  }
+
   try {
     const byId = new Map();
+    const pageSize = 100;
+    const maxPages = 20;
     let pagesChecked = 0;
     let totalSeen = 0;
-    for (let page = 1; page <= 5; page += 1) {
+    let truncated = false;
+
+    for (let page = 1; page <= maxPages; page += 1) {
       const url = new URL(`${DTONE_API_BASE_URL}/v1/operators`);
       url.searchParams.set('country_iso_code', countryIsoCode);
-      url.searchParams.set('per_page', '100');
+      url.searchParams.set('per_page', String(pageSize));
       url.searchParams.set('page', String(page));
-      const response = await fetch(url, { method: 'GET', headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: getDtOneAuthHeader(),
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(45000),
+      });
       const responseText = await response.text();
       let data = null;
-      try { data = responseText ? JSON.parse(responseText) : null; } catch (_) { data = null; }
-      if (!response.ok) return res.status(502).json({ verified: false, providerStatus: response.status, configuredBaseUrl: DTONE_API_BASE_URL, providerMessage: String(responseText || '').slice(0, 1000) || null, pagesChecked, error: 'DT One operator discovery failed.' });
-      const operators = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch (_) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        return res.status(502).json({
+          verified: false,
+          providerStatus: response.status,
+          pagesChecked,
+          error: 'DT One operator discovery failed.',
+        });
+      }
+
+      const operators = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.items) ? data.items : null);
+      if (!operators) {
+        return res.status(502).json({
+          verified: false,
+          pagesChecked,
+          error: 'DT One returned an unexpected operator-list response.',
+        });
+      }
+
       pagesChecked += 1;
       totalSeen += operators.length;
       for (const operator of operators) {
-        const country = String(operator?.country?.iso_code || '').toUpperCase();
+        const country = String(operator?.country?.iso_code || '').trim().toUpperCase();
         if (country !== countryIsoCode || operator?.id == null || !operator?.name) continue;
-        byId.set(String(operator.id), { id: operator.id, name: operator.name, countryIsoCode: country, regions: Array.isArray(operator.regions) ? operator.regions.map(region => region?.name).filter(Boolean) : [] });
+        byId.set(String(operator.id), {
+          id: operator.id,
+          name: String(operator.name).trim(),
+          countryIsoCode: country,
+          regions: Array.isArray(operator.regions)
+            ? operator.regions.map(region => region?.name).filter(Boolean)
+            : [],
+        });
       }
-      if (operators.length < 100) break;
+
+      if (operators.length < pageSize) break;
+      if (page === maxPages) truncated = true;
     }
+
     const operators = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
-    return res.json({ verified: true, environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured', countryIsoCode, pagesChecked, providerOperatorsSeen: totalSeen, operatorCount: operators.length, operators, catalogActivation: 'unchanged', transactionCreated: false, note: 'Read-only operator list; network presence does not prove airtime product availability.' });
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      countryIsoCode,
+      pagesChecked,
+      providerOperatorsSeen: totalSeen,
+      operatorCount: operators.length,
+      operators,
+      truncated,
+      complete: !truncated,
+      catalogActivation: 'unchanged',
+      transactionCreated: false,
+      note: truncated
+        ? 'Partial read-only operator list: the 20-page safety limit was reached. Refine the search or review provider pagination before treating this as complete.'
+        : 'Read-only operator list; network presence does not prove airtime product availability.',
+    });
   } catch (error) {
     console.error('DT One operator discovery failed:', error.message);
-    return res.status(502).json({ verified: false, error: 'Could not reach DT One operator discovery endpoint.' });
+    return res.status(502).json({
+      verified: false,
+      error: 'Could not reach DT One operator discovery endpoint.',
+    });
   }
 });
 
