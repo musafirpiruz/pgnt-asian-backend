@@ -75,6 +75,13 @@ jobs:
             exit 1
           fi
           test -s lib/main.dart
+          if [ -f "firebase_options.dart" ]; then
+            cp firebase_options.dart lib/firebase_options.dart
+          elif [ ! -s "lib/firebase_options.dart" ]; then
+            echo "ERROR: Firebase options file not found."
+            exit 1
+          fi
+          test -s lib/firebase_options.dart
 
       - name: Generate missing Android project files
         shell: bash
