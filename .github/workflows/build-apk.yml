@@ -25,6 +25,7 @@ on:
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
+      - 'firebase_options.dart'
       - 'lib/**'
       - 'pubspec.yaml'
       - '.github/workflows/build-apk.yml'
