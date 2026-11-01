@@ -3,7 +3,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:app_links/app_links.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'firebase_options.dart';
 import 'global_phone_auth_gate.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -28,13 +30,18 @@ const Color cardWhite = Color(0xFFFFFFFF);
 const Color successGreen = Color(0xFF238636);
 const Color errorRed = Color(0xFFB42318);
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase Phone Authentication is intentionally deferred to the final
-  // release phase. The current app does not need Firebase during startup.
-  // Keeping initialization out of startup prevents Firebase configuration
-  // from crashing the existing recharge experience.
+  // Keep Firebase completely out of the current guest startup flow.
+  // When the final phone-auth gate is explicitly enabled, initialize the
+  // registered Firebase app before any FirebaseAuth access occurs.
+  if (GlobalPhoneAuthGate.enabled) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
+
   runApp(const PgntAsianApp());
 }
 // Supported countries
