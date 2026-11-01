@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'global_phone_auth_gate.dart';
 import 'firebase_options.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -960,7 +961,7 @@ class PgntAsianApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const PgntHomePage(),
+      home: const GlobalPhoneAuthGate(child: PgntHomePage()),
     );
   }
 }
