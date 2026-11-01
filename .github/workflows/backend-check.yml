@@ -11,6 +11,7 @@ on:
       - "tests/firebase-admin-adapter.test.js"
       - "phone-auth.js"
       - "tests/firebase-auth.test.js"
+      - "tests/phone-auth.test.js"
       - ".github/workflows/backend-check.yml"
   push:
     branches:
