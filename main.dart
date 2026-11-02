@@ -1113,7 +1113,10 @@ class PgntHomePage extends StatefulWidget {
 
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
+  List<AppCountry> availableCountries = countries;
   AppCountry selectedCountry = countries.first;
+  bool isLoadingCountries = false;
+  String? countryDirectoryError;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   int selectedAmount = 100;
