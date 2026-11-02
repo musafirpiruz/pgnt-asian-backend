@@ -756,6 +756,17 @@ async function runMigration() {
             UNIQUE (country_code, operator_key)
           );
 
+          CREATE TABLE IF NOT EXISTS country_operator_localizations (
+            country_code CHAR(2) NOT NULL,
+            operator_key TEXT NOT NULL,
+            language_code VARCHAR(8) NOT NULL,
+            display_name TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (country_code, operator_key, language_code),
+            FOREIGN KEY (country_code, operator_key)
+              REFERENCES country_operators(country_code, operator_key) ON DELETE CASCADE
+          );
+
           CREATE TABLE IF NOT EXISTS operator_prefixes (
             id BIGSERIAL PRIMARY KEY,
             country_code CHAR(2) NOT NULL REFERENCES countries(code) ON DELETE CASCADE,
