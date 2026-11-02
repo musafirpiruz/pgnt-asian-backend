@@ -1,3 +1,17 @@
+# Implementation status (2026-11-02)
+
+The database foundation is being introduced on branch `feat/database-driven-country-registry` in migration 017:
+
+- Adds normalized `countries`, `country_localizations`, `country_operators`, `operator_prefixes`, `country_exchange_rates`, and `country_provider_settings` tables.
+- Seeds AF, PK, IN, and BD as active DT One destinations using conflict-safe inserts.
+- New country rows default to `draft`; FX observations are marked reference-only by default.
+- The migration does not rewrite existing pricing, product catalog, orders, refunds, or wallet data.
+- Migration regression tests are in `tests/country-registry-migration.test.js`.
+
+**Not yet complete:** backend country validation/API migration, Flutter dynamic country loading, provider/FX scheduled refresh, price history and guarded price application, admin onboarding UI, and end-to-end staging tests. Do not treat the country registry migration alone as enabling new countries or automatic live repricing.
+
+---
+
 # Admin-Managed Country Onboarding
 
 ## Goal
