@@ -4905,6 +4905,60 @@ app.post('/api/admin/countries', requireAdmin, async (req, res) => {
   }
 });
 
+// Operator mappings are created inactive. Provider IDs must be verified against DT One before use.
+app.get('/api/admin/countries/:countryCode/operators', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) return res.status(400).json({ error: 'A valid ISO country code is required.' });
+  try {
+    const result = await pool.query(
+      `SELECT operator_key, display_name, provider_operator_id, active, created_at, updated_at
+       FROM country_operators WHERE country_code = $1 ORDER BY display_name ASC`,
+      [countryCode]
+    );
+    return res.json({ country: countryCode, operators: result.rows });
+  } catch (error) {
+    console.error('Admin country operator lookup failed:', error.message);
+    return res.status(503).json({ error: 'Country operator registry is not initialized or unavailable.' });
+  }
+});
+
+app.post('/api/admin/countries/:countryCode/operators', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const operatorKey = String(body.operator_key || '').trim().toLowerCase();
+  const displayName = String(body.display_name || '').trim();
+  const providerOperatorId = String(body.provider_operator_id || '').trim();
+
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !/^[a-z0-9][a-z0-9_-]{1,59}$/.test(operatorKey) ||
+      !displayName || displayName.length > 120 ||
+      !providerOperatorId || providerOperatorId.length > 120) {
+    return res.status(400).json({ error: 'Provide a valid country, operator key, display name, and verified provider operator ID.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO country_operators
+         (country_code, operator_key, display_name, provider_operator_id, active)
+       VALUES ($1, $2, $3, $4, FALSE)
+       RETURNING country_code, operator_key, display_name, provider_operator_id, active`,
+      [countryCode, operatorKey, displayName, providerOperatorId]
+    );
+    return res.status(201).json({
+      operator: result.rows[0],
+      activationPerformed: false,
+      note: 'Operator mapping is saved inactive. Verify provider catalog products and complete country preflight before activation.',
+    });
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'This operator key already exists for the country.' });
+    if (error.code === '23503') return res.status(404).json({ error: 'Country does not exist.' });
+    console.error('Admin country operator creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create inactive operator mapping.' });
+  }
+});
+
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({
