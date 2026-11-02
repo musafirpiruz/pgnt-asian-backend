@@ -722,29 +722,7 @@ async function runMigration() {
       try {
         await client.query(`
           CREATE TABLE IF NOT EXISTS countries (
-            code CHAR(2) PRIMARY KEY CHECK (code ~ '^[A-Z]{2}
-    );
-
-    console.error(
-      error.message
-    );
-
-    process.exitCode = 1;
-  } finally {
-    if (client) {
-      try {
-        await client.query("SELECT pg_advisory_unlock(738291);");
-      } catch (_) {}
-
-      client.release();
-    }
-
-    await pool.end();
-  }
-}
-
-runMigration();
-),
+            code CHAR(2) PRIMARY KEY CHECK (code ~ '^[A-Z][A-Z]$'),
             name_en TEXT NOT NULL,
             local_currency CHAR(3) NOT NULL CHECK (local_currency ~ '^[A-Z]{3}
     );
