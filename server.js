@@ -893,6 +893,92 @@ async function getProductQuote(productId, country) {
 // Quotes may preview inactive, database-mapped products; checkout still requires an enabled product.
 // Public, read-only list of configured payment currencies.
 // Only EUR is eligible for checkout until FX, fees, and checkout support are verified.
+// Customer country directory: only explicitly active database records are exposed.
+app.get('/api/countries', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country directory is temporarily unavailable.' });
+  }
+  const language = String(req.query.language || 'en').trim().toLowerCase().slice(0, 8);
+  try {
+    const result = await pool.query(
+      `SELECT c.code, c.name_en, c.local_currency, c.calling_code,
+              c.phone_min_digits, c.phone_max_digits,
+              COALESCE(l.display_name, c.name_en) AS display_name,
+              COALESCE(l.is_fallback, TRUE) AS localization_fallback
+       FROM countries c
+       LEFT JOIN country_localizations l
+         ON l.country_code = c.code AND l.language_code = $1
+       WHERE c.status = 'active'
+       ORDER BY c.name_en ASC`,
+      [language]
+    );
+    return res.json({
+      paymentCurrency: 'EUR',
+      countries: result.rows.map((row) => ({
+        code: String(row.code).trim(),
+        name: row.display_name,
+        currency: String(row.local_currency).trim(),
+        callingCode: row.calling_code,
+        phoneMinDigits: row.phone_min_digits,
+        phoneMaxDigits: row.phone_max_digits,
+        localizationFallback: row.localization_fallback,
+      })),
+    });
+  } catch (error) {
+    console.error('Active country directory lookup failed:', error.message);
+    return res.status(503).json({ error: 'Country directory is not initialized or unavailable.' });
+  }
+});
+
+app.get('/api/countries/:countryCode/operators', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country operator directory is temporarily unavailable.' });
+  }
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return res.status(400).json({ error: 'A valid ISO country code is required.' });
+  }
+  const language = String(req.query.language || 'en').trim().toLowerCase().slice(0, 8);
+  try {
+    const result = await pool.query(
+      `SELECT o.operator_key, o.provider_operator_id,
+              COALESCE(l.display_name, o.display_name) AS display_name,
+              o.active
+       FROM country_operators o
+       JOIN countries c ON c.code = o.country_code AND c.status = 'active'
+       LEFT JOIN country_operator_localizations l
+         ON l.country_code = o.country_code
+        AND l.operator_key = o.operator_key
+        AND l.language_code = $2
+       WHERE o.country_code = $1 AND o.active = TRUE
+       ORDER BY display_name ASC`,
+      [countryCode, language]
+    );
+    return res.json({ country: countryCode, operators: result.rows });
+  } catch (error) {
+    // Operator localization is optional until its dedicated migration is introduced.
+    if (error.code === '42P01') {
+      try {
+        const fallback = await pool.query(
+          `SELECT o.operator_key, o.provider_operator_id,
+                  o.display_name, o.active
+           FROM country_operators o
+           JOIN countries c ON c.code = o.country_code AND c.status = 'active'
+           WHERE o.country_code = $1 AND o.active = TRUE
+           ORDER BY o.display_name ASC`,
+          [countryCode]
+        );
+        return res.json({ country: countryCode, operators: fallback.rows });
+      } catch (fallbackError) {
+        console.error('Country operator lookup failed:', fallbackError.message);
+      }
+    } else {
+      console.error('Country operator lookup failed:', error.message);
+    }
+    return res.status(503).json({ error: 'Country operators are not initialized or unavailable.' });
+  }
+});
+
 app.get('/api/payment-currencies', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Payment currency service is not configured.' });
