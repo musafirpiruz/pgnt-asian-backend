@@ -710,8 +710,7 @@ async function runMigration() {
 
 
     // Version 017 introduces a database-backed destination-country registry.
-    // Seed the existing four countries without changing their pricing, products,
-    // orders, or activation state. New countries are always created as drafts.
+    // Existing pricing, catalog, orders, refunds, and wallet data are untouched.
     const countryRegistryVersion = "017_database_country_registry";
     const countryRegistryCheck = await client.query(
       "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
@@ -759,13 +758,12 @@ async function runMigration() {
 
           CREATE TABLE IF NOT EXISTS operator_prefixes (
             id BIGSERIAL PRIMARY KEY,
-            country_code CHAR(2) NOT NULL,
+            country_code CHAR(2) NOT NULL REFERENCES countries(code) ON DELETE CASCADE,
             operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
             prefix VARCHAR(20) NOT NULL,
             priority SMALLINT NOT NULL DEFAULT 100,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            UNIQUE (country_code, prefix, operator_id),
-            FOREIGN KEY (country_code) REFERENCES countries(code) ON DELETE CASCADE
+            UNIQUE (country_code, prefix, operator_id)
           );
 
           CREATE TABLE IF NOT EXISTS country_exchange_rates (
@@ -822,7 +820,7 @@ async function runMigration() {
           ON CONFLICT (version) DO NOTHING;
         `);
         await client.query("COMMIT");
-        console.log("Migration 017_database_country_registry completed; existing country pricing/catalog/order data was not changed.");
+        console.log("Migration 017_database_country_registry completed; existing financial and catalog data was not changed.");
       } catch (migrationError) {
         await client.query("ROLLBACK");
         throw migrationError;
