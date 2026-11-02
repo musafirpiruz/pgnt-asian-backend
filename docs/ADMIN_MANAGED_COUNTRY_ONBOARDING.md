@@ -8,7 +8,7 @@ The database foundation is being introduced on branch `feat/database-driven-coun
 - The migration does not rewrite existing pricing, product catalog, orders, refunds, or wallet data.
 - Migration regression tests are in `tests/country-registry-migration.test.js`.
 
-**Implemented on this branch (pending full CI and staging verification):** public active-country and active-operator read APIs; Flutter fetches the active country directory and operator directory, retains the verified legacy operator list as a fallback for the four existing countries, and validates phone length using returned country metadata. The app still cannot onboard a new sellable destination until its operator/provider mappings and products are configured.
+**Implemented on this branch (pending full CI and staging verification):** public active-country and active-operator read APIs; protected admin APIs to create draft countries and inactive operator/provider mappings; Flutter fetches the active country directory and operator directory, retains the verified legacy operator list as a fallback for the four existing countries, validates phone length using returned country metadata, and refreshes localized directory data when the app language changes. New country/operator records remain non-sellable until their provider/product mappings and activation preflight are completed.
 
 **Still not complete:** admin country creation/configuration APIs and UI, DT One operator mapping/import workflow, provider/FX scheduled refresh, price history and guarded price application, and end-to-end staging tests. Do not treat the country registry migration alone as enabling new countries or automatic live repricing.
 
