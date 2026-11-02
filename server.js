@@ -4827,6 +4827,84 @@ app.put('/api/admin/operator-pricing/:country/:operator', requireAdmin, async (r
   }
 });
 
+// Admin country onboarding starts in draft and cannot enable providers or checkout.
+// Every new destination requires a separate provider/product/pricing preflight.
+app.get('/api/admin/countries', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(
+      `SELECT c.code, c.name_en, c.local_currency, c.calling_code,
+              c.phone_min_digits, c.phone_max_digits, c.provider_code,
+              c.status, c.created_at, c.updated_at,
+              (SELECT COUNT(*) FROM country_operators o WHERE o.country_code = c.code) AS operator_count,
+              (SELECT COUNT(*) FROM product_catalog p WHERE p.country = c.code) AS catalog_product_count
+       FROM countries c
+       ORDER BY c.created_at DESC, c.code ASC`
+    );
+    return res.json({ countries: result.rows });
+  } catch (error) {
+    console.error('Admin country directory lookup failed:', error.message);
+    return res.status(503).json({ error: 'Country registry is not initialized or unavailable.' });
+  }
+});
+
+app.post('/api/admin/countries', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const code = String(body.code || '').trim().toUpperCase();
+  const name = String(body.name_en || body.name || '').trim();
+  const currency = String(body.local_currency || body.currency || '').trim().toUpperCase();
+  const callingCode = String(body.calling_code || '').trim();
+  const minDigits = Number(body.phone_min_digits);
+  const maxDigits = Number(body.phone_max_digits);
+
+  if (!/^[A-Z]{2}$/.test(code) || !/^[A-Z]{3}$/.test(currency) ||
+      !name || name.length > 100 ||
+      (callingCode && !/^\\+[1-9][0-9]{0,3}$/.test(callingCode)) ||
+      !Number.isInteger(minDigits) || !Number.isInteger(maxDigits) ||
+      minDigits < 4 || maxDigits > 15 || minDigits > maxDigits) {
+    return res.status(400).json({
+      error: 'Provide a valid ISO country code, currency, name, calling code, and phone digit range (4–15).',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const inserted = await client.query(
+      `INSERT INTO countries
+         (code, name_en, local_currency, calling_code, phone_min_digits, phone_max_digits, provider_code, status)
+       VALUES ($1, $2, $3, $4, $5, $6, NULL, 'draft')
+       RETURNING code, name_en, local_currency, calling_code, phone_min_digits, phone_max_digits, provider_code, status`,
+      [code, name, currency, callingCode || null, minDigits, maxDigits]
+    );
+    await client.query(
+      `INSERT INTO country_localizations
+         (country_code, language_code, display_name, is_fallback)
+       VALUES ($1, 'en', $2, FALSE)
+       ON CONFLICT (country_code, language_code) DO NOTHING`,
+      [code, name]
+    );
+    await client.query('COMMIT');
+    return res.status(201).json({
+      country: inserted.rows[0],
+      nextStep: 'Configure provider and operator mappings, import products as disabled, verify FX and pricing, then complete preflight. This country remains draft.',
+      activationPerformed: false,
+      providerEnabled: false,
+      productsActivated: false,
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'This country code already exists.' });
+    }
+    console.error('Admin draft country creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create draft country.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({
