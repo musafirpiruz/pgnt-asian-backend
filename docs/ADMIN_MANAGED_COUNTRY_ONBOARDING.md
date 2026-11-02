@@ -1,3 +1,19 @@
+# Implementation status (2026-11-02)
+
+The database foundation is being introduced on branch `feat/database-driven-country-registry` in migration 017:
+
+- Adds normalized `countries`, `country_localizations`, `country_operators`, `operator_prefixes`, `country_exchange_rates`, and `country_provider_settings` tables.
+- Seeds AF, PK, IN, and BD as active DT One destinations using conflict-safe inserts.
+- New country rows default to `draft`; FX observations are marked reference-only by default.
+- The migration does not rewrite existing pricing, product catalog, orders, refunds, or wallet data.
+- Migration regression tests are in `tests/country-registry-migration.test.js`.
+
+**Implemented on this branch (pending full CI and staging verification):** public active-country and active-operator read APIs; protected admin APIs to create draft countries and inactive operator/provider mappings; Flutter fetches the active country directory and operator directory, retains the verified legacy operator list as a fallback for the four existing countries, validates phone length using returned country metadata, and refreshes localized directory data when the app language changes. New country/operator records remain non-sellable until their provider/product mappings and activation preflight are completed.
+
+**Still not complete:** admin country creation/configuration UI; verified DT One operator catalog mapping/import workflow; provider and FX scheduled refresh; price history and guarded price application; activation preflight controls; and end-to-end staging tests. The draft-country and inactive operator/provider mapping APIs exist, but they do not activate fulfillment. Do not treat the country registry migration alone as enabling new countries or automatic live repricing.
+
+---
+
 # Admin-Managed Country Onboarding
 
 ## Goal

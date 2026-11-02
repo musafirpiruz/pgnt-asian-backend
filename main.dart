@@ -51,6 +51,9 @@ class AppCountry {
   final String flag;
   final String currency;
   final String symbol;
+  final String callingCode;
+  final int phoneMinDigits;
+  final int phoneMaxDigits;
 
   const AppCountry({
     required this.code,
@@ -58,6 +61,9 @@ class AppCountry {
     required this.flag,
     required this.currency,
     required this.symbol,
+    this.callingCode = '',
+    this.phoneMinDigits = 6,
+    this.phoneMaxDigits = 15,
   });
 }
 
@@ -1107,7 +1113,14 @@ class PgntHomePage extends StatefulWidget {
 
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
+  String _welcomeLanguageCode = 'ps';
+  bool _showLanguageWelcome = true;
+  List<AppCountry> availableCountries = countries;
   AppCountry selectedCountry = countries.first;
+  List<MobileOperator>? directoryOperators;
+  bool isLoadingCountries = false;
+  bool isLoadingOperators = false;
+  String? countryDirectoryError;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   int selectedAmount = 100;
@@ -1146,6 +1159,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   void initState() {
     super.initState();
     _restoreFuture = _restoreLocalData();
+    _restoreLanguagePreference();
     _appLinks = AppLinks();
     _referralLinkSubscription = _appLinks.uriLinkStream.listen(
       _applyReferralUri,
@@ -1154,6 +1168,194 @@ class _PgntHomePageState extends State<PgntHomePage> {
     _appLinks.getInitialLink().then((uri) {
       if (uri != null) _applyReferralUri(uri);
     }).catchError((Object _) {});
+  }
+
+  static const String _languagePreferenceKey = 'pgnt_preferred_language_v1';
+
+  Future<void> _restoreLanguagePreference() async {
+    String? savedLanguage;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      savedLanguage = preferences.getString(_languagePreferenceKey);
+    } catch (_) {
+      // If local preferences are unavailable, keep the first-launch chooser.
+    }
+    if (!mounted) return;
+    final valid = languages.any((item) => item.code == savedLanguage);
+    setState(() {
+      if (valid) languageCode = savedLanguage!;
+      _welcomeLanguageCode = languageCode;
+      _showLanguageWelcome = !valid;
+    });
+    await _loadActiveCountries();
+  }
+
+  Future<void> _confirmWelcomeLanguage() async {
+    final selected = _welcomeLanguageCode;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_languagePreferenceKey, selected);
+    } catch (_) {
+      if (mounted) showMessage('Language preference could not be saved.');
+    }
+    if (!mounted) return;
+    setState(() {
+      languageCode = selected;
+      _showLanguageWelcome = false;
+    });
+    _loadActiveCountries();
+  }
+
+  Map<String, String> _welcomeCopy() => const {
+    'ps': {'title':'ښه راغلاست', 'subtitle':'د خپلې خوښې ژبه وټاکئ او له اسانه موبایل چارج څخه ګټه واخلئ', 'choose':'خپله ژبه وټاکئ', 'continue':'پیل وکړئ'},
+    'fa': {'title':'خوش آمدید', 'subtitle':'زبان دلخواه خود را انتخاب کنید و به آسانی موبایل را شارژ کنید', 'choose':'زبان خود را انتخاب کنید', 'continue':'شروع کنید'},
+    'en': {'title':'Welcome', 'subtitle':'Choose your language and enjoy simple, reliable mobile top-ups', 'choose':'Choose your language', 'continue':'Get started'},
+    'ur': {'title':'خوش آمدید', 'subtitle':'اپنی پسندیدہ زبان منتخب کریں اور آسانی سے موبائل ریچارج کریں', 'choose':'اپنی زبان منتخب کریں', 'continue':'شروع کریں'},
+    'hi': {'title':'स्वागत है', 'subtitle':'अपनी भाषा चुनें और आसानी से मोबाइल रिचार्ज करें', 'choose':'अपनी भाषा चुनें', 'continue':'शुरू करें'},
+    'bn': {'title':'স্বাগতম', 'subtitle':'আপনার ভাষা নির্বাচন করুন এবং সহজে মোবাইল রিচার্জ করুন', 'choose':'আপনার ভাষা নির্বাচন করুন', 'continue':'শুরু করুন'},
+  }[_welcomeLanguageCode] ?? const {'title':'Welcome','subtitle':'Choose your language','choose':'Choose your language','continue':'Get started'};
+
+  Widget _buildLanguageWelcome() {
+    final copy = _welcomeCopy();
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [darkRed, primaryRed, pageBg],
+            stops: [0.0, 0.43, 0.43],
+          ),
+        ),
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(22, 30, 22, 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight - 54),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    const PgntLogo(size: 88),
+                    const SizedBox(height: 18),
+                    const Text('PGNT ASIAN TOPUP', textAlign: TextAlign.center,
+                      style: TextStyle(color: brightGold, fontSize: 25, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                    const SizedBox(height: 12),
+                    Text(copy['title']!, textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 27, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(copy['subtitle']!, textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5)),
+                    const SizedBox(height: 28),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: gold, width: 1.4), boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 18, offset: Offset(0, 8))]),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(copy['choose']!, style: const TextStyle(color: primaryRed, fontSize: 17, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        ...languages.map((language) {
+                          final selected = _welcomeLanguageCode == language.code;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () => setState(() => _welcomeLanguageCode = language.code),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+                                decoration: BoxDecoration(color: selected ? cream : Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: selected ? primaryRed : const Color(0xFFE8E1D8), width: selected ? 1.6 : 1)),
+                                child: Row(children: [
+                                  Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, color: selected ? primaryRed : Colors.grey),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: Text(language.nativeName, textDirection: language.code == 'ps' || language.code == 'fa' || language.code == 'ur' ? TextDirection.rtl : TextDirection.ltr,
+                                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: darkRed))),
+                                  Text(language.name, style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                                ]),
+                              ),
+                            ),
+                          );
+                        }),
+                        const SizedBox(height: 8),
+                        SizedBox(width: double.infinity, child: ElevatedButton.icon(
+                          onPressed: _confirmWelcomeLanguage,
+                          icon: const Icon(Icons.arrow_forward_rounded),
+                          label: Text(copy['continue']!),
+                        )),
+                      ]),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text('Recharge • Wallet • Support', style: TextStyle(color: primaryRed, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _countryFlag(String code) => const {'AF':'🇦🇫','PK':'🇵🇰','IN':'🇮🇳','BD':'🇧🇩'}[code] ?? '🌐';
+
+  String _currencySymbol(String currency) => const {'AFN':'؋','PKR':'Rs','INR':'₹','BDT':'৳','EUR':'€'}[currency] ?? currency;
+
+  Future<void> _loadActiveCountries() async {
+    if (mounted) setState(() { isLoadingCountries = true; countryDirectoryError = null; });
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries').replace(queryParameters: {'language': languageCode});
+      final response = await http.get(uri, headers: const {'Accept':'application/json'}).timeout(const Duration(seconds: 20));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception('HTTP ${response.statusCode}');
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic> || decoded['countries'] is! List) throw const FormatException('Invalid country directory response');
+      final loaded = (decoded['countries'] as List).whereType<Map<String, dynamic>>().map((row) {
+        final code = (row['code'] ?? '').toString().trim().toUpperCase();
+        final currency = (row['currency'] ?? '').toString().trim().toUpperCase();
+        if (!RegExp(r'^[A-Z]{2}$').hasMatch(code) || !RegExp(r'^[A-Z]{3}$').hasMatch(currency)) return null;
+        return AppCountry(code: code, name: (row['name'] ?? code).toString(), flag: _countryFlag(code), currency: currency, symbol: _currencySymbol(currency), callingCode: (row['callingCode'] ?? '').toString(), phoneMinDigits: (row['phoneMinDigits'] as num?)?.toInt() ?? 6, phoneMaxDigits: (row['phoneMaxDigits'] as num?)?.toInt() ?? 15);
+      }).whereType<AppCountry>().toList();
+      if (loaded.isEmpty) throw const FormatException('No active countries returned');
+      if (!mounted) return;
+      final oldCode = selectedCountry.code;
+      setState(() {
+        availableCountries = loaded;
+        selectedCountry = loaded.firstWhere((item) => item.code == oldCode, orElse: () => loaded.first);
+        if (!loaded.any((item) => item.code == oldCode)) { selectedOperator = null; priceQuote = null; priceQuoteError = null; }
+      });
+      await _loadCountryOperators(selectedCountry.code);
+    } catch (_) {
+      if (mounted) setState(() { availableCountries = countries; countryDirectoryError = 'د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.'; });
+    } finally {
+      if (mounted) setState(() => isLoadingCountries = false);
+    }
+  }
+
+  Future<void> _loadCountryOperators(String countryCode) async {
+    if (mounted) setState(() => isLoadingOperators = true);
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries/$countryCode/operators').replace(queryParameters: {'language': languageCode});
+      final response = await http.get(uri, headers: const {'Accept':'application/json'}).timeout(const Duration(seconds: 15));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception('HTTP ${response.statusCode}');
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic> || decoded['operators'] is! List) throw const FormatException('Invalid operator directory response');
+      final loaded = (decoded['operators'] as List).whereType<Map<String, dynamic>>().map((row) {
+        final name = (row['display_name'] ?? row['displayName'] ?? '').toString().trim();
+        if (name.isEmpty) return null;
+        return MobileOperator(countryCode, name, '📶');
+      }).whereType<MobileOperator>().toList();
+      if (!mounted || selectedCountry.code != countryCode) return;
+      setState(() {
+        directoryOperators = loaded;
+        if (loaded.isNotEmpty && !loaded.any((item) => item.name == selectedOperator?.name)) { selectedOperator = null; priceQuote = null; priceQuoteError = null; }
+      });
+    } catch (_) {
+      if (mounted && selectedCountry.code == countryCode) setState(() => directoryOperators = null);
+    } finally {
+      if (mounted && selectedCountry.code == countryCode) setState(() => isLoadingOperators = false);
+    }
   }
 
   void _applyReferralUri(Uri uri) {
@@ -1376,9 +1578,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
   }
 
-  List<MobileOperator> get countryOperators => operators
-      .where((item) => item.countryCode == selectedCountry.code)
-      .toList();
+  List<MobileOperator> get countryOperators {
+    if (directoryOperators != null && directoryOperators!.isNotEmpty) return directoryOperators!;
+    return operators.where((item) => item.countryCode == selectedCountry.code).toList();
+  }
 
   List<int> get amounts =>
       rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
@@ -1498,6 +1701,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
     setState(() {
       selectedCountry = country;
+      directoryOperators = null;
       selectedOperator = null;
       selectedAmount =
           (rechargeAmounts[country.currency] ?? [100]).first;
@@ -1506,6 +1710,17 @@ class _PgntHomePageState extends State<PgntHomePage> {
       priceQuote = null;
       priceQuoteError = null;
     });
+    _loadCountryOperators(country.code);
+  }
+
+  bool _isPhoneValidForSelectedCountry(String value) {
+    var digits = normalizePhone(value);
+    final callingCode = selectedCountry.callingCode.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('+')) digits = digits.substring(1);
+    if (digits.startsWith('00')) digits = digits.substring(2);
+    if (callingCode.isNotEmpty && digits.startsWith(callingCode)) digits = digits.substring(callingCode.length);
+    if (!RegExp(r'^\d+$').hasMatch(digits)) return false;
+    return digits.length >= selectedCountry.phoneMinDigits && digits.length <= selectedCountry.phoneMaxDigits;
   }
 
   void handlePhoneChanged(String value) {
@@ -1550,6 +1765,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showLanguageWelcome) return _buildLanguageWelcome();
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -1785,7 +2001,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: countries
+              children: availableCountries
                   .map((country) => countryCard(country, cardWidth))
                   .toList(),
             ),
@@ -1850,6 +2066,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildOperatorSelector() {
+    if (isLoadingOperators) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (countryOperators.isEmpty) {
       return Text(t('selectOperator'));
     }
@@ -2134,7 +2356,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
-    if (!isValidPhone(selectedCountry.code, phone)) {
+    if (!_isPhoneValidForSelectedCountry(phone)) {
       showMessage(t('invalidPhone'));
       return;
     }
@@ -3285,7 +3507,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       if (value == null) return;
                       setState(() {
                         languageCode = value;
+                        _welcomeLanguageCode = value;
                       });
+                      SharedPreferences.getInstance().then((preferences) => preferences.setString(_languagePreferenceKey, value));
+                      _loadActiveCountries();
                       Navigator.pop(sheetContext);
                     },
                   ),
