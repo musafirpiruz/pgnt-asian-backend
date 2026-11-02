@@ -4959,6 +4959,42 @@ app.post('/api/admin/countries/:countryCode/operators', requireAdmin, async (req
   }
 });
 
+// New provider mappings are stored disabled; this route never enables fulfillment.
+app.post('/api/admin/countries/:countryCode/providers', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const providerCode = String(body.provider_code || '').trim().toUpperCase();
+  const providerCountryCode = String(body.provider_country_code || '').trim().toUpperCase();
+
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !/^[A-Z0-9_-]{2,32}$/.test(providerCode) ||
+      !/^[A-Z0-9_-]{2,32}$/.test(providerCountryCode)) {
+    return res.status(400).json({ error: 'Provide a valid country, provider code, and verified provider country code.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO country_provider_settings
+         (country_code, provider_code, provider_country_code, enabled)
+       VALUES ($1, $2, $3, FALSE)
+       RETURNING country_code, provider_code, provider_country_code, enabled`,
+      [countryCode, providerCode, providerCountryCode]
+    );
+    return res.status(201).json({
+      provider: result.rows[0],
+      activationPerformed: false,
+      fulfillmentEnabled: false,
+      note: 'Provider mapping is saved disabled. Verify provider credentials, country coverage, operator IDs, products, FX, and pricing before any activation.',
+    });
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'This provider is already mapped for the country.' });
+    if (error.code === '23503') return res.status(404).json({ error: 'Country does not exist.' });
+    console.error('Admin country provider mapping failed:', error.message);
+    return res.status(500).json({ error: 'Could not save disabled provider mapping.' });
+  }
+});
+
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({
