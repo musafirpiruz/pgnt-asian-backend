@@ -2825,8 +2825,35 @@ require('./support-routes')({
   requireAdmin,
 });
 
-// International customer phone authentication (Twilio Verify, E.164 numbers).
-require('./phone-auth').registerPhoneAuthRoutes({ app, pool });
+// Firebase Admin verifies ID tokens only. SMS delivery remains client-side
+// through Firebase Authentication and the send/verify backend routes stay disabled.
+const { createFirebaseAuthMiddleware } = require('./firebase-auth');
+const { initializeFirebaseAdmin } = require('./firebase-admin-adapter');
+
+let firebaseAdminConfig = {
+  configured: false,
+  projectId: null,
+  verifyIdToken: null,
+};
+try {
+  firebaseAdminConfig = initializeFirebaseAdmin();
+} catch (firebaseConfigError) {
+  // Never log service-account JSON, private keys, or credential parser details.
+  console.error('Firebase Admin configuration is invalid; authentication remains disabled.');
+}
+
+const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
+  projectId: firebaseAdminConfig.projectId,
+  verifyIdToken: firebaseAdminConfig.verifyIdToken,
+  requirePhoneNumber: true,
+});
+
+// International customer phone authentication (Firebase; SMS remains deferred).
+require('./phone-auth').registerPhoneAuthRoutes({
+  app,
+  pool,
+  authMiddleware: firebaseAuthMiddleware,
+});
 
 
 

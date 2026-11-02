@@ -17,7 +17,7 @@ function rateLimitLockKeys(eventType, phoneHash, ipHash) {
   return [`${eventType}:phone:${phoneHash}`, `${eventType}:ip:${ipHash}`].sort();
 }
 
-function registerPhoneAuthRoutes({ app }) {
+function registerPhoneAuthRoutes({ app, authMiddleware = null }) {
   const deferred = (_req, res) => res.status(503).json({
     error: 'Phone sign-in is not available yet. Firebase Authentication will be enabled in the final release phase.',
     code: 'PHONE_AUTH_DEFERRED',
@@ -27,7 +27,17 @@ function registerPhoneAuthRoutes({ app }) {
 
   app.post('/api/auth/phone/send', deferred);
   app.post('/api/auth/phone/verify', deferred);
-  app.get('/api/auth/me', deferred);
+  if (typeof authMiddleware === 'function') {
+    app.get('/api/auth/me', authMiddleware, (req, res) => {
+      return res.json({
+        authenticated: true,
+        uid: req.auth.uid,
+        phoneNumber: req.auth.phoneNumber,
+      });
+    });
+  } else {
+    app.get('/api/auth/me', deferred);
+  }
   app.post('/api/auth/logout', (_req, res) => res.status(503).json({
     error: 'Phone sign-in is not enabled yet.',
     code: 'PHONE_AUTH_DEFERRED',
