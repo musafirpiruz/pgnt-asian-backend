@@ -1115,6 +1115,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
   List<AppCountry> availableCountries = countries;
   AppCountry selectedCountry = countries.first;
+  List<MobileOperator>? directoryOperators;
+  bool isLoadingOperators = false;
   bool isLoadingCountries = false;
   String? countryDirectoryError;
   bool showCountryChoices = false;
@@ -1174,6 +1176,41 @@ class _PgntHomePageState extends State<PgntHomePage> {
   String _currencySymbol(String currency) {
     const symbols = {'AFN':'؋','PKR':'Rs','INR':'₹','BDT':'৳','EUR':'€'};
     return symbols[currency] ?? currency;
+  }
+
+  Future<void> _loadCountryOperators(String countryCode) async {
+    if (mounted) setState(() => isLoadingOperators = true);
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries/$countryCode/operators').replace(
+        queryParameters: {'language': languageCode},
+      );
+      final response = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception('HTTP ${response.statusCode}');
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic> || decoded['operators'] is! List) throw const FormatException('Invalid operator directory response');
+      final loaded = (decoded['operators'] as List).whereType<Map<String, dynamic>>().map((row) {
+        final name = (row['display_name'] ?? row['displayName'] ?? '').toString().trim();
+        if (name.isEmpty) return null;
+        return MobileOperator(countryCode, name, '📶');
+      }).whereType<MobileOperator>().toList();
+      if (!mounted || selectedCountry.code != countryCode) return;
+      setState(() {
+        // Empty DB results retain the already verified legacy list for the four
+        // existing destinations; new countries have no hard-coded fallback.
+        directoryOperators = loaded;
+        if (loaded.isNotEmpty && !loaded.any((item) => item.name == selectedOperator?.name)) {
+          selectedOperator = null;
+          priceQuote = null;
+          priceQuoteError = null;
+        }
+      });
+    } catch (_) {
+      if (mounted && selectedCountry.code == countryCode) {
+        setState(() => directoryOperators = null);
+      }
+    } finally {
+      if (mounted && selectedCountry.code == countryCode) setState(() => isLoadingOperators = false);
+    }
   }
 
   Future<void> _loadActiveCountries() async {
@@ -1415,9 +1452,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
   }
 
-  List<MobileOperator> get countryOperators => operators
-      .where((item) => item.countryCode == selectedCountry.code)
-      .toList();
+  List<MobileOperator> get countryOperators {
+    if (directoryOperators != null && directoryOperators!.isNotEmpty) return directoryOperators!;
+    return operators.where((item) => item.countryCode == selectedCountry.code).toList();
+  }
 
   List<int> get amounts =>
       rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
@@ -1537,6 +1575,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
     setState(() {
       selectedCountry = country;
+      directoryOperators = null;
       selectedOperator = null;
       selectedAmount =
           (rechargeAmounts[country.currency] ?? [100]).first;
@@ -1545,6 +1584,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       priceQuote = null;
       priceQuoteError = null;
     });
+    _loadCountryOperators(country.code);
   }
 
   void handlePhoneChanged(String value) {
@@ -2171,11 +2211,24 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
   
+  bool _isPhoneValidForSelectedCountry(String value) {
+    var digits = normalizePhone(value);
+    final callingCode = selectedCountry.callingCode.replaceAll(RegExp(r'\\D'), '');
+    if (digits.startsWith('+')) digits = digits.substring(1);
+    if (digits.startsWith('00')) digits = digits.substring(2);
+    if (callingCode.isNotEmpty && digits.startsWith(callingCode)) {
+      digits = digits.substring(callingCode.length);
+    }
+    if (!RegExp(r'^\\d+$').hasMatch(digits)) return false;
+    return digits.length >= selectedCountry.phoneMinDigits &&
+        digits.length <= selectedCountry.phoneMaxDigits;
+  }
+
   Future<void> startPayment() async {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
-    if (!isValidPhone(selectedCountry.code, phone)) {
+    if (!_isPhoneValidForSelectedCountry(phone)) {
       showMessage(t('invalidPhone'));
       return;
     }
@@ -5510,6 +5563,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
         }
         countryDirectoryError = null;
       });
+      await _loadCountryOperators(selectedCountry.code);
     } catch (error) {
       if (mounted) setState(() {
         countryDirectoryError = 'د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.';
