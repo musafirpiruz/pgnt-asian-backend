@@ -724,29 +724,7 @@ async function runMigration() {
           CREATE TABLE IF NOT EXISTS countries (
             code CHAR(2) PRIMARY KEY CHECK (code ~ '^[A-Z][A-Z]$'),
             name_en TEXT NOT NULL,
-            local_currency CHAR(3) NOT NULL CHECK (local_currency ~ '^[A-Z][A-Z][A-Z]}
-    );
-
-    console.error(
-      error.message
-    );
-
-    process.exitCode = 1;
-  } finally {
-    if (client) {
-      try {
-        await client.query("SELECT pg_advisory_unlock(738291);");
-      } catch (_) {}
-
-      client.release();
-    }
-
-    await pool.end();
-  }
-}
-
-runMigration();
-),
+            local_currency CHAR(3) NOT NULL CHECK (local_currency ~ '^[A-Z][A-Z][A-Z]$'),
             calling_code VARCHAR(8),
             phone_min_digits SMALLINT CHECK (phone_min_digits IS NULL OR phone_min_digits BETWEEN 4 AND 15),
             phone_max_digits SMALLINT CHECK (phone_max_digits IS NULL OR phone_max_digits BETWEEN 4 AND 15),
