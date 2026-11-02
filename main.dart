@@ -1011,7 +1011,7 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
       'subtitle': 'Choose your preferred language to continue',
       'description': 'Send mobile top-ups easily to Afghanistan, Pakistan, India and Bangladesh.',
       'continue': 'Continue',
-      'later': copy['later']!,
+      'later': 'You can change your language later in Settings.',
     },
     'ur': {
       'title': 'خوش آمدید',
@@ -1201,10 +1201,10 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                     child: Text(copy['continue']!),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'You can change your language later in Settings.',
+                  Text(
+                    copy['later']!,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.black54, fontSize: 12),
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
                   ),
                 ],
               ),
