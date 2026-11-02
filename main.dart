@@ -1113,6 +1113,8 @@ class PgntHomePage extends StatefulWidget {
 
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
+  String _welcomeLanguageCode = 'ps';
+  bool _showLanguageWelcome = true;
   List<AppCountry> availableCountries = countries;
   AppCountry selectedCountry = countries.first;
   List<MobileOperator>? directoryOperators;
@@ -1157,7 +1159,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   void initState() {
     super.initState();
     _restoreFuture = _restoreLocalData();
-    _loadActiveCountries();
+    _restoreLanguagePreference();
     _appLinks = AppLinks();
     _referralLinkSubscription = _appLinks.uriLinkStream.listen(
       _applyReferralUri,
@@ -1166,6 +1168,135 @@ class _PgntHomePageState extends State<PgntHomePage> {
     _appLinks.getInitialLink().then((uri) {
       if (uri != null) _applyReferralUri(uri);
     }).catchError((Object _) {});
+  }
+
+  static const String _languagePreferenceKey = 'pgnt_preferred_language_v1';
+
+  Future<void> _restoreLanguagePreference() async {
+    String? savedLanguage;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      savedLanguage = preferences.getString(_languagePreferenceKey);
+    } catch (_) {
+      // If local preferences are unavailable, keep the first-launch chooser.
+    }
+    if (!mounted) return;
+    final valid = languages.any((item) => item.code == savedLanguage);
+    setState(() {
+      if (valid) languageCode = savedLanguage!;
+      _welcomeLanguageCode = languageCode;
+      _showLanguageWelcome = !valid;
+    });
+    await _loadActiveCountries();
+  }
+
+  Future<void> _confirmWelcomeLanguage() async {
+    final selected = _welcomeLanguageCode;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_languagePreferenceKey, selected);
+    } catch (_) {
+      if (mounted) showMessage('Language preference could not be saved.');
+    }
+    if (!mounted) return;
+    setState(() {
+      languageCode = selected;
+      _showLanguageWelcome = false;
+    });
+    _loadActiveCountries();
+  }
+
+  Map<String, String> _welcomeCopy() => const {
+    'ps': {'title':'ښه راغلاست', 'subtitle':'د خپلې خوښې ژبه وټاکئ او له اسانه موبایل چارج څخه ګټه واخلئ', 'choose':'خپله ژبه وټاکئ', 'continue':'پیل وکړئ'},
+    'fa': {'title':'خوش آمدید', 'subtitle':'زبان دلخواه خود را انتخاب کنید و به آسانی موبایل را شارژ کنید', 'choose':'زبان خود را انتخاب کنید', 'continue':'شروع کنید'},
+    'en': {'title':'Welcome', 'subtitle':'Choose your language and enjoy simple, reliable mobile top-ups', 'choose':'Choose your language', 'continue':'Get started'},
+    'ur': {'title':'خوش آمدید', 'subtitle':'اپنی پسندیدہ زبان منتخب کریں اور آسانی سے موبائل ریچارج کریں', 'choose':'اپنی زبان منتخب کریں', 'continue':'شروع کریں'},
+    'hi': {'title':'स्वागत है', 'subtitle':'अपनी भाषा चुनें और आसानी से मोबाइल रिचार्ज करें', 'choose':'अपनी भाषा चुनें', 'continue':'शुरू करें'},
+    'bn': {'title':'স্বাগতম', 'subtitle':'আপনার ভাষা নির্বাচন করুন এবং সহজে মোবাইল রিচার্জ করুন', 'choose':'আপনার ভাষা নির্বাচন করুন', 'continue':'শুরু করুন'},
+  }[_welcomeLanguageCode] ?? const {'title':'Welcome','subtitle':'Choose your language','choose':'Choose your language','continue':'Get started'};
+
+  Widget _buildLanguageWelcome() {
+    final copy = _welcomeCopy();
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [darkRed, primaryRed, pageBg],
+            stops: [0.0, 0.43, 0.43],
+          ),
+        ),
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(22, 30, 22, 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight - 54),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    const PgntLogo(size: 88),
+                    const SizedBox(height: 18),
+                    const Text('PGNT ASIAN TOPUP', textAlign: TextAlign.center,
+                      style: TextStyle(color: brightGold, fontSize: 25, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                    const SizedBox(height: 12),
+                    Text(copy['title']!, textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 27, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(copy['subtitle']!, textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5)),
+                    const SizedBox(height: 28),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: gold, width: 1.4), boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 18, offset: Offset(0, 8))]),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(copy['choose']!, style: const TextStyle(color: primaryRed, fontSize: 17, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        ...languages.map((language) {
+                          final selected = _welcomeLanguageCode == language.code;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () => setState(() => _welcomeLanguageCode = language.code),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+                                decoration: BoxDecoration(color: selected ? cream : Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: selected ? primaryRed : const Color(0xFFE8E1D8), width: selected ? 1.6 : 1)),
+                                child: Row(children: [
+                                  Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, color: selected ? primaryRed : Colors.grey),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: Text(language.nativeName, textDirection: language.code == 'ps' || language.code == 'fa' || language.code == 'ur' ? TextDirection.rtl : TextDirection.ltr,
+                                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: darkRed))),
+                                  Text(language.name, style: const TextStyle(color: Colors.black54, fontSize: 12)),
+                                ]),
+                              ),
+                            ),
+                          );
+                        }),
+                        const SizedBox(height: 8),
+                        SizedBox(width: double.infinity, child: ElevatedButton.icon(
+                          onPressed: _confirmWelcomeLanguage,
+                          icon: const Icon(Icons.arrow_forward_rounded),
+                          label: Text(copy['continue']!),
+                        )),
+                      ]),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text('Recharge • Wallet • Support', style: TextStyle(color: primaryRed, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   String _countryFlag(String code) => const {'AF':'🇦🇫','PK':'🇵🇰','IN':'🇮🇳','BD':'🇧🇩'}[code] ?? '🌐';
@@ -1634,6 +1765,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showLanguageWelcome) return _buildLanguageWelcome();
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -3375,7 +3507,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       if (value == null) return;
                       setState(() {
                         languageCode = value;
+                        _welcomeLanguageCode = value;
                       });
+                      SharedPreferences.getInstance().then((preferences) => preferences.setString(_languagePreferenceKey, value));
                       _loadActiveCountries();
                       Navigator.pop(sheetContext);
                     },
