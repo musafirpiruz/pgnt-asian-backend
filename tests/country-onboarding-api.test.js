@@ -34,3 +34,16 @@ test('draft country onboarding validates identifiers and phone digit bounds', ()
   assert.match(route, /ON CONFLICT \(country_code, language_code\) DO NOTHING/);
   assert.match(route, /error\.code === '23505'/);
 });
+
+
+test('admin operator mappings are protected and remain inactive on creation', () => {
+  assert.match(serverSource, /app\.get\('\/api\/admin\/countries\/:countryCode\/operators',\s*requireAdmin/);
+  assert.match(serverSource, /app\.post\('\/api\/admin\/countries\/:countryCode\/operators',\s*requireAdmin/);
+  const start = serverSource.indexOf("app.post('/api/admin/countries/:countryCode/operators'");
+  const end = serverSource.indexOf("app.get('/api/admin/pricing'", start);
+  assert.ok(start >= 0 && end > start, 'operator mapping route exists');
+  const route = serverSource.slice(start, end);
+  assert.match(route, /provider_operator_id, active\)[\s\S]*VALUES[\s\S]*FALSE/);
+  assert.match(route, /activationPerformed: false/);
+  assert.match(route, /error\.code === '23505'/);
+});
