@@ -2,6 +2,17 @@ name: Build PGNT ASIAN TOPUP APK
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'main.dart'
+      - 'main_FIXED_FINAL.dart'
+      - 'firebase_options.dart'
+      - 'global_phone_auth_gate.dart'
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/build-apk.yml'
   push:
     branches:
       - main
@@ -22,6 +33,7 @@ on:
       - ui/five-step-flow-current-main-v2
       - fix/flutter-disable-unverified-referral-ui
       - feature/firebase-id-token-verification-core
+      - feat/first-launch-language-welcome
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'

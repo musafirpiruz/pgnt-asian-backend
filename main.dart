@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const String appName = 'PGNT ASIAN TOPUP';
+const String _languagePreferenceKey = 'pgnt_selected_language_v1';
 
 const String backendBaseUrl = String.fromEnvironment(
   'BACKEND_BASE_URL',
@@ -967,7 +968,250 @@ class PgntAsianApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const GlobalPhoneAuthGate(child: PgntHomePage()),
+      home: const WelcomeLanguageGate(
+        child: GlobalPhoneAuthGate(child: PgntHomePage()),
+      ),
+    );
+  }
+}
+
+
+
+class WelcomeLanguageGate extends StatefulWidget {
+  final Widget child;
+
+  const WelcomeLanguageGate({super.key, required this.child});
+
+  @override
+  State<WelcomeLanguageGate> createState() => _WelcomeLanguageGateState();
+}
+
+class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
+  bool _loading = true;
+  bool _completed = false;
+  String _selectedLanguage = 'ps';
+
+  static const Map<String, Map<String, String>> _welcomeCopy = {
+    'ps': {
+      'title': 'ښه راغلاست',
+      'subtitle': 'د دوام لپاره خپله خوښه ژبه وټاکئ',
+      'description': 'له افغانستان، پاکستان، هند او بنګله‌دېش سره په اسانه موبایل چارج واستوئ.',
+      'continue': 'دوام ورکړئ',
+      'later': 'تاسو کولای شئ وروسته په تنظیماتو کې ژبه بدله کړئ.',
+    },
+    'fa': {
+      'title': 'خوش آمدید',
+      'subtitle': 'برای ادامه، زبان دلخواه خود را انتخاب کنید',
+      'description': 'به‌آسانی برای افغانستان، پاکستان، هند و بنگلادش شارژ موبایل بفرستید.',
+      'continue': 'ادامه',
+      'later': 'بعداً می‌توانید زبان را از تنظیمات تغییر دهید.',
+    },
+    'en': {
+      'title': 'Welcome',
+      'subtitle': 'Choose your preferred language to continue',
+      'description': 'Send mobile top-ups easily to Afghanistan, Pakistan, India and Bangladesh.',
+      'continue': 'Continue',
+      'later': 'You can change your language later in Settings.',
+    },
+    'ur': {
+      'title': 'خوش آمدید',
+      'subtitle': 'جاری رکھنے کے لیے اپنی پسندیدہ زبان منتخب کریں',
+      'description': 'افغانستان، پاکستان، بھارت اور بنگلہ دیش میں آسانی سے موبائل بیلنس بھیجیں۔',
+      'continue': 'جاری رکھیں',
+      'later': 'آپ بعد میں ترتیبات میں زبان تبدیل کر سکتے ہیں۔',
+    },
+    'hi': {
+      'title': 'आपका स्वागत है',
+      'subtitle': 'आगे बढ़ने के लिए अपनी पसंदीदा भाषा चुनें',
+      'description': 'अफ़ग़ानिस्तान, पाकिस्तान, भारत और बांग्लादेश में आसानी से मोबाइल रिचार्ज भेजें।',
+      'continue': 'जारी रखें',
+      'later': 'आप बाद में सेटिंग्स में भाषा बदल सकते हैं।',
+    },
+    'bn': {
+      'title': 'স্বাগতম',
+      'subtitle': 'চালিয়ে যেতে আপনার পছন্দের ভাষা নির্বাচন করুন',
+      'description': 'সহজেই আফগানিস্তান, পাকিস্তান, ভারত ও বাংলাদেশে মোবাইল টপ-আপ পাঠান।',
+      'continue': 'চালিয়ে যান',
+      'later': 'আপনি পরে সেটিংস থেকে ভাষা পরিবর্তন করতে পারবেন।',
+    },
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedLanguage();
+  }
+
+  Future<void> _loadSavedLanguage() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final saved = preferences.getString(_languagePreferenceKey);
+      if (saved != null && languages.any((language) => language.code == saved)) {
+        _selectedLanguage = saved;
+        _completed = true;
+      }
+    } catch (_) {
+      // If local preferences are unavailable, show language selection again.
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _continue() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final saved = await preferences.setString(
+        _languagePreferenceKey,
+        _selectedLanguage,
+      );
+      if (!saved) throw StateError('Language preference could not be saved.');
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save your language. Please try again.'),
+        ),
+      );
+      return;
+    }
+    if (mounted) setState(() => _completed = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: pageBg,
+        body: Center(child: CircularProgressIndicator(color: primaryRed)),
+      );
+    }
+    if (_completed) return widget.child;
+
+    final copy = _welcomeCopy[_selectedLanguage] ?? _welcomeCopy['en']!;
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [primaryRed, darkRed],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.all(Radius.circular(26)),
+                    ),
+                    child: Column(
+                      children: [
+                        const PgntLogo(size: 78),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'PGNT ASIAN TOPUP',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: brightGold,
+                            fontSize: 23,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          copy['title']!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 25,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          copy['description']!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    copy['subtitle']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: primaryRed,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  ...languages.map((language) {
+                    final selected = language.code == _selectedLanguage;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Card(
+                        margin: EdgeInsets.zero,
+                        elevation: selected ? 3 : 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                          side: BorderSide(
+                            color: selected ? primaryRed : gold,
+                            width: selected ? 1.8 : 0.8,
+                          ),
+                        ),
+                        child: RadioListTile<String>(
+                          value: language.code,
+                          groupValue: _selectedLanguage,
+                          activeColor: primaryRed,
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _selectedLanguage = value);
+                            }
+                          },
+                          title: Text(
+                            language.nativeName,
+                            textDirection: language.code == 'ps' ||
+                                    language.code == 'fa' ||
+                                    language.code == 'ur'
+                                ? TextDirection.rtl
+                                : TextDirection.ltr,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          subtitle: Text(language.name),
+                        ),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _continue,
+                    child: Text(copy['continue']!),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    copy['later']!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1185,6 +1429,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
     try {
       final preferences = await SharedPreferences.getInstance();
+      final savedLanguage = preferences.getString(_languagePreferenceKey);
+      if (savedLanguage != null && languages.any((item) => item.code == savedLanguage)) {
+        languageCode = savedLanguage;
+      }
       final rawHistory = preferences.getString(_historyStorageKey);
       if (rawHistory != null) {
         final decoded = jsonDecode(rawHistory);
@@ -3285,6 +3533,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       if (value == null) return;
                       setState(() {
                         languageCode = value;
+                      });
+                      SharedPreferences.getInstance().then((preferences) {
+                        preferences.setString(_languagePreferenceKey, value);
                       });
                       Navigator.pop(sheetContext);
                     },
