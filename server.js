@@ -4860,7 +4860,7 @@ app.post('/api/admin/countries', requireAdmin, async (req, res) => {
 
   if (!/^[A-Z]{2}$/.test(code) || !/^[A-Z]{3}$/.test(currency) ||
       !name || name.length > 100 ||
-      (callingCode && !/^\\+[1-9][0-9]{0,3}$/.test(callingCode)) ||
+      (callingCode && !/^\+[1-9][0-9]{0,3}$/.test(callingCode)) ||
       !Number.isInteger(minDigits) || !Number.isInteger(maxDigits) ||
       minDigits < 4 || maxDigits > 15 || minDigits > maxDigits) {
     return res.status(400).json({
