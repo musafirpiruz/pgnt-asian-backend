@@ -90,7 +90,7 @@ test('catalog price discrepancy is explicitly reported and cannot be mistaken fo
 
 test('verified DT One import keeps provider wholesale and retail prices in separate fields and product disabled', () => {
   const routeStart = server.indexOf("app.post('/api/admin/catalog/:productId/import', requireAdmin");
-  const routeEnd = server.indexOf("\n\n// Read-only product discovery", routeStart);
+  const routeEnd = server.indexOf("\n\n// Automatically discover and prepare every valid product", routeStart);
   assert.notEqual(routeStart, -1, 'verified catalog import route must exist');
   assert.ok(routeEnd > routeStart, 'catalog import route must be bounded');
   const route = server.slice(routeStart, routeEnd);
