@@ -1934,6 +1934,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildOperatorSelector() {
+    if (isLoadingOperators) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (countryOperators.isEmpty) {
       return Text(t('selectOperator'));
     }
@@ -3370,6 +3376,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       setState(() {
                         languageCode = value;
                       });
+                      _loadActiveCountries();
                       Navigator.pop(sheetContext);
                     },
                   ),
