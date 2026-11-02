@@ -500,7 +500,7 @@ bool isValidPhone(
     case 'BD':
       return digits.length >= 10 && digits.length <= 13;
     default:
-      return digits.length >= 6 && digits.length <= 15;
+      return false;
   }
 }
 
@@ -1116,8 +1116,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   List<AppCountry> availableCountries = countries;
   AppCountry selectedCountry = countries.first;
   List<MobileOperator>? directoryOperators;
-  bool isLoadingOperators = false;
   bool isLoadingCountries = false;
+  bool isLoadingOperators = false;
   String? countryDirectoryError;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
@@ -1178,58 +1178,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
     return symbols[currency] ?? currency;
   }
 
-  Future<void> _loadCountryOperators(String countryCode) async {
-    if (mounted) setState(() => isLoadingOperators = true);
-    try {
-      final uri = Uri.parse('$backendBaseUrl/api/countries/$countryCode/operators').replace(
-        queryParameters: {'language': languageCode},
-      );
-      final response = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 15));
-      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception('HTTP ${response.statusCode}');
-      final decoded = jsonDecode(response.body);
-      if (decoded is! Map<String, dynamic> || decoded['operators'] is! List) throw const FormatException('Invalid operator directory response');
-      final loaded = (decoded['operators'] as List).whereType<Map<String, dynamic>>().map((row) {
-        final name = (row['display_name'] ?? row['displayName'] ?? '').toString().trim();
-        if (name.isEmpty) return null;
-        return MobileOperator(countryCode, name, '📶');
-      }).whereType<MobileOperator>().toList();
-      if (!mounted || selectedCountry.code != countryCode) return;
-      setState(() {
-        // Empty DB results retain the already verified legacy list for the four
-        // existing destinations; new countries have no hard-coded fallback.
-        directoryOperators = loaded;
-        if (loaded.isNotEmpty && !loaded.any((item) => item.name == selectedOperator?.name)) {
-          selectedOperator = null;
-          priceQuote = null;
-          priceQuoteError = null;
-        }
-      });
-    } catch (_) {
-      if (mounted && selectedCountry.code == countryCode) {
-        setState(() => directoryOperators = null);
-      }
-    } finally {
-      if (mounted && selectedCountry.code == countryCode) setState(() => isLoadingOperators = false);
-    }
-  }
-
   Future<void> _loadActiveCountries() async {
     if (mounted) setState(() { isLoadingCountries = true; countryDirectoryError = null; });
     try {
-      final uri = Uri.parse('$backendBaseUrl/api/countries').replace(
-        queryParameters: {'language': languageCode},
-      );
-      final response = await http.get(uri, headers: const {'Accept':'application/json'})
-          .timeout(const Duration(seconds: 20));
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('HTTP ${response.statusCode}');
-      }
+      final uri = Uri.parse('$backendBaseUrl/api/countries').replace(queryParameters: {'language': languageCode});
+      final response = await http.get(uri, headers: const {'Accept':'application/json'}).timeout(const Duration(seconds: 20));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception('HTTP ${response.statusCode}');
       final decoded = jsonDecode(response.body);
-      if (decoded is! Map<String, dynamic> || decoded['countries'] is! List) {
-        throw const FormatException('Invalid country directory response');
-      }
-      final loaded = (decoded['countries'] as List).whereType<Map<String, dynamic>>()
-          .map((row) {
+      if (decoded is! Map<String, dynamic> || decoded['countries'] is! List) throw const FormatException('Invalid country directory response');
+      final loaded = (decoded['countries'] as List).whereType<Map<String, dynamic>>().map((row) {
         final code = (row['code'] ?? '').toString().trim().toUpperCase();
         final currency = (row['currency'] ?? '').toString().trim().toUpperCase();
         if (!RegExp(r'^[A-Z]{2}
@@ -1587,7 +1544,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
     _loadCountryOperators(country.code);
   }
 
-  void handlePhoneChanged(String value) {
+  bool _isPhoneValidForSelectedCountry(String value) {
+    var digits = normalizePhone(value);
+    final callingCode = selectedCountry.callingCode.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('+')) digits = digits.substring(1);
+    if (digits.startsWith('00')) digits = digits.substring(2);
+    if (callingCode.isNotEmpty && digits.startsWith(callingCode)) digits = digits.substring(callingCode.length);
+    if (!RegExp(r'^\d+
     if (mounted) setState(() {});
     if (selectedCountry.code != 'AF') return;
     final detectedName = detectAfghanOperator(value);
@@ -1845,8 +1808,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               countryCard(selectedCountry, constraints.maxWidth),
-              if (isLoadingCountries) const LinearProgressIndicator(),
-              if (countryDirectoryError != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(countryDirectoryError!, style: const TextStyle(fontSize: 11, color: Colors.black54))),
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
@@ -2211,19 +2172,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
   
-  bool _isPhoneValidForSelectedCountry(String value) {
-    var digits = normalizePhone(value);
-    final callingCode = selectedCountry.callingCode.replaceAll(RegExp(r'\D'), '');
-    if (digits.startsWith('+')) digits = digits.substring(1);
-    if (digits.startsWith('00')) digits = digits.substring(2);
-    if (callingCode.isNotEmpty && digits.startsWith(callingCode)) {
-      digits = digits.substring(callingCode.length);
-    }
-    if (!RegExp(r'^\d+).hasMatch(digits)) return false;
-    return digits.length >= selectedCountry.phoneMinDigits &&
-        digits.length <= selectedCountry.phoneMaxDigits;
-  }
-
   Future<void> startPayment() async {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
@@ -3393,8 +3341,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
   
 }
-).hasMatch(code) ||
-            !RegExp(r'^[A-Z]{3}
+).hasMatch(code) || !RegExp(r'^[A-Z]{3}
     if (!mounted) return;
     // Supported invite links use: pgntasian://referral?code=FRIEND2026
     if (uri.scheme.toLowerCase() != 'pgntasian' ||
@@ -5538,39 +5485,46 @@ class _PgntHomePageState extends State<PgntHomePage> {
   
 }
 ).hasMatch(currency)) return null;
-        return AppCountry(
-          code: code,
-          name: (row['name'] ?? code).toString(),
-          flag: _countryFlag(code),
-          currency: currency,
-          symbol: _currencySymbol(currency),
-          callingCode: (row['callingCode'] ?? '').toString(),
-          phoneMinDigits: (row['phoneMinDigits'] as num?)?.toInt() ?? 6,
-          phoneMaxDigits: (row['phoneMaxDigits'] as num?)?.toInt() ?? 15,
-        );
+        return AppCountry(code: code, name: (row['name'] ?? code).toString(), flag: _countryFlag(code), currency: currency, symbol: _currencySymbol(currency), callingCode: (row['callingCode'] ?? '').toString(), phoneMinDigits: (row['phoneMinDigits'] as num?)?.toInt() ?? 6, phoneMaxDigits: (row['phoneMaxDigits'] as num?)?.toInt() ?? 15);
       }).whereType<AppCountry>().toList();
       if (loaded.isEmpty) throw const FormatException('No active countries returned');
       if (!mounted) return;
+      final previousCode = selectedCountry.code;
       setState(() {
         availableCountries = loaded;
-        if (!loaded.any((country) => country.code == selectedCountry.code)) {
-          selectedCountry = loaded.first;
-          selectedOperator = null;
-          priceQuote = null;
-          priceQuoteError = null;
-        } else {
-          selectedCountry = loaded.firstWhere((country) => country.code == selectedCountry.code);
-        }
-        countryDirectoryError = null;
+        selectedCountry = loaded.firstWhere((item) => item.code == previousCode, orElse: () => loaded.first);
+        if (!loaded.any((item) => item.code == previousCode)) selectedOperator = null;
       });
       await _loadCountryOperators(selectedCountry.code);
-    } catch (error) {
-      if (mounted) setState(() {
-        countryDirectoryError = 'د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.';
-        availableCountries = countries;
-      });
+    } catch (_) {
+      if (mounted) setState(() { availableCountries = countries; countryDirectoryError = 'د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.'; });
     } finally {
       if (mounted) setState(() => isLoadingCountries = false);
+    }
+  }
+
+  Future<void> _loadCountryOperators(String countryCode) async {
+    if (mounted) setState(() => isLoadingOperators = true);
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries/$countryCode/operators').replace(queryParameters: {'language': languageCode});
+      final response = await http.get(uri, headers: const {'Accept':'application/json'}).timeout(const Duration(seconds: 15));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception('HTTP ${response.statusCode}');
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic> || decoded['operators'] is! List) throw const FormatException('Invalid operator directory response');
+      final loaded = (decoded['operators'] as List).whereType<Map<String, dynamic>>().map((row) {
+        final name = (row['display_name'] ?? row['displayName'] ?? '').toString().trim();
+        if (name.isEmpty) return null;
+        return MobileOperator(countryCode, name, '📶');
+      }).whereType<MobileOperator>().toList();
+      if (!mounted || selectedCountry.code != countryCode) return;
+      setState(() {
+        directoryOperators = loaded;
+        if (loaded.isNotEmpty && !loaded.any((item) => item.name == selectedOperator?.name)) { selectedOperator = null; priceQuote = null; priceQuoteError = null; }
+      });
+    } catch (_) {
+      if (mounted && selectedCountry.code == countryCode) setState(() => directoryOperators = null);
+    } finally {
+      if (mounted && selectedCountry.code == countryCode) setState(() => isLoadingOperators = false);
     }
   }
 
@@ -7718,15 +7672,636 @@ class _PgntHomePageState extends State<PgntHomePage> {
   
 }
 ).hasMatch(digits)) return false;
-    return digits.length >= selectedCountry.phoneMinDigits &&
-        digits.length <= selectedCountry.phoneMaxDigits;
+    return digits.length >= selectedCountry.phoneMinDigits && digits.length <= selectedCountry.phoneMaxDigits;
   }
 
+  void handlePhoneChanged(String value) {
+    if (mounted) setState(() {});
+    if (selectedCountry.code != 'AF') return;
+    final detectedName = detectAfghanOperator(value);
+    if (detectedName == null) return;
+
+    MobileOperator? detected;
+    for (final operator in countryOperators) {
+      if (operator.name.toLowerCase() == detectedName.toLowerCase()) {
+        detected = operator;
+        break;
+      }
+    }
+    if (detected == null ||
+        (selectedOperator?.name == detected.name &&
+            selectedOperator?.countryCode == detected.countryCode)) {
+      return;
+    }
+
+    setState(() {
+      selectedOperator = detected;
+      priceQuote = null;
+      priceQuoteError = null;
+    });
+    loadPriceQuote();
+  }
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          appName,
+          style: TextStyle(
+            color: brightGold,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        actions: [
+          IconButton(
+            tooltip: t('settings'),
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: openSettings,
+          ),
+        ],
+      ),
+      body: IndexedStack(
+        index: selectedTab,
+        children: [
+          buildHome(),
+          buildHistory(),
+          buildWallet(),
+          buildSupport(),
+          buildProfile(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        backgroundColor: cream,
+        indicatorColor: gold.withValues(alpha: 0.35),
+        selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
+        onDestinationSelected: (index) {
+          setState(() => selectedTab = index);
+        },
+        destinations: [
+          NavigationDestination(
+            icon: const Icon(Icons.home_outlined),
+            selectedIcon: const Icon(Icons.home),
+            label: t('home'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.receipt_long_outlined),
+            selectedIcon: const Icon(Icons.receipt_long),
+            label: t('history'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: const Icon(Icons.account_balance_wallet),
+            label: t('wallet'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.support_agent_outlined),
+            selectedIcon: const Icon(Icons.support_agent),
+            label: t('support'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildHome() {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const PgntBrandHeader(
+            subtitle: 'Mobile Recharge • Wallet • Support',
+          ),
+          const SizedBox(height: 18),
+          buildWelcomeCard(),
+          const SizedBox(height: 18),
+          _buildStepHeader(1, t('selectCountry')),
+          buildCountrySelector(),
+          const SizedBox(height: 18),
+          _buildStepHeader(2, t('phone')),
+          buildPhoneField(),
+          const SizedBox(height: 18),
+          _buildStepHeader(3, t('selectOperator')),
+          buildOperatorSelector(),
+          const SizedBox(height: 18),
+          _buildStepHeader(4, t('amount')),
+          buildAmountSelector(),
+          const SizedBox(height: 10),
+          buildCustomAmountField(),
+          const SizedBox(height: 14),
+          buildPriceCard(),
+          const SizedBox(height: 18),
+          _buildStepHeader(5, t('review')),
+          buildReviewSummary(),
+          const SizedBox(height: 12),
+          buildPaymentButton(),
+          const SizedBox(height: 12),
+          buildSecureNote(),
+          const SizedBox(height: 22),
+        ],
+      ),
+    );
+  }
+
+  Widget buildWelcomeCard() {
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: darkRed,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: gold),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.bolt,
+            color: brightGold,
+            size: 36,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  t('welcome'),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                const Text(
+                  'Fast • Simple • Secure',
+                  style: TextStyle(
+                    color: brightGold,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.verified_user_outlined,
+            color: gold,
+            size: 28,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildCountrySelector() {
+    Widget countryCard(AppCountry country, double width) {
+      final selected = country.code == selectedCountry.code;
+      return InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          if (selected) {
+            setState(() => showCountryChoices = false);
+          } else {
+            selectCountry(country);
+            setState(() => showCountryChoices = false);
+          }
+        },
+        child: Container(
+          width: width,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFF1F0) : cardWhite,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? primaryRed : const Color(0xFFE7DED2),
+              width: selected ? 1.7 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Text(country.flag, style: const TextStyle(fontSize: 27)),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      country.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? primaryRed : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      country.currency,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selected)
+                const Icon(Icons.check_circle, color: primaryRed, size: 18),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!showCountryChoices) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              countryCard(selectedCountry, constraints.maxWidth),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => showCountryChoices = true),
+                  icon: const Icon(Icons.public, size: 18),
+                  label: Text(t('changeCountry')),
+                ),
+              ),
+            ],
+          );
+        }
+
+        final cardWidth = (constraints.maxWidth - 12) / 2;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: countries
+                  .map((country) => countryCard(country, cardWidth))
+                  .toList(),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(() => showCountryChoices = false),
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(t('changeCountry')),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget buildReferralCodeField() {
+    return TextField(
+      controller: referralCodeController,
+      textCapitalization: TextCapitalization.characters,
+      autocorrect: false,
+      enableSuggestions: false,
+      maxLength: 40,
+      decoration: InputDecoration(
+        labelText: t('referralCode'),
+        hintText: t('referralCode'),
+        helperText: t('referralHint'),
+        prefixIcon: const Icon(Icons.card_giftcard, color: primaryRed),
+        counterText: '',
+      ),
+    );
+  }
+
+  Widget buildPhoneField() {
+    final phoneHint = switch (selectedCountry.code) {
+      'AF' => '07X XXX XXXX',
+      'PK' => '03XX XXXXXXX',
+      'IN' => '10-digit mobile number',
+      'BD' => '01XXXXXXXXX',
+      _ => 'Mobile number',
+    };
+    return TextField(
+      controller: phoneController,
+      keyboardType: TextInputType.phone,
+      maxLength: 16,
+      onChanged: handlePhoneChanged,
+      decoration: InputDecoration(
+        hintText: phoneHint,
+        helperText: 'Enter the recipient number for ${selectedCountry.name}',
+        counterText: '',
+        prefixIcon: const Icon(
+          Icons.phone_android,
+          color: primaryRed,
+        ),
+        suffixIcon: const Icon(
+          Icons.shield_outlined,
+          color: successGreen,
+        ),
+      ),
+    );
+  }
+
+  Widget buildOperatorSelector() {
+    if (countryOperators.isEmpty) {
+      return Text(t('selectOperator'));
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = 2;
+        final spacing = 8.0;
+        final cardWidth =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: countryOperators.map((item) {
+            final selected = selectedOperator?.name == item.name &&
+                selectedOperator?.countryCode == item.countryCode;
+            return InkWell(
+              borderRadius: BorderRadius.circular(13),
+              onTap: () {
+                setState(() {
+                  selectedOperator = item;
+                  priceQuote = null;
+                  priceQuoteError = null;
+                });
+                loadPriceQuote();
+              },
+              child: Container(
+                width: cardWidth,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFFFF1F0) : cardWhite,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: selected ? primaryRed : const Color(0xFFE7DED2),
+                    width: selected ? 1.6 : 1,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    OperatorBrandMark(
+                      operator: item,
+                      size: 30,
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      item.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? primaryRed : Colors.black87,
+                      ),
+                    ),
+                    if (selected)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Icon(
+                          Icons.check_circle,
+                          color: primaryRed,
+                          size: 15,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget buildAmountSelector() {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: amounts.map((amount) {
+        final selected = selectedAmount == amount;
+
+        return ChoiceChip(
+          label: Text('$amount ${selectedCountry.currency}'),
+          selected: selected,
+          selectedColor: gold,
+          backgroundColor: Colors.white,
+          side: BorderSide(
+            color: selected ? primaryRed : gold,
+          ),
+          labelStyle: TextStyle(
+            color: selected ? primaryRed : Colors.black87,
+            fontWeight: FontWeight.bold,
+          ),
+          onSelected: (_) {
+            customAmountController.clear();
+            setState(() { selectedAmount = amount; priceQuote = null; priceQuoteError = null; });
+            loadPriceQuote();
+          },
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildStepHeader(int number, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(children: [
+        Container(
+          width: 32, height: 32, alignment: Alignment.center,
+          decoration: const BoxDecoration(color: primaryRed, shape: BoxShape.circle),
+          child: Text('$number', style: const TextStyle(color: brightGold, fontWeight: FontWeight.w900)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primaryRed))),
+      ]),
+    );
+  }
+
+  Widget buildCustomAmountField() {
+    void applyAmount(String raw) {
+      final value = int.tryParse(raw.trim());
+      if (value == null || value <= 0) {
+        showMessage(t('invalidAmount'));
+        return;
+      }
+      setState(() {
+        selectedAmount = value;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+      loadPriceQuote();
+    }
+
+    return TextField(
+      controller: customAmountController,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: '${t('customAmount')} (${selectedCountry.currency})',
+        hintText: t('amount'),
+        prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
+        suffixIcon: IconButton(
+          tooltip: 'Check amount and price',
+          icon: const Icon(Icons.check_circle_outline, color: primaryRed),
+          onPressed: () => applyAmount(customAmountController.text),
+        ),
+      ),
+      onChanged: (_) {
+        if (priceQuote != null) {
+          setState(() {
+            priceQuote = null;
+            priceQuoteError = null;
+          });
+        }
+      },
+      onSubmitted: applyAmount,
+    );
+  }
+
+  Widget buildReviewSummary() {
+    final quote = priceQuote;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(children: [
+          _reviewRow(t('selectCountry'), '${selectedCountry.flag} ${selectedCountry.name}'),
+          const Divider(height: 18),
+          _reviewRow(t('phone'), phoneController.text.isEmpty ? '—' : phoneController.text),
+          const Divider(height: 18),
+          _reviewRow(t('selectOperator'), selectedOperator?.name ?? '—'),
+          const Divider(height: 18),
+          _reviewRow(t('amount'), '$selectedAmount ${selectedCountry.currency}'),
+          const Divider(height: 18),
+          _reviewRow(t('total'), quote?['formattedFinalPrice']?.toString() ?? t('priceNote')),
+          if (quote == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(t('priceNote'), style: const TextStyle(color: errorRed, fontSize: 12), textAlign: TextAlign.center),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _reviewRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(color: Colors.black54))),
+        const SizedBox(width: 12),
+        Flexible(child: Text(value, textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w700))),
+      ],
+    );
+  }
+
+  Widget buildPriceCard() {
+    final quote = priceQuote;
+    final basePrice = quote == null ? null : quote['formattedBasePrice'];
+    final fee = quote == null ? null : quote['formattedFee'];
+    final total = quote == null ? null : quote['formattedFinalPrice'];
+    final bonusPercent = quote == null ? null : quote['bonusPercent'];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(children: [
+          Row(children: [
+            const Text('€', style: TextStyle(color: primaryRed, fontSize: 24, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 10), Expanded(child: Text(t('price'))),
+            Text(basePrice is String ? basePrice : '—', style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 8),
+            Text('$selectedAmount ${selectedCountry.currency}', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ]),
+          if (quote != null && selectedCountry.code == 'AF') ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              const Icon(Icons.currency_exchange, color: primaryRed),
+              const SizedBox(width: 10),
+              const Expanded(child: Text('د بازار اټکلي معادل')),
+              Text(quote['marketEquivalentEurFormatted'] is String ? quote['marketEquivalentEurFormatted'] as String : '—', style: const TextStyle(fontWeight: FontWeight.w600)),
+            ]),
+            Row(children: [
+              const SizedBox(width: 34),
+              const Expanded(child: Text('د تبادلې نرخ', style: TextStyle(fontSize: 12, color: Colors.black54))),
+              Text(quote['exchangeRateAfnPerEur'] is num ? '1 € = ${quote['exchangeRateAfnPerEur']} AFN' : '—', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            ]),
+          ],
+          pgntGoldDivider(),
+          Row(children: [const Icon(Icons.receipt_outlined, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('fee'))), Text(fee is String ? fee : '—')]),
+          const SizedBox(height: 12),
+          Row(children: [const Icon(Icons.card_giftcard, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('bonus'))), Text(bonusPercent is num && bonusPercent > 0 ? '${bonusPercent.toString()}%' : '—')]),
+          if (quote != null) ...[
+            pgntGoldDivider(),
+            Row(children: [Expanded(child: Text('ټول تادیه', style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
+          ],
+          const SizedBox(height: 12),
+          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
+        ]),
+      ),
+    );
+  }
+
+  Widget buildPaymentButton() {
+    return ElevatedButton.icon(
+      onPressed: (isLoading || priceQuote == null || isQuoteLoading) ? null : startPayment,
+      icon: isLoading
+          ? const SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: brightGold,
+              ),
+            )
+          : const Icon(Icons.lock_outline),
+      label: Text(
+        isLoading ? t('loading') : t('continue'),
+      ),
+    );
+  }
+
+  Widget buildSecureNote() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(
+          Icons.verified_user_outlined,
+          color: successGreen,
+          size: 18,
+        ),
+        const SizedBox(width: 7),
+        Text(
+          t('securePayment'),
+          style: const TextStyle(color: Colors.black54),
+        ),
+      ],
+    );
+  }
+  
   Future<void> startPayment() async {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
-    if (!_isPhoneValidForSelectedCountry(phone)) {
+    if (!isValidPhone(selectedCountry.code, phone)) {
       showMessage(t('invalidPhone'));
       return;
     }
@@ -8891,8 +9466,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
   
 }
-).hasMatch(code) ||
-            !RegExp(r'^[A-Z]{3}
+).hasMatch(code) || !RegExp(r'^[A-Z]{3}
     if (!mounted) return;
     // Supported invite links use: pgntasian://referral?code=FRIEND2026
     if (uri.scheme.toLowerCase() != 'pgntasian' ||
@@ -11036,39 +11610,46 @@ class _PgntHomePageState extends State<PgntHomePage> {
   
 }
 ).hasMatch(currency)) return null;
-        return AppCountry(
-          code: code,
-          name: (row['name'] ?? code).toString(),
-          flag: _countryFlag(code),
-          currency: currency,
-          symbol: _currencySymbol(currency),
-          callingCode: (row['callingCode'] ?? '').toString(),
-          phoneMinDigits: (row['phoneMinDigits'] as num?)?.toInt() ?? 6,
-          phoneMaxDigits: (row['phoneMaxDigits'] as num?)?.toInt() ?? 15,
-        );
+        return AppCountry(code: code, name: (row['name'] ?? code).toString(), flag: _countryFlag(code), currency: currency, symbol: _currencySymbol(currency), callingCode: (row['callingCode'] ?? '').toString(), phoneMinDigits: (row['phoneMinDigits'] as num?)?.toInt() ?? 6, phoneMaxDigits: (row['phoneMaxDigits'] as num?)?.toInt() ?? 15);
       }).whereType<AppCountry>().toList();
       if (loaded.isEmpty) throw const FormatException('No active countries returned');
       if (!mounted) return;
+      final previousCode = selectedCountry.code;
       setState(() {
         availableCountries = loaded;
-        if (!loaded.any((country) => country.code == selectedCountry.code)) {
-          selectedCountry = loaded.first;
-          selectedOperator = null;
-          priceQuote = null;
-          priceQuoteError = null;
-        } else {
-          selectedCountry = loaded.firstWhere((country) => country.code == selectedCountry.code);
-        }
-        countryDirectoryError = null;
+        selectedCountry = loaded.firstWhere((item) => item.code == previousCode, orElse: () => loaded.first);
+        if (!loaded.any((item) => item.code == previousCode)) selectedOperator = null;
       });
       await _loadCountryOperators(selectedCountry.code);
-    } catch (error) {
-      if (mounted) setState(() {
-        countryDirectoryError = 'د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.';
-        availableCountries = countries;
-      });
+    } catch (_) {
+      if (mounted) setState(() { availableCountries = countries; countryDirectoryError = 'د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.'; });
     } finally {
       if (mounted) setState(() => isLoadingCountries = false);
+    }
+  }
+
+  Future<void> _loadCountryOperators(String countryCode) async {
+    if (mounted) setState(() => isLoadingOperators = true);
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries/$countryCode/operators').replace(queryParameters: {'language': languageCode});
+      final response = await http.get(uri, headers: const {'Accept':'application/json'}).timeout(const Duration(seconds: 15));
+      if (response.statusCode < 200 || response.statusCode >= 300) throw Exception('HTTP ${response.statusCode}');
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic> || decoded['operators'] is! List) throw const FormatException('Invalid operator directory response');
+      final loaded = (decoded['operators'] as List).whereType<Map<String, dynamic>>().map((row) {
+        final name = (row['display_name'] ?? row['displayName'] ?? '').toString().trim();
+        if (name.isEmpty) return null;
+        return MobileOperator(countryCode, name, '📶');
+      }).whereType<MobileOperator>().toList();
+      if (!mounted || selectedCountry.code != countryCode) return;
+      setState(() {
+        directoryOperators = loaded;
+        if (loaded.isNotEmpty && !loaded.any((item) => item.name == selectedOperator?.name)) { selectedOperator = null; priceQuote = null; priceQuoteError = null; }
+      });
+    } catch (_) {
+      if (mounted && selectedCountry.code == countryCode) setState(() => directoryOperators = null);
+    } finally {
+      if (mounted && selectedCountry.code == countryCode) setState(() => isLoadingOperators = false);
     }
   }
 
