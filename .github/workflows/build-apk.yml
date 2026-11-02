@@ -22,6 +22,7 @@ on:
       - ui/five-step-flow-current-main-v2
       - fix/flutter-disable-unverified-referral-ui
       - feature/firebase-id-token-verification-core
+      - feat/database-driven-country-registry
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
