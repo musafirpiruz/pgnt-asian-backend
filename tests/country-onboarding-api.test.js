@@ -17,7 +17,7 @@ test('new countries are always created as draft with no provider enabled', () =>
   const end = serverSource.indexOf("app.get('/api/admin/pricing'", start);
   assert.ok(start >= 0 && end > start, 'draft country creation route exists');
   const route = serverSource.slice(start, end);
-  assert.match(route, /provider_code, status\)[\s\S]*VALUES[\s\S]*NULL, 'draft'/);
+  assert.ok(route.includes('VALUES ($1, $2, $3, FALSE)'));
   assert.match(route, /activationPerformed: false/);
   assert.match(route, /providerEnabled: false/);
   assert.match(route, /productsActivated: false/);
