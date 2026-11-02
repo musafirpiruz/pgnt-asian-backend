@@ -47,3 +47,15 @@ test('admin operator mappings are protected and remain inactive on creation', ()
   assert.match(route, /activationPerformed: false/);
   assert.match(route, /error\.code === '23505'/);
 });
+
+test('new provider mappings are admin-only and remain disabled', () => {
+  assert.match(serverSource, /app\\.post\\('\\/api\\/admin\\/countries\\/:countryCode\\/providers',\\s*requireAdmin/);
+  const start = serverSource.indexOf("app.post('/api/admin/countries/:countryCode/providers'");
+  const end = serverSource.indexOf("app.get('/api/admin/pricing'", start);
+  assert.ok(start >= 0 && end > start, 'disabled provider mapping route exists');
+  const route = serverSource.slice(start, end);
+  assert.match(route, /country_provider_settings/);
+  assert.match(route, /VALUES \\(\\$1, \\$2, \\$3, FALSE\\)/);
+  assert.match(route, /fulfillmentEnabled: false/);
+  assert.match(route, /activationPerformed: false/);
+});
