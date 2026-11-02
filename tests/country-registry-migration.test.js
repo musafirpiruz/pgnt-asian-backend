@@ -16,6 +16,7 @@ test('country registry migration 017 creates normalized configuration tables', (
     'countries',
     'country_localizations',
     'country_operators',
+    'country_operator_localizations',
     'operator_prefixes',
     'country_exchange_rates',
     'country_provider_settings',
