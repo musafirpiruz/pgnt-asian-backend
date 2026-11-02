@@ -49,7 +49,7 @@ test('admin operator mappings are protected and remain inactive on creation', ()
 });
 
 test('new provider mappings are admin-only and remain disabled', () => {
-  assert.match(serverSource, /app\\.post\\('\\/api\\/admin\\/countries\\/:countryCode\\/providers',\\s*requireAdmin/);
+  assert.ok(serverSource.includes("app.post('/api/admin/countries/:countryCode/providers', requireAdmin"));
   const start = serverSource.indexOf("app.post('/api/admin/countries/:countryCode/providers'");
   const end = serverSource.indexOf("app.get('/api/admin/pricing'", start);
   assert.ok(start >= 0 && end > start, 'disabled provider mapping route exists');
