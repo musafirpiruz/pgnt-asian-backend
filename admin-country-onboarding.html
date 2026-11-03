@@ -86,6 +86,12 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 </div>
 <div id="productDiscovery" class="status">No product lookup has been run.</div>
 <div style="overflow-x:auto"><table><thead><tr><th>Product ID</th><th>Name</th><th>Operator</th><th>Amount / Benefit</th><th>Country</th></tr></thead><tbody id="productsBody"><tr><td colspan="5">No results</td></tr></tbody></table></div>
+<div class="grid" style="margin-top:14px">
+<label>Discovered DT One product<select id="selectedProviderProduct"><option value="">Run product discovery first</option></select></label>
+<label>Existing catalog product ID<input id="catalogProductId" inputmode="numeric" placeholder="ID from the existing product catalog"></label>
+</div>
+<button id="mapOperatorProduct" type="button">Save explicit operator ↔ catalog mapping (inactive)</button>
+<p class="note">This action only links an already imported catalog row to the exact discovered DT One product ID and selected operator. It never activates the mapping or product.</p>
 </section>
 <section class="panel">
 <h2>Add a disabled provider-country mapping</h2>
@@ -216,7 +222,16 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
       const data=await api('/api/admin/dtone/products?'+params.toString());
       if(!data.verified) throw new Error(data.error || 'DT One product lookup was not verified.');
       const body=$('productsBody'); body.replaceChildren();
+      const discoveredSelect=$('selectedProviderProduct');
+      discoveredSelect.replaceChildren();
+      const placeholder=document.createElement('option');
+      placeholder.value=''; placeholder.textContent='Select a verified DT One product';
+      discoveredSelect.append(placeholder);
       (data.products||[]).forEach(product=>{
+        const option=document.createElement('option');
+        option.value=String(product.id);
+        option.textContent=String(product.id)+' — '+String(product.name || 'Unnamed product');
+        discoveredSelect.append(option);
         const row=document.createElement('tr');
         const operator=product.operator?.name || 'Unknown';
         const amount=product.benefits?.map(b=>b.amount?.total_excluding_tax ?? b.amount?.base).filter(x=>x!=null).join(', ')
@@ -234,6 +249,28 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
       $('productDiscovery').className='status error';
       message(error.message,'error');
     }
+  });
+  $('mapOperatorProduct').addEventListener('click',async()=>{
+    try {
+      const country=$('operatorCountry').value;
+      const operatorKey=$('operatorKey').value.trim().toLowerCase();
+      const providerOperatorId=$('operatorProviderId').value.trim();
+      const providerProductId=$('selectedProviderProduct').value.trim();
+      const catalogProductId=$('catalogProductId').value.trim();
+      if(!country || !operatorKey || !providerOperatorId) throw new Error('Select or save the verified operator first.');
+      if(!providerProductId || !/^\\d+$/.test(providerProductId)) throw new Error('Select a discovered DT One product.');
+      if(!catalogProductId || !/^[1-9]\\d*$/.test(catalogProductId)) throw new Error('Enter the existing catalog product ID.');
+      message('Saving explicit inactive operator-to-product mapping…');
+      const data=await api('/api/admin/countries/'+encodeURIComponent(country)+'/operators/'+encodeURIComponent(operatorKey)+'/products',{
+        method:'POST',
+        body:JSON.stringify({
+          provider_operator_id:providerOperatorId,
+          provider_product_id:providerProductId,
+          catalog_product_id:catalogProductId
+        })
+      });
+      message('Mapping saved. Active: '+data.mapping.active+'. Product activation: '+data.productActivated+'.','ok');
+    } catch(error) { message(error.message,'error'); }
   });
   $('createOperator').addEventListener('click',async()=>{
     try {
