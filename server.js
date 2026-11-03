@@ -3509,7 +3509,7 @@ app.get('/api/admin/countries/:countryCode/operators', requireAdmin, async (req,
              operator_key AS "operatorKey",display_name AS "displayName",
              active,verified_at AS "verifiedAt"
       FROM country_operators WHERE country_code=$1 ORDER BY display_name
-    `, [code]);
+    `, [code, ['en','ps','fa','ur','hi','bn'].includes(String(req.query.language || '').toLowerCase()) ? String(req.query.language).toLowerCase() : 'en']);
     return res.json({ countryCode: code, operators: result.rows });
   } catch (error) {
     console.error('Admin country operator list failed:', error.message);
@@ -3539,6 +3539,54 @@ app.get('/api/admin/countries/:countryCode/products', requireAdmin, async (req, 
   } catch (error) {
     console.error('Admin country product list failed:', error.message);
     return res.status(500).json({ error: 'Could not retrieve country products.' });
+  }
+});
+
+app.put('/api/admin/countries/:countryCode/operators/:operatorId/localizations', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorId = Number(req.params.operatorId);
+  const entries = Array.isArray(req.body?.localizations) ? req.body.localizations : [];
+  const allowed = new Set(['en','ps','fa','ur','hi','bn']);
+  if (!/^[A-Z]{2}$/.test(code) || !Number.isSafeInteger(operatorId) || operatorId <= 0 ||
+      entries.length !== 6 || entries.some(item => !allowed.has(String(item?.languageCode || '').toLowerCase()) ||
+        !String(item?.displayName || '').trim() || String(item.displayName).trim().length > 120) ||
+      new Set(entries.map(item => String(item.languageCode).toLowerCase())).size !== 6) {
+    return res.status(400).json({ error: 'Provide exactly six valid operator translations: en, ps, fa, ur, hi and bn.' });
+  }
+  try {
+    const state = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
+    if (state.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+    if (state.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing operator translations.' });
+    const operator = await pool.query('SELECT id FROM country_operators WHERE country_code=$1 AND id=$2', [code, operatorId]);
+    if (operator.rowCount !== 1) return res.status(404).json({ error: 'Operator was not found.' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const item of entries) {
+        await client.query(`
+          INSERT INTO country_operator_localizations (operator_id,language_code,display_name)
+          VALUES ($1,$2,$3)
+          ON CONFLICT (operator_id,language_code) DO UPDATE SET
+            display_name=EXCLUDED.display_name,updated_at=NOW()
+        `, [operatorId, String(item.languageCode).toLowerCase(), String(item.displayName).trim()]);
+      }
+      await client.query(`
+        UPDATE country_registry SET configuration_version=configuration_version+1,updated_at=NOW()
+        WHERE country_code=$1
+      `, [code]);
+      await client.query(`
+        INSERT INTO country_configuration_audit (country_code,actor,action,configuration_version,after_state)
+        SELECT country_code,'admin','operator_localizations_updated',configuration_version,$2::jsonb
+        FROM country_registry WHERE country_code=$1
+      `, [code, JSON.stringify({ operatorId, localizations: entries })]);
+      await client.query('COMMIT');
+    } catch (error) { try { await client.query('ROLLBACK'); } catch (_) {} throw error; }
+    finally { client.release(); }
+    return res.json({ saved: 6, operatorId, countryCode: code, activation: 'unchanged' });
+  } catch (error) {
+    console.error('Operator localization update failed:', error.message);
+    return res.status(500).json({ error: 'Could not save operator translations.' });
   }
 });
 
@@ -3652,6 +3700,14 @@ app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req,
     const languages = new Set(localizations.rows.map(row => String(row.language_code).toLowerCase().split('-')[0]));
     const requiredLanguages = ['en','ps','fa','ur','hi','bn'];
     const missingLanguages = requiredLanguages.filter(language => !languages.has(language));
+    const operatorLocalizationResult = await pool.query(`
+      SELECT COUNT(*)::int AS incomplete_count
+      FROM country_operators o
+      WHERE o.country_code=$1 AND o.active=TRUE
+        AND (SELECT COUNT(DISTINCT LOWER(language_code))
+             FROM country_operator_localizations l
+             WHERE l.operator_id=o.id AND LOWER(l.language_code)=ANY($2::text[])) < 6
+    `, [code, requiredLanguages]);
     const destinationFx = String(country.destination_currency).trim() === 'EUR'
       ? { rowCount: 1 }
       : await pool.query(`
@@ -3692,6 +3748,7 @@ app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req,
       ['country_pricing_active', pricing.rowCount === 1, 'Country pricing must be configured and explicitly activated.'],
       ['destination_fx_fresh', destinationFx.rowCount === 1, 'A fresh EUR reference rate for destination currency is required.'],
       ['localizations_complete', missingLanguages.length === 0, 'Country name translations are required in en, ps, fa, ur, hi and bn.'],
+      ['operator_localizations_complete', Number(operatorLocalizationResult.rows[0].incomplete_count) === 0 && Number(operators.rows[0].count) > 0, 'Every active operator needs translations in en, ps, fa, ur, hi and bn.'],
       ['product_prices_valid', priceChecksPassed, 'All active products must produce valid EUR customer prices within configured limits.'],
     ];
     const version = Number(country.configuration_version);
@@ -3734,7 +3791,7 @@ app.post('/api/admin/countries/:countryCode/activate', requireAdmin, async (req,
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const code = String(req.params.countryCode || '').trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ error: 'Invalid country code.' });
-  const required = ['provider_mapping_verified','phone_validation_configured','active_operator_available','active_product_available','country_pricing_active','destination_fx_fresh','localizations_complete','product_prices_valid'];
+  const required = ['provider_mapping_verified','phone_validation_configured','active_operator_available','active_product_available','country_pricing_active','destination_fx_fresh','localizations_complete','operator_localizations_complete','product_prices_valid'];
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -3816,9 +3873,12 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
     const country = await pool.query(`SELECT 1 FROM country_registry WHERE country_code=$1 AND status IN ('active','legacy')`, [code]);
     if (country.rowCount !== 1) return res.status(404).json({ error: 'Country is unavailable.' });
     const result = await pool.query(`
-      SELECT id,operator_key AS code,display_name AS name
-      FROM country_operators
-      WHERE country_code=$1 AND active=TRUE
+      SELECT o.id,o.operator_key AS code,
+             COALESCE(l.display_name,o.display_name) AS name
+      FROM country_operators o
+      LEFT JOIN country_operator_localizations l
+        ON l.operator_id=o.id AND LOWER(l.language_code)=$2
+      WHERE o.country_code=$1 AND o.active=TRUE
       UNION
       SELECT NULL::bigint AS id,
              LOWER(REGEXP_REPLACE(operator,'[^a-zA-Z0-9]+','-','g')) AS code,
