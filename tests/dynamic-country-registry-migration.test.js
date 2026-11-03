@@ -65,3 +65,13 @@ test('FX observations include source and freshness window and are not auto-appro
   assert.match(migration, /is_approved BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(migration, /CHECK \(expires_at > observed_at\)/);
 });
+
+test('legacy countries receive all six localized names and operator translations have a normalized table', () => {
+  const start = migrationSource.indexOf('const countryRegistryVersion = "017_dynamic_country_registry"');
+  const end = migrationSource.indexOf('const globalFxVersion', start);
+  const countryMigration = migrationSource.slice(start, end);
+  for (const language of ['ps','fa','en','ur','hi','bn']) assert.ok(countryMigration.includes("'" + language + "'"), language);
+  assert.match(countryMigration, /INSERT INTO country_localizations/);
+  assert.match(migrationSource, /CREATE TABLE IF NOT EXISTS country_operator_localizations/);
+  assert.match(migrationSource, /020_country_operator_localizations/);
+});
