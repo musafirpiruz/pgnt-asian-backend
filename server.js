@@ -761,6 +761,30 @@ async function resolveProductPricing(client, country, operator, product, pricing
     operatorFeePercent: percent, operatorPricingApplied: true };
 }
 
+// Validate registry-backed operator identity before resolving catalog products.
+// Legacy curated fallback operators have no registry key and retain the existing path.
+async function getVerifiedCountryOperator(client, country, operatorKey, providerOperatorId) {
+  if (!operatorKey && !providerOperatorId) return null;
+  if (!operatorKey || !providerOperatorId ||
+      !/^[a-z0-9][a-z0-9_-]{1,59}$/.test(operatorKey) ||
+      providerOperatorId.length > 120) {
+    throw new Error('A complete valid verified operator mapping is required.');
+  }
+  const result = await client.query(
+    `SELECT operator_key, display_name, provider_operator_id
+     FROM country_operators
+     WHERE country_code = $1 AND operator_key = $2 AND active = TRUE
+     LIMIT 1`,
+    [normalizeCountry(country), operatorKey]
+  );
+  if (result.rowCount !== 1 ||
+      String(result.rows[0].provider_operator_id || '') !== providerOperatorId) {
+    throw new Error('The selected network is not an active verified provider mapping.');
+  }
+  return result.rows[0];
+}
+
+
 function calculateFinalPrice(product, pricing) {
   // An enabled production product must have a verified DT One wholesale
   // cost. Never silently treat an old retail/display price as wholesale.
@@ -842,29 +866,6 @@ function calculateFinalPrice(product, pricing) {
       finalPriceCents
     ),
   };
-}
-
-// Validate registry-backed operator identity before resolving catalog products.
-// Legacy curated fallback operators have no registry key and retain the existing path.
-async function getVerifiedCountryOperator(client, country, operatorKey, providerOperatorId) {
-  if (!operatorKey && !providerOperatorId) return null;
-  if (!operatorKey || !providerOperatorId ||
-      !/^[a-z0-9][a-z0-9_-]{1,59}$/.test(operatorKey) ||
-      providerOperatorId.length > 120) {
-    throw new Error('A complete valid verified operator mapping is required.');
-  }
-  const result = await client.query(
-    `SELECT operator_key, display_name, provider_operator_id
-     FROM country_operators
-     WHERE country_code = $1 AND operator_key = $2 AND active = TRUE
-     LIMIT 1`,
-    [normalizeCountry(country), operatorKey]
-  );
-  if (result.rowCount !== 1 ||
-      String(result.rows[0].provider_operator_id || '') !== providerOperatorId) {
-    throw new Error('The selected network is not an active verified provider mapping.');
-  }
-  return result.rows[0];
 }
 
 // Get a quote using server-side product and pricing data.
