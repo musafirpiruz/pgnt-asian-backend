@@ -2916,15 +2916,20 @@ app.post('/api/admin/countries/:countryCode/dtone-mapping', requireAdmin, async 
 // are intentionally excluded until they pass the new registry preflight.
 app.get('/api/countries/active', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Country registry is unavailable.' });
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = ['en','ps','fa','ur','hi','bn'].includes(requestedLanguage) ? requestedLanguage : 'en';
   try {
     const result = await pool.query(`
-      SELECT country_code AS code, country_name AS name,
-             destination_currency AS currency, calling_code AS callingCode
-      FROM country_registry
-      WHERE status IN ('active','legacy')
-      ORDER BY country_name ASC
-    `);
-    return res.json({ countries: result.rows, count: result.rowCount });
+      SELECT c.country_code AS code,
+             COALESCE(l.display_name,c.country_name) AS name,
+             c.destination_currency AS currency, c.calling_code AS "callingCode"
+      FROM country_registry c
+      LEFT JOIN country_localizations l
+        ON l.country_code=c.country_code AND LOWER(l.language_code)= $1
+      WHERE c.status IN ('active','legacy')
+      ORDER BY name ASC
+    `, [language]);
+    return res.json({ countries: result.rows, count: result.rowCount, language });
   } catch (error) {
     console.error('Active country lookup failed:', error.message);
     return res.status(503).json({ error: 'Country registry is not ready.' });
