@@ -3209,7 +3209,7 @@ app.post('/api/admin/fx/rates/refresh', requireAdmin, async (req, res) => {
         await pool.query(`
           INSERT INTO fx_currency_rate_history
             (currency, units_per_eur, source, source_reference, observed_at, accepted, rejection_reason)
-          VALUES ($1,1,'frankfurter-v2',NULL,COALESCE($2,NOW()),FALSE,$3)
+          VALUES ($1,NULL,'frankfurter-v2',NULL,COALESCE($2,NOW()),FALSE,$3)
         `, [currency, observedAt && Number.isFinite(observedAt.getTime()) ? observedAt : new Date(), 'Provider response missing, invalid, future-dated, or older than five days.']);
         results.push({ currency, accepted: false, error: 'No fresh, valid EUR FX quote returned; previous saved rate was preserved.' });
         continue;
