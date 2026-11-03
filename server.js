@@ -2931,6 +2931,92 @@ app.get('/api/countries/active', async (req, res) => {
   }
 });
 
+// Refresh auditable EUR-base FX quotes for provider settlement currencies.
+// Rates are reference data only; stale/missing rates block dynamic catalog pricing.
+app.post('/api/admin/fx/rates/refresh', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const requested = Array.isArray(req.body?.currencies) ? req.body.currencies : [];
+  const currencies = [...new Set(requested.map(value => String(value || '').trim().toUpperCase()))];
+  if (!currencies.length || currencies.length > 40 || currencies.some(code => !/^[A-Z]{3}$/.test(code))) {
+    return res.status(400).json({ error: 'Provide 1 to 40 valid ISO 4217 currency codes.' });
+  }
+  const results = [];
+  for (const currency of currencies) {
+    if (currency === 'EUR') {
+      results.push({ currency, accepted: true, unitsPerEur: 1, source: 'base-currency' });
+      continue;
+    }
+    try {
+      const response = await fetch(`https://api.frankfurter.dev/v2/rate/EUR/${currency}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(12000),
+      });
+      const body = await response.text();
+      let data = null;
+      try { data = body ? JSON.parse(body) : null; } catch (_) {}
+      const rate = Number(data?.rate);
+      const observedAt = data?.date ? new Date(`${data.date}T00:00:00.000Z`) : null;
+      const now = new Date();
+      const ageMs = observedAt && Number.isFinite(observedAt.getTime()) ? now.getTime() - observedAt.getTime() : NaN;
+      const valid = response.ok && String(data?.base || '').toUpperCase() === 'EUR' &&
+        String(data?.quote || '').toUpperCase() === currency &&
+        Number.isFinite(rate) && rate > 0 &&
+        observedAt && Number.isFinite(observedAt.getTime()) &&
+        ageMs >= -86400000 && ageMs <= 5 * 86400000;
+      if (!valid) {
+        await pool.query(`
+          INSERT INTO fx_currency_rate_history
+            (currency, units_per_eur, source, source_reference, observed_at, accepted, rejection_reason)
+          VALUES ($1,1,'frankfurter-v2',NULL,COALESCE($2,NOW()),FALSE,$3)
+        `, [currency, observedAt && Number.isFinite(observedAt.getTime()) ? observedAt : new Date(), 'Provider response missing, invalid, future-dated, or older than five days.']);
+        results.push({ currency, accepted: false, error: 'No fresh, valid EUR FX quote returned; previous saved rate was preserved.' });
+        continue;
+      }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`
+          INSERT INTO fx_currency_rate_history
+            (currency, units_per_eur, source, source_reference, observed_at, accepted)
+          VALUES ($1,$2,'frankfurter-v2',$3,$4,TRUE)
+        `, [currency, rate, 'https://api.frankfurter.dev/v2/rate/EUR/' + currency, observedAt]);
+        await client.query(`
+          INSERT INTO fx_currency_rates
+            (currency, units_per_eur, source, source_reference, observed_at, expires_at, updated_at)
+          VALUES ($1,$2,'frankfurter-v2',$3,$4,$4 + INTERVAL '5 days',NOW())
+          ON CONFLICT (currency) DO UPDATE SET
+            units_per_eur = EXCLUDED.units_per_eur,
+            source = EXCLUDED.source,
+            source_reference = EXCLUDED.source_reference,
+            observed_at = EXCLUDED.observed_at,
+            expires_at = EXCLUDED.expires_at,
+            updated_at = NOW()
+        `, [currency, rate, 'https://api.frankfurter.dev/v2/rate/EUR/' + currency, observedAt]);
+        await client.query('COMMIT');
+      } catch (error) {
+        try { await client.query('ROLLBACK'); } catch (_) {}
+        throw error;
+      } finally {
+        client.release();
+      }
+      results.push({ currency, accepted: true, unitsPerEur: rate, observedAt: observedAt.toISOString(), source: 'frankfurter-v2' });
+    } catch (error) {
+      console.warn('FX refresh failed for currency', currency, error.message);
+      results.push({ currency, accepted: false, error: 'FX refresh failed; previously saved rate was preserved.' });
+    }
+  }
+  return res.json({
+    source: 'Frankfurter API v2',
+    baseCurrency: 'EUR',
+    maxAcceptedAgeDays: 5,
+    results,
+    acceptedCount: results.filter(item => item.accepted).length,
+    rejectedCount: results.filter(item => !item.accepted).length,
+    note: 'Reference rates only. No customer price or product activation was changed.',
+  });
+});
+
 // Read-only wallet integrity diagnostics. This deliberately exposes no
 // customer records and performs no wallet, ledger, payment, or refund writes.
 // Wallet APIs remain disabled until identity binding and ledger safeguards ship.
