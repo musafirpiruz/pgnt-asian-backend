@@ -710,8 +710,6 @@ async function runMigration() {
 
 
     // Version 017 introduces the additive, database-backed country onboarding registry.
-    // Existing four destinations are marked legacy-active to preserve current behavior;
-    // newly created destinations must begin in draft and are never sellable by default.
     const countryRegistryVersion = "017_dynamic_country_registry";
     const countryRegistryCheck = await client.query(
       "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
@@ -722,55 +720,9 @@ async function runMigration() {
       try {
         await client.query(`
           CREATE TABLE IF NOT EXISTS country_registry (
-            country_code CHAR(2) PRIMARY KEY
-              CHECK (country_code ~ '^[A-Z]{2}
-    );
-
-    console.error(
-      error.message
-    );
-
-    process.exitCode = 1;
-  } finally {
-    if (client) {
-      try {
-        await client.query("SELECT pg_advisory_unlock(738291);");
-      } catch (_) {}
-
-      client.release();
-    }
-
-    await pool.end();
-  }
-}
-
-runMigration();
-),
+            country_code CHAR(2) PRIMARY KEY CHECK (country_code ~ '^[A-Z]{2}$'),
             country_name VARCHAR(120) NOT NULL,
-            destination_currency CHAR(3) NOT NULL
-              CHECK (destination_currency ~ '^[A-Z]{3}
-    );
-
-    console.error(
-      error.message
-    );
-
-    process.exitCode = 1;
-  } finally {
-    if (client) {
-      try {
-        await client.query("SELECT pg_advisory_unlock(738291);");
-      } catch (_) {}
-
-      client.release();
-    }
-
-    await pool.end();
-  }
-}
-
-runMigration();
-),
+            destination_currency CHAR(3) NOT NULL CHECK (destination_currency ~ '^[A-Z]{3}$'),
             calling_code VARCHAR(8),
             phone_min_digits SMALLINT,
             phone_max_digits SMALLINT,
@@ -778,14 +730,12 @@ runMigration();
             provider_country_code VARCHAR(8),
             status VARCHAR(20) NOT NULL DEFAULT 'draft'
               CHECK (status IN ('draft','configuring','testing','active','disabled','legacy')),
-            configuration_version INTEGER NOT NULL DEFAULT 1
-              CHECK (configuration_version > 0),
+            configuration_version INTEGER NOT NULL DEFAULT 1 CHECK (configuration_version > 0),
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CHECK (
               (phone_min_digits IS NULL AND phone_max_digits IS NULL)
-              OR (phone_min_digits BETWEEN 1 AND 15
-                  AND phone_max_digits BETWEEN phone_min_digits AND 15)
+              OR (phone_min_digits BETWEEN 1 AND 15 AND phone_max_digits BETWEEN phone_min_digits AND 15)
             )
           );
 
@@ -861,10 +811,8 @@ runMigration();
             UNIQUE (provider, provider_product_id),
             CHECK (
               catalog_status <> 'active'
-              OR (verification_status = 'verified'
-                  AND price_currency_verified = TRUE
-                  AND wholesale_eur_cents > 0
-                  AND retail_eur_cents > 0)
+              OR (verification_status = 'verified' AND price_currency_verified = TRUE
+                  AND wholesale_eur_cents > 0 AND retail_eur_cents > 0)
             )
           );
           CREATE INDEX IF NOT EXISTS idx_country_products_country_status
@@ -893,8 +841,7 @@ runMigration();
             country_code CHAR(2) REFERENCES country_registry(country_code) ON DELETE SET NULL,
             provider VARCHAR(32) NOT NULL,
             run_type VARCHAR(32) NOT NULL,
-            status VARCHAR(20) NOT NULL
-              CHECK (status IN ('running','succeeded','partial','failed','cancelled')),
+            status VARCHAR(20) NOT NULL CHECK (status IN ('running','succeeded','partial','failed','cancelled')),
             pages_read INTEGER NOT NULL DEFAULT 0,
             items_seen INTEGER NOT NULL DEFAULT 0,
             items_verified INTEGER NOT NULL DEFAULT 0,
@@ -932,8 +879,7 @@ runMigration();
             ON country_configuration_audit(country_code, created_at DESC);
 
           INSERT INTO country_registry
-            (country_code, country_name, destination_currency, calling_code,
-             phone_min_digits, phone_max_digits, provider, provider_country_code, status)
+            (country_code,country_name,destination_currency,calling_code,phone_min_digits,phone_max_digits,provider,provider_country_code,status)
           VALUES
             ('AF','Afghanistan','AFN','+93',9,9,'dtone','AFG','legacy'),
             ('PK','Pakistan','PKR','+92',10,10,'dtone','PAK','legacy'),
@@ -942,7 +888,7 @@ runMigration();
           ON CONFLICT (country_code) DO NOTHING;
 
           INSERT INTO country_provider_mappings
-            (country_code, provider, provider_country_code, verification_status)
+            (country_code,provider,provider_country_code,verification_status)
           VALUES
             ('AF','dtone','AFG','pending'),
             ('PK','dtone','PAK','pending'),
@@ -955,7 +901,7 @@ runMigration();
           ON CONFLICT (version) DO NOTHING;
         `);
         await client.query("COMMIT");
-        console.log("Migration 017_dynamic_country_registry completed; existing country pricing/catalog and customer availability were not modified. New countries default to draft.");
+        console.log("Migration 017_dynamic_country_registry completed; existing pricing and catalog data were not changed.");
       } catch (migrationError) {
         await client.query("ROLLBACK");
         throw migrationError;
@@ -964,10 +910,7 @@ runMigration();
       console.log("Migration 017_dynamic_country_registry is already applied.");
     }
 
-
-    // Version 018 stores provider-currency FX rates independently of destination
-    // currency. This is required because DT One wholesale settlement currency
-    // may differ from the recipient's local currency (for example SGD vs AFN).
+    // Version 018 adds auditable EUR-base rates for provider settlement currencies.
     const globalFxVersion = "018_global_provider_currency_fx";
     const globalFxCheck = await client.query(
       "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
@@ -978,32 +921,8 @@ runMigration();
       try {
         await client.query(`
           CREATE TABLE IF NOT EXISTS fx_currency_rates (
-            currency CHAR(3) PRIMARY KEY
-              CHECK (currency ~ '^[A-Z]{3}
-    );
-
-    console.error(
-      error.message
-    );
-
-    process.exitCode = 1;
-  } finally {
-    if (client) {
-      try {
-        await client.query("SELECT pg_advisory_unlock(738291);");
-      } catch (_) {}
-
-      client.release();
-    }
-
-    await pool.end();
-  }
-}
-
-runMigration();
-),
-            units_per_eur NUMERIC(20,8) NOT NULL
-              CHECK (units_per_eur > 0),
+            currency CHAR(3) PRIMARY KEY CHECK (currency ~ '^[A-Z]{3}$'),
+            units_per_eur NUMERIC(20,8) NOT NULL CHECK (units_per_eur > 0),
             source VARCHAR(80) NOT NULL,
             source_reference TEXT,
             observed_at TIMESTAMPTZ NOT NULL,
@@ -1012,33 +931,9 @@ runMigration();
             CHECK (currency <> 'EUR' OR units_per_eur = 1),
             CHECK (expires_at > observed_at)
           );
-
           CREATE TABLE IF NOT EXISTS fx_currency_rate_history (
             id BIGSERIAL PRIMARY KEY,
-            currency CHAR(3) NOT NULL
-              CHECK (currency ~ '^[A-Z]{3}
-    );
-
-    console.error(
-      error.message
-    );
-
-    process.exitCode = 1;
-  } finally {
-    if (client) {
-      try {
-        await client.query("SELECT pg_advisory_unlock(738291);");
-      } catch (_) {}
-
-      client.release();
-    }
-
-    await pool.end();
-  }
-}
-
-runMigration();
-),
+            currency CHAR(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
             units_per_eur NUMERIC(20,8),
             source VARCHAR(80) NOT NULL,
             source_reference TEXT,
@@ -1050,18 +945,16 @@ runMigration();
           );
           CREATE INDEX IF NOT EXISTS idx_fx_currency_history_currency_time
             ON fx_currency_rate_history(currency, observed_at DESC);
-
           INSERT INTO fx_currency_rates
-            (currency, units_per_eur, source, source_reference, observed_at, expires_at)
-          VALUES ('EUR', 1, 'base-currency', 'EUR base', NOW(), NOW() + INTERVAL '36500 days')
+            (currency,units_per_eur,source,source_reference,observed_at,expires_at)
+          VALUES ('EUR',1,'base-currency','EUR base',NOW(),NOW()+INTERVAL '36500 days')
           ON CONFLICT (currency) DO NOTHING;
-
           INSERT INTO schema_migrations (version)
           VALUES ('018_global_provider_currency_fx')
           ON CONFLICT (version) DO NOTHING;
         `);
         await client.query("COMMIT");
-        console.log("Migration 018_global_provider_currency_fx completed; provider settlement FX is separated from recipient destination FX.");
+        console.log("Migration 018_global_provider_currency_fx completed.");
       } catch (migrationError) {
         await client.query("ROLLBACK");
         throw migrationError;
@@ -1070,9 +963,7 @@ runMigration();
       console.log("Migration 018_global_provider_currency_fx is already applied.");
     }
 
-
-    // Version 019 adds independent, admin-configured pricing controls per
-    // destination country. New pricing rows are inactive until reviewed.
+    // Version 019 adds per-country EUR pricing controls, disabled by default.
     const countryPricingVersion = "019_country_pricing_settings";
     const countryPricingCheck = await client.query(
       "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
@@ -1099,7 +990,7 @@ runMigration();
           ON CONFLICT (version) DO NOTHING;
         `);
         await client.query("COMMIT");
-        console.log("Migration 019_country_pricing_settings completed; country pricing defaults remain inactive until admin review.");
+        console.log("Migration 019_country_pricing_settings completed.");
       } catch (migrationError) {
         await client.query("ROLLBACK");
         throw migrationError;
