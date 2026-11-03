@@ -9371,7 +9371,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       });
       await _loadCountryCatalog();
     } catch (_) {
-      // Preserve the last known bundled destinations when the registry is offline.
+      // Keep bundled countries available while the backend is offline.
     }
   }
 
@@ -9385,17 +9385,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
             headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 12)),
       ]);
       if (!mounted || countryCode != selectedCountry.code) return;
-      final operatorBody = responses[0].statusCode == 200
-          ? jsonDecode(responses[0].body) : null;
-      final productBody = responses[1].statusCode == 200
-          ? jsonDecode(responses[1].body) : null;
+      final operatorBody = responses[0].statusCode == 200 ? jsonDecode(responses[0].body) : null;
+      final productBody = responses[1].statusCode == 200 ? jsonDecode(responses[1].body) : null;
       final nextOperators = <MobileOperator>[];
       if (operatorBody is Map && operatorBody['operators'] is List) {
         for (final raw in operatorBody['operators'] as List) {
           if (raw is! Map) continue;
           final name = (raw['name'] ?? '').toString().trim();
-          if (name.isEmpty) continue;
-          nextOperators.add(MobileOperator(countryCode, name, '📶'));
+          if (name.isNotEmpty) nextOperators.add(MobileOperator(countryCode, name, '📶'));
         }
       }
       final nextAmounts = <int>{};
@@ -9404,7 +9401,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           if (raw is! Map) continue;
           final amount = raw['amount'];
           final value = amount is num ? amount.toInt() : int.tryParse('$amount');
-          if (value != null && value > 0 && value == amount) nextAmounts.add(value);
+          if (value != null && value > 0 && amount is num && amount == value) nextAmounts.add(value);
         }
       }
       setState(() {
@@ -9415,11 +9412,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             !_loadedCountryOperators.any((item) => item.name == selectedOperator!.name)) {
           selectedOperator = null;
         }
-        if (_loadedCountryOperators.isNotEmpty && selectedOperator == null) {
-          selectedOperator = null;
-        }
-        if (_loadedCountryAmounts.isNotEmpty &&
-            !_loadedCountryAmounts.contains(selectedAmount)) {
+        if (_loadedCountryAmounts.isNotEmpty && !_loadedCountryAmounts.contains(selectedAmount)) {
           selectedAmount = _loadedCountryAmounts.first;
         }
       });
