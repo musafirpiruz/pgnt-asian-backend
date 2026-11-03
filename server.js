@@ -2828,6 +2828,7 @@ app.post('/api/admin/countries/:countryCode/dtone-mapping', requireAdmin, async 
       [countryCode]
     );
     if (local.rowCount !== 1) return res.status(404).json({ verified: false, error: 'Country draft was not found.' });
+    if (local.rows[0].status === 'active') return res.status(409).json({ verified: false, error: 'Disable the country before changing its provider mapping.' });
 
     let providerCountry = null;
     let pagesChecked = 0;
@@ -3377,6 +3378,9 @@ app.put('/api/admin/countries/:countryCode/pricing', requireAdmin, async (req, r
     return res.status(400).json({ error: 'Invalid country pricing settings.' });
   }
   try {
+    const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
+    if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+    if (countryState.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing its pricing.' });
     const client = await pool.connect();
     let result;
     try {
@@ -3424,6 +3428,9 @@ app.put('/api/admin/countries/:countryCode/localizations', requireAdmin, async (
         !String(item?.displayName || '').trim() || String(item.displayName).trim().length > 120)) {
     return res.status(400).json({ error: 'Provide valid localized country names.' });
   }
+  const state = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
+  if (state.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+  if (state.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing its localizations.' });
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -3462,6 +3469,9 @@ app.patch('/api/admin/countries/:countryCode/operators/:operatorId', requireAdmi
     return res.status(400).json({ error: 'Invalid country or operator ID.' });
   }
   try {
+    const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
+    if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+    if (countryState.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing operators.' });
     const result = await pool.query(`
       UPDATE country_operators SET active=$3,updated_at=NOW()
       WHERE country_code=$1 AND id=$2 AND ($3=FALSE OR verified_at IS NOT NULL)
@@ -3489,6 +3499,9 @@ app.patch('/api/admin/countries/:countryCode/products/:productId', requireAdmin,
     return res.status(400).json({ error: 'Invalid product review request.' });
   }
   try {
+    const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
+    if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+    if (countryState.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing product review status.' });
     const product = await pool.query(`
       SELECT p.id,p.wholesale_currency,p.price_currency_verified,p.verification_status,
              p.wholesale_eur_cents,p.retail_eur_cents
