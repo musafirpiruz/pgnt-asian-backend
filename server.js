@@ -3050,7 +3050,7 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
       const retailAmount = Number(item?.prices?.retail?.amount);
       const retailCurrency = String(item?.prices?.retail?.unit || '').trim().toUpperCase();
       const reject = reason => rejected.push({ productId, reason });
-      if (!operatorName || !providerOperatorId || !/^[A-Z]{3}$/.test(denominationCurrency) ||
+      if (!/^\\d+$/.test(productId) || !operatorName || !providerOperatorId || !/^[A-Z]{3}$/.test(denominationCurrency) ||
           denominationCurrency !== destinationCurrency || !Number.isFinite(denomination) || denomination <= 0) {
         reject('Missing operator ID/name or invalid destination denomination/currency.');
         continue;
@@ -3140,7 +3140,18 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
             fxObservedAt: product.fxObservedAt,
             source: 'DT One product detail endpoint',
           })]);
-        if (insert.rowCount === 1) imported.push(insert.rows[0]);
+        if (insert.rowCount === 1) {
+          await client.query(`
+            INSERT INTO product_catalog
+              (country,operator,amount,currency,product_id,price_eur_cents,
+               wholesale_price_eur_cents,bonus_amount,active,updated_at)
+            VALUES ($1,$2,$3,$4,$5::bigint,$6,$7,0,FALSE,NOW())
+            ON CONFLICT DO NOTHING
+          `, [countryCode, product.operatorName, product.denomination,
+            product.denominationCurrency, product.productId,
+            product.retailEurCents, product.wholesaleEurCents]);
+          imported.push(insert.rows[0]);
+        }
       }
       await client.query(`
         UPDATE country_sync_runs SET status='succeeded', pages_read=$2, items_seen=$3,
@@ -3419,6 +3430,12 @@ app.patch('/api/admin/countries/:countryCode/products/:productId', requireAdmin,
       WHERE country_code=$1 AND id=$2
       RETURNING id,provider_product_id,catalog_status,verification_status,price_currency_verified
     `, [code, productId, status]);
+    if (/^\\d+$/.test(String(product.rows[0].provider_product_id))) {
+      await pool.query(`
+        UPDATE product_catalog SET active=$3,updated_at=NOW()
+        WHERE country=$1 AND product_id=$2::bigint
+      `, [code, product.rows[0].provider_product_id, status === 'active']);
+    }
     await pool.query(`
       UPDATE country_registry SET configuration_version=configuration_version+1,updated_at=NOW()
       WHERE country_code=$1 AND status <> 'active'
@@ -3607,6 +3624,51 @@ app.post('/api/admin/countries/:countryCode/disable', requireAdmin, async (req, 
   } catch (error) {
     console.error('Country disable failed:', error.message);
     return res.status(500).json({ error: 'Could not disable country.' });
+  }
+});
+
+// Customer APIs expose only active, reviewed country configuration.
+app.get('/api/countries/:countryCode/operators', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Country service is unavailable.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  try {
+    const country = await pool.query(`SELECT 1 FROM country_registry WHERE country_code=$1 AND status='active'`, [code]);
+    if (country.rowCount !== 1) return res.status(404).json({ error: 'Country is unavailable.' });
+    const result = await pool.query(`
+      SELECT id,operator_key AS code,display_name AS name
+      FROM country_operators
+      WHERE country_code=$1 AND active=TRUE
+      ORDER BY display_name
+    `, [code]);
+    return res.json({ countryCode: code, operators: result.rows });
+  } catch (error) {
+    console.error('Customer country operator lookup failed:', error.message);
+    return res.status(503).json({ error: 'Operators are temporarily unavailable.' });
+  }
+});
+
+app.get('/api/countries/:countryCode/products', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Country service is unavailable.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  try {
+    const country = await pool.query(`SELECT destination_currency FROM country_registry WHERE country_code=$1 AND status='active'`, [code]);
+    if (country.rowCount !== 1) return res.status(404).json({ error: 'Country is unavailable.' });
+    const result = await pool.query(`
+      SELECT p.id,p.provider_product_id AS "providerProductId",
+             o.operator_key AS "operatorCode",o.display_name AS operator,
+             p.denomination AS amount,p.destination_currency AS currency,
+             p.retail_eur_cents AS "providerRetailEurCents",
+             p.wholesale_eur_cents AS "wholesaleEurCents"
+      FROM country_products p
+      JOIN country_operators o ON o.id=p.operator_id
+      WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE
+        AND p.verification_status='verified' AND p.price_currency_verified=TRUE
+      ORDER BY o.display_name,p.denomination
+    `, [code]);
+    return res.json({ countryCode: code, currency: String(country.rows[0].destination_currency).trim(), products: result.rows });
+  } catch (error) {
+    console.error('Customer country product lookup failed:', error.message);
+    return res.status(503).json({ error: 'Products are temporarily unavailable.' });
   }
 });
 
