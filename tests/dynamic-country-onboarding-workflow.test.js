@@ -25,7 +25,7 @@ test('DT One country discovery is paginated, read-only, and never activates a co
 
 test('provider country mapping is verified against DT One before it is saved', () => {
   const start = server.indexOf("app.post('/api/admin/countries/:countryCode/dtone-mapping'");
-  const end = server.indexOf('// Customer discovery exposes only active country configuration.', start);
+  const end = server.indexOf('// Customer discovery exposes only explicitly active countries.', start);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start, end);
   assert.match(route, /\/v1\/countries/);
