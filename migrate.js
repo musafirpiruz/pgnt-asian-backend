@@ -709,6 +709,231 @@ async function runMigration() {
     }
 
 
+    // Version 019 adds an explicit, inactive-by-default link between
+    // registry operators and existing DT One product_catalog records.
+    // It does not import, activate, price, or modify any existing product.
+    const operatorProductMappingVersion = "019_country_operator_product_mapping";
+    const operatorProductMappingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [operatorProductMappingVersion]
+    );
+    if (operatorProductMappingCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_operator_products (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL,
+            operator_key TEXT NOT NULL,
+            product_catalog_id BIGINT NOT NULL UNIQUE REFERENCES product_catalog(id) ON DELETE RESTRICT,
+            provider_operator_id TEXT NOT NULL,
+            provider_product_id TEXT NOT NULL,
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            FOREIGN KEY (country_code, operator_key)
+              REFERENCES country_operators(country_code, operator_key) ON DELETE RESTRICT,
+            UNIQUE (country_code, operator_key, provider_product_id),
+            CHECK (length(provider_operator_id) BETWEEN 1 AND 120),
+            CHECK (provider_product_id ~ '^[0-9]+
+    // Existing pricing, catalog, orders, refunds, and wallet data are untouched.
+    const countryRegistryVersion = "017_database_country_registry";
+    const countryRegistryCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [countryRegistryVersion]
+    );
+    if (countryRegistryCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS countries (
+            code CHAR(2) PRIMARY KEY CHECK (code ~ '^[A-Z][A-Z]$'),
+            name_en TEXT NOT NULL,
+            local_currency CHAR(3) NOT NULL CHECK (local_currency ~ '^[A-Z][A-Z][A-Z]$'),
+            calling_code VARCHAR(8),
+            phone_min_digits SMALLINT CHECK (phone_min_digits IS NULL OR phone_min_digits BETWEEN 4 AND 15),
+            phone_max_digits SMALLINT CHECK (phone_max_digits IS NULL OR phone_max_digits BETWEEN 4 AND 15),
+            provider_code TEXT,
+            status TEXT NOT NULL DEFAULT 'draft'
+              CHECK (status IN ('draft','testing','active','disabled')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (phone_min_digits IS NULL OR phone_max_digits IS NULL OR phone_min_digits <= phone_max_digits)
+          );
+
+          CREATE TABLE IF NOT EXISTS country_localizations (
+            country_code CHAR(2) NOT NULL REFERENCES countries(code) ON DELETE CASCADE,
+            language_code VARCHAR(8) NOT NULL,
+            display_name TEXT NOT NULL,
+            is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (country_code, language_code)
+          );
+
+          CREATE TABLE IF NOT EXISTS country_operators (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES countries(code) ON DELETE CASCADE,
+            operator_key TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            provider_operator_id TEXT,
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (country_code, operator_key)
+          );
+
+          CREATE TABLE IF NOT EXISTS country_operator_localizations (
+            country_code CHAR(2) NOT NULL,
+            operator_key TEXT NOT NULL,
+            language_code VARCHAR(8) NOT NULL,
+            display_name TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (country_code, operator_key, language_code),
+            FOREIGN KEY (country_code, operator_key)
+              REFERENCES country_operators(country_code, operator_key) ON DELETE CASCADE
+          );
+
+          CREATE TABLE IF NOT EXISTS operator_prefixes (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES countries(code) ON DELETE CASCADE,
+            operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
+            prefix VARCHAR(20) NOT NULL,
+            priority SMALLINT NOT NULL DEFAULT 100,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (country_code, prefix, operator_id)
+          );
+
+          CREATE TABLE IF NOT EXISTS country_exchange_rates (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES countries(code) ON DELETE CASCADE,
+            base_currency CHAR(3) NOT NULL DEFAULT 'EUR' CHECK (base_currency = 'EUR'),
+            quote_currency CHAR(3) NOT NULL,
+            rate NUMERIC(20,8) NOT NULL CHECK (rate > 0),
+            source TEXT NOT NULL,
+            observed_at TIMESTAMPTZ NOT NULL,
+            fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            is_reference_only BOOLEAN NOT NULL DEFAULT TRUE,
+            UNIQUE (country_code, source, observed_at)
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_exchange_rates_latest
+            ON country_exchange_rates(country_code, fetched_at DESC);
+
+          CREATE TABLE IF NOT EXISTS country_provider_settings (
+            country_code CHAR(2) NOT NULL REFERENCES countries(code) ON DELETE CASCADE,
+            provider_code TEXT NOT NULL,
+            provider_country_code TEXT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (country_code, provider_code)
+          );
+
+          INSERT INTO countries
+            (code, name_en, local_currency, calling_code, phone_min_digits, phone_max_digits, provider_code, status)
+          VALUES
+            ('AF','Afghanistan','AFN','+93',9,9,'DTONE','active'),
+            ('PK','Pakistan','PKR','+92',10,10,'DTONE','active'),
+            ('IN','India','INR','+91',10,10,'DTONE','active'),
+            ('BD','Bangladesh','BDT','+880',10,10,'DTONE','active')
+          ON CONFLICT (code) DO NOTHING;
+
+          INSERT INTO country_localizations(country_code, language_code, display_name, is_fallback)
+          VALUES
+            ('AF','en','Afghanistan',FALSE),
+            ('AF','ps','افغانستان',FALSE),
+            ('AF','fa','افغانستان',FALSE),
+            ('AF','ur','افغانستان',FALSE),
+            ('AF','hi','अफ़ग़ानिस्तान',FALSE),
+            ('AF','bn','আফগানিস্তান',FALSE),
+            ('PK','en','Pakistan',FALSE),
+            ('PK','ps','پاکستان',FALSE),
+            ('PK','fa','پاکستان',FALSE),
+            ('PK','ur','پاکستان',FALSE),
+            ('PK','hi','पाकिस्तान',FALSE),
+            ('PK','bn','পাকিস্তান',FALSE),
+            ('IN','en','India',FALSE),
+            ('IN','ps','هند',FALSE),
+            ('IN','fa','هند',FALSE),
+            ('IN','ur','بھارت',FALSE),
+            ('IN','hi','भारत',FALSE),
+            ('IN','bn','ভারত',FALSE),
+            ('BD','en','Bangladesh',FALSE),
+            ('BD','ps','بنګله‌دېش',FALSE),
+            ('BD','fa','بنگلادیش',FALSE),
+            ('BD','ur','بنگلہ دیش',FALSE),
+            ('BD','hi','बांग्लादेश',FALSE),
+            ('BD','bn','বাংলাদেশ',FALSE)
+          ON CONFLICT (country_code, language_code) DO NOTHING;
+
+          INSERT INTO country_provider_settings(country_code, provider_code, provider_country_code, enabled)
+          VALUES
+            ('AF','DTONE','AFG',TRUE),
+            ('PK','DTONE','PAK',TRUE),
+            ('IN','DTONE','IND',TRUE),
+            ('BD','DTONE','BGD',TRUE)
+          ON CONFLICT (country_code, provider_code) DO NOTHING;
+
+          INSERT INTO schema_migrations(version)
+          VALUES ('017_database_country_registry')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 017_database_country_registry completed; existing financial and catalog data was not changed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 017_database_country_registry is already applied.");
+    }
+
+
+
+    // Version 017 introduces a database-backed destination-country registry.
+    // Existing pricing, catalog, orders, refunds, and wallet data are untouched.
+    
+  } catch (error) {
+    console.error(
+      "DATABASE MIGRATION FAILED:"
+    );
+
+    console.error(
+      error.message
+    );
+
+    process.exitCode = 1;
+  } finally {
+    if (client) {
+      try {
+        await client.query("SELECT pg_advisory_unlock(738291);");
+      } catch (_) {}
+
+      client.release();
+    }
+
+    await pool.end();
+  }
+}
+
+runMigration();
+)
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_operator_products_active
+            ON country_operator_products(country_code, operator_key, active);
+          INSERT INTO schema_migrations(version)
+          VALUES ('019_country_operator_product_mapping')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 019_country_operator_product_mapping completed; all mappings remain inactive.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 019_country_operator_product_mapping is already applied.");
+    }
+
     // Version 017 introduces a database-backed destination-country registry.
     // Existing pricing, catalog, orders, refunds, and wallet data are untouched.
     const countryRegistryVersion = "017_database_country_registry";
