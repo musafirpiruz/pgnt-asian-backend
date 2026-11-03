@@ -3379,7 +3379,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   t('walletServerBalanceNote'),
                   style: TextStyle(
                     color: Colors.white70,
@@ -3412,7 +3412,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ),
               ),
               title: const Text('Stripe'),
-              subtitle: const Text(
+              subtitle: Text(
                 t('walletStripeDescription'),
               ),
               trailing: const Icon(Icons.lock_outline),
@@ -3432,7 +3432,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ),
               ),
               title: Text(t('history')),
-              subtitle: const Text(
+              subtitle: Text(
                 t('walletHistoryDescription'),
               ),
               trailing: const Icon(Icons.chevron_right),
@@ -3449,7 +3449,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Icons.shield_outlined,
           ),
 
-          const Card(
+          Card(
             child: ListTile(
               leading: Icon(
                 Icons.verified_user_outlined,
@@ -3742,9 +3742,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
           Icons.mark_email_unread_outlined,
         ),
         if (supportOrders.isEmpty)
-          const Card(
+          Card(
             child: Padding(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               child: Text(
                 t('supportNoOrder'),
                 style: TextStyle(height: 1.45),
