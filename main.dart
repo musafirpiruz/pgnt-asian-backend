@@ -126,12 +126,19 @@ class MobileOperator {
   final String countryCode;
   final String name;
   final String icon;
+  // Stable backend/provider identifiers are retained when an operator is
+  // loaded from the verified country registry. Curated fallback entries
+  // intentionally leave these nullable until they are mapped by an admin.
+  final String? operatorKey;
+  final String? providerOperatorId;
 
   const MobileOperator(
     this.countryCode,
     this.name,
-    this.icon,
-  );
+    this.icon, {
+    this.operatorKey,
+    this.providerOperatorId,
+  });
 }
 
 // Brand-inspired compact marks keep operator cards recognizable without
@@ -1980,7 +1987,25 @@ class _PgntHomePageState extends State<PgntHomePage> {
             .toString()
             .trim();
         if (name.isEmpty) return null;
-        return MobileOperator(countryCode, name, '📶');
+        final operatorKey = (row['operator_key'] ?? row['operatorKey'])
+            ?.toString()
+            .trim();
+        final providerOperatorId =
+            (row['provider_operator_id'] ?? row['providerOperatorId'])
+                ?.toString()
+                .trim();
+        return MobileOperator(
+          countryCode,
+          name,
+          '📶',
+          operatorKey: operatorKey == null || operatorKey.isEmpty
+              ? null
+              : operatorKey,
+          providerOperatorId:
+              providerOperatorId == null || providerOperatorId.isEmpty
+                  ? null
+                  : providerOperatorId,
+        );
       }).whereType<MobileOperator>().toList();
 
       if (!mounted || selectedCountry.code != countryCode) return;
