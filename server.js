@@ -353,6 +353,12 @@ const SUPPORTED_COUNTRIES = Object.freeze({
   },
 });
 
+// Runtime registry cache. Existing four destinations remain available for
+// backward compatibility; additional countries are loaded only when active.
+const DYNAMIC_COUNTRY_CONFIG = new Map(
+  Object.entries(SUPPORTED_COUNTRIES).map(([code, config]) => [code, config])
+);
+
 // Normalize and validate country code.
 function normalizeCountry(value) {
   return String(value || '')
@@ -361,17 +367,14 @@ function normalizeCountry(value) {
 }
 
 function isValidCountry(country) {
-  return Object.prototype.hasOwnProperty.call(
-    SUPPORTED_COUNTRIES,
-    normalizeCountry(country)
-  );
+  return DYNAMIC_COUNTRY_CONFIG.has(normalizeCountry(country));
 }
 
-// Get the recipient's local currency.
+// Get the recipient's local currency from the runtime country registry.
 function countryCurrency(country) {
-  return getCountryCurrency(
-    normalizeCountry(country)
-  );
+  const config = DYNAMIC_COUNTRY_CONFIG.get(normalizeCountry(country));
+  if (!config?.currency) throw new Error('Unsupported country.');
+  return config.currency;
 }
 
 // Customer payments always use EUR.
@@ -394,7 +397,7 @@ function normalizePaymentCurrency(value) {
 // beginning with the country's calling code.
 function normalizePhone(value, country) {
   const code = normalizeCountry(country);
-  const config = SUPPORTED_COUNTRIES[code];
+  const config = DYNAMIC_COUNTRY_CONFIG.get(code);
 
   if (!config) {
     throw new Error('Unsupported country.');
