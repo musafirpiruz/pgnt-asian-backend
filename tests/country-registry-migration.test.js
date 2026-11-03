@@ -48,3 +48,23 @@ test('country registry migration is additive and does not rewrite money or fulfi
   assert.match(migration, /'draft','testing','active','disabled'/);
   assert.match(migration, /is_reference_only BOOLEAN NOT NULL DEFAULT TRUE/);
 });
+
+test('country registry seeds reviewed country names in all six supported languages', () => {
+  const start = migrationSource.indexOf('const countryRegistryVersion = "017_database_country_registry"');
+  const end = migrationSource.indexOf('} catch (error)', start);
+  const migration = migrationSource.slice(start, end);
+  for (const row of [
+    "('AF','ps','افغانستان',FALSE)",
+    "('AF','fa','افغانستان',FALSE)",
+    "('PK','ur','پاکستان',FALSE)",
+    "('IN','hi','भारत',FALSE)",
+    "('IN','bn','ভারত',FALSE)",
+    "('BD','ps','بنګله‌دېش',FALSE)",
+    "('BD','fa','بنگلادیش',FALSE)",
+    "('BD','ur','بنگلہ دیش',FALSE)",
+    "('BD','hi','बांग्लादेश',FALSE)",
+    "('BD','bn','বাংলাদেশ',FALSE)",
+  ]) assert.ok(migration.includes(row), 'localized country seed is present: ' + row);
+  assert.match(migration, /INSERT INTO country_localizations\(country_code, language_code, display_name, is_fallback\)/);
+  assert.match(migration, /ON CONFLICT \(country_code, language_code\) DO NOTHING/);
+});
