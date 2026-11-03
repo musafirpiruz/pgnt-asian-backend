@@ -5066,6 +5066,62 @@ app.post('/api/admin/countries/:countryCode/operators/:operatorKey/products', re
       return res.status(409).json({ error: 'Provider operator ID does not match the saved country operator.' });
     }
 
+    const providerCountry = await pool.query(
+      `SELECT provider_country_code FROM country_provider_settings
+       WHERE country_code = $1 AND provider_code = 'DTONE' AND enabled = TRUE
+       LIMIT 1`,
+      [countryCode]
+    );
+    if (providerCountry.rowCount !== 1) {
+      return res.status(409).json({ error: 'No enabled DT One country mapping exists for this destination.' });
+    }
+
+    // Re-verify the exact provider product and its owning operator server-side.
+    // Client-submitted IDs and browser discovery results are not trusted as proof.
+    let verifiedProviderProduct = null;
+    let providerCatalogComplete = false;
+    for (let page = 1; page <= 20; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+      url.searchParams.set('country_iso_code', String(providerCountry.rows[0].provider_country_code).trim().toUpperCase());
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(45000),
+      });
+      const responseText = await response.text();
+      let data;
+      try { data = responseText ? JSON.parse(responseText) : null; } catch (_) { data = null; }
+      if (!response.ok) {
+        console.warn('DT One operator-product mapping verification failed.', { providerHttpStatus: response.status, page });
+        return res.status(502).json({ error: 'Could not verify the selected product against DT One.', providerHttpStatus: response.status });
+      }
+      const products = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      verifiedProviderProduct = products.find((item) => String(item?.id ?? '') === providerProductId) || verifiedProviderProduct;
+      if (verifiedProviderProduct) {
+        providerCatalogComplete = true;
+        break;
+      }
+      if (products.length < 100) {
+        providerCatalogComplete = true;
+        break;
+      }
+      if (page === 20) providerCatalogComplete = false;
+    }
+    if (!verifiedProviderProduct && !providerCatalogComplete) {
+      return res.status(503).json({ error: 'DT One product catalog verification reached its page safety limit. No mapping was saved.' });
+    }
+    if (!verifiedProviderProduct) {
+      return res.status(404).json({ error: 'The selected product ID was not found in the verified DT One country catalog.' });
+    }
+    const providerProductOperatorId = String(verifiedProviderProduct?.operator?.id ?? '');
+    const providerProductCountry = String(verifiedProviderProduct?.operator?.country?.iso_code || '').toUpperCase();
+    if (providerProductOperatorId !== providerOperatorId ||
+        providerProductCountry !== String(providerCountry.rows[0].provider_country_code).trim().toUpperCase()) {
+      return res.status(409).json({ error: 'The DT One product does not belong to the selected verified operator and country.' });
+    }
+
     const product = await pool.query(
       `SELECT id, country, product_id, amount, currency, active
        FROM product_catalog WHERE id = $1 LIMIT 1`,
