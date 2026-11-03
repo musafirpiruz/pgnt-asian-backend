@@ -503,6 +503,15 @@ function validateCheckoutInput(body) {
   const rawProductId = String(body.productId || '').trim();
   const productId = rawProductId || null;
   const operator = String(body.operator || '').trim();
+  const rawOperatorKey = body.operatorKey == null ? '' : String(body.operatorKey).trim();
+  const rawProviderOperatorId = body.providerOperatorId == null ? '' : String(body.providerOperatorId).trim();
+  const operatorKey = rawOperatorKey || null;
+  const providerOperatorId = rawProviderOperatorId || null;
+  if ((operatorKey && !/^[a-z0-9][a-z0-9_-]{1,59}$/.test(operatorKey)) ||
+      (providerOperatorId && providerOperatorId.length > 120) ||
+      Boolean(operatorKey) !== Boolean(providerOperatorId)) {
+    throw new Error('Invalid verified operator mapping.');
+  }
   const amount = Number(body.amount);
 
   if (productId && !/^[1-9]\d*$/.test(productId)) {
@@ -522,6 +531,8 @@ function validateCheckoutInput(body) {
     phone: phoneResult.phone,
     productId,
     operator,
+    operatorKey,
+    providerOperatorId,
     amount,
     paymentCurrency,
     recipientCurrency: countryCurrency(country),
@@ -749,6 +760,30 @@ async function resolveProductPricing(client, country, operator, product, pricing
   return { ...pricing, feeCents: fixed + Math.ceil(wholesale * percent / 100), operatorFeeCents: fixed,
     operatorFeePercent: percent, operatorPricingApplied: true };
 }
+
+// Validate registry-backed operator identity before resolving catalog products.
+// Legacy curated fallback operators have no registry key and retain the existing path.
+async function getVerifiedCountryOperator(client, country, operatorKey, providerOperatorId) {
+  if (!operatorKey && !providerOperatorId) return null;
+  if (!operatorKey || !providerOperatorId ||
+      !/^[a-z0-9][a-z0-9_-]{1,59}$/.test(operatorKey) ||
+      providerOperatorId.length > 120) {
+    throw new Error('A complete valid verified operator mapping is required.');
+  }
+  const result = await client.query(
+    `SELECT operator_key, display_name, provider_operator_id
+     FROM country_operators
+     WHERE country_code = $1 AND operator_key = $2 AND active = TRUE
+     LIMIT 1`,
+    [normalizeCountry(country), operatorKey]
+  );
+  if (result.rowCount !== 1 ||
+      String(result.rows[0].provider_operator_id || '') !== providerOperatorId) {
+    throw new Error('The selected network is not an active verified provider mapping.');
+  }
+  return result.rows[0];
+}
+
 
 function calculateFinalPrice(product, pricing) {
   // An enabled production product must have a verified DT One wholesale
@@ -1018,13 +1053,19 @@ app.get('/api/pricing/quote', async (req, res) => {
     return res.status(503).json({ error: 'Pricing service is not configured.' });
   }
   const country = normalizeCountry(req.query.country);
-  const operator = String(req.query.operator || '').trim();
+  let operator = String(req.query.operator || '').trim();
+  const operatorKey = String(req.query.operatorKey || '').trim() || null;
+  const providerOperatorId = String(req.query.providerOperatorId || '').trim() || null;
   const amount = Number(req.query.amount);
   if (!isValidCountry(country) || !operator || operator.length > 120 || !Number.isSafeInteger(amount) || amount <= 0) {
     return res.status(400).json({ error: 'Select a valid country, operator, and amount.' });
   }
   const client = await pool.connect();
   try {
+    const verifiedOperator = await getVerifiedCountryOperator(
+      client, country, operatorKey, providerOperatorId
+    );
+    if (verifiedOperator) operator = verifiedOperator.display_name;
     const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
     const basePricing = await getPricingSettings(client, country);
     const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
@@ -1124,9 +1165,15 @@ app.post('/api/payments/checkout', async (req, res) => {
     await client.query('BEGIN');
     transactionOpen = true;
 
+    const verifiedOperator = await getVerifiedCountryOperator(
+      client, input.country, input.operatorKey, input.providerOperatorId
+    );
+    if (verifiedOperator) input.operator = verifiedOperator.display_name;
+
     const product = await getProduct(
       client,
-      input.productId,      input.country,
+      input.productId,
+      input.country,
       input.operator,
       input.amount
     );

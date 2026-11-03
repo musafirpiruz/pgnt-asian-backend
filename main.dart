@@ -2296,6 +2296,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
         queryParameters: {
           'country': countryCode,
           'operator': operator.name,
+          if (operator.operatorKey != null) 'operatorKey': operator.operatorKey!,
+          if (operator.providerOperatorId != null)
+            'providerOperatorId': operator.providerOperatorId!,
           'amount': '$amount',
         },
       );
@@ -3069,6 +3072,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'phone': phone,
               'phoneNumber': phone,
               'operator': selectedOperator!.name,
+              if (selectedOperator!.operatorKey != null)
+                'operatorKey': selectedOperator!.operatorKey!,
+              if (selectedOperator!.providerOperatorId != null)
+                'providerOperatorId': selectedOperator!.providerOperatorId!,
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
