@@ -896,6 +896,14 @@ async function runMigration() {
             ('BD','dtone','BGD','pending')
           ON CONFLICT (country_code) DO NOTHING;
 
+          INSERT INTO country_localizations (country_code,language_code,display_name)
+          VALUES
+            ('AF','ps','افغانستان'),('AF','fa','افغانستان'),('AF','en','Afghanistan'),('AF','ur','افغانستان'),('AF','hi','अफ़ग़ानिस्तान'),('AF','bn','আফগানিস্তান'),
+            ('PK','ps','پاکستان'),('PK','fa','پاکستان'),('PK','en','Pakistan'),('PK','ur','پاکستان'),('PK','hi','पाकिस्तान'),('PK','bn','পাকিস্তান'),
+            ('IN','ps','هند'),('IN','fa','هند'),('IN','en','India'),('IN','ur','بھارت'),('IN','hi','भारत'),('IN','bn','ভারত'),
+            ('BD','ps','بنګله دېش'),('BD','fa','بنگلادش'),('BD','en','Bangladesh'),('BD','ur','بنگلہ دیش'),('BD','hi','बांग्लादेश'),('BD','bn','বাংলাদেশ')
+          ON CONFLICT (country_code,language_code) DO NOTHING;
+
           INSERT INTO schema_migrations (version)
           VALUES ('017_dynamic_country_registry')
           ON CONFLICT (version) DO NOTHING;
