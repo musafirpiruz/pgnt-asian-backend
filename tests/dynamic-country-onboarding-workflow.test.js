@@ -110,7 +110,7 @@ test('customer catalog APIs only expose reviewed operators and products for acti
 
 test('Flutter loads country list, operators and denominations from backend endpoints', () => {
   assert.match(flutter, /api\/countries\/active/);
-  assert.match(flutter, /api\/countries\/\$countryCode\/operators/);
+  assert.match(flutter, /api\/countries\/\$countryCode\/operators\?language=\$languageCode/);
   assert.match(flutter, /api\/countries\/\$countryCode\/products/);
   assert.match(flutter, /_availableCountries/);
   assert.match(flutter, /_loadedCountryOperators/);
