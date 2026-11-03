@@ -665,7 +665,7 @@ async function getProduct(client, productId, requestedCountry = null, operator =
      WHERE (
        ($1::bigint IS NOT NULL AND id = $1::bigint)
        OR
-       ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
+       ($1::bigint IS NULL AND country = $2 AND amount = $4 AND ($5::text IS NOT NULL OR LOWER(operator) = LOWER($3)))
      )
      AND (
        $5::text IS NULL
