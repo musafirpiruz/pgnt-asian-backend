@@ -40,6 +40,10 @@ test('admin mapping endpoint verifies operator and catalog provider IDs and neve
   assert.match(route, /provider_product_id/);
   assert.match(route, /catalog_product_id/);
   assert.match(route, /String\(row\.product_id\) !== providerProductId/);
+  assert.match(route, /country_provider_settings/);
+  assert.match(route, /verifiedProviderProduct\?\.operator\?\.id/);
+  assert.match(route, /providerProductCountry !== String/);
+  assert.match(route, /DT One product does not belong to the selected verified operator and country/);
   assert.match(route, /VALUES \(\$1, \$2, \$3, \$4, \$5, FALSE\)/);
   assert.match(route, /activationPerformed: false/);
   assert.match(route, /productActivated: false/);
