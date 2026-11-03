@@ -56,6 +56,14 @@ Default backend URL:
 
 The application must use the backend to retrieve products and create payment requests.
 
+## Automatic Recipient-Currency FX Rates
+
+The backend can refresh reference rates for AFN, PKR, INR, and BDT against EUR using the authenticated ExchangeRate-API Standard endpoint. Configure `FX_API_KEY` in the backend environment; never commit the key to GitHub or place it in Flutter. The provider refreshes its feed daily, so the backend checks once on startup and then every 24 hours.
+
+Rates are accepted only when all four currencies are present and the provider timestamp is no more than 48 hours old. Updates are committed atomically and recorded in `fx_rate_history`; provider failures leave the last saved rates unchanged. These are reference comparison rates, not guaranteed cash-remittance or DT One settlement rates. EUR remains the only enabled Stripe payment currency.
+
+The authenticated provider account is required for use in the customer-facing application; do not replace it with the free Open Access feed, whose terms prohibit redistribution. Check the provider's current plan, coverage, and terms before configuring production use.
+
 ## Build Android APK
 
 1. Open the repository on GitHub.
@@ -72,6 +80,7 @@ The application must use the backend to retrieve products and create payment req
 - Do not fulfill orders before verified payment.
 - Prevent duplicate payment and top-up processing.
 - Calculate prices, fees, and bonuses on the server.
+- Keep FX reference rates server-side and record their source and update timestamps.
 - Protect order information with authentication and authorization.
 - Test failed transactions and refunds before production.
 
