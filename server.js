@@ -3495,6 +3495,48 @@ app.put('/api/admin/countries/:countryCode/localizations', requireAdmin, async (
   } finally { client.release(); }
 });
 
+app.get('/api/admin/countries/:countryCode/operators', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  try {
+    const result = await pool.query(`
+      SELECT id,provider,provider_operator_id AS "providerOperatorId",
+             operator_key AS "operatorKey",display_name AS "displayName",
+             active,verified_at AS "verifiedAt"
+      FROM country_operators WHERE country_code=$1 ORDER BY display_name
+    `, [code]);
+    return res.json({ countryCode: code, operators: result.rows });
+  } catch (error) {
+    console.error('Admin country operator list failed:', error.message);
+    return res.status(500).json({ error: 'Could not retrieve country operators.' });
+  }
+});
+
+app.get('/api/admin/countries/:countryCode/products', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  try {
+    const result = await pool.query(`
+      SELECT p.id,p.provider_product_id AS "providerProductId",
+             o.id AS "operatorId",o.display_name AS operator,
+             p.denomination,p.destination_currency AS "destinationCurrency",
+             p.wholesale_amount AS "wholesaleAmount",
+             p.wholesale_currency AS "wholesaleCurrency",
+             p.wholesale_eur_cents AS "wholesaleEurCents",
+             p.retail_eur_cents AS "retailEurCents",
+             p.price_currency_verified AS "priceCurrencyVerified",
+             p.verification_status AS "verificationStatus",
+             p.catalog_status AS "catalogStatus",p.verified_at AS "verifiedAt"
+      FROM country_products p JOIN country_operators o ON o.id=p.operator_id
+      WHERE p.country_code=$1 ORDER BY o.display_name,p.denomination
+    `, [code]);
+    return res.json({ countryCode: code, products: result.rows });
+  } catch (error) {
+    console.error('Admin country product list failed:', error.message);
+    return res.status(500).json({ error: 'Could not retrieve country products.' });
+  }
+});
+
 app.patch('/api/admin/countries/:countryCode/operators/:operatorId', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const code = String(req.params.countryCode || '').trim().toUpperCase();
