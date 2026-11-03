@@ -4572,11 +4572,26 @@ app.get('/api/admin/dtone/operators', requireAdmin, async (req, res) => {
 
   const countryIsoCode = String(req.query.country_iso_code || 'AFG').trim().toUpperCase();
   const supportedOperatorCountries = new Set(['AFG', 'PAK', 'IND', 'BGD']);
+  let dynamicallyMappedCountry = false;
   if (!supportedOperatorCountries.has(countryIsoCode)) {
-    return res.status(400).json({
-      verified: false,
-      error: 'country_iso_code must be one of AFG, PAK, IND, or BGD.',
-    });
+    if (pool) {
+      const mapping = await pool.query(`
+        SELECT 1
+        FROM country_provider_mappings m
+        JOIN country_registry c ON c.country_code = m.country_code
+        WHERE m.provider = 'dtone'
+          AND m.provider_country_code = $1
+          AND m.verification_status = 'verified'
+        LIMIT 1
+      `, [countryIsoCode]);
+      dynamicallyMappedCountry = mapping.rowCount === 1;
+    }
+    if (!dynamicallyMappedCountry) {
+      return res.status(400).json({
+        verified: false,
+        error: 'country_iso_code must be a legacy supported code or a provider code verified in the country registry.',
+      });
+    }
   }
 
   try {
@@ -4687,6 +4702,23 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
   if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
     return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
   }
+  const legacyDestinationCurrencies = ({ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' });
+  let discoveredDestinationCurrency = legacyDestinationCurrencies[countryIsoCode] || null;
+  if (!discoveredDestinationCurrency && pool) {
+    const mapping = await pool.query(`
+      SELECT c.destination_currency
+      FROM country_provider_mappings m
+      JOIN country_registry c ON c.country_code = m.country_code
+      WHERE m.provider = 'dtone'
+        AND m.provider_country_code = $1
+        AND m.verification_status = 'verified'
+      LIMIT 1
+    `, [countryIsoCode]);
+    if (mapping.rowCount === 1) discoveredDestinationCurrency = String(mapping.rows[0].destination_currency).trim().toUpperCase();
+  }
+  if (!discoveredDestinationCurrency) {
+    return res.status(400).json({ error: 'This DT One country code has no verified country/currency mapping.' });
+  }
   if (amountQuery !== null && (!Number.isFinite(amountQuery) || amountQuery <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number.' });
   }
@@ -4755,7 +4787,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
           product?.amount?.base,
           typeof product?.amount === 'number' ? product.amount : NaN,
         ].map(Number);
-        const localCurrency = ({ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' })[countryIsoCode];
+        const localCurrency = discoveredDestinationCurrency;
         const mentionsAmount = amountQuery === null
           || benefitAmounts.includes(amountQuery)
           || productAmounts.includes(amountQuery)
