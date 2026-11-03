@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
+const { scheduleCountryFxRefresh } = require('./fx-rates');
 
 const app = express();
 
@@ -5880,6 +5881,9 @@ async function startServer() {
       console.log(
         `Customer payment currency: ${PAYMENT_CURRENCY.toUpperCase()}`
       );
+      // Reference FX only: refreshes the four recipient-currency comparison rates.
+      // A provider failure preserves the last saved rates and never blocks checkout startup.
+      scheduleCountryFxRefresh(pool);
     });
   } catch (error) {
     console.error(
