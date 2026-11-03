@@ -1,6 +1,6 @@
 'use strict';
 
-const FX_PROVIDER_URL = 'https://open.er-api.com/v6/latest/EUR';
+const FX_PROVIDER_URL = 'https://v6.exchangerate-api.com/v6';
 const COUNTRY_CURRENCIES = Object.freeze({
   AF: 'AFN',
   PK: 'PKR',
@@ -11,7 +11,7 @@ const MAX_PROVIDER_AGE_MS = 48 * 60 * 60 * 1000;
 
 function validateProviderPayload(payload, nowMs = Date.now()) {
   if (!payload || payload.result !== 'success' || payload.base_code !== 'EUR' ||
-      !payload.rates || typeof payload.rates !== 'object') {
+      !(payload.conversion_rates || payload.rates) || typeof (payload.conversion_rates || payload.rates) !== 'object') {
     throw new Error('FX provider returned an invalid EUR rate response.');
   }
 
@@ -24,7 +24,7 @@ function validateProviderPayload(payload, nowMs = Date.now()) {
 
   const rates = {};
   for (const [country, currency] of Object.entries(COUNTRY_CURRENCIES)) {
-    const rate = Number(payload.rates[currency]);
+    const rate = Number((payload.conversion_rates || payload.rates)[currency]);
     if (!Number.isFinite(rate) || rate <= 0) {
       throw new Error(`FX provider did not return a valid ${currency} rate.`);
     }
@@ -46,9 +46,11 @@ async function refreshCountryFxRates(pool, options = {}) {
   }
   const fetchImpl = options.fetchImpl || global.fetch;
   const now = options.now || (() => Date.now());
+  const apiKey = String(options.apiKey || process.env.FX_API_KEY || '').trim();
+  if (!apiKey) throw new Error('FX_API_KEY is not configured; automatic FX refresh is disabled.');
   if (typeof fetchImpl !== 'function') throw new Error('Fetch is unavailable.');
 
-  const response = await fetchImpl(FX_PROVIDER_URL, {
+  const response = await fetchImpl(`${FX_PROVIDER_URL}/${encodeURIComponent(apiKey)}/latest/EUR`, {
     method: 'GET',
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(15000),
@@ -71,7 +73,7 @@ async function refreshCountryFxRates(pool, options = {}) {
                 updated_at = NOW()
           WHERE country = $1
           RETURNING country`,
-        [country, rate, 'ExchangeRate-API Open Access', validated.providerUpdatedAt]
+        [country, rate, 'ExchangeRate-API authenticated Standard endpoint', validated.providerUpdatedAt]
       );
       if (updated.rowCount !== 1) {
         throw new Error(`FX refresh expected one configured pricing row for country ${country}.`);
@@ -125,7 +127,11 @@ function scheduleCountryFxRefresh(pool, options = {}) {
     }
   };
 
-  void run();
+  if (String(options.apiKey || process.env.FX_API_KEY || '').trim()) {
+    void run();
+  } else {
+    (options.logger || console).warn('Automatic country FX refresh is disabled: FX_API_KEY is not configured.');
+  }
   const timer = setInterval(run, intervalMs);
   if (typeof timer.unref === 'function') timer.unref();
   return () => {
