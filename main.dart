@@ -1602,7 +1602,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
       if (!mounted || selectedCountry.code != countryCode) return;
       setState(() {
-        directoryOperators = loaded;
+        // Until an admin verifies and maps DT One operator IDs, the backend
+        // may legitimately return an empty list. Keep the curated local
+        // operator list available rather than hiding every operator card.
+        directoryOperators = loaded.isEmpty ? null : loaded;
         if (!loaded.any((item) =>
             item.name == selectedOperator?.name &&
             item.countryCode == selectedOperator?.countryCode)) {
