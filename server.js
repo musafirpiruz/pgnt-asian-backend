@@ -3051,7 +3051,7 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
       const retailCurrency = String(item?.prices?.retail?.unit || '').trim().toUpperCase();
       const reject = reason => rejected.push({ productId, reason });
       if (!/^\\d+$/.test(productId) || !operatorName || !providerOperatorId || !/^[A-Z]{3}$/.test(denominationCurrency) ||
-          denominationCurrency !== destinationCurrency || !Number.isFinite(denomination) || denomination <= 0) {
+          denominationCurrency !== destinationCurrency || !Number.isSafeInteger(denomination) || denomination <= 0) {
         reject('Missing operator ID/name or invalid destination denomination/currency.');
         continue;
       }
@@ -3613,9 +3613,7 @@ app.post('/api/admin/countries/:countryCode/disable', requireAdmin, async (req, 
       WHERE country_code=$1 RETURNING country_code,country_name,status,configuration_version
     `, [code]);
     if (result.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (!Object.prototype.hasOwnProperty.call(SUPPORTED_COUNTRIES, code)) {
-      DYNAMIC_COUNTRY_CONFIG.delete(code);
-    }
+    DYNAMIC_COUNTRY_CONFIG.delete(code);
     await pool.query(`
       INSERT INTO country_configuration_audit (country_code,actor,action,configuration_version,after_state)
       VALUES ($1,'admin','country_disabled',$2,$3::jsonb)
@@ -6940,6 +6938,13 @@ async function startServer() {
         callingCode: row.calling_code,
         phoneDigits: [Number(row.phone_min_digits), Number(row.phone_max_digits)],
       });
+    }
+    const unavailableRegistry = await pool.query(`
+      SELECT country_code FROM country_registry
+      WHERE status IN ('draft','configuring','testing','disabled')
+    `);
+    for (const row of unavailableRegistry.rows) {
+      DYNAMIC_COUNTRY_CONFIG.delete(String(row.country_code).trim().toUpperCase());
     }
 
     app.listen(PORT, '0.0.0.0', () => {
