@@ -1069,6 +1069,65 @@ async function runMigration() {
       console.log("Migration 021_dynamic_operator_pricing_countries is already applied.");
     }
 
+
+    // Version 022 stores discovered country currency candidates and explicit admin confirmation.
+    const countryCurrencyDiscoveryVersion = "022_country_currency_discovery";
+    const countryCurrencyDiscoveryCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [countryCurrencyDiscoveryVersion]
+    );
+    if (countryCurrencyDiscoveryCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_currency_discoveries (
+            country_code CHAR(2) PRIMARY KEY REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            currencies JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(currencies) = 'array'),
+            source VARCHAR(80) NOT NULL,
+            source_reference TEXT NOT NULL,
+            observed_at TIMESTAMPTZ NOT NULL,
+            selected_currency CHAR(3),
+            selected_at TIMESTAMPTZ,
+            selection_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+              CHECK (selection_status IN ('pending','confirmed')),
+            CHECK (selected_currency IS NULL OR selected_currency ~ '^[A-Z]{3}
+    );
+
+    console.error(
+      error.message
+    );
+
+    process.exitCode = 1;
+  } finally {
+    if (client) {
+      try {
+        await client.query("SELECT pg_advisory_unlock(738291);");
+      } catch (_) {}
+
+      client.release();
+    }
+
+    await pool.end();
+  }
+}
+
+runMigration();
+)
+          );
+          INSERT INTO schema_migrations (version)
+          VALUES ('022_country_currency_discovery')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 022_country_currency_discovery completed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 022_country_currency_discovery is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
