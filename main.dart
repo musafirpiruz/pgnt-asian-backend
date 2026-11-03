@@ -1090,126 +1090,191 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [primaryRed, darkRed],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.all(Radius.circular(26)),
-                    ),
-                    child: Column(
-                      children: [
-                        const PgntLogo(size: 78),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'PGNT ASIAN TOPUP',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: brightGold,
-                            fontSize: 23,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.1,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          copy['title']!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 25,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          copy['description']!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxHeight < 680;
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compact ? 14 : 20,
+                    vertical: compact ? 8 : 16,
                   ),
-                  const SizedBox(height: 24),
-                  Text(
-                    copy['subtitle']!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: primaryRed,
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  ...languages.map((language) {
-                    final selected = language.code == _selectedLanguage;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Card(
-                        margin: EdgeInsets.zero,
-                        elevation: selected ? 3 : 1,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          side: BorderSide(
-                            color: selected ? primaryRed : gold,
-                            width: selected ? 1.8 : 0.8,
-                          ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: compact ? 10 : 16,
                         ),
-                        child: RadioListTile<String>(
-                          value: language.code,
-                          groupValue: _selectedLanguage,
-                          activeColor: primaryRed,
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _selectedLanguage = value);
-                            }
-                          },
-                          title: Text(
-                            language.nativeName,
-                            textDirection: language.code == 'ps' ||
-                                    language.code == 'fa' ||
-                                    language.code == 'ur'
-                                ? TextDirection.rtl
-                                : TextDirection.ltr,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [primaryRed, darkRed],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.all(Radius.circular(22)),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            PgntLogo(size: compact ? 46 : 58),
+                            SizedBox(height: compact ? 5 : 8),
+                            const Text(
+                              'PGNT ASIAN TOPUP',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: brightGold,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                              ),
                             ),
-                          ),
-                          subtitle: Text(language.name),
+                            SizedBox(height: compact ? 4 : 7),
+                            Text(
+                              copy['title']!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: compact ? 19 : 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (!compact) ...[
+                              const SizedBox(height: 5),
+                              Text(
+                                copy['description']!,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  height: 1.25,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                    );
-                  }),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _continue,
-                    child: Text(copy['continue']!),
+                      SizedBox(height: compact ? 10 : 14),
+                      Text(
+                        copy['subtitle']!,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: primaryRed,
+                          fontSize: compact ? 13 : 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 7 : 10),
+                      GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: compact ? 6 : 8,
+                        crossAxisSpacing: compact ? 7 : 9,
+                        childAspectRatio: compact ? 3.15 : 3.0,
+                        children: languages.map((language) {
+                          final selected = language.code == _selectedLanguage;
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => setState(
+                              () => _selectedLanguage = language.code,
+                            ),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? primaryRed.withOpacity(0.08)
+                                    : cardWhite,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: selected ? primaryRed : gold,
+                                  width: selected ? 1.7 : 0.8,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    selected
+                                        ? Icons.radio_button_checked
+                                        : Icons.radio_button_off,
+                                    color: selected ? primaryRed : Colors.black45,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          language.nativeName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          textDirection: language.code == 'ps' ||
+                                                  language.code == 'fa' ||
+                                                  language.code == 'ur'
+                                              ? TextDirection.rtl
+                                              : TextDirection.ltr,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        Text(
+                                          language.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      SizedBox(height: compact ? 10 : 14),
+                      SizedBox(
+                        height: compact ? 46 : 50,
+                        child: ElevatedButton(
+                          onPressed: _continue,
+                          child: Text(copy['continue']!),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        copy['later']!,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    copy['later']!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
