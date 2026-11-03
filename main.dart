@@ -600,6 +600,32 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "د حساب امنیتي ځانګړتیاوې د حساب له جوړېدو وروسته فعالېږي.",
     'accountSecurityNotConnected': "د حساب امنیت لا نه دی نښلول شوی.",
     'couldNotSaveLanguage': "ستاسو ژبه ثبت نه شوه. بیا هڅه وکړئ.",
+    'supportCreateTitle': "د مرستې ټکټ جوړ کړئ",
+    'supportSelectOrder': "د معاملې شمېره",
+    'supportSelectCategory': "د ستونزې ډول",
+    'supportCatPayment': "تادیه",
+    'supportCatTopup': "موبایل چارج",
+    'supportCatRefund': "د پیسو بېرته ترلاسه کول",
+    'supportCatWallet': "والټ",
+    'supportCatAccount': "حساب",
+    'supportCatOther': "نور",
+    'supportSubject': "د موضوع لنډ عنوان",
+    'supportDescribe': "ستونزه په تفصیل ولیکئ",
+    'supportSending': "لېږل کېږي...",
+    'supportSend': "د مرستې غوښتنه ولېږئ",
+    'supportChooseOrderFirst': "لومړی له تاریخچې څخه خپله معامله انتخاب کړئ.",
+    'supportCompleteFields': "د موضوع عنوان او د ستونزې تشریح بشپړه ولیکئ.",
+    'supportTicketCreated': "ستاسو د مرستې غوښتنه ثبت شوه. د ټکټ شمېره:",
+    'supportTicketFailed': "د مرستې غوښتنه ثبت نه شوه؛ بیا هڅه وکړئ.",
+    'supportHistoryTitle': "زما د مرستې غوښتنې",
+    'supportRefresh': "تازه کول",
+    'supportChooseOrderView': "د ټکټونو د کتلو لپاره خپله معامله انتخاب کړئ.",
+    'supportNoTickets': "د دې معاملې لپاره د مرستې پخوانی ټکټ نشته. د تازه کولو نښه کېکاږئ.",
+    'supportCategoryLabel': "ډول:",
+    'supportReply': "د ملاتړ ځواب",
+    'supportLoadFailed': "د ټکټونو تاریخچه نه شوه لوستل کېدای.",
+    'supportInvalidHistory': "د ملاتړ د تاریخچې ځواب ناسم دی.",
+    'supportLoadRequestsFailed': "د مرستې غوښتنې نه شوې لوستل کېدای.",
   },
 
   'fa': {
@@ -692,6 +718,32 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "ویژگی‌های امنیت حساب پس از راه‌اندازی حساب فعال می‌شوند.",
     'accountSecurityNotConnected': "امنیت حساب هنوز متصل نشده است.",
     'couldNotSaveLanguage': "ذخیره زبان ممکن نشد. دوباره تلاش کنید.",
+    'supportCreateTitle': "ایجاد درخواست پشتیبانی",
+    'supportSelectOrder': "شماره تراکنش",
+    'supportSelectCategory': "نوع مشکل",
+    'supportCatPayment': "پرداخت",
+    'supportCatTopup': "شارژ موبایل",
+    'supportCatRefund': "بازپرداخت",
+    'supportCatWallet': "کیف پول",
+    'supportCatAccount': "حساب",
+    'supportCatOther': "سایر",
+    'supportSubject': "عنوان کوتاه موضوع",
+    'supportDescribe': "مشکل را با جزئیات بنویسید",
+    'supportSending': "در حال ارسال...",
+    'supportSend': "ارسال درخواست پشتیبانی",
+    'supportChooseOrderFirst': "ابتدا تراکنش خود را از تاریخچه انتخاب کنید.",
+    'supportCompleteFields': "عنوان موضوع و توضیح مشکل را کامل بنویسید.",
+    'supportTicketCreated': "درخواست پشتیبانی شما ثبت شد. شماره تیکت:",
+    'supportTicketFailed': "درخواست پشتیبانی ثبت نشد؛ دوباره تلاش کنید.",
+    'supportHistoryTitle': "درخواست‌های پشتیبانی من",
+    'supportRefresh': "تازه‌سازی",
+    'supportChooseOrderView': "برای دیدن تیکت‌ها، تراکنش خود را انتخاب کنید.",
+    'supportNoTickets': "برای این تراکنش تیکت قبلی وجود ندارد. دکمه تازه‌سازی را بزنید.",
+    'supportCategoryLabel': "نوع:",
+    'supportReply': "پاسخ پشتیبانی",
+    'supportLoadFailed': "تاریخچه تیکت‌ها بارگیری نشد.",
+    'supportInvalidHistory': "پاسخ تاریخچه پشتیبانی نامعتبر است.",
+    'supportLoadRequestsFailed': "درخواست‌های پشتیبانی بارگیری نشدند.",
   },
 
   'en': {
@@ -784,6 +836,32 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "Account security features require account setup.",
     'accountSecurityNotConnected': "Account security is not connected yet.",
     'couldNotSaveLanguage': "Could not save your language. Please try again.",
+    'supportCreateTitle': "Create a support ticket",
+    'supportSelectOrder': "Transaction number",
+    'supportSelectCategory': "Issue type",
+    'supportCatPayment': "Payment",
+    'supportCatTopup': "Mobile top-up",
+    'supportCatRefund': "Refund",
+    'supportCatWallet': "Wallet",
+    'supportCatAccount': "Account",
+    'supportCatOther': "Other",
+    'supportSubject': "Short subject",
+    'supportDescribe': "Describe the issue in detail",
+    'supportSending': "Submitting...",
+    'supportSend': "Send support request",
+    'supportChooseOrderFirst': "First select your transaction from history.",
+    'supportCompleteFields': "Please complete the subject and issue description.",
+    'supportTicketCreated': "Your support request was submitted. Ticket number:",
+    'supportTicketFailed': "Could not submit the support request. Please try again.",
+    'supportHistoryTitle': "My support requests",
+    'supportRefresh': "Refresh",
+    'supportChooseOrderView': "Select a transaction to view its tickets.",
+    'supportNoTickets': "There are no previous support tickets for this transaction. Tap refresh.",
+    'supportCategoryLabel': "Type:",
+    'supportReply': "Support reply",
+    'supportLoadFailed': "Could not load ticket history.",
+    'supportInvalidHistory': "Invalid support history response.",
+    'supportLoadRequestsFailed': "Could not load support requests.",
   },
 
   'ur': {
@@ -876,6 +954,32 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "اکاؤنٹ کی سیکیورٹی خصوصیات اکاؤنٹ بنانے کے بعد دستیاب ہوں گی۔",
     'accountSecurityNotConnected': "اکاؤنٹ کی سیکیورٹی ابھی منسلک نہیں ہے۔",
     'couldNotSaveLanguage': "زبان محفوظ نہیں ہو سکی۔ دوبارہ کوشش کریں۔",
+    'supportCreateTitle': "سپورٹ ٹکٹ بنائیں",
+    'supportSelectOrder': "لین دین نمبر",
+    'supportSelectCategory': "مسئلے کی قسم",
+    'supportCatPayment': "ادائیگی",
+    'supportCatTopup': "موبائل ریچارج",
+    'supportCatRefund': "رقم واپسی",
+    'supportCatWallet': "والٹ",
+    'supportCatAccount': "اکاؤنٹ",
+    'supportCatOther': "دیگر",
+    'supportSubject': "موضوع کا مختصر عنوان",
+    'supportDescribe': "مسئلہ تفصیل سے لکھیں",
+    'supportSending': "جمع ہو رہا ہے...",
+    'supportSend': "سپورٹ درخواست بھیجیں",
+    'supportChooseOrderFirst': "پہلے ہسٹری سے اپنا لین دین منتخب کریں۔",
+    'supportCompleteFields': "موضوع اور مسئلے کی تفصیل مکمل لکھیں۔",
+    'supportTicketCreated': "آپ کی سپورٹ درخواست درج ہو گئی۔ ٹکٹ نمبر:",
+    'supportTicketFailed': "سپورٹ درخواست جمع نہیں ہو سکی؛ دوبارہ کوشش کریں۔",
+    'supportHistoryTitle': "میری سپورٹ درخواستیں",
+    'supportRefresh': "تازہ کریں",
+    'supportChooseOrderView': "ٹکٹ دیکھنے کے لیے اپنا لین دین منتخب کریں۔",
+    'supportNoTickets': "اس لین دین کے لیے کوئی سابقہ سپورٹ ٹکٹ نہیں۔ تازہ کرنے کا بٹن دبائیں۔",
+    'supportCategoryLabel': "قسم:",
+    'supportReply': "سپورٹ کا جواب",
+    'supportLoadFailed': "ٹکٹ کی ہسٹری لوڈ نہیں ہو سکی۔",
+    'supportInvalidHistory': "سپورٹ ہسٹری کا جواب درست نہیں۔",
+    'supportLoadRequestsFailed': "سپورٹ درخواستیں لوڈ نہیں ہو سکیں۔",
   },
 
   'hi': {
@@ -968,6 +1072,32 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "खाता सुरक्षा सुविधाओं के लिए खाता सेटअप आवश्यक है।",
     'accountSecurityNotConnected': "खाता सुरक्षा अभी कनेक्ट नहीं है।",
     'couldNotSaveLanguage': "आपकी भाषा सहेजी नहीं जा सकी। फिर कोशिश करें।",
+    'supportCreateTitle': "सहायता टिकट बनाएँ",
+    'supportSelectOrder': "लेन-देन संख्या",
+    'supportSelectCategory': "समस्या का प्रकार",
+    'supportCatPayment': "भुगतान",
+    'supportCatTopup': "मोबाइल रिचार्ज",
+    'supportCatRefund': "रिफंड",
+    'supportCatWallet': "वॉलेट",
+    'supportCatAccount': "खाता",
+    'supportCatOther': "अन्य",
+    'supportSubject': "विषय का छोटा शीर्षक",
+    'supportDescribe': "समस्या का विस्तार से वर्णन करें",
+    'supportSending': "जमा हो रहा है...",
+    'supportSend': "सहायता अनुरोध भेजें",
+    'supportChooseOrderFirst': "पहले इतिहास से अपना लेन-देन चुनें।",
+    'supportCompleteFields': "विषय और समस्या का विवरण पूरा लिखें।",
+    'supportTicketCreated': "आपका सहायता अनुरोध दर्ज हो गया। टिकट नंबर:",
+    'supportTicketFailed': "सहायता अनुरोध दर्ज नहीं हुआ। फिर कोशिश करें।",
+    'supportHistoryTitle': "मेरे सहायता अनुरोध",
+    'supportRefresh': "रीफ़्रेश करें",
+    'supportChooseOrderView': "टिकट देखने के लिए लेन-देन चुनें।",
+    'supportNoTickets': "इस लेन-देन के लिए कोई पुराना सहायता टिकट नहीं है। रीफ़्रेश दबाएँ।",
+    'supportCategoryLabel': "प्रकार:",
+    'supportReply': "सहायता का जवाब",
+    'supportLoadFailed': "टिकट इतिहास लोड नहीं हो सका।",
+    'supportInvalidHistory': "सहायता इतिहास का जवाब अमान्य है।",
+    'supportLoadRequestsFailed': "सहायता अनुरोध लोड नहीं हो सके।",
   },
 
   'bn': {
@@ -1060,6 +1190,32 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "অ্যাকাউন্ট নিরাপত্তা সুবিধার জন্য অ্যাকাউন্ট সেটআপ প্রয়োজন।",
     'accountSecurityNotConnected': "অ্যাকাউন্ট নিরাপত্তা এখনো সংযুক্ত নয়।",
     'couldNotSaveLanguage': "আপনার ভাষা সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।",
+    'supportCreateTitle': "সাপোর্ট টিকিট তৈরি করুন",
+    'supportSelectOrder': "লেনদেন নম্বর",
+    'supportSelectCategory': "সমস্যার ধরন",
+    'supportCatPayment': "পেমেন্ট",
+    'supportCatTopup': "মোবাইল রিচার্জ",
+    'supportCatRefund': "রিফান্ড",
+    'supportCatWallet': "ওয়ালেট",
+    'supportCatAccount': "অ্যাকাউন্ট",
+    'supportCatOther': "অন্যান্য",
+    'supportSubject': "বিষয়ের সংক্ষিপ্ত শিরোনাম",
+    'supportDescribe': "সমস্যাটি বিস্তারিত লিখুন",
+    'supportSending': "জমা হচ্ছে...",
+    'supportSend': "সাপোর্ট অনুরোধ পাঠান",
+    'supportChooseOrderFirst': "প্রথমে ইতিহাস থেকে আপনার লেনদেন নির্বাচন করুন।",
+    'supportCompleteFields': "বিষয়ের শিরোনাম ও সমস্যার বিবরণ সম্পূর্ণ লিখুন।",
+    'supportTicketCreated': "আপনার সাপোর্ট অনুরোধ জমা হয়েছে। টিকিট নম্বর:",
+    'supportTicketFailed': "সাপোর্ট অনুরোধ জমা হয়নি। আবার চেষ্টা করুন।",
+    'supportHistoryTitle': "আমার সাপোর্ট অনুরোধ",
+    'supportRefresh': "রিফ্রেশ করুন",
+    'supportChooseOrderView': "টিকিট দেখতে একটি লেনদেন নির্বাচন করুন।",
+    'supportNoTickets': "এই লেনদেনের জন্য আগের কোনো সাপোর্ট টিকিট নেই। রিফ্রেশ চাপুন।",
+    'supportCategoryLabel': "ধরন:",
+    'supportReply': "সাপোর্টের উত্তর",
+    'supportLoadFailed': "টিকিটের ইতিহাস লোড করা যায়নি।",
+    'supportInvalidHistory': "সাপোর্ট ইতিহাসের উত্তর সঠিক নয়।",
+    'supportLoadRequestsFailed': "সাপোর্ট অনুরোধ লোড করা যায়নি.",
   },
 };
 
@@ -3255,11 +3411,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final subject = supportSubjectController.text.trim();
     final message = supportMessageController.text.trim();
     if (orderId == null || !_orderAccessTokens.containsKey(orderId)) {
-      showMessage('لومړی له تاریخچې څخه خپله معامله انتخاب کړئ.');
+      showMessage(t('supportChooseOrderFirst'));
       return;
     }
     if (subject.length < 4 || message.length < 10) {
-      showMessage('موضوع او د ستونزې تشریح بشپړه ولیکئ.');
+      showMessage(t('supportCompleteFields'));
       return;
     }
 
@@ -3289,11 +3445,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
       supportSubjectController.clear();
       supportMessageController.clear();
       await loadSupportTickets();
-      showMessage('ستاسو د مرستې غوښتنه ثبت شوه. د ټکټ شمېره: ${(decoded['ticket'] as Map<String, dynamic>)['id']}');
+      showMessage('${t('supportTicketCreated')} ${(decoded['ticket'] as Map<String, dynamic>)['id']}');
     } catch (error) {
       if (!mounted) return;
       final detail = error.toString().replaceFirst('Exception: ', '').trim();
-      showMessage(detail.isEmpty ? 'د مرستې غوښتنه ثبت نه شوه؛ بیا هڅه وکړئ.' : detail);
+      showMessage(detail.isEmpty ? t('supportTicketFailed') : detail);
     } finally {
       if (mounted) setState(() => isSubmittingSupport = false);
     }
@@ -3316,10 +3472,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final dynamic decoded = jsonDecode(response.body);
       if (response.statusCode != 200 || decoded is! Map<String, dynamic>) {
         final detail = decoded is Map<String, dynamic> ? decoded['error'] : null;
-        throw Exception(detail is String ? detail : 'Could not load support requests.');
+        throw Exception(detail is String ? detail : t('supportLoadRequestsFailed'));
       }
       final rawTickets = decoded['tickets'];
-      if (rawTickets is! List) throw Exception('Invalid support history response.');
+      if (rawTickets is! List) throw Exception(t('supportInvalidHistory'));
       final loaded = rawTickets
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
@@ -3333,7 +3489,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     } catch (error) {
       if (mounted) {
         final detail = error.toString().replaceFirst('Exception: ', '').trim();
-        showMessage(detail.isEmpty ? 'د ټکټونو تاریخچه نه شوه لوستل کېدای.' : detail);
+        showMessage(detail.isEmpty ? t('supportLoadFailed') : detail);
       }
     } finally {
       if (mounted) setState(() => isLoadingSupportTickets = false);
@@ -3350,12 +3506,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
           children: [
             const Expanded(
               child: Text(
-                'زما د مرستې غوښتنې',
+                t('supportHistoryTitle'),
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
             ),
             IconButton(
-              tooltip: 'تازه کول',
+              tooltip: t('supportRefresh'),
               onPressed: !hasOrder || isLoadingSupportTickets ? null : loadSupportTickets,
               icon: isLoadingSupportTickets
                   ? const SizedBox(
@@ -3368,9 +3524,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ],
         ),
         if (!hasOrder)
-          const Text('د ټکټونو د کتلو لپاره خپله معامله انتخاب کړئ.')
+          const Text(t('supportChooseOrderView'))
         else if (supportTickets.isEmpty && !isLoadingSupportTickets)
-          const Text('د دې معاملې لپاره د مرستې پخوانی ټکټ نشته. د تازه کولو نښه کېکاږئ.')
+          const Text(t('supportNoTickets'))
         else
           ...supportTickets.map((ticket) {
             final id = ticket['id']?.toString() ?? '—';
@@ -3395,12 +3551,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
                         Chip(label: Text(status)),
                       ],
                     ),
-                    Text('ډول: $category'),
+                    Text('${t('supportCategoryLabel')} $category'),
                     const SizedBox(height: 6),
                     Text(message),
                     if (reply.trim().isNotEmpty) ...[
                       const Divider(),
-                      const Text('د ملاتړ ځواب',
+                      Text(t('supportReply'),
                           style: TextStyle(fontWeight: FontWeight.w700)),
                       Text(reply),
                     ],
@@ -3522,7 +3678,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
         ),
         const SizedBox(height: 20),
         pgntSectionTitle(
-          'د مرستې غوښتنه ثبت کړئ',
+          t('supportCreateTitle'),
           Icons.mark_email_unread_outlined,
         ),
         if (supportOrders.isEmpty)
@@ -3540,8 +3696,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
             value: supportOrders.any((item) => item.orderId == selectedSupportOrderId)
                 ? selectedSupportOrderId
                 : supportOrders.first.orderId,
-            decoration: const InputDecoration(
-              labelText: 'د معاملې نمبر',
+            decoration: InputDecoration(
+              labelText: t('supportSelectOrder'),
               prefixIcon: Icon(Icons.receipt_long_outlined),
             ),
             items: supportOrders.map((item) {
@@ -3562,17 +3718,17 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             value: supportCategory,
-            decoration: const InputDecoration(
-              labelText: 'د ستونزې ډول',
+            decoration: InputDecoration(
+              labelText: t('supportSelectCategory'),
               prefixIcon: Icon(Icons.category_outlined),
             ),
-            items: const [
-              DropdownMenuItem(value: 'payment', child: Text('تادیه')),
-              DropdownMenuItem(value: 'topup', child: Text('موبایل چارج')),
-              DropdownMenuItem(value: 'refund', child: Text('بېرته پیسې')),
-              DropdownMenuItem(value: 'wallet', child: Text('والټ')),
-              DropdownMenuItem(value: 'account', child: Text('حساب')),
-              DropdownMenuItem(value: 'other', child: Text('نور')),
+            items: [
+              DropdownMenuItem(value: 'payment', child: Text(t('supportCatPayment'))),
+              DropdownMenuItem(value: 'topup', child: Text(t('supportCatTopup'))),
+              DropdownMenuItem(value: 'refund', child: Text(t('supportCatRefund'))),
+              DropdownMenuItem(value: 'wallet', child: Text(t('supportCatWallet'))),
+              DropdownMenuItem(value: 'account', child: Text(t('supportCatAccount'))),
+              DropdownMenuItem(value: 'other', child: Text(t('supportCatOther'))),
             ],
             onChanged: (value) {
               if (value != null) setState(() => supportCategory = value);
@@ -3582,8 +3738,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           TextField(
             controller: supportSubjectController,
             maxLength: 160,
-            decoration: const InputDecoration(
-              labelText: 'د موضوع لنډ عنوان',
+            decoration: InputDecoration(
+              labelText: t('supportSubject'),
               prefixIcon: Icon(Icons.short_text_rounded),
             ),
           ),
@@ -3593,8 +3749,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
             minLines: 3,
             maxLines: 6,
             maxLength: 4000,
-            decoration: const InputDecoration(
-              labelText: 'ستونزه په تفصیل ولیکئ',
+            decoration: InputDecoration(
+              labelText: t('supportDescribe'),
               alignLabelWithHint: true,
               prefixIcon: Icon(Icons.message_outlined),
             ),
@@ -3609,7 +3765,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: brightGold),
                   )
                 : const Icon(Icons.send_rounded),
-            label: Text(isSubmittingSupport ? 'ثبتېږي...' : 'د مرستې غوښتنه ولېږئ'),
+            label: Text(isSubmittingSupport ? t('supportSending') : t('supportSend')),
           ),
         ],
         const SizedBox(height: 16),
