@@ -26,7 +26,7 @@ test('checkout validates complete operator identity and rejects partial mappings
 test('quotes and checkout require an active country operator with the exact provider ID', () => {
   assert.match(server, /async function getVerifiedCountryOperator/);
   assert.match(server, /WHERE country_code = \$1 AND operator_key = \$2 AND active = TRUE/);
-  assert.match(server, /provider_operator_id\) !== providerOperatorId/);
+  assert.match(server, /String\(result\.rows\[0\]\.provider_operator_id \|\| ''\) !== providerOperatorId/);
   const quote = server.slice(server.indexOf("app.get('/api/pricing/quote'"), server.indexOf("app.post('/api/payments/checkout'"));
   const checkout = server.slice(server.indexOf("app.post('/api/payments/checkout'"), server.indexOf("app.post('/api/admin/stripe-dtone/sandbox-checkout'"));
   assert.ok(quote.indexOf('getVerifiedCountryOperator') >= 0);
