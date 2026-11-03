@@ -1032,7 +1032,7 @@ const Map<String, Map<String, String>> translations = {
     'changeCountry': 'দেশ পরিবর্তন করুন',
     'referralCode': 'রেফারেল কোড (ঐচ্ছিক)',
     'referralHint': 'ঐচ্ছিক — সফল রিচার্জের পর পুরস্কার জমা হবে।',
-    'invalidReferralCode': 'রেফারেল কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।'
+    'invalidReferralCode': 'রেফারেল কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।',
     'recipientHint': "আফগানিস্তানে প্রাপকের নম্বর লিখুন",
     'amountCheck': "পরিমাণ ও মূল্য যাচাই করুন",
     'marketEquivalent': "বাজার অনুযায়ী আনুমানিক মূল্য",
@@ -1235,7 +1235,7 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(tr(_selectedLanguage, 'couldNotSaveLanguage')),
         ),
       );
@@ -3782,7 +3782,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 t('guestAccount'),
                 style: TextStyle(color: Colors.grey),
               ),
@@ -3844,7 +3844,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               color: primaryRed,
             ),
             title: Text(t('security')),
-            subtitle: const Text(
+            subtitle: Text(
               t('accountSecurityNote'),
             ),
             onTap: () {
@@ -3924,8 +3924,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.person_outline, color: primaryRed),
-                    title: const Text(t('profileOptional')),
-                    subtitle: const Text(t('profileDetailsOptional')),
+                    title: Text(t('profileOptional')),
+                    subtitle: Text(t('profileDetailsOptional')),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       setState(() => selectedTab = 4);
