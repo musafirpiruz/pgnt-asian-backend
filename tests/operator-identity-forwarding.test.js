@@ -17,7 +17,7 @@ test('Flutter forwards registry operator identifiers to quote and checkout reque
 
 test('checkout validates complete operator identity and rejects partial mappings', () => {
   const start = server.indexOf('function validateCheckoutInput');
-  const end = server.indexOf('// =====================================================\\n// PART 3/8', start);
+  const end = server.indexOf('// Get a quote using server-side product and pricing data.', start);
   const validation = server.slice(start, end);
   assert.match(validation, /Boolean\(operatorKey\) !== Boolean\(providerOperatorId\)/);
   assert.match(validation, /Invalid verified operator mapping/);
