@@ -7041,6 +7041,100 @@ require('./dtone-sandbox-test')({
   getDtOneAuthHeader,
 });
 
+app.get('/admin-countries', (req, res) => {
+  res.type('html').send(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PGNT Country Onboarding</title>
+<style>
+body{font:15px system-ui;background:#f6f7f9;color:#20242a;margin:0;padding:20px}
+main{max-width:920px;margin:auto}h1{color:#7a0c10}section{background:#fff;border:1px solid #ddd;border-radius:12px;padding:16px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+input,textarea,button{font:inherit;padding:10px;border:1px solid #bbb;border-radius:8px;width:100%;box-sizing:border-box}
+button{background:#7a0c10;color:#fff;border:0;margin-top:8px;cursor:pointer}button.secondary{background:#444}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#17191d;color:#e7e7e7;padding:12px;border-radius:8px;min-height:100px}
+small{color:#555}.inline{display:flex;gap:8px;align-items:center}.inline input[type=checkbox]{width:auto}
+</style></head><body><main>
+<h1>PGNT ASIAN TOPUP — Country Onboarding</h1>
+<p>Admin workflow: Draft → DT One mapping → Catalog preview/import → Pricing/localization → Review → Preflight → Activate.</p>
+<section><h2>Admin access</h2><input id="adminKey" type="password" autocomplete="off" placeholder="Admin API key"><div class="inline"><input id="countryCode" maxlength="2" placeholder="ISO alpha-2, e.g. KE"><button class="secondary" onclick="loadCountries()">Load countries</button></div><pre id="countryList">Country registry not loaded.</pre></section>
+<section><h2>1. Create draft country</h2><div class="grid">
+<input id="newCode" maxlength="2" placeholder="Country code, e.g. KE">
+<input id="newName" placeholder="Country name">
+<input id="newCurrency" maxlength="3" placeholder="Destination currency">
+<input id="newCalling" placeholder="Calling code, e.g. +254">
+<input id="newMin" type="number" min="1" max="15" placeholder="Phone min digits">
+<input id="newMax" type="number" min="1" max="15" placeholder="Phone max digits">
+</div><button onclick="createDraft()">Create draft</button></section>
+<section><h2>2. Discover and verify DT One country</h2><button class="secondary" onclick="discoverCountries()">Discover DT One supported countries</button><pre id="providerCountries">Provider countries not loaded.</pre><div class="grid"><input id="providerCode" maxlength="3" placeholder="DT One country code, e.g. KEN"><button onclick="verifyMapping()">Verify mapping for selected country</button></div></section>
+<section><h2>3. Refresh FX and sync product catalog</h2><input id="fxCurrencies" placeholder="Settlement/destination currencies, comma-separated (e.g. KES,SGD)"><button class="secondary" onclick="refreshFx()">Refresh EUR FX rates</button><div class="inline"><input id="confirmImport" type="checkbox"><label for="confirmImport">I reviewed the preview and explicitly confirm importing valid products as DISABLED.</label></div><button onclick="syncCatalog()">Preview / import DT One catalog</button></section>
+<section><h2>4. Pricing and translations</h2><div class="grid">
+<input id="feeCents" type="number" min="0" placeholder="Fixed app fee (EUR cents)">
+<input id="feePercent" type="number" min="0" step="0.01" placeholder="App fee percent">
+<input id="stripePercent" type="number" min="0" step="0.001" value="1.5" placeholder="Stripe fee percent">
+<input id="stripeFixed" type="number" min="0" value="25" placeholder="Stripe fixed fee cents">
+<input id="minPrice" type="number" min="1" value="1" placeholder="Minimum EUR cents">
+<input id="maxPrice" type="number" min="1" value="1000000" placeholder="Maximum EUR cents">
+</div><div class="inline"><input id="pricingActive" type="checkbox"><label for="pricingActive">Activate reviewed pricing settings</label></div><button onclick="savePricing()">Save pricing</button>
+<p>Enter translations as a JSON array. Required language codes: en, ps, fa, ur, hi, bn.</p>
+<textarea id="localizations" rows="5" placeholder='[{"languageCode":"en","displayName":"Kenya"},{"languageCode":"ps","displayName":"کینیا"},{"languageCode":"fa","displayName":"کنیا"},{"languageCode":"ur","displayName":"کینیا"},{"languageCode":"hi","displayName":"केन्या"},{"languageCode":"bn","displayName":"কেনিয়া"}]'></textarea><button onclick="saveLocalizations()">Save translations</button></section>
+<section><h2>5. Review operator / product</h2><div class="grid">
+<input id="operatorId" type="number" min="1" placeholder="Operator database ID">
+<input id="productId" type="number" min="1" placeholder="Product database ID">
+</div><div class="inline"><input id="operatorActive" type="checkbox"><label for="operatorActive">Approve operator</label></div><button class="secondary" onclick="reviewOperator()">Save operator review</button>
+<div class="grid"><input id="productStatus" value="active" placeholder="disabled / review / active / retired"></div><button class="secondary" onclick="reviewProduct()">Save product review</button></section>
+<section><h2>6. Validate and activate</h2><button class="secondary" onclick="preflight()">Run preflight checks</button><button onclick="activateCountry()">Activate only if every check passes</button><button class="secondary" onclick="disableCountry()">Disable country / rollback</button></section>
+<section><h2>Result and diagnostics</h2><pre id="output">No action performed.</pre></section>
+</main>
+<script>
+const el=id=>document.getElementById(id);
+const key=()=>el('adminKey').value.trim();
+const code=()=>el('countryCode').value.trim().toUpperCase();
+function show(value){el('output').textContent=JSON.stringify(value,null,2);}
+async function api(path,method='GET',body=null){
+ const headers={'Accept':'application/json','x-admin-api-key':key()};
+ if(body!==null) headers['Content-Type']='application/json';
+ const response=await fetch(path,{method,headers,body:body===null?undefined:JSON.stringify(body)});
+ let data;try{data=await response.json();}catch(_){data={error:'Invalid server response'};}
+ show({httpStatus:response.status,...data});return {ok:response.ok,data};
+}
+async function loadCountries(){const r=await api('/api/admin/countries');el('countryList').textContent=JSON.stringify(r.data,null,2);}
+async function createDraft(){
+ const r=await api('/api/admin/countries','POST',{
+  countryCode:el('newCode').value,countryName:el('newName').value,
+  destinationCurrency:el('newCurrency').value,callingCode:el('newCalling').value,
+  phoneMinDigits:Number(el('newMin').value),phoneMaxDigits:Number(el('newMax').value)
+ });
+ if(r.ok){el('countryCode').value=r.data.country.country_code;loadCountries();}
+}
+async function discoverCountries(){const r=await api('/api/admin/dtone/countries');el('providerCountries').textContent=JSON.stringify(r.data,null,2);}
+async function verifyMapping(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/dtone-mapping','POST',{providerCountryCode:el('providerCode').value});}
+async function refreshFx(){
+ const currencies=el('fxCurrencies').value.split(',').map(v=>v.trim().toUpperCase()).filter(Boolean);
+ await api('/api/admin/fx/rates/refresh','POST',{currencies});
+}
+async function syncCatalog(){
+ await api('/api/admin/countries/'+encodeURIComponent(code())+'/dtone-catalog/sync','POST',{confirmImport:el('confirmImport').checked});
+}
+async function savePricing(){
+ await api('/api/admin/countries/'+encodeURIComponent(code())+'/pricing','PUT',{
+  feeEurCents:Number(el('feeCents').value),feePercent:Number(el('feePercent').value||0),
+  stripeFeePercent:Number(el('stripePercent').value),stripeFixedFeeCents:Number(el('stripeFixed').value),
+  minCustomerPriceEurCents:Number(el('minPrice').value),maxCustomerPriceEurCents:Number(el('maxPrice').value),
+  active:el('pricingActive').checked
+ });
+}
+async function saveLocalizations(){
+ let localizations;try{localizations=JSON.parse(el('localizations').value);}catch(_){show({error:'Translations JSON is invalid'});return;}
+ await api('/api/admin/countries/'+encodeURIComponent(code())+'/localizations','PUT',{localizations});
+}
+async function reviewOperator(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/operators/'+encodeURIComponent(el('operatorId').value),'PATCH',{active:el('operatorActive').checked});}
+async function reviewProduct(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/products/'+encodeURIComponent(el('productId').value),'PATCH',{catalogStatus:el('productStatus').value.trim().toLowerCase()});}
+async function preflight(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/validate','POST',{});}
+async function activateCountry(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/activate','POST',{});}
+async function disableCountry(){if(confirm('Disable this country and block new orders?'))await api('/api/admin/countries/'+encodeURIComponent(code())+'/disable','POST',{});}
+</script></body></html>`);
+});
+
 // Start the server only after configuration checks.
 // Keep this block once, at the very end of server.js.
 app.get('/api/referrals/validate/:code', async (req, res) => {
