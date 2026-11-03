@@ -34,7 +34,7 @@ test('migration 018 contains reviewed names for all four countries in all six la
     "('BD','ps','بنګله‌دېش',FALSE)",
     "('BD','fa','بنگلادیش',FALSE)",
     "('BD','ur','بنگلہ دیش',FALSE)",
-    "('BD','hi','बांग्लादेश',FALSE)",
+    "('BD','hi','बांग्लাদেশ',FALSE)",
     "('BD','bn','বাংলাদেশ',FALSE)",
   ]) assert.ok(migration.includes(row), 'localized label exists: ' + row);
 });
