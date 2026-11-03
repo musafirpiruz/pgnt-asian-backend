@@ -77,7 +77,7 @@ test('country preflight requires provider, phone, operator, product, pricing, FX
   for (const check of [
     'provider_mapping_verified','phone_validation_configured','active_operator_available',
     'active_product_available','country_pricing_active','destination_fx_fresh',
-    'localizations_complete','product_prices_valid',
+    'localizations_complete','operator_localizations_complete','product_prices_valid',
   ]) assert.ok(route.includes(check), check);
   for (const language of ['en','ps','fa','ur','hi','bn']) assert.ok(route.includes(language), language);
 });
@@ -115,4 +115,28 @@ test('Flutter loads country list, operators and denominations from backend endpo
   assert.match(flutter, /_availableCountries/);
   assert.match(flutter, /_loadedCountryOperators/);
   assert.match(flutter, /_loadedCountryAmounts/);
+});
+
+test('operator translations are stored per operator and required for activation', () => {
+  const start = server.indexOf("app.put('/api/admin/countries/:countryCode/operators/:operatorId/localizations'");
+  const end = server.indexOf("app.patch('/api/admin/countries/:countryCode/operators/:operatorId'", start);
+  assert.ok(start >= 0 && end > start);
+  const route = server.slice(start, end);
+  for (const language of ['en','ps','fa','ur','hi','bn']) assert.ok(route.includes(language), language);
+  assert.match(route, /country_operator_localizations/);
+  assert.match(server, /operator_localizations_complete/);
+  assert.match(migration, /020_country_operator_localizations/);
+});
+
+test('admin onboarding wizard is available without embedding the admin secret', () => {
+  const start = server.indexOf("app.get('/admin-countries'");
+  const end = server.indexOf('// Start the server only after configuration checks.', start);
+  assert.ok(start >= 0 && end > start);
+  const page = server.slice(start, end);
+  assert.match(page, /Create draft country/);
+  assert.match(page, /Discover DT One supported countries/);
+  assert.match(page, /Run preflight checks/);
+  assert.match(page, /Activate only if every check passes/);
+  assert.match(page, /adminKey/);
+  assert.doesNotMatch(page, /ADMIN_API_KEY\s*=/);
 });
