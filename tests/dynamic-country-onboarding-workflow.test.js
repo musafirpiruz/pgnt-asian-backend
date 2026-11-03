@@ -161,3 +161,18 @@ test('admin onboarding wizard is available without embedding the admin secret', 
   assert.match(page, /adminKey/);
   assert.doesNotMatch(page, /ADMIN_API_KEY\s*=/);
 });
+
+
+test('country currency discovery is source-backed and requires explicit admin confirmation', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const migration = fs.readFileSync(path.join(__dirname, '..', 'migrate.js'), 'utf8');
+  assert.match(server, /\/api\/admin\/countries\/:countryCode\/currency-discovery/);
+  assert.match(server, /restcountries-v3\.1/);
+  assert.match(server, /selectedAutomatically: false/);
+  assert.match(server, /\/api\/admin\/countries\/:countryCode\/destination-currency/);
+  assert.match(server, /Select a currency returned by the latest verified country currency discovery/);
+  assert.match(server, /Currency cannot change after catalog import/);
+  assert.match(migration, /022_country_currency_discovery/);
+  assert.match(migration, /source_reference TEXT NOT NULL/);
+  assert.match(migration, /selection_status VARCHAR\(20\)/);
+});
