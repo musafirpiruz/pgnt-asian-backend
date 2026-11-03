@@ -21,7 +21,7 @@ test('country onboarding UI calls only protected draft and inactive mapping APIs
   assert.match(pageSource, /\/providers/);
   assert.match(pageSource, /x-admin-api-key/);
   assert.match(pageSource, /Create draft country/);
-  assert.match(pageSource, /Save inactive operator/);
+  assert.match(pageSource, /Save selected operator as inactive/);
   assert.match(pageSource, /Save disabled provider mapping/);
 });
 
