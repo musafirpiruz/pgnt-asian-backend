@@ -2811,6 +2811,107 @@ app.post('/api/admin/countries', requireAdmin, async (req, res) => {
   }
 });
 
+// Verify an explicit alpha-2 to DT One alpha-3 mapping against the
+// provider's live country list. This does not activate the country.
+app.post('/api/admin/countries/:countryCode/dtone-mapping', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ verified: false, error: 'DT One credentials are not configured.' });
+  }
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const providerCountryCode = String(req.body?.providerCountryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode) || !/^[A-Z]{3}$/.test(providerCountryCode)) {
+    return res.status(400).json({ verified: false, error: 'A valid ISO alpha-2 country and DT One alpha-3 code are required.' });
+  }
+  try {
+    const local = await pool.query(
+      'SELECT country_code, country_name, status, configuration_version FROM country_registry WHERE country_code = $1',
+      [countryCode]
+    );
+    if (local.rowCount !== 1) return res.status(404).json({ verified: false, error: 'Country draft was not found.' });
+
+    let providerCountry = null;
+    let pagesChecked = 0;
+    const pageSize = 100;
+    for (let page = 1; page <= 20; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/countries`);
+      url.searchParams.set('per_page', String(pageSize));
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(30000),
+      });
+      const body = await response.text();
+      let data = null;
+      try { data = body ? JSON.parse(body) : null; } catch (_) {}
+      if (!response.ok) return res.status(502).json({ verified: false, providerStatus: response.status, error: 'Could not verify provider country mapping.' });
+      const rows = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : (Array.isArray(data?.countries) ? data.countries : null));
+      if (!rows) return res.status(502).json({ verified: false, error: 'DT One returned an unexpected country-list response.' });
+      pagesChecked += 1;
+      providerCountry = rows.find(row =>
+        String(row?.iso_code || row?.code || '').trim().toUpperCase() === providerCountryCode
+      ) || providerCountry;
+      if (providerCountry || rows.length < pageSize) break;
+      if (page === 20) return res.status(409).json({ verified: false, complete: false, error: 'Country mapping could not be verified within the pagination safety limit.' });
+    }
+    if (!providerCountry) {
+      return res.status(422).json({ verified: false, error: 'The selected DT One country code is not present in the provider country list.' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`
+        INSERT INTO country_provider_mappings
+          (country_code, provider, provider_country_code, verified_at, verification_status, diagnostics)
+        VALUES ($1,'dtone',$2,NOW(),'verified',$3::jsonb)
+        ON CONFLICT (country_code) DO UPDATE SET
+          provider = EXCLUDED.provider,
+          provider_country_code = EXCLUDED.provider_country_code,
+          verified_at = NOW(),
+          verification_status = 'verified',
+          diagnostics = EXCLUDED.diagnostics,
+          updated_at = NOW()
+      `, [countryCode, providerCountryCode, JSON.stringify({
+        providerCountryName: String(providerCountry.name || providerCountry.label || ''),
+        pagesChecked,
+        verifiedAgainst: 'GET /v1/countries',
+      })]);
+      await client.query(`
+        UPDATE country_registry
+        SET provider = 'dtone', provider_country_code = $2,
+            configuration_version = configuration_version + 1, updated_at = NOW()
+        WHERE country_code = $1
+      `, [countryCode, providerCountryCode]);
+      await client.query(`
+        INSERT INTO country_configuration_audit
+          (country_code, actor, action, configuration_version, after_state)
+        SELECT country_code, 'admin', 'dtone_country_mapping_verified',
+               configuration_version,
+               jsonb_build_object('provider','dtone','providerCountryCode',$2,'status',status)
+        FROM country_registry WHERE country_code = $1
+      `, [countryCode, providerCountryCode]);
+      await client.query('COMMIT');
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw error;
+    } finally {
+      client.release();
+    }
+    return res.json({
+      verified: true, countryCode, providerCountryCode,
+      providerCountryName: String(providerCountry.name || providerCountry.label || ''),
+      countryStatus: local.rows[0].status,
+      customerVisible: false, checkoutEnabled: false,
+      productActivation: 'unchanged', transactionCreated: false,
+    });
+  } catch (error) {
+    console.error('DT One country mapping verification failed:', error.message);
+    return res.status(500).json({ verified: false, error: 'Could not save the verified DT One country mapping.' });
+  }
+});
+
 // Customer discovery exposes only explicitly active countries. Legacy entries
 // are intentionally excluded until they pass the new registry preflight.
 app.get('/api/countries/active', async (req, res) => {
