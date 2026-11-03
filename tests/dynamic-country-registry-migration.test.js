@@ -44,7 +44,7 @@ test('new countries default to draft and legacy four-country settings are preser
   assert.match(migration, /'IN','India','INR','\+91',10,10,'dtone','IND','legacy'/);
   assert.match(migration, /'BD','Bangladesh','BDT','\+880',10,10,'dtone','BGD','legacy'/);
   assert.match(migration, /ON CONFLICT \(country_code\) DO NOTHING/);
-  assert.match(migration, /New countries default to draft/);
+  assert.match(migration, /status VARCHAR\(20\) NOT NULL DEFAULT 'draft'/);
 });
 
 test('catalog activation is blocked unless provider price currency and EUR cost are verified', () => {
