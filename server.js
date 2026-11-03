@@ -2810,6 +2810,106 @@ app.post('/api/admin/countries', requireAdmin, async (req, res) => {
   }
 });
 
+// Discover official ISO 4217 currency candidates for a draft country.
+// A candidate is never selected automatically: some territories use multiple currencies.
+app.post('/api/admin/countries/:countryCode/currency-discovery', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ discovered: false, error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ discovered: false, error: 'A valid ISO alpha-2 country code is required.' });
+  try {
+    const country = await pool.query('SELECT country_code,status FROM country_registry WHERE country_code=$1', [code]);
+    if (country.rowCount !== 1) return res.status(404).json({ discovered: false, error: 'Country draft was not found.' });
+    if (country.rows[0].status === 'active') return res.status(409).json({ discovered: false, error: 'Disable the country before changing currency metadata.' });
+    const response = await fetch('https://restcountries.com/v3.1/alpha/' + encodeURIComponent(code) + '?fields=cca2,name,currencies,idd', {
+      method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
+    });
+    const body = await response.text();
+    let data = null;
+    try { data = body ? JSON.parse(body) : null; } catch (_) {}
+    const record = Array.isArray(data) ? data[0] : data;
+    if (!response.ok || !record || String(record.cca2 || '').toUpperCase() !== code || !record.currencies || typeof record.currencies !== 'object') {
+      return res.status(502).json({ discovered: false, error: 'Currency metadata could not be verified from the ISO country metadata provider.' });
+    }
+    const currencies = Object.entries(record.currencies).map(([currency, details]) => ({
+      currency: String(currency).trim().toUpperCase(),
+      name: String(details?.name || '').trim(),
+      symbol: String(details?.symbol || '').trim(),
+    })).filter(item => /^[A-Z]{3}$/.test(item.currency));
+    if (!currencies.length) return res.status(422).json({ discovered: false, error: 'The country metadata provider returned no valid ISO 4217 currency.' });
+    await pool.query(`
+      INSERT INTO country_currency_discoveries
+        (country_code,currencies,source,source_reference,observed_at,selection_status)
+      VALUES ($1,$2::jsonb,'restcountries-v3.1',$3,NOW(),'pending')
+      ON CONFLICT (country_code) DO UPDATE SET
+        currencies=EXCLUDED.currencies,source=EXCLUDED.source,
+        source_reference=EXCLUDED.source_reference,observed_at=NOW(),
+        selection_status='pending',selected_currency=NULL,selected_at=NULL
+    `, [code, JSON.stringify(currencies), 'https://restcountries.com/v3.1/alpha/' + code]);
+    return res.json({
+      discovered: true, countryCode: code, countryName: String(record.name?.common || ''),
+      currencies, selectionRequired: true, selectedAutomatically: false,
+      source: 'restcountries-v3.1', observedAt: new Date().toISOString(),
+      message: currencies.length > 1 ? 'Multiple currencies were reported. Select the DT One product denomination currency after catalog verification.' : 'Confirm the candidate currency before catalog import.',
+    });
+  } catch (error) {
+    console.warn('Country currency discovery failed:', error.message);
+    return res.status(502).json({ discovered: false, error: 'Currency metadata provider is unavailable; no currency was guessed or changed.' });
+  }
+});
+
+app.put('/api/admin/countries/:countryCode/destination-currency', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ updated: false, error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  const currency = String(req.body?.currency || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code) || !/^[A-Z]{3}$/.test(currency)) {
+    return res.status(400).json({ updated: false, error: 'A valid ISO alpha-2 country and ISO 4217 currency are required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const country = await client.query('SELECT country_name,status,configuration_version FROM country_registry WHERE country_code=$1 FOR UPDATE', [code]);
+    if (country.rowCount !== 1) { await client.query('ROLLBACK'); return res.status(404).json({ updated: false, error: 'Country was not found.' }); }
+    if (country.rows[0].status === 'active') { await client.query('ROLLBACK'); return res.status(409).json({ updated: false, error: 'Disable the country before changing destination currency.' }); }
+    const discovery = await client.query(`
+      SELECT currencies FROM country_currency_discoveries
+      WHERE country_code=$1 AND selection_status='pending'
+      FOR UPDATE
+    `, [code]);
+    if (discovery.rowCount !== 1 || !Array.isArray(discovery.rows[0].currencies) ||
+        !discovery.rows[0].currencies.some(item => String(item.currency).toUpperCase() === currency)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ updated: false, error: 'Select a currency returned by the latest verified country currency discovery.' });
+    }
+    const products = await client.query('SELECT COUNT(*)::int AS count FROM country_products WHERE country_code=$1', [code]);
+    if (Number(products.rows[0].count) > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ updated: false, error: 'Currency cannot change after catalog import. Review or remove the draft catalog before retrying.' });
+    }
+    const updated = await client.query(`
+      UPDATE country_registry SET destination_currency=$2,
+        configuration_version=configuration_version+1,updated_at=NOW()
+      WHERE country_code=$1
+      RETURNING country_code,country_name,destination_currency,status,configuration_version
+    `, [code, currency]);
+    await client.query(`
+      UPDATE country_currency_discoveries SET selected_currency=$2,
+        selected_at=NOW(),selection_status='confirmed'
+      WHERE country_code=$1
+    `, [code, currency]);
+    await client.query(`
+      INSERT INTO country_configuration_audit
+        (country_code,actor,action,configuration_version,after_state)
+      VALUES ($1,'admin','destination_currency_confirmed',$2,$3::jsonb)
+    `, [code, Number(updated.rows[0].configuration_version), JSON.stringify(updated.rows[0])]);
+    await client.query('COMMIT');
+    return res.json({ updated: true, country: updated.rows[0], currencySource: 'restcountries-v3.1', confirmedByAdmin: true });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Destination currency confirmation failed:', error.message);
+    return res.status(500).json({ updated: false, error: 'Could not confirm destination currency.' });
+  } finally { client.release(); }
+});
+
 // Verify an explicit alpha-2 to DT One alpha-3 mapping against the
 // provider's live country list. This does not activate the country.
 app.post('/api/admin/countries/:countryCode/dtone-mapping', requireAdmin, async (req, res) => {
