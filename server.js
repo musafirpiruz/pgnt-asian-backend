@@ -437,7 +437,7 @@ function normalizePhone(value, country) {
 
 function validatePhone(phone, country) {
   const code = normalizeCountry(country);
-  const config = SUPPORTED_COUNTRIES[code];
+  const config = DYNAMIC_COUNTRY_CONFIG.get(code);
 
   if (!config) {
     return {
@@ -1715,7 +1715,7 @@ async function processPaidStripeSession(session) {
   // DT One expects the recipient number in international format.
   // Build it from the validated local number and this country's
   // configured calling code; never rely on an undeclared variable.
-  const countryConfig = SUPPORTED_COUNTRIES[order.country];
+  const countryConfig = DYNAMIC_COUNTRY_CONFIG.get(normalizeCountry(order.country));
   if (!countryConfig || !countryConfig.callingCode) {
     await pool.query(
       `UPDATE orders
