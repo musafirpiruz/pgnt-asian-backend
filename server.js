@@ -1137,6 +1137,18 @@ app.post('/api/payments/checkout', async (req, res) => {
       );
     }
 
+    // A catalog ID is not permission to change the selected network or
+    // denomination. Validate the client selections against the authoritative
+    // catalog row before calculating a price or creating a Stripe session.
+    if (input.productId && input.operator &&
+        product.name.trim().toLowerCase() !== input.operator.trim().toLowerCase()) {
+      throw new Error('Product does not match selected operator.');
+    }
+    if (input.productId && Number.isSafeInteger(input.amount) && input.amount > 0 &&
+        product.localAmount !== input.amount) {
+      throw new Error('Product does not match selected amount.');
+    }
+
     const basePricing = await getPricingSettings(client, input.country);
     const pricing = await resolveProductPricing(client, input.country, product.name, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
