@@ -93,7 +93,7 @@ async function refreshCountryFxRates(pool, options = {}) {
     return {
       updatedCountries: Object.keys(validated.rates),
       rates: validated.rates,
-      source: 'ExchangeRate-API Open Access',
+      source: 'ExchangeRate-API authenticated Standard endpoint',
       providerUpdatedAt: validated.providerUpdatedAt.toISOString(),
       nextUpdateAt: validated.nextUpdateAt ? validated.nextUpdateAt.toISOString() : null,
     };
