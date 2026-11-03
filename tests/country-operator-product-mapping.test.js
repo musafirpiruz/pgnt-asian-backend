@@ -66,7 +66,7 @@ test('admin page can create explicit mappings only from discovered DT One produc
   assert.match(admin, /selectedProviderProduct/);
   assert.match(admin, /catalogProductId/);
   assert.match(admin, /Save explicit operator ↔ catalog mapping \(inactive\)/);
-  assert.match(admin, /\/operators\/\+encodeURIComponent\(operatorKey\)\+'\/products'/);
+  assert.match(admin, /\/operators\/'\+encodeURIComponent\(operatorKey\)\+'\/products'/);
   assert.match(admin, /provider_product_id:providerProductId/);
   assert.match(admin, /catalog_product_id:catalogProductId/);
 });
