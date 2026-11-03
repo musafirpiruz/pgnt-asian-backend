@@ -1069,6 +1069,44 @@ runMigration();
       console.log("Migration 018_global_provider_currency_fx is already applied.");
     }
 
+
+    // Version 019 adds independent, admin-configured pricing controls per
+    // destination country. New pricing rows are inactive until reviewed.
+    const countryPricingVersion = "019_country_pricing_settings";
+    const countryPricingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [countryPricingVersion]
+    );
+    if (countryPricingCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_pricing_settings (
+            country_code CHAR(2) PRIMARY KEY REFERENCES country_registry(country_code) ON DELETE RESTRICT,
+            fee_eur_cents INTEGER NOT NULL DEFAULT 0 CHECK (fee_eur_cents >= 0 AND fee_eur_cents <= 100000),
+            fee_percent NUMERIC(7,4) NOT NULL DEFAULT 0 CHECK (fee_percent >= 0 AND fee_percent <= 100),
+            stripe_fee_percent NUMERIC(6,3) NOT NULL DEFAULT 1.500 CHECK (stripe_fee_percent >= 0 AND stripe_fee_percent < 100),
+            stripe_fixed_fee_cents INTEGER NOT NULL DEFAULT 25 CHECK (stripe_fixed_fee_cents >= 0),
+            min_customer_price_eur_cents INTEGER NOT NULL DEFAULT 1 CHECK (min_customer_price_eur_cents > 0),
+            max_customer_price_eur_cents INTEGER NOT NULL DEFAULT 1000000 CHECK (max_customer_price_eur_cents >= min_customer_price_eur_cents),
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            updated_by VARCHAR(160) NOT NULL DEFAULT 'system',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          INSERT INTO schema_migrations (version)
+          VALUES ('019_country_pricing_settings')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 019_country_pricing_settings completed; country pricing defaults remain inactive until admin review.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 019_country_pricing_settings is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
