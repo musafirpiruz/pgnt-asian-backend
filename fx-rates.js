@@ -23,7 +23,7 @@ function validateProviderPayload(payload, nowMs = Date.now()) {
       item && item.base === 'EUR' && item.quote === currency
     );
     if (!row || typeof row.date !== 'string' ||
-        !/^\\d{4}-\\d{2}-\\d{2}$/.test(row.date)) {
+        !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) {
       throw new Error(`FX provider did not return a dated EUR/${currency} rate.`);
     }
 
