@@ -58,11 +58,11 @@ The application must use the backend to retrieve products and create payment req
 
 ## Automatic Recipient-Currency FX Rates
 
-The backend can refresh reference rates for AFN, PKR, INR, and BDT against EUR using the authenticated ExchangeRate-API Standard endpoint. Configure `FX_API_KEY` in the backend environment; never commit the key to GitHub or place it in Flutter. The provider refreshes its feed daily, so the backend checks once on startup and then every 24 hours.
+The backend refreshes reference rates for AFN, PKR, INR, and BDT against EUR using the public Frankfurter API (`https://api.frankfurter.dev/v2/rates`). No account, API key, or payment card is required. The backend checks once at startup and then every 24 hours.
 
-Rates are accepted only when all four currencies are present and the provider timestamp is no more than 48 hours old. Updates are committed atomically and recorded in `fx_rate_history`; provider failures leave the last saved rates unchanged. These are reference comparison rates, not guaranteed cash-remittance or DT One settlement rates. EUR remains the only enabled Stripe payment currency.
+The refresh validates that all four EUR-based currency quotes are present, positive, and no more than five days old (to allow weekends and public holidays). Updates are committed atomically and recorded in `fx_rate_history`; provider failures leave the last saved rates unchanged. Each country's provider observation date is recorded separately.
 
-The authenticated provider account is required for use in the customer-facing application; do not replace it with the free Open Access feed, whose terms prohibit redistribution. Check the provider's current plan, coverage, and terms before configuring production use.
+Frankfurter aggregates reference rates from central banks and official sources. Data availability and reuse terms can depend on the underlying provider; review the provider terms before production use. These are reference comparison rates, not guaranteed cash-remittance or DT One settlement rates. EUR remains the only enabled Stripe payment currency.
 
 ## Build Android APK
 
