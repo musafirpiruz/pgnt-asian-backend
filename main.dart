@@ -3504,7 +3504,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
                 t('supportHistoryTitle'),
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
@@ -3524,9 +3524,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ],
         ),
         if (!hasOrder)
-          const Text(t('supportChooseOrderView'))
+          Text(t('supportChooseOrderView'))
         else if (supportTickets.isEmpty && !isLoadingSupportTickets)
-          const Text(t('supportNoTickets'))
+          Text(t('supportNoTickets'))
         else
           ...supportTickets.map((ticket) {
             final id = ticket['id']?.toString() ?? '—';
