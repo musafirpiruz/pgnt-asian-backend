@@ -1039,13 +1039,14 @@ runMigration();
 
 runMigration();
 ),
-            units_per_eur NUMERIC(20,8) NOT NULL CHECK (units_per_eur > 0),
+            units_per_eur NUMERIC(20,8),
             source VARCHAR(80) NOT NULL,
             source_reference TEXT,
             observed_at TIMESTAMPTZ NOT NULL,
             fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             accepted BOOLEAN NOT NULL DEFAULT FALSE,
-            rejection_reason TEXT
+            rejection_reason TEXT,
+            CHECK ((accepted = TRUE AND units_per_eur > 0) OR (accepted = FALSE AND units_per_eur IS NULL))
           );
           CREATE INDEX IF NOT EXISTS idx_fx_currency_history_currency_time
             ON fx_currency_rate_history(currency, observed_at DESC);
