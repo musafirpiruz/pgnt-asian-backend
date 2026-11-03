@@ -1039,6 +1039,36 @@ async function runMigration() {
       console.log("Migration 020_country_operator_localizations is already applied.");
     }
 
+
+    // Version 021 removes the original four-country restriction from operator fees.
+    const operatorPricingRegistryVersion = "021_dynamic_operator_pricing_countries";
+    const operatorPricingRegistryCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [operatorPricingRegistryVersion]
+    );
+    if (operatorPricingRegistryCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE operator_pricing_settings
+            DROP CONSTRAINT IF EXISTS operator_pricing_settings_country_check;
+          ALTER TABLE operator_pricing_settings
+            ADD CONSTRAINT operator_pricing_settings_country_iso2_check
+            CHECK (country ~ '^[A-Z]{2}$');
+          INSERT INTO schema_migrations (version)
+          VALUES ('021_dynamic_operator_pricing_countries')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 021_dynamic_operator_pricing_countries completed; existing operator fee rows were preserved.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 021_dynamic_operator_pricing_countries is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
