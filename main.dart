@@ -3405,7 +3405,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'For a failed or delayed order, save the transaction ID and receipt. Direct ticket submission and automatic refund review still require a connected support service.',
+                  'For a failed or delayed order, you can submit a support ticket using the transaction from your history. Ticket availability depends on a working internet connection and the backend service.',
                   style: TextStyle(height: 1.4),
                 ),
               ),
