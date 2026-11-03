@@ -3869,6 +3869,8 @@ app.post('/api/admin/countries/:countryCode/disable', requireAdmin, async (req, 
 app.get('/api/countries/:countryCode/operators', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Country service is unavailable.' });
   const code = String(req.params.countryCode || '').trim().toUpperCase();
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = ['en','ps','fa','ur','hi','bn'].includes(requestedLanguage) ? requestedLanguage : 'en';
   try {
     const country = await pool.query(`SELECT 1 FROM country_registry WHERE country_code=$1 AND status IN ('active','legacy')`, [code]);
     if (country.rowCount !== 1) return res.status(404).json({ error: 'Country is unavailable.' });
@@ -3887,8 +3889,8 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
       WHERE country=$1 AND active=TRUE
         AND NOT EXISTS (SELECT 1 FROM country_operators WHERE country_code=$1 AND active=TRUE)
       ORDER BY name
-    `, [code]);
-    return res.json({ countryCode: code, operators: result.rows });
+    `, [code, language]);
+    return res.json({ countryCode: code, language, operators: result.rows });
   } catch (error) {
     console.error('Customer country operator lookup failed:', error.message);
     return res.status(503).json({ error: 'Operators are temporarily unavailable.' });
