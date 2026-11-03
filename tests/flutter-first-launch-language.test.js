@@ -27,3 +27,8 @@ test('selected language is saved and restored across app launches', () => {
   assert.match(dart, /preferences\.setString\(\s*_languagePreferenceKey/);
   assert.match(dart, /preferences\.getString\(_languagePreferenceKey\)/);
 });
+
+test('empty country operator registry falls back to curated local operators', () => {
+  assert.match(dart, /directoryOperators\s*=\s*loaded\.isEmpty\s*\?\s*null\s*:\s*loaded/);
+  assert.match(dart, /directoryOperators\s*\?\?\s*operators\.where/);
+});
