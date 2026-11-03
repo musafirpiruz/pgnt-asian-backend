@@ -2930,6 +2930,87 @@ app.get('/api/countries/active', async (req, res) => {
   }
 });
 
+let registryFxRefreshInProgress = false;
+
+async function refreshFxCurrencyRate(currencyValue) {
+  const currency = String(currencyValue || '').trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return { currency, accepted: false, reason: 'invalid currency code' };
+  if (currency === 'EUR') return { currency, accepted: true, unitsPerEur: 1, source: 'base-currency' };
+  try {
+    const response = await fetch(`https://api.frankfurter.dev/v2/rate/EUR/${currency}`, {
+      method: 'GET', headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(12000),
+    });
+    const body = await response.text();
+    let data = null;
+    try { data = body ? JSON.parse(body) : null; } catch (_) {}
+    const rate = Number(data?.rate);
+    const observedAt = data?.date ? new Date(`${data.date}T00:00:00.000Z`) : null;
+    const ageMs = observedAt && Number.isFinite(observedAt.getTime())
+      ? Date.now() - observedAt.getTime() : NaN;
+    const valid = response.ok && String(data?.base || '').toUpperCase() === 'EUR' &&
+      String(data?.quote || '').toUpperCase() === currency &&
+      Number.isFinite(rate) && rate > 0 && observedAt &&
+      Number.isFinite(observedAt.getTime()) && ageMs >= -86400000 &&
+      ageMs <= 5 * 86400000;
+    if (!valid) {
+      await pool.query(`
+        INSERT INTO fx_currency_rate_history
+          (currency,units_per_eur,source,source_reference,observed_at,accepted,rejection_reason)
+        VALUES ($1,NULL,'frankfurter-v2',NULL,$2,FALSE,$3)
+      `, [currency, observedAt && Number.isFinite(observedAt.getTime()) ? observedAt : new Date(),
+        'FX quote missing, invalid, future-dated, or older than five days.']);
+      return { currency, accepted: false, reason: 'no fresh valid rate; saved rate preserved' };
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`
+        INSERT INTO fx_currency_rate_history
+          (currency,units_per_eur,source,source_reference,observed_at,accepted)
+        VALUES ($1,$2,'frankfurter-v2',$3,$4,TRUE)
+      `, [currency, rate, 'https://api.frankfurter.dev/v2/rate/EUR/' + currency, observedAt]);
+      await client.query(`
+        INSERT INTO fx_currency_rates
+          (currency,units_per_eur,source,source_reference,observed_at,expires_at,updated_at)
+        VALUES ($1,$2,'frankfurter-v2',$3,$4,$4 + INTERVAL '5 days',NOW())
+        ON CONFLICT (currency) DO UPDATE SET
+          units_per_eur=EXCLUDED.units_per_eur,
+          source=EXCLUDED.source,source_reference=EXCLUDED.source_reference,
+          observed_at=EXCLUDED.observed_at,expires_at=EXCLUDED.expires_at,updated_at=NOW()
+      `, [currency, rate, 'https://api.frankfurter.dev/v2/rate/EUR/' + currency, observedAt]);
+      await client.query('COMMIT');
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw error;
+    } finally { client.release(); }
+    return { currency, accepted: true, unitsPerEur: rate, observedAt: observedAt.toISOString(), source: 'frankfurter-v2' };
+  } catch (error) {
+    console.warn('Automatic FX refresh failed for', currency, error.message);
+    return { currency, accepted: false, reason: 'provider unavailable; previous saved rate preserved' };
+  }
+}
+
+async function refreshRegistryFxRates() {
+  if (!pool || registryFxRefreshInProgress) return;
+  registryFxRefreshInProgress = true;
+  try {
+    const result = await pool.query(`
+      SELECT destination_currency AS currency FROM country_registry
+      WHERE status IN ('active','legacy','draft','configuring','testing')
+      UNION
+      SELECT DISTINCT wholesale_currency AS currency FROM country_products
+    `);
+    const currencies = [...new Set(result.rows.map(row => String(row.currency || '').trim().toUpperCase()))]
+      .filter(code => /^[A-Z]{3}$/.test(code) && code !== 'EUR');
+    for (const currency of currencies) await refreshFxCurrencyRate(currency);
+  } catch (error) {
+    console.warn('Country registry FX refresh could not complete:', error.message);
+  } finally {
+    registryFxRefreshInProgress = false;
+  }
+}
+
 // Discover and import a registry country catalog. All provider details and
 // wholesale/retail currency units are verified before a preview or disabled import.
 app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, async (req, res) => {
@@ -3027,6 +3108,13 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
     }
 
     const currencies = [...new Set(detailed.map(item => String(item?.prices?.wholesale?.unit || '').trim().toUpperCase()).filter(code => /^[A-Z]{3}$/.test(code) && code !== 'EUR'))];
+    for (const currency of currencies) {
+      const saved = await pool.query(`
+        SELECT 1 FROM fx_currency_rates WHERE currency=$1 AND expires_at>NOW()
+          AND observed_at>=NOW()-INTERVAL '5 days' LIMIT 1
+      `, [currency]);
+      if (saved.rowCount !== 1) await refreshFxCurrencyRate(currency);
+    }
     const fxResult = currencies.length
       ? await pool.query(`
           SELECT currency, units_per_eur, source, observed_at, expires_at
@@ -6965,6 +7053,8 @@ async function startServer() {
     }
 
     app.listen(PORT, '0.0.0.0', () => {
+      refreshRegistryFxRates().catch(() => {});
+      setInterval(() => refreshRegistryFxRates().catch(() => {}), 24 * 60 * 60 * 1000).unref?.();
       console.log(
         `PGNT ASIAN TOPUP backend listening on port ${PORT}`
       );
