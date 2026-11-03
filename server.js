@@ -2974,7 +2974,7 @@ async function refreshFxCurrencyRate(currencyValue) {
       await client.query(`
         INSERT INTO fx_currency_rates
           (currency,units_per_eur,source,source_reference,observed_at,expires_at,updated_at)
-        VALUES ($1,$2,'frankfurter-v2',$3,$4,$4 + INTERVAL '5 days',NOW())
+        VALUES ($1,$2,'frankfurter-v2',$3,$4,$4::timestamptz + INTERVAL '5 days',NOW())
         ON CONFLICT (currency) DO UPDATE SET
           units_per_eur=EXCLUDED.units_per_eur,
           source=EXCLUDED.source,source_reference=EXCLUDED.source_reference,
@@ -3359,7 +3359,7 @@ app.post('/api/admin/fx/rates/refresh', requireAdmin, async (req, res) => {
         await client.query(`
           INSERT INTO fx_currency_rates
             (currency, units_per_eur, source, source_reference, observed_at, expires_at, updated_at)
-          VALUES ($1,$2,'frankfurter-v2',$3,$4,$4 + INTERVAL '5 days',NOW())
+          VALUES ($1,$2,'frankfurter-v2',$3,$4,$4::timestamptz + INTERVAL '5 days',NOW())
           ON CONFLICT (currency) DO UPDATE SET
             units_per_eur = EXCLUDED.units_per_eur,
             source = EXCLUDED.source,
