@@ -1714,7 +1714,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           if (raw is! Map) continue;
           final amount = raw['amount'];
           final value = amount is num ? amount.toInt() : int.tryParse('$amount');
-          if (value != null && value > 0 && amount is num && amount == value) nextAmounts.add(value);
+          final numericValue = amount is num ? amount.toDouble() : double.tryParse('$amount');
+          if (value != null && value > 0 && numericValue == value.toDouble()) nextAmounts.add(value);
         }
       }
       setState(() {
