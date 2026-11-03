@@ -2645,8 +2645,124 @@ function requireAdmin(req, res, next) {
     });
   }
 
+
   return next();
 }
+
+// Database-backed country onboarding. A newly submitted country is ALWAYS a
+// draft: this endpoint cannot activate countries, operators, products or pricing.
+app.get('/api/admin/countries', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(`
+      SELECT c.country_code, c.country_name, c.destination_currency,
+             c.calling_code, c.phone_min_digits, c.phone_max_digits,
+             c.provider, c.provider_country_code, c.status,
+             c.configuration_version, c.created_at, c.updated_at,
+             m.verification_status AS provider_mapping_status,
+             m.verified_at AS provider_mapping_verified_at
+      FROM country_registry c
+      LEFT JOIN country_provider_mappings m
+        ON m.country_code = c.country_code
+      ORDER BY c.country_name ASC
+    `);
+    return res.json({ countries: result.rows, count: result.rowCount, readOnly: true });
+  } catch (error) {
+    console.error('Admin country registry lookup failed:', error.message);
+    return res.status(500).json({ error: 'Could not retrieve country registry.' });
+  }
+});
+
+app.post('/api/admin/countries', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.body?.countryCode || '').trim().toUpperCase();
+  const countryName = String(req.body?.countryName || '').trim();
+  const destinationCurrency = String(req.body?.destinationCurrency || '').trim().toUpperCase();
+  const callingCode = String(req.body?.callingCode || '').trim();
+  const provider = String(req.body?.provider || 'dtone').trim().toLowerCase();
+  const providerCountryCode = String(req.body?.providerCountryCode || '').trim().toUpperCase();
+  const minDigits = req.body?.phoneMinDigits == null ? null : Number(req.body.phoneMinDigits);
+  const maxDigits = req.body?.phoneMaxDigits == null ? null : Number(req.body.phoneMaxDigits);
+
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !/^[A-Z]{3}$/.test(destinationCurrency) ||
+      !countryName || countryName.length > 120 ||
+      !['dtone'].includes(provider) ||
+      (callingCode && !/^\+[1-9][0-9]{0,6}$/.test(callingCode)) ||
+      ((minDigits == null) !== (maxDigits == null)) ||
+      (minDigits != null && (!Number.isInteger(minDigits) || !Number.isInteger(maxDigits) ||
+        minDigits < 1 || maxDigits < minDigits || maxDigits > 15)) ||
+      providerCountryCode.length > 8) {
+    return res.status(400).json({
+      error: 'Invalid country configuration. Use ISO alpha-2, ISO currency, valid phone rules and a supported provider.',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const inserted = await client.query(`
+      INSERT INTO country_registry
+        (country_code, country_name, destination_currency, calling_code,
+         phone_min_digits, phone_max_digits, provider, provider_country_code, status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft')
+      RETURNING country_code, country_name, destination_currency, calling_code,
+                phone_min_digits, phone_max_digits, provider, provider_country_code,
+                status, configuration_version, created_at
+    `, [
+      countryCode, countryName, destinationCurrency, callingCode || null,
+      minDigits, maxDigits, provider, providerCountryCode || null,
+    ]);
+    if (providerCountryCode) {
+      await client.query(`
+        INSERT INTO country_provider_mappings
+          (country_code, provider, provider_country_code, verification_status)
+        VALUES ($1,$2,$3,'pending')
+      `, [countryCode, provider, providerCountryCode]);
+    }
+    await client.query(`
+      INSERT INTO country_configuration_audit
+        (country_code, actor, action, configuration_version, after_state)
+      VALUES ($1,'admin','country_draft_created',1,$2::jsonb)
+    `, [countryCode, JSON.stringify(inserted.rows[0])]);
+    await client.query('COMMIT');
+    return res.status(201).json({
+      country: inserted.rows[0],
+      nextStep: 'Configure provider mapping, operators, products, FX and localizations; country remains draft.',
+      customerVisible: false,
+      checkoutEnabled: false,
+      productsActivated: false,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'This country or provider mapping already exists.' });
+    }
+    console.error('Admin country draft creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create country draft.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Customer discovery exposes only explicitly active countries. Legacy entries
+// are intentionally excluded until they pass the new registry preflight.
+app.get('/api/countries/active', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Country registry is unavailable.' });
+  try {
+    const result = await pool.query(`
+      SELECT country_code AS code, country_name AS name,
+             destination_currency AS currency, calling_code AS callingCode
+      FROM country_registry
+      WHERE status = 'active'
+      ORDER BY country_name ASC
+    `);
+    return res.json({ countries: result.rows, count: result.rowCount });
+  } catch (error) {
+    console.error('Active country lookup failed:', error.message);
+    return res.status(503).json({ error: 'Country registry is not ready.' });
+  }
+});
 
 // Read-only wallet integrity diagnostics. This deliberately exposes no
 // customer records and performs no wallet, ledger, payment, or refund writes.
