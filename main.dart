@@ -1692,7 +1692,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final countryCode = selectedCountry.code;
     try {
       final responses = await Future.wait([
-        http.get(Uri.parse('$backendBaseUrl/api/countries/$countryCode/operators'),
+        http.get(Uri.parse('$backendBaseUrl/api/countries/$countryCode/operators?language=$languageCode'),
             headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 12)),
         http.get(Uri.parse('$backendBaseUrl/api/countries/$countryCode/products'),
             headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 12)),
