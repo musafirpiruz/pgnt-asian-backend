@@ -743,7 +743,7 @@ async function resolveProductPricing(client, country, operator, product, pricing
   const percent = Number(result.rows[0].fee_percent);
   if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('Invalid operator fee percentage.');
   const wholesale = requirePositiveInteger(product.wholesalePriceCents, 'DT One wholesale price in EUR cents');
-  return { ...pricing, feeCents: fixed + Math.ceil(wholesale * percent / 100), operatorFeeCents: fixed,
+  return { ...pricing, feeCents: fixed + Math.ceil(wholesale * percent / 100), feePercent: 0, operatorFeeCents: fixed,
     operatorFeePercent: percent, operatorPricingApplied: true };
 }
 
@@ -3565,6 +3565,19 @@ app.post('/api/admin/countries/:countryCode/activate', requireAdmin, async (req,
       VALUES ($1,'admin','country_activated',$2,$3::jsonb)
     `, [code, Number(updated.rows[0].configuration_version), JSON.stringify(updated.rows[0])]);
     await client.query('COMMIT');
+    const registryDetails = await pool.query(`
+      SELECT country_name,destination_currency,calling_code,phone_min_digits,phone_max_digits
+      FROM country_registry WHERE country_code=$1
+    `, [code]);
+    if (registryDetails.rowCount === 1) {
+      const row = registryDetails.rows[0];
+      DYNAMIC_COUNTRY_CONFIG.set(code, {
+        name: row.country_name,
+        currency: String(row.destination_currency).trim().toUpperCase(),
+        callingCode: row.calling_code,
+        phoneDigits: [Number(row.phone_min_digits), Number(row.phone_max_digits)],
+      });
+    }
     return res.json({ activated: true, country: updated.rows[0], customerVisible: true });
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
@@ -3583,6 +3596,9 @@ app.post('/api/admin/countries/:countryCode/disable', requireAdmin, async (req, 
       WHERE country_code=$1 RETURNING country_code,country_name,status,configuration_version
     `, [code]);
     if (result.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+    if (!Object.prototype.hasOwnProperty.call(SUPPORTED_COUNTRIES, code)) {
+      DYNAMIC_COUNTRY_CONFIG.delete(code);
+    }
     await pool.query(`
       INSERT INTO country_configuration_audit (country_code,actor,action,configuration_version,after_state)
       VALUES ($1,'admin','country_disabled',$2,$3::jsonb)
@@ -6850,6 +6866,19 @@ async function startServer() {
 
   try {
     await pool.query('SELECT 1');
+    const activeRegistry = await pool.query(`
+      SELECT country_code, country_name, destination_currency,
+             calling_code, phone_min_digits, phone_max_digits
+      FROM country_registry WHERE status='active'
+    `);
+    for (const row of activeRegistry.rows) {
+      DYNAMIC_COUNTRY_CONFIG.set(String(row.country_code).trim().toUpperCase(), {
+        name: row.country_name,
+        currency: String(row.destination_currency).trim().toUpperCase(),
+        callingCode: row.calling_code,
+        phoneDigits: [Number(row.phone_min_digits), Number(row.phone_max_digits)],
+      });
+    }
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(
