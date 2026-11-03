@@ -570,71 +570,65 @@ function requirePositiveInteger(value, fieldName) {
 // Expected database table: pricing_settings
 async function getPricingSettings(client, country) {
   const code = normalizeCountry(country);
-
-  const result = await client.query(
-    `SELECT
-       country,
-       fee_eur_cents,
-       COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
-       afn_per_eur,
-       bonus_percent,
-       stripe_fee_percent,
-       stripe_fixed_fee_cents,
-       active
-     FROM pricing_settings
-     WHERE country = $1
-     LIMIT 1`,
+  const legacy = await client.query(
+    `SELECT country, fee_eur_cents,
+            COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
+            afn_per_eur, bonus_percent, stripe_fee_percent,
+            stripe_fixed_fee_cents, active
+     FROM pricing_settings WHERE country = $1 LIMIT 1`,
     [code]
   );
 
-  if (result.rowCount !== 1) {
-    throw new Error(
-      'Pricing settings are not configured.'
+  let settings;
+  let feePercent = 0;
+  if (legacy.rowCount === 1) {
+    settings = legacy.rows[0];
+    if (settings.active !== true) throw new Error('Pricing settings are disabled or invalid.');
+  } else {
+    const dynamic = await client.query(
+      `SELECT fee_eur_cents, fee_percent, stripe_fee_percent,
+              stripe_fixed_fee_cents, active
+       FROM country_pricing_settings WHERE country_code=$1 LIMIT 1`,
+      [code]
     );
+    if (dynamic.rowCount !== 1 || dynamic.rows[0].active !== true) {
+      throw new Error('Pricing settings are not configured or are inactive.');
+    }
+    const fx = await client.query(
+      `SELECT units_per_eur FROM fx_currency_rates
+       WHERE currency=$1 AND expires_at>NOW()
+         AND observed_at>=NOW()-INTERVAL '5 days' LIMIT 1`,
+      [countryCurrency(code)]
+    );
+    if (fx.rowCount !== 1) throw new Error('A fresh destination-currency FX rate is required.');
+    settings = {
+      ...dynamic.rows[0],
+      local_currency_per_eur: fx.rows[0].units_per_eur,
+      afn_per_eur: fx.rows[0].units_per_eur,
+      bonus_percent: 0,
+    };
+    feePercent = Number(settings.fee_percent || 0);
   }
 
-  const settings = result.rows[0];
-
-  if (
-    settings.active !== true
-  ) {
-    throw new Error(
-      'Pricing settings are disabled or invalid.'
-    );
-  }
-
-  const feeCents = requireNonNegativeInteger(
-    settings.fee_eur_cents,
-    'fee in EUR cents'
-  );
-
+  if (settings.active !== true) throw new Error('Pricing settings are disabled or invalid.');
+  const feeCents = requireNonNegativeInteger(settings.fee_eur_cents, 'fee in EUR cents');
   const localCurrencyPerEur = Number(settings.local_currency_per_eur);
   if (!Number.isFinite(localCurrencyPerEur) || localCurrencyPerEur <= 0) {
     throw new Error('Invalid local-currency-per-EUR exchange rate.');
   }
-
-  const bonusPercent = Number(settings.bonus_percent);
+  const bonusPercent = Number(settings.bonus_percent ?? 0);
   if (!Number.isFinite(bonusPercent) || bonusPercent < 0 || bonusPercent > 100) {
     throw new Error('Invalid bonus percentage.');
   }
-
   const stripeFeePercent = Number(settings.stripe_fee_percent);
-  const stripeFixedFeeCents = requireNonNegativeInteger(
-    settings.stripe_fixed_fee_cents,
-    'Stripe fixed fee in EUR cents'
-  );
+  const stripeFixedFeeCents = requireNonNegativeInteger(settings.stripe_fixed_fee_cents, 'Stripe fixed fee in EUR cents');
   if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
     throw new Error('Invalid Stripe fee percentage.');
   }
-
   return {
-    country: code,
-    currency: 'EUR',
-    feeCents,
-    localCurrencyPerEur,
-    bonusPercent,
-    stripeFeePercent,
-    stripeFixedFeeCents,
+    country: code, currency: 'EUR', feeCents, feePercent,
+    localCurrencyPerEur, afnPerEur: localCurrencyPerEur,
+    bonusPercent, stripeFeePercent, stripeFixedFeeCents,
   };
 }
 
@@ -761,10 +755,12 @@ function calculateFinalPrice(product, pricing) {
     'verified DT One wholesale price in EUR cents'
   );
 
-  const feeCents = requireNonNegativeInteger(
-    pricing.feeCents,
-    'fee'
-  );
+  const fixedFeeCents = requireNonNegativeInteger(pricing.feeCents, 'fee');
+  const feePercent = Number(pricing.feePercent || 0);
+  if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 100) {
+    throw new Error('Invalid country fee percentage.');
+  }
+  const feeCents = fixedFeeCents + Math.ceil(basePriceCents * feePercent / 100);
 
   const bonusPercent = Number(
     pricing.bonusPercent
