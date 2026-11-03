@@ -83,7 +83,7 @@ async function refreshCountryFxRates(pool, options = {}) {
         `INSERT INTO fx_rate_history
            (country, currency, rate_per_eur, source, provider_updated_at)
          VALUES ($1, $2, $3, $4, $5)`,
-        [country, COUNTRY_CURRENCIES[country], rate, 'ExchangeRate-API Open Access', validated.providerUpdatedAt]
+        [country, COUNTRY_CURRENCIES[country], rate, 'ExchangeRate-API authenticated Standard endpoint', validated.providerUpdatedAt]
       );
     }
     if (updatedCountryCount !== 4) {
@@ -106,7 +106,7 @@ async function refreshCountryFxRates(pool, options = {}) {
 }
 
 function scheduleCountryFxRefresh(pool, options = {}) {
-  const intervalMs = options.intervalMs || 6 * 60 * 60 * 1000;
+  const intervalMs = options.intervalMs || 24 * 60 * 60 * 1000;
   let inFlight = false;
   let stopped = false;
 
