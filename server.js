@@ -509,11 +509,13 @@ function validateCheckoutInput(body) {
     throw new Error('Invalid product ID.');
   }
 
-  // Current Flutter clients send operator + local amount, not a catalog ID.
-  if (!productId && (
+  // Require the selected operator and denomination even when a catalog
+  // product ID is supplied. Otherwise a caller could omit either field and
+  // bypass the product-selection consistency checks at checkout.
+  if (
     !operator || operator.length > 120 ||
     !Number.isSafeInteger(amount) || amount <= 0
-  )) {
+  ) {
     throw new Error('Select a valid operator and top-up amount.');
   }
 
@@ -1135,6 +1137,16 @@ app.post('/api/payments/checkout', async (req, res) => {
       throw new Error(
         'Product does not match selected country.'
       );
+    }
+
+    // A catalog ID is not permission to change the selected network or
+    // denomination. Validate the client selections against the authoritative
+    // catalog row before calculating a price or creating a Stripe session.
+    if (product.name.trim().toLowerCase() !== input.operator.trim().toLowerCase()) {
+      throw new Error('Product does not match selected operator.');
+    }
+    if (product.localAmount !== input.amount) {
+      throw new Error('Product does not match selected amount.');
     }
 
     const basePricing = await getPricingSettings(client, input.country);
