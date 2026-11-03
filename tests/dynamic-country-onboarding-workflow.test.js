@@ -128,6 +128,27 @@ test('operator translations are stored per operator and required for activation'
   assert.match(migration, /020_country_operator_localizations/);
 });
 
+test('catalog detail must match the verified provider country and listed operator identity', () => {
+  const start = server.indexOf("app.post('/api/admin/countries/:countryCode/dtone-catalog/sync'");
+  const end = server.indexOf("app.post('/api/admin/fx/rates/refresh'", start);
+  const route = server.slice(start, end);
+  assert.match(route, /detailCountryCode !== providerCountryCode/);
+  assert.match(route, /providerOperatorId !== listedOperatorId/);
+  assert.match(route, /wholesaleCurrency/);
+  assert.match(route, /retailCurrency !== wholesaleCurrency/);
+});
+
+test('operator-specific pricing is no longer limited to the four legacy countries', () => {
+  const start = server.indexOf("app.get('/api/admin/operator-pricing'");
+  const end = server.indexOf("app.get('/api/admin/pricing'", start);
+  assert.ok(start >= 0 && end > start);
+  const routes = server.slice(start, end);
+  assert.match(routes, /FROM country_registry WHERE country_code=\$1/);
+  assert.match(routes, /operator_pricing_settings/);
+  assert.doesNotMatch(routes, /isValidCountry\(country\)/);
+  assert.match(migration, /021_dynamic_operator_pricing_countries/);
+});
+
 test('admin onboarding wizard is available without embedding the admin secret', () => {
   const start = server.indexOf("app.get('/admin-countries'");
   const end = server.indexOf('// Start the server only after configuration checks.', start);
