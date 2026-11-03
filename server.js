@@ -7189,7 +7189,7 @@ small{color:#555}.inline{display:flex;gap:8px;align-items:center}.inline input[t
 <section><h2>5. Review operator / product</h2><button class="secondary" onclick="loadOperators()">List imported operators and IDs</button><button class="secondary" onclick="loadProducts()">List imported products and IDs</button><div class="grid">
 <input id="operatorId" type="number" min="1" placeholder="Operator database ID">
 <input id="productId" type="number" min="1" placeholder="Product database ID">
-</div><div class="inline"><input id="operatorActive" type="checkbox"><label for="operatorActive">Approve operator</label></div><button class="secondary" onclick="reviewOperator()">Save operator review</button>
+</div><textarea id="operatorLocalizations" rows="4" placeholder='[{"languageCode":"en","displayName":"Mobile operator"},{"languageCode":"ps","displayName":"شبکه"},{"languageCode":"fa","displayName":"اپراتور"},{"languageCode":"ur","displayName":"نیٹ ورک"},{"languageCode":"hi","displayName":"मोबाइल नेटवर्क"},{"languageCode":"bn","displayName":"মোবাইল নেটওয়ার্ক"}]'></textarea><button class="secondary" onclick="saveOperatorLocalizations()">Save six operator translations</button><div class="inline"><input id="operatorActive" type="checkbox"><label for="operatorActive">Approve operator</label></div><button class="secondary" onclick="reviewOperator()">Save operator review</button>
 <div class="grid"><input id="productStatus" value="active" placeholder="disabled / review / active / retired"></div><button class="secondary" onclick="reviewProduct()">Save product review</button></section>
 <section><h2>6. Validate and activate</h2><button class="secondary" onclick="preflight()">Run preflight checks</button><button onclick="activateCountry()">Activate only if every check passes</button><button class="secondary" onclick="disableCountry()">Disable country / rollback</button></section>
 <section><h2>Result and diagnostics</h2><pre id="output">No action performed.</pre></section>
@@ -7238,6 +7238,10 @@ async function saveLocalizations(){
 }
 async function loadOperators(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/operators');}
 async function loadProducts(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/products');}
+async function saveOperatorLocalizations(){
+ let localizations;try{localizations=JSON.parse(el('operatorLocalizations').value);}catch(_){show({error:'Operator translations JSON is invalid'});return;}
+ await api('/api/admin/countries/'+encodeURIComponent(code())+'/operators/'+encodeURIComponent(el('operatorId').value)+'/localizations','PUT',{localizations});
+}
 async function reviewOperator(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/operators/'+encodeURIComponent(el('operatorId').value),'PATCH',{active:el('operatorActive').checked});}
 async function reviewProduct(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/products/'+encodeURIComponent(el('productId').value),'PATCH',{catalogStatus:el('productStatus').value.trim().toLowerCase()});}
 async function preflight(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/validate','POST',{});}
