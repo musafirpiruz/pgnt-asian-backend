@@ -812,10 +812,31 @@ async function runMigration() {
           ON CONFLICT (code) DO NOTHING;
 
           INSERT INTO country_localizations(country_code, language_code, display_name, is_fallback)
-          SELECT c.code, l.language_code, c.name_en, TRUE
-          FROM countries c
-          CROSS JOIN (VALUES ('en'),('ps'),('fa'),('ur'),('hi'),('bn')) AS l(language_code)
-          WHERE c.code IN ('AF','PK','IN','BD')
+          VALUES
+            ('AF','en','Afghanistan',FALSE),
+            ('AF','ps','افغانستان',FALSE),
+            ('AF','fa','افغانستان',FALSE),
+            ('AF','ur','افغانستان',FALSE),
+            ('AF','hi','अफ़ग़ानिस्तान',FALSE),
+            ('AF','bn','আফগানিস্তান',FALSE),
+            ('PK','en','Pakistan',FALSE),
+            ('PK','ps','پاکستان',FALSE),
+            ('PK','fa','پاکستان',FALSE),
+            ('PK','ur','پاکستان',FALSE),
+            ('PK','hi','पाकिस्तान',FALSE),
+            ('PK','bn','পাকিস্তান',FALSE),
+            ('IN','en','India',FALSE),
+            ('IN','ps','هند',FALSE),
+            ('IN','fa','هند',FALSE),
+            ('IN','ur','بھارت',FALSE),
+            ('IN','hi','भारत',FALSE),
+            ('IN','bn','ভারত',FALSE),
+            ('BD','en','Bangladesh',FALSE),
+            ('BD','ps','بنګله‌دېش',FALSE),
+            ('BD','fa','بنگلادیش',FALSE),
+            ('BD','ur','بنگلہ دیش',FALSE),
+            ('BD','hi','बांग्लादेश',FALSE),
+            ('BD','bn','বাংলাদেশ',FALSE)
           ON CONFLICT (country_code, language_code) DO NOTHING;
 
           INSERT INTO country_provider_settings(country_code, provider_code, provider_country_code, enabled)
