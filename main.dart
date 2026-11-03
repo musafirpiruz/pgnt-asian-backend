@@ -1718,7 +1718,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
         }
       }
       setState(() {
-        _countryCatalogLoaded = responses.every((item) => item.statusCode == 200);
+        _countryCatalogLoaded = responses.every((item) => item.statusCode == 200) && nextOperators.isNotEmpty;
         _loadedCountryOperators = nextOperators;
         _loadedCountryAmounts = nextAmounts.toList()..sort();
         if (selectedOperator != null &&
