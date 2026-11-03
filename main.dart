@@ -120,12 +120,14 @@ class MobileOperator {
   final String countryCode;
   final String name;
   final String icon;
+  final String? providerName;
 
   const MobileOperator(
     this.countryCode,
     this.name,
-    this.icon,
-  );
+    this.icon, {
+    this.providerName,
+  });
 }
 
 // Brand-inspired compact marks keep operator cards recognizable without
@@ -1705,7 +1707,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
         for (final raw in operatorBody['operators'] as List) {
           if (raw is! Map) continue;
           final name = (raw['name'] ?? '').toString().trim();
-          if (name.isNotEmpty) nextOperators.add(MobileOperator(countryCode, name, '📶'));
+          if (name.isNotEmpty) nextOperators.add(MobileOperator(countryCode, name, '📶', providerName: (raw['providerName'] ?? name).toString()));
         }
       }
       final nextAmounts = <int>{};
@@ -1722,9 +1724,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
         _countryCatalogLoaded = responses.every((item) => item.statusCode == 200) && nextOperators.isNotEmpty;
         _loadedCountryOperators = nextOperators;
         _loadedCountryAmounts = nextAmounts.toList()..sort();
-        if (selectedOperator != null &&
-            !_loadedCountryOperators.any((item) => item.name == selectedOperator!.name)) {
-          selectedOperator = null;
+        if (selectedOperator != null) {
+          final selectedKey = selectedOperator!.providerName ?? selectedOperator!.name;
+          final matching = _loadedCountryOperators
+              .where((item) => (item.providerName ?? item.name) == selectedKey)
+              .toList();
+          selectedOperator = matching.isEmpty ? null : matching.first;
         }
         if (_loadedCountryAmounts.isNotEmpty && !_loadedCountryAmounts.contains(selectedAmount)) {
           selectedAmount = _loadedCountryAmounts.first;
@@ -1771,7 +1776,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(
         queryParameters: {
           'country': countryCode,
-          'operator': operator.name,
+          'operator': operator.providerName ?? operator.name,
           'amount': '$amount',
         },
       );
@@ -2522,7 +2527,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'countryCode': selectedCountry.code,
               'phone': phone,
               'phoneNumber': phone,
-              'operator': selectedOperator!.name,
+              'operator': selectedOperator!.providerName ?? selectedOperator!.name,
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
