@@ -2650,6 +2650,69 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+// Read-only DT One country discovery. Provider country codes are never
+// guessed from ISO alpha-2; an admin must explicitly verify the mapping.
+app.get('/api/admin/dtone/countries', requireAdmin, async (req, res) => {
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ verified: false, error: 'DT One credentials are not configured.' });
+  }
+  try {
+    const byCode = new Map();
+    let pagesChecked = 0;
+    let totalSeen = 0;
+    let truncated = false;
+    const pageSize = 100;
+    const maxPages = 20;
+    for (let page = 1; page <= maxPages; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/countries`);
+      url.searchParams.set('per_page', String(pageSize));
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(30000),
+      });
+      const body = await response.text();
+      let data = null;
+      try { data = body ? JSON.parse(body) : null; } catch (_) {}
+      if (!response.ok) {
+        return res.status(502).json({
+          verified: false, providerStatus: response.status, pagesChecked,
+          error: 'DT One country discovery failed. No country configuration was changed.',
+        });
+      }
+      const rows = Array.isArray(data) ? data
+        : (Array.isArray(data?.items) ? data.items
+          : (Array.isArray(data?.countries) ? data.countries : null));
+      if (!rows) {
+        return res.status(502).json({ verified: false, pagesChecked, error: 'DT One returned an unexpected country-list response.' });
+      }
+      pagesChecked += 1;
+      totalSeen += rows.length;
+      for (const row of rows) {
+        const code = String(row?.iso_code || row?.code || '').trim().toUpperCase();
+        const name = String(row?.name || row?.label || '').trim();
+        if (/^[A-Z]{3}$/.test(code) && name) {
+          byCode.set(code, { providerCountryCode: code, name, regions: Array.isArray(row.regions) ? row.regions : [] });
+        }
+      }
+      if (rows.length < pageSize) break;
+      if (page === maxPages) truncated = true;
+    }
+    return res.json({
+      verified: true,
+      environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
+      countries: [...byCode.values()].sort((a,b) => a.name.localeCompare(b.name)),
+      count: byCode.size, pagesChecked, providerCountriesSeen: totalSeen,
+      truncated, complete: !truncated, readOnly: true,
+      catalogActivation: 'unchanged', transactionCreated: false,
+    });
+  } catch (error) {
+    console.error('DT One country discovery failed:', error.message);
+    return res.status(502).json({ verified: false, error: 'Could not reach DT One country discovery.' });
+  }
+});
+
 // Database-backed country onboarding. A newly submitted country is ALWAYS a
 // draft: this endpoint cannot activate countries, operators, products or pricing.
 app.get('/api/admin/countries', requireAdmin, async (req, res) => {
