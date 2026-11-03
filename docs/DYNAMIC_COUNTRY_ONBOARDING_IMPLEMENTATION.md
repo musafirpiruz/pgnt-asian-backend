@@ -29,6 +29,11 @@ Open `/admin-countries` on the backend. The page does not embed an admin key; th
 - `POST /api/admin/fx/rates/refresh`
 - `PUT /api/admin/countries/:countryCode/pricing`
 - `PUT /api/admin/countries/:countryCode/localizations`
+- `PUT /api/admin/countries/:countryCode/operators/:operatorId/localizations`
+- `GET /api/admin/countries/:countryCode/operators`
+- `GET /api/admin/countries/:countryCode/products`
+- `GET /api/admin/operator-pricing?country=XX`
+- `PUT /api/admin/operator-pricing/:country/:operator`
 - `PATCH /api/admin/countries/:countryCode/operators/:operatorId`
 - `PATCH /api/admin/countries/:countryCode/products/:productId`
 - `POST /api/admin/countries/:countryCode/validate`
@@ -43,6 +48,8 @@ Open `/admin-countries` on the backend. The page does not embed an admin key; th
 - 017: country registry, provider mappings, operators, prefixes, products, FX observations, sync runs, activation checks and audit.
 - 018: global EUR-base settlement-currency FX rates and immutable history.
 - 019: per-country pricing settings, inactive by default.
+- 020: per-operator localized names for all six app languages.
+- 021: remove the legacy four-country restriction from operator-specific fee settings.
 
 The existing AF/PK/IN/BD catalog and pricing data are not rewritten by these migrations. The four existing destinations remain in the legacy path until separately verified and migrated.
 
