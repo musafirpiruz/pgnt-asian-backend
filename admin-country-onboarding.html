@@ -53,15 +53,39 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <button id="createCountry" type="button">Create draft country</button>
 </section>
 <section class="panel">
-<h2>Add an inactive operator mapping</h2>
-<p class="note">Only enter a provider operator ID after checking it against the official DT One catalog.</p>
+<h2>Discover official DT One operators</h2>
+<p class="note">Read-only lookup in the configured DT One environment. Results are candidates only; saving below creates an inactive mapping.</p>
+<div class="row">
+<label>Destination country<select id="discoverOperatorCountry">
+<option value="AFG">Afghanistan (AFG)</option><option value="PAK">Pakistan (PAK)</option>
+<option value="IND">India (IND)</option><option value="BGD">Bangladesh (BGD)</option>
+</select></label>
+<button id="discoverOperators" type="button">Discover DT One operators</button>
+</div>
+<div id="operatorDiscovery" class="status">No provider lookup has been run.</div>
 <div class="grid">
-<label>Country<select id="operatorCountry"><option value="">Load countries first</option></select></label>
+<label>Verified operator result<select id="discoveredOperator"><option value="">Run discovery first</option></select></label>
+<label>Country registry<select id="operatorCountry"><option value="">Load countries first</option></select></label>
 <label>Operator key<input id="operatorKey" maxlength="60" placeholder="operator_key"></label>
 <label>Display name<input id="operatorName" maxlength="120" placeholder="Operator name"></label>
-<label>Verified provider operator ID<input id="operatorProviderId" maxlength="120" placeholder="DT One operator ID"></label>
+<label>Verified provider operator ID<input id="operatorProviderId" maxlength="120" placeholder="DT One operator ID" readonly></label>
 </div>
-<button id="createOperator" type="button">Save inactive operator</button>
+<button id="createOperator" type="button">Save selected operator as inactive</button>
+</section>
+<section class="panel">
+<h2>Read-only DT One product discovery</h2>
+<p class="note">Inspect candidate airtime products for the selected destination country. This does not import or activate products.</p>
+<div class="row">
+<label>Destination country<select id="discoverProductCountry">
+<option value="AFG">Afghanistan (AFG)</option><option value="PAK">Pakistan (PAK)</option>
+<option value="IND">India (IND)</option><option value="BGD">Bangladesh (BGD)</option>
+</select></label>
+<label>Operator name filter<input id="productOperator" placeholder="e.g. ROSHAN, AWCC, JAZZ"></label>
+<label>Amount filter (optional)<input id="productAmount" type="number" min="0" step="any" placeholder="e.g. 100"></label>
+<button id="discoverProducts" type="button">Find DT One products</button>
+</div>
+<div id="productDiscovery" class="status">No product lookup has been run.</div>
+<div style="overflow-x:auto"><table><thead><tr><th>Product ID</th><th>Name</th><th>Operator</th><th>Amount / Benefit</th><th>Country</th></tr></thead><tbody id="productsBody"><tr><td colspan="5">No results</td></tr></tbody></table></div>
 </section>
 <section class="panel">
 <h2>Add a disabled provider-country mapping</h2>
@@ -149,6 +173,67 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
       message('Draft country created: '+data.country.code+'. Activation: '+data.activationPerformed+'.','ok');
       await load();
     } catch(error) { message(error.message,'error'); }
+  });
+  let discoveredOperators = [];
+  $('discoverOperators').addEventListener('click',async()=>{
+    try {
+      const country=$('discoverOperatorCountry').value;
+      message('Reading verified DT One operator list for '+country+'…');
+      const data=await api('/api/admin/dtone/operators?country_iso_code='+encodeURIComponent(country));
+      if(!data.verified) throw new Error(data.error || 'DT One operator lookup was not verified.');
+      discoveredOperators=Array.isArray(data.operators)?data.operators:[];
+      const select=$('discoveredOperator'); select.replaceChildren();
+      discoveredOperators.forEach(item=>{
+        const option=document.createElement('option');
+        option.value=String(item.id); option.textContent=item.name+' (ID '+item.id+')';
+        select.append(option);
+      });
+      $('operatorDiscovery').textContent='Verified read-only response: '+data.operatorCount+' operators; pages checked: '+data.pagesChecked+'. Complete: '+data.complete+'. No provider mapping was activated.';
+      $('operatorDiscovery').className='status ok';
+      if(discoveredOperators.length) select.dispatchEvent(new Event('change'));
+    } catch(error) {
+      $('operatorDiscovery').textContent=error.message;
+      $('operatorDiscovery').className='status error';
+      message(error.message,'error');
+    }
+  });
+  $('discoveredOperator').addEventListener('change',()=>{
+    const item=discoveredOperators.find(x=>String(x.id)===$('discoveredOperator').value);
+    if(!item) return;
+    $('operatorName').value=item.name;
+    $('operatorProviderId').value=String(item.id);
+    $('operatorKey').value=item.name.toLowerCase().normalize('NFKD')
+      .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,60);
+    const map={AFG:'AF',PAK:'PK',IND:'IN',BGD:'BD'};
+    $('operatorCountry').value=map[$('discoverOperatorCountry').value] || '';
+  });
+  $('discoverProducts').addEventListener('click',async()=>{
+    try {
+      const params=new URLSearchParams({country_iso_code:$('discoverProductCountry').value});
+      if($('productOperator').value.trim()) params.set('operator',$('productOperator').value.trim());
+      if($('productAmount').value.trim()) params.set('amount',$('productAmount').value.trim());
+      message('Reading DT One product candidates…');
+      const data=await api('/api/admin/dtone/products?'+params.toString());
+      if(!data.verified) throw new Error(data.error || 'DT One product lookup was not verified.');
+      const body=$('productsBody'); body.replaceChildren();
+      (data.products||[]).forEach(product=>{
+        const row=document.createElement('tr');
+        const operator=product.operator?.name || 'Unknown';
+        const amount=product.benefits?.map(b=>b.amount?.total_excluding_tax ?? b.amount?.base).filter(x=>x!=null).join(', ')
+          || product.destination?.amount || product.amount?.base || '—';
+        [product.id,product.name,operator,amount,product.operator?.country?.iso_code || data.countryIsoCode].forEach(value=>{
+          const cell=document.createElement('td'); cell.textContent=String(value ?? '—'); row.append(cell);
+        });
+        body.append(row);
+      });
+      $('productDiscovery').textContent='Verified read-only response: '+data.resultCount+' candidate products; pages checked: '+data.providerPagesChecked+'. Complete: '+data.complete+'. No catalog records or activations changed.';
+      $('productDiscovery').className='status ok';
+      message('DT One product discovery completed safely.','ok');
+    } catch(error) {
+      $('productDiscovery').textContent=error.message;
+      $('productDiscovery').className='status error';
+      message(error.message,'error');
+    }
   });
   $('createOperator').addEventListener('click',async()=>{
     try {
