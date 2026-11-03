@@ -2931,6 +2931,247 @@ app.get('/api/countries/active', async (req, res) => {
   }
 });
 
+// Discover and import a registry country catalog. All provider details and
+// wholesale/retail currency units are verified before a preview or disabled import.
+app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ verified: false, error: 'Database is not configured.' });
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) return res.status(503).json({ verified: false, error: 'DT One credentials are not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const confirmImport = req.body?.confirmImport === true;
+  if (!/^[A-Z]{2}$/.test(countryCode)) return res.status(400).json({ verified: false, error: 'A valid ISO alpha-2 country code is required.' });
+
+  let syncRunId = null;
+  try {
+    const configResult = await pool.query(`
+      SELECT c.country_code, c.destination_currency, c.status,
+             m.provider_country_code, m.verification_status
+      FROM country_registry c
+      JOIN country_provider_mappings m ON m.country_code = c.country_code
+      WHERE c.country_code = $1 AND m.provider = 'dtone'
+      LIMIT 1
+    `, [countryCode]);
+    if (configResult.rowCount !== 1 || configResult.rows[0].verification_status !== 'verified') {
+      return res.status(409).json({ verified: false, error: 'Verify the DT One country mapping before catalog discovery.' });
+    }
+    const config = configResult.rows[0];
+    if (config.status === 'active') {
+      return res.status(409).json({ verified: false, error: 'Active country catalog changes require a separate reviewed change workflow.' });
+    }
+    const providerCountryCode = String(config.provider_country_code).trim().toUpperCase();
+    const destinationCurrency = String(config.destination_currency).trim().toUpperCase();
+
+    const run = await pool.query(`
+      INSERT INTO country_sync_runs (country_code, provider, run_type, status, diagnostics)
+      VALUES ($1,'dtone','catalog-sync','running',$2::jsonb)
+      RETURNING id
+    `, [countryCode, JSON.stringify({ providerCountryCode, confirmImport })]);
+    syncRunId = run.rows[0].id;
+
+    const providerById = new Map();
+    let pagesChecked = 0;
+    let providerProductsSeen = 0;
+    const pageSize = 100;
+    const maxPages = 20;
+    let truncated = false;
+    for (let page = 1; page <= maxPages; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+      url.searchParams.set('country_iso_code', providerCountryCode);
+      url.searchParams.set('per_page', String(pageSize));
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(45000),
+      });
+      const body = await response.text();
+      let data = null;
+      try { data = body ? JSON.parse(body) : null; } catch (_) {}
+      if (!response.ok) throw new Error(`DT One product list returned HTTP ${response.status}.`);
+      const rows = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : null);
+      if (!rows) throw new Error('DT One returned an unexpected product-list response.');
+      pagesChecked += 1;
+      providerProductsSeen += rows.length;
+      for (const row of rows) {
+        if (String(row?.operator?.country?.iso_code || '').trim().toUpperCase() !== providerCountryCode || row?.id == null) continue;
+        providerById.set(String(row.id), row);
+      }
+      if (rows.length < pageSize) break;
+      if (page === maxPages) truncated = true;
+    }
+    if (truncated) {
+      await pool.query(`
+        UPDATE country_sync_runs SET status='partial', pages_read=$2, items_seen=$3,
+          finished_at=NOW(), diagnostics=diagnostics || $4::jsonb WHERE id=$1
+      `, [syncRunId, pagesChecked, providerProductsSeen, JSON.stringify({ reason: 'pagination safety limit reached; import blocked' })]);
+      return res.status(409).json({ verified: false, complete: false, truncated: true, pagesChecked, providerProductsSeen, error: 'Provider catalog exceeded the 2,000-product safety limit; no products were imported.' });
+    }
+
+    const listed = [...providerById.values()];
+    const detailed = [];
+    for (let offset = 0; offset < listed.length; offset += 5) {
+      const batch = listed.slice(offset, offset + 5);
+      const details = await Promise.all(batch.map(async item => {
+        const response = await fetch(`${DTONE_API_BASE_URL}/v1/products/${encodeURIComponent(item.id)}`, {
+          method: 'GET',
+          headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+          signal: AbortSignal.timeout(20000),
+        });
+        const body = await response.text();
+        let detail = null;
+        try { detail = body ? JSON.parse(body) : null; } catch (_) {}
+        if (!response.ok || !detail || String(detail.id) !== String(item.id)) {
+          throw new Error(`Could not verify DT One detail for product ${item.id}; catalog import stopped.`);
+        }
+        return detail;
+      }));
+      detailed.push(...details);
+    }
+
+    const currencies = [...new Set(detailed.map(item => String(item?.prices?.wholesale?.unit || '').trim().toUpperCase()).filter(code => /^[A-Z]{3}$/.test(code) && code !== 'EUR'))];
+    const fxResult = currencies.length
+      ? await pool.query(`
+          SELECT currency, units_per_eur, source, observed_at, expires_at
+          FROM fx_currency_rates
+          WHERE currency = ANY($1::char(3)[]) AND expires_at > NOW()
+            AND observed_at >= NOW() - INTERVAL '5 days'
+        `, [currencies])
+      : { rows: [] };
+    const fxByCurrency = new Map(fxResult.rows.map(row => [String(row.currency).trim(), row]));
+
+    const validProducts = [];
+    const rejected = [];
+    for (const item of detailed) {
+      const productId = String(item.id);
+      const operatorName = String(item?.operator?.name || '').trim();
+      const providerOperatorId = item?.operator?.id == null ? '' : String(item.operator.id);
+      const denominationCurrency = String(item?.destination?.unit || item?.benefits?.[0]?.amount?.unit || '').trim().toUpperCase();
+      const denomination = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
+      const wholesaleAmount = Number(item?.prices?.wholesale?.amount);
+      const wholesaleCurrency = String(item?.prices?.wholesale?.unit || '').trim().toUpperCase();
+      const retailAmount = Number(item?.prices?.retail?.amount);
+      const retailCurrency = String(item?.prices?.retail?.unit || '').trim().toUpperCase();
+      const reject = reason => rejected.push({ productId, reason });
+      if (!operatorName || !providerOperatorId || !/^[A-Z]{3}$/.test(denominationCurrency) ||
+          denominationCurrency !== destinationCurrency || !Number.isFinite(denomination) || denomination <= 0) {
+        reject('Missing operator ID/name or invalid destination denomination/currency.');
+        continue;
+      }
+      if (!Number.isFinite(wholesaleAmount) || wholesaleAmount <= 0 ||
+          !Number.isFinite(retailAmount) || retailAmount <= 0 ||
+          !/^[A-Z]{3}$/.test(wholesaleCurrency) || retailCurrency !== wholesaleCurrency ||
+          retailAmount < wholesaleAmount) {
+        reject('Wholesale/retail price amount or currency unit is missing, inconsistent, or invalid.');
+        continue;
+      }
+      const fx = wholesaleCurrency === 'EUR'
+        ? { units_per_eur: 1, source: 'base-currency', observed_at: new Date(), expires_at: new Date(Date.now() + 86400000) }
+        : fxByCurrency.get(wholesaleCurrency);
+      if (!fx) {
+        reject(`No fresh EUR/${wholesaleCurrency} FX rate is available. Refresh FX before importing.`);
+        continue;
+      }
+      const wholesaleEur = wholesaleAmount / Number(fx.units_per_eur);
+      const retailEur = retailAmount / Number(fx.units_per_eur);
+      const wholesaleEurCents = Math.round(wholesaleEur * 100);
+      const retailEurCents = Math.round(retailEur * 100);
+      if (!Number.isSafeInteger(wholesaleEurCents) || wholesaleEurCents <= 0 ||
+          !Number.isSafeInteger(retailEurCents) || retailEurCents <= 0 || retailEurCents < wholesaleEurCents) {
+        reject('Converted EUR costs cannot be represented safely in cents.');
+        continue;
+      }
+      validProducts.push({
+        productId, operatorName, providerOperatorId, denomination, denominationCurrency,
+        wholesaleAmount, wholesaleCurrency, retailAmount,
+        wholesaleEurCents, retailEurCents,
+        fxSource: fx.source, fxObservedAt: fx.observed_at,
+      });
+    }
+
+    const summary = {
+      verified: true, complete: true, countryCode, providerCountryCode, destinationCurrency,
+      pagesChecked, providerProductsSeen, uniqueProviderProducts: providerById.size,
+      detailProductsVerified: detailed.length, validProducts: validProducts.length,
+      rejectedCount: rejected.length, rejected,
+      settlementCurrencies: currencies,
+      importRequiresExplicitConfirmation: true,
+      productsRemainDisabled: true,
+      transactionCreated: false, paymentCreated: false,
+      note: 'Provider details and price currency units were checked. Wholesale and retail amounts were converted to EUR using fresh recorded FX. No product was activated.',
+    };
+    if (!confirmImport) {
+      await pool.query(`
+        UPDATE country_sync_runs SET status='succeeded', pages_read=$2, items_seen=$3,
+          items_verified=$4, items_rejected=$5, finished_at=NOW(), diagnostics=diagnostics || $6::jsonb
+        WHERE id=$1
+      `, [syncRunId, pagesChecked, providerProductsSeen, validProducts.length, rejected.length,
+        JSON.stringify({ previewOnly: true, currencies, rejectedProductIds: rejected.map(item => item.productId) })]);
+      return res.json({ ...summary, syncRunId, importedCount: 0 });
+    }
+
+    const client = await pool.connect();
+    let imported = [];
+    try {
+      await client.query('BEGIN');
+      for (const product of validProducts) {
+        const keySlug = product.operatorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'operator';
+        const operatorKey = `${keySlug}-${product.providerOperatorId.replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`;
+        const operatorResult = await client.query(`
+          INSERT INTO country_operators
+            (country_code, provider, provider_operator_id, operator_key, display_name, active, verified_at)
+          VALUES ($1,'dtone',$2,$3,$4,FALSE,NOW())
+          ON CONFLICT (country_code, provider, provider_operator_id) DO UPDATE SET
+            display_name = EXCLUDED.display_name, updated_at = NOW()
+          RETURNING id
+        `, [countryCode, product.providerOperatorId, operatorKey, product.operatorName]);
+        const operatorId = operatorResult.rows[0].id;
+        const insert = await client.query(`
+          INSERT INTO country_products
+            (country_code, operator_id, provider, provider_product_id, denomination,
+             destination_currency, wholesale_amount, wholesale_currency,
+             wholesale_eur_cents, retail_eur_cents, price_currency_verified,
+             verification_status, catalog_status, provider_payload, verified_at)
+          VALUES ($1,$2,'dtone',$3,$4,$5,$6,$7,$8,$9,TRUE,'verified','disabled',$10::jsonb,NOW())
+          ON CONFLICT (provider, provider_product_id) DO NOTHING
+          RETURNING id, provider_product_id, denomination, destination_currency,
+                    wholesale_currency, wholesale_eur_cents, retail_eur_cents, catalog_status
+        `, [countryCode, operatorId, product.productId, product.denomination,
+          product.denominationCurrency, product.wholesaleAmount, product.wholesaleCurrency,
+          product.wholesaleEurCents, product.retailEurCents, JSON.stringify({
+            fxSource: product.fxSource,
+            fxObservedAt: product.fxObservedAt,
+            source: 'DT One product detail endpoint',
+          })]);
+        if (insert.rowCount === 1) imported.push(insert.rows[0]);
+      }
+      await client.query(`
+        UPDATE country_sync_runs SET status='succeeded', pages_read=$2, items_seen=$3,
+          items_verified=$4, items_rejected=$5, finished_at=NOW(),
+          diagnostics=diagnostics || $6::jsonb WHERE id=$1
+      `, [syncRunId, pagesChecked, providerProductsSeen, validProducts.length, rejected.length,
+        JSON.stringify({ importConfirmed: true, importedCount: imported.length })]);
+      await client.query('COMMIT');
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw error;
+    } finally {
+      client.release();
+    }
+    return res.json({
+      ...summary, syncRunId, importedCount: imported.length, imported,
+      note: 'Verified products were imported as disabled. No customer-facing product was activated.',
+    });
+  } catch (error) {
+    if (syncRunId != null) {
+      try {
+        await pool.query(`UPDATE country_sync_runs SET status='failed', finished_at=NOW(), diagnostics=diagnostics || $2::jsonb WHERE id=$1`,
+          [syncRunId, JSON.stringify({ error: String(error.message || 'sync failed').slice(0, 500) })]);
+      } catch (_) {}
+    }
+    console.error('Dynamic DT One country catalog sync failed:', error.message);
+    return res.status(502).json({ verified: false, error: 'Dynamic country catalog sync failed. No partial product import was committed.' });
+  }
+});
+
 // Refresh auditable EUR-base FX quotes for provider settlement currencies.
 // Rates are reference data only; stale/missing rates block dynamic catalog pricing.
 app.post('/api/admin/fx/rates/refresh', requireAdmin, async (req, res) => {
