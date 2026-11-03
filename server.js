@@ -2443,8 +2443,9 @@ async function markCheckoutPaymentFailed(session) {
     throw new Error('Invalid failed payment event.');
   }
 
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
     const changed = await client.query(
       `UPDATE orders
@@ -2734,14 +2735,16 @@ app.post('/api/admin/countries', requireAdmin, async (req, res) => {
       productsActivated: false,
     });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
     if (error.code === '23505') {
       return res.status(409).json({ error: 'This country or provider mapping already exists.' });
     }
     console.error('Admin country draft creation failed:', error.message);
     return res.status(500).json({ error: 'Could not create country draft.' });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
