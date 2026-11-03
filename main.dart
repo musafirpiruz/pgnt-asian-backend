@@ -1655,7 +1655,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Future<void> _loadActiveCountries() async {
     try {
       final response = await http.get(
-        Uri.parse('$backendBaseUrl/api/countries/active'),
+        Uri.parse('$backendBaseUrl/api/countries/active?language=$languageCode'),
         headers: const {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 15));
       if (response.statusCode != 200) return;
@@ -3645,6 +3645,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       setState(() {
                         languageCode = value;
                       });
+                      _loadActiveCountries();
                       SharedPreferences.getInstance().then((preferences) {
                         preferences.setString(_languagePreferenceKey, value);
                       });
