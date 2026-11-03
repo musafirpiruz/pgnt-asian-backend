@@ -5,18 +5,19 @@ const assert = require('node:assert/strict');
 const {
   validateProviderPayload,
   refreshCountryFxRates,
+  FX_RATE_SOURCE,
 } = require('../fx-rates');
 
 const now = Date.UTC(2026, 10, 3, 12, 0, 0);
 function payload(overrides = {}) {
-  return {
-    result: 'success',
-    base_code: 'EUR',
-    time_last_update_unix: Math.floor((now - 60 * 60 * 1000) / 1000),
-    time_next_update_unix: Math.floor((now + 23 * 60 * 60 * 1000) / 1000),
-    conversion_rates: { AFN: 75, PKR: 300, INR: 105, BDT: 130 },
-    ...overrides,
-  };
+  return [
+    { date: '2026-11-03', base: 'EUR', quote: 'AFN', rate: 75 },
+    { date: '2026-11-03', base: 'EUR', quote: 'PKR', rate: 300 },
+    { date: '2026-11-03', base: 'EUR', quote: 'INR', rate: 105 },
+    { date: '2026-11-03', base: 'EUR', quote: 'BDT', rate: 130 },
+    ...overrides.extraRows || [],
+  ].filter((row) => !overrides.removeQuotes?.includes(row.quote))
+   .map((row) => overrides.replace?.[row.quote] || row);
 }
 function fakePool(updatedRows = ['AF', 'PK', 'IN', 'BD']) {
   const calls = [];
@@ -35,26 +36,34 @@ function fakePool(updatedRows = ['AF', 'PK', 'IN', 'BD']) {
   return { calls, pool: { async connect() { return client; } } };
 }
 
-test('FX payload validates all four supported currencies and provider freshness', () => {
+test('Frankfurter payload validates all four EUR reference rates and their dates', () => {
   const result = validateProviderPayload(payload(), now);
   assert.deepEqual(result.rates, { AF: 75, PK: 300, IN: 105, BD: 130 });
-  assert.equal(result.providerUpdatedAt.getTime(), now - 60 * 60 * 1000);
+  assert.equal(result.providerUpdatedAtByCountry.AF.toISOString(), '2026-11-03T00:00:00.000Z');
 });
 
-test('FX payload rejects missing currency, invalid rate, and stale timestamp', () => {
-  assert.throws(() => validateProviderPayload(payload({ conversion_rates: { AFN: 75, PKR: 300, INR: 105 } }), now), /valid BDT rate/);
-  assert.throws(() => validateProviderPayload(payload({ conversion_rates: { AFN: 0, PKR: 300, INR: 105, BDT: 130 } }), now), /valid AFN rate/);
-  assert.throws(() => validateProviderPayload(payload({ time_last_update_unix: 1 }), now), /older than 48 hours/);
+test('Frankfurter payload rejects missing currency, invalid rate, future date, and stale date', () => {
+  assert.throws(() => validateProviderPayload(payload({ removeQuotes: ['BDT'] }), now), /dated EUR\/BDT rate/);
+  assert.throws(() => validateProviderPayload(payload({ replace: { AFN: { date: '2026-11-03', base: 'EUR', quote: 'AFN', rate: 0 } } }), now), /valid AFN rate/);
+  assert.throws(() => validateProviderPayload(payload({ replace: { PKR: { date: '2026-11-05', base: 'EUR', quote: 'PKR', rate: 300 } } }), now), /future/);
+  assert.throws(() => validateProviderPayload(payload({ replace: { INR: { date: '2026-10-20', base: 'EUR', quote: 'INR', rate: 105 } } }), now), /older than five days/);
 });
 
 test('FX refresh updates all four rows and writes an audit history entry per country atomically', async () => {
   const { pool, calls } = fakePool();
   const result = await refreshCountryFxRates(pool, {
     now: () => now,
-    apiKey: 'test-api-key',
-    fetchImpl: async (url) => { assert.match(url, /test-api-key\/latest\/EUR$/); return { ok: true, json: async () => payload() }; },
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      assert.equal(parsed.origin, 'https://api.frankfurter.dev');
+      assert.equal(parsed.pathname, '/v2/rates');
+      assert.equal(parsed.searchParams.get('base'), 'EUR');
+      assert.equal(parsed.searchParams.get('quotes'), 'AFN,PKR,INR,BDT');
+      return { ok: true, json: async () => payload() };
+    },
   });
   assert.deepEqual(result.updatedCountries, ['AF', 'PK', 'IN', 'BD']);
+  assert.equal(result.source, FX_RATE_SOURCE);
   assert.equal(calls.filter(call => call.sql.startsWith('INSERT INTO fx_rate_history')).length, 4);
   assert.equal(calls[0].sql, 'BEGIN');
   assert.equal(calls.at(-2).sql, 'COMMIT');
@@ -66,7 +75,6 @@ test('FX refresh rolls back if all four configured pricing rows are not present'
   await assert.rejects(
     refreshCountryFxRates(pool, {
       now: () => now,
-      apiKey: 'test-api-key',
       fetchImpl: async () => ({ ok: true, json: async () => payload() }),
     }),
     /one configured pricing row for country BD/
@@ -80,7 +88,6 @@ test('FX refresh leaves the database untouched when the provider is unavailable'
   await assert.rejects(
     refreshCountryFxRates(pool, {
       now: () => now,
-      apiKey: 'test-api-key',
       fetchImpl: async () => ({ ok: false, status: 503 }),
     }),
     /HTTP 503/
