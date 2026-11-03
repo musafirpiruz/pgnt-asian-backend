@@ -7198,6 +7198,11 @@ small{color:#555}.inline{display:flex;gap:8px;align-items:center}.inline input[t
 <input id="operatorId" type="number" min="1" placeholder="Operator database ID">
 <input id="productId" type="number" min="1" placeholder="Product database ID">
 </div><textarea id="operatorLocalizations" rows="4" placeholder='[{"languageCode":"en","displayName":"Mobile operator"},{"languageCode":"ps","displayName":"شبکه"},{"languageCode":"fa","displayName":"اپراتور"},{"languageCode":"ur","displayName":"نیٹ ورک"},{"languageCode":"hi","displayName":"मोबाइल नेटवर्क"},{"languageCode":"bn","displayName":"মোবাইল নেটওয়ার্ক"}]'></textarea><button class="secondary" onclick="saveOperatorLocalizations()">Save six operator translations</button><div class="inline"><input id="operatorActive" type="checkbox"><label for="operatorActive">Approve operator</label></div><button class="secondary" onclick="reviewOperator()">Save operator review</button>
+<div class="grid">
+<input id="operatorName" placeholder="Exact operator name from catalog">
+<input id="operatorFeeCents" type="number" min="0" placeholder="Operator fee EUR cents">
+<input id="operatorFeePercent" type="number" min="0" step="0.01" placeholder="Operator fee percent">
+</div><div class="inline"><input id="operatorPricingActive" type="checkbox"><label for="operatorPricingActive">Enable operator-specific fee (replaces country fee)</label></div><button class="secondary" onclick="saveOperatorFee()">Save operator fee</button><button class="secondary" onclick="loadOperatorFees()">List operator fees</button>
 <div class="grid"><input id="productStatus" value="active" placeholder="disabled / review / active / retired"></div><button class="secondary" onclick="reviewProduct()">Save product review</button></section>
 <section><h2>6. Validate and activate</h2><button class="secondary" onclick="preflight()">Run preflight checks</button><button onclick="activateCountry()">Activate only if every check passes</button><button class="secondary" onclick="disableCountry()">Disable country / rollback</button></section>
 <section><h2>Result and diagnostics</h2><pre id="output">No action performed.</pre></section>
@@ -7251,6 +7256,15 @@ async function saveOperatorLocalizations(){
  await api('/api/admin/countries/'+encodeURIComponent(code())+'/operators/'+encodeURIComponent(el('operatorId').value)+'/localizations','PUT',{localizations});
 }
 async function reviewOperator(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/operators/'+encodeURIComponent(el('operatorId').value),'PATCH',{active:el('operatorActive').checked});}
+async function saveOperatorFee(){
+ const name=el('operatorName').value.trim();
+ if(!name){show({error:'Enter the exact operator name.'});return;}
+ await api('/api/admin/operator-pricing/'+encodeURIComponent(code())+'/'+encodeURIComponent(name),'PUT',{
+  feeEurCents:Number(el('operatorFeeCents').value),feePercent:Number(el('operatorFeePercent').value||0),
+  active:el('operatorPricingActive').checked
+ });
+}
+async function loadOperatorFees(){await api('/api/admin/operator-pricing?country='+encodeURIComponent(code()));}
 async function reviewProduct(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/products/'+encodeURIComponent(el('productId').value),'PATCH',{catalogStatus:el('productStatus').value.trim().toLowerCase()});}
 async function preflight(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/validate','POST',{});}
 async function activateCountry(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/activate','POST',{});}
