@@ -54,7 +54,7 @@ test('product-name denomination matching uses the selected country local currenc
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
   const end = server.indexOf('// Read-only verification of a catalog product', start);
   const route = server.slice(start, end);
-  assert.match(route, /AFG:\s*'AFN'.*PAK:\s*'PKR'.*IND:\s*'INR'.*BGD:\s*'BDT'/s);
+  assert.match(route, /legacyDestinationCurrencies\s*=\s*\(\{ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' \}\)/);
   assert.match(route, /new RegExp\(`\\\\b\$\{amountQuery\}\\\\s\*\$\{localCurrency\}\\\\b/);
   const cases = [
     ['ATOMA 115 AFN', 115, 'AFN'],
@@ -164,7 +164,9 @@ test('DT One operator discovery accepts only the four supported provider country
   const route = server.slice(start, end);
   assert.match(route, /new Set\(\['AFG', 'PAK', 'IND', 'BGD'\]\)/);
   assert.match(route, /supportedOperatorCountries\.has\(countryIsoCode\)/);
-  assert.match(route, /one of AFG, PAK, IND, or BGD/);
+  assert.match(route, /country_provider_mappings/);
+  assert.match(route, /verification_status = 'verified'/);
+  assert.match(route, /provider code verified in the country registry/);
 });
 
 test('DT One operator discovery marks a page-limit result as partial', () => {
