@@ -3012,8 +3012,8 @@ app.post('/api/admin/countries/:countryCode/dtone-mapping', requireAdmin, async 
   }
 });
 
-// Customer discovery exposes only explicitly active countries. Legacy entries
-// are intentionally excluded until they pass the new registry preflight.
+// Customer discovery exposes explicitly active countries plus the four existing
+// legacy destinations, which remain available through the preserved compatibility path.
 app.get('/api/countries/active', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Country registry is unavailable.' });
   const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
