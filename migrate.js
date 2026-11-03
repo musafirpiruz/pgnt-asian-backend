@@ -964,6 +964,111 @@ runMigration();
       console.log("Migration 017_dynamic_country_registry is already applied.");
     }
 
+
+    // Version 018 stores provider-currency FX rates independently of destination
+    // currency. This is required because DT One wholesale settlement currency
+    // may differ from the recipient's local currency (for example SGD vs AFN).
+    const globalFxVersion = "018_global_provider_currency_fx";
+    const globalFxCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [globalFxVersion]
+    );
+    if (globalFxCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS fx_currency_rates (
+            currency CHAR(3) PRIMARY KEY
+              CHECK (currency ~ '^[A-Z]{3}
+    );
+
+    console.error(
+      error.message
+    );
+
+    process.exitCode = 1;
+  } finally {
+    if (client) {
+      try {
+        await client.query("SELECT pg_advisory_unlock(738291);");
+      } catch (_) {}
+
+      client.release();
+    }
+
+    await pool.end();
+  }
+}
+
+runMigration();
+),
+            units_per_eur NUMERIC(20,8) NOT NULL
+              CHECK (units_per_eur > 0),
+            source VARCHAR(80) NOT NULL,
+            source_reference TEXT,
+            observed_at TIMESTAMPTZ NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (currency <> 'EUR' OR units_per_eur = 1),
+            CHECK (expires_at > observed_at)
+          );
+
+          CREATE TABLE IF NOT EXISTS fx_currency_rate_history (
+            id BIGSERIAL PRIMARY KEY,
+            currency CHAR(3) NOT NULL
+              CHECK (currency ~ '^[A-Z]{3}
+    );
+
+    console.error(
+      error.message
+    );
+
+    process.exitCode = 1;
+  } finally {
+    if (client) {
+      try {
+        await client.query("SELECT pg_advisory_unlock(738291);");
+      } catch (_) {}
+
+      client.release();
+    }
+
+    await pool.end();
+  }
+}
+
+runMigration();
+),
+            units_per_eur NUMERIC(20,8) NOT NULL CHECK (units_per_eur > 0),
+            source VARCHAR(80) NOT NULL,
+            source_reference TEXT,
+            observed_at TIMESTAMPTZ NOT NULL,
+            fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            accepted BOOLEAN NOT NULL DEFAULT FALSE,
+            rejection_reason TEXT
+          );
+          CREATE INDEX IF NOT EXISTS idx_fx_currency_history_currency_time
+            ON fx_currency_rate_history(currency, observed_at DESC);
+
+          INSERT INTO fx_currency_rates
+            (currency, units_per_eur, source, source_reference, observed_at, expires_at)
+          VALUES ('EUR', 1, 'base-currency', 'EUR base', NOW(), NOW() + INTERVAL '36500 days')
+          ON CONFLICT (currency) DO NOTHING;
+
+          INSERT INTO schema_migrations (version)
+          VALUES ('018_global_provider_currency_fx')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 018_global_provider_currency_fx completed; provider settlement FX is separated from recipient destination FX.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 018_global_provider_currency_fx is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
