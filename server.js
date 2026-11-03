@@ -3137,6 +3137,9 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
       const productId = String(item.id);
       const operatorName = String(item?.operator?.name || '').trim();
       const providerOperatorId = item?.operator?.id == null ? '' : String(item.operator.id);
+      const detailCountryCode = String(item?.operator?.country?.iso_code || '').trim().toUpperCase();
+      const listedOperatorId = providerById.get(productId)?.operator?.id == null
+        ? '' : String(providerById.get(productId).operator.id);
       const denominationCurrency = String(item?.destination?.unit || item?.benefits?.[0]?.amount?.unit || '').trim().toUpperCase();
       const denomination = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
       const wholesaleAmount = Number(item?.prices?.wholesale?.amount);
@@ -3144,7 +3147,7 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
       const retailAmount = Number(item?.prices?.retail?.amount);
       const retailCurrency = String(item?.prices?.retail?.unit || '').trim().toUpperCase();
       const reject = reason => rejected.push({ productId, reason });
-      if (!/^\\d+$/.test(productId) || !operatorName || !providerOperatorId || !/^[A-Z]{3}$/.test(denominationCurrency) ||
+      if (!/^\d+$/.test(productId) || detailCountryCode !== providerCountryCode || !operatorName || !providerOperatorId || providerOperatorId !== listedOperatorId || !/^[A-Z]{3}$/.test(denominationCurrency) ||
           denominationCurrency !== destinationCurrency || !Number.isSafeInteger(denomination) || denomination <= 0) {
         reject('Missing operator ID/name or invalid destination denomination/currency.');
         continue;
@@ -3661,7 +3664,7 @@ app.patch('/api/admin/countries/:countryCode/products/:productId', requireAdmin,
       WHERE country_code=$1 AND id=$2
       RETURNING id,provider_product_id,catalog_status,verification_status,price_currency_verified
     `, [code, productId, status]);
-    if (/^\\d+$/.test(String(product.rows[0].provider_product_id))) {
+    if (/^\d+$/.test(String(product.rows[0].provider_product_id))) {
       await pool.query(`
         UPDATE product_catalog SET active=$3,updated_at=NOW()
         WHERE country=$1 AND product_id=$2::bigint
