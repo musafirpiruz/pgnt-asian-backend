@@ -626,6 +626,16 @@ const Map<String, Map<String, String>> translations = {
     'supportLoadFailed': "د ټکټونو تاریخچه نه شوه لوستل کېدای.",
     'supportInvalidHistory': "د ملاتړ د تاریخچې ځواب ناسم دی.",
     'supportLoadRequestsFailed': "د مرستې غوښتنې نه شوې لوستل کېدای.",
+    'supportNoOrder': "د ټکټ ثبتولو لپاره لومړی یوه معامله پیل کړئ؛ بیا یې د معاملاتو له تاریخچې څخه وټاکئ.",
+    'walletServerBalanceNote': "د حقیقي بیلانس ښودلو لپاره د سرور اتصال اړین دی.",
+    'walletAddMoneyNote': "د پیسو جمع کولو لپاره د والټ API او د تادیې تایید اړین دي.",
+    'walletStripeDescription': "تادیه د موجود Backend له لارې ترسره کېږي.",
+    'walletHistoryDescription': "د والټ د پیسو داخلېدو او وتلو معاملې",
+    'walletSecurityTitle': "د والټ امنیت",
+    'walletSecurePayments': "خوندي تادیات",
+    'walletSecretKeysNote': "د تادیې پټ کلیدونه باید یوازې په Backend کې وساتل شي.",
+    'walletStripeVerifyNote': "د Stripe تادیه باید د سرور له خوا تایید شي.",
+    'shareReceiptNotReady': "د رسید شریکولو ځانګړنه به په راتلونکي پړاو کې ورزیاته شي.",
   },
 
   'fa': {
@@ -744,6 +754,16 @@ const Map<String, Map<String, String>> translations = {
     'supportLoadFailed': "تاریخچه تیکت‌ها بارگیری نشد.",
     'supportInvalidHistory': "پاسخ تاریخچه پشتیبانی نامعتبر است.",
     'supportLoadRequestsFailed': "درخواست‌های پشتیبانی بارگیری نشدند.",
+    'supportNoOrder': "برای ثبت تیکت، ابتدا یک تراکنش آغاز کنید؛ سپس آن را از تاریخچه تراکنش‌ها انتخاب کنید.",
+    'walletServerBalanceNote': "برای نمایش موجودی واقعی، اتصال به سرور لازم است.",
+    'walletAddMoneyNote': "برای افزودن پول، API کیف پول و تأیید پرداخت لازم است.",
+    'walletStripeDescription': "پرداخت از طریق Backend موجود انجام می‌شود.",
+    'walletHistoryDescription': "تراکنش‌های ورود و خروج پول کیف پول",
+    'walletSecurityTitle': "امنیت کیف پول",
+    'walletSecurePayments': "پرداخت‌های امن",
+    'walletSecretKeysNote': "کلیدهای محرمانه پرداخت باید فقط در Backend نگهداری شوند.",
+    'walletStripeVerifyNote': "پرداخت Stripe باید توسط سرور تأیید شود.",
+    'shareReceiptNotReady': "قابلیت اشتراک‌گذاری رسید در مرحله بعد اضافه می‌شود.",
   },
 
   'en': {
@@ -862,6 +882,16 @@ const Map<String, Map<String, String>> translations = {
     'supportLoadFailed': "Could not load ticket history.",
     'supportInvalidHistory': "Invalid support history response.",
     'supportLoadRequestsFailed': "Could not load support requests.",
+    'supportNoOrder': "Start a transaction first to create a ticket, then select it from your transaction history.",
+    'walletServerBalanceNote': "A server connection is required to display the actual balance.",
+    'walletAddMoneyNote': "Wallet API and payment verification are required to add funds.",
+    'walletStripeDescription': "Payments are processed through the existing backend.",
+    'walletHistoryDescription': "Wallet deposits and withdrawals",
+    'walletSecurityTitle': "Wallet security",
+    'walletSecurePayments': "Secure payments",
+    'walletSecretKeysNote': "Payment secret keys must remain on the backend only.",
+    'walletStripeVerifyNote': "Stripe payments must be verified by the server.",
+    'shareReceiptNotReady': "Receipt sharing will be added in a later stage.",
   },
 
   'ur': {
@@ -980,6 +1010,16 @@ const Map<String, Map<String, String>> translations = {
     'supportLoadFailed': "ٹکٹ کی ہسٹری لوڈ نہیں ہو سکی۔",
     'supportInvalidHistory': "سپورٹ ہسٹری کا جواب درست نہیں۔",
     'supportLoadRequestsFailed': "سپورٹ درخواستیں لوڈ نہیں ہو سکیں۔",
+    'supportNoOrder': "ٹکٹ بنانے کے لیے پہلے ایک ٹرانزیکشن شروع کریں، پھر اسے ٹرانزیکشن ہسٹری سے منتخب کریں۔",
+    'walletServerBalanceNote': "اصل بیلنس دکھانے کے لیے سرور سے رابطہ ضروری ہے۔",
+    'walletAddMoneyNote': "رقم جمع کرنے کے لیے والٹ API اور ادائیگی کی تصدیق ضروری ہے۔",
+    'walletStripeDescription': "ادائیگی موجودہ Backend کے ذریعے ہوگی۔",
+    'walletHistoryDescription': "والٹ میں رقم جمع اور نکالنے کی ٹرانزیکشنز",
+    'walletSecurityTitle': "والٹ کی سیکیورٹی",
+    'walletSecurePayments': "محفوظ ادائیگیاں",
+    'walletSecretKeysNote': "ادائیگی کی خفیہ چابیاں صرف Backend میں ہونی چاہئیں۔",
+    'walletStripeVerifyNote': "Stripe ادائیگی کی سرور سے تصدیق ضروری ہے۔",
+    'shareReceiptNotReady': "رسید شیئر کرنے کی سہولت اگلے مرحلے میں شامل ہوگی۔",
   },
 
   'hi': {
@@ -1098,6 +1138,16 @@ const Map<String, Map<String, String>> translations = {
     'supportLoadFailed': "टिकट इतिहास लोड नहीं हो सका।",
     'supportInvalidHistory': "सहायता इतिहास का जवाब अमान्य है।",
     'supportLoadRequestsFailed': "सहायता अनुरोध लोड नहीं हो सके।",
+    'supportNoOrder': "टिकट बनाने के लिए पहले एक लेन-देन शुरू करें, फिर उसे लेन-देन इतिहास से चुनें।",
+    'walletServerBalanceNote': "वास्तविक बैलेंस दिखाने के लिए सर्वर कनेक्शन आवश्यक है।",
+    'walletAddMoneyNote': "पैसे जोड़ने के लिए वॉलेट API और भुगतान सत्यापन आवश्यक हैं।",
+    'walletStripeDescription': "भुगतान मौजूदा Backend के माध्यम से होगा।",
+    'walletHistoryDescription': "वॉलेट में जमा और निकासी के लेन-देन",
+    'walletSecurityTitle': "वॉलेट सुरक्षा",
+    'walletSecurePayments': "सुरक्षित भुगतान",
+    'walletSecretKeysNote': "भुगतान की गुप्त कुंजियाँ केवल Backend में रहनी चाहिए।",
+    'walletStripeVerifyNote': "Stripe भुगतान की पुष्टि सर्वर द्वारा होनी चाहिए।",
+    'shareReceiptNotReady': "रसीद साझा करने की सुविधा अगले चरण में जोड़ी जाएगी।",
   },
 
   'bn': {
@@ -1216,6 +1266,16 @@ const Map<String, Map<String, String>> translations = {
     'supportLoadFailed': "টিকিটের ইতিহাস লোড করা যায়নি।",
     'supportInvalidHistory': "সাপোর্ট ইতিহাসের উত্তর সঠিক নয়।",
     'supportLoadRequestsFailed': "সাপোর্ট অনুরোধ লোড করা যায়নি.",
+    'supportNoOrder': "টিকিট তৈরি করতে প্রথমে একটি লেনদেন শুরু করুন, তারপর লেনদেনের ইতিহাস থেকে সেটি নির্বাচন করুন।",
+    'walletServerBalanceNote': "প্রকৃত ব্যালেন্স দেখাতে সার্ভারের সংযোগ প্রয়োজন।",
+    'walletAddMoneyNote': "টাকা যোগ করতে ওয়ালেট API এবং পেমেন্ট যাচাই প্রয়োজন।",
+    'walletStripeDescription': "বিদ্যমান Backend-এর মাধ্যমে পেমেন্ট প্রক্রিয়া হয়।",
+    'walletHistoryDescription': "ওয়ালেটে টাকা জমা ও উত্তোলনের লেনদেন",
+    'walletSecurityTitle': "ওয়ালেটের নিরাপত্তা",
+    'walletSecurePayments': "নিরাপদ পেমেন্ট",
+    'walletSecretKeysNote': "পেমেন্টের গোপন কী শুধু Backend-এ রাখতে হবে।",
+    'walletStripeVerifyNote': "Stripe পেমেন্ট সার্ভার দ্বারা যাচাই করতে হবে।",
+    'shareReceiptNotReady': "রসিদ শেয়ার করার সুবিধা পরবর্তী ধাপে যোগ করা হবে।",
   },
 };
 
@@ -3204,7 +3264,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   onPressed: () {
                     Navigator.pop(context);
                     showMessage(
-                      'د رسید شریکولو ځانګړنه به په راتلونکي پړاو کې ورزیاته شي.',
+                      t('shareReceiptNotReady'),
                     );
                   },
                   icon: const Icon(Icons.share_outlined),
@@ -3320,7 +3380,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'د حقیقي بیلانس لپاره د سرور اتصال اړین دی.',
+                  t('walletServerBalanceNote'),
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
@@ -3334,7 +3394,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
           ElevatedButton.icon(
             onPressed: () => showMessage(
-              'د پیسو جمع کولو لپاره د والټ API او د تادیې تایید اړین دي.',
+              t('walletAddMoneyNote'),
             ),
             icon: const Icon(Icons.add_circle_outline),
             label: Text(t('addMoney')),
@@ -3353,11 +3413,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
               ),
               title: const Text('Stripe'),
               subtitle: const Text(
-                'د موجود Backend له لارې تادیه',
+                t('walletStripeDescription'),
               ),
               trailing: const Icon(Icons.lock_outline),
               onTap: () => showMessage(
-                'Stripe تادیه باید د سرور له خوا تایید شي.',
+                t('walletStripeVerifyNote'),
               ),
             ),
           ),
@@ -3373,7 +3433,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               ),
               title: Text(t('history')),
               subtitle: const Text(
-                'د والټ د داخلېدو او وتلو معاملې',
+                t('walletHistoryDescription'),
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
@@ -3385,7 +3445,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const SizedBox(height: 16),
 
           pgntSectionTitle(
-            'د والټ امنیت',
+            t('walletSecurityTitle'),
             Icons.shield_outlined,
           ),
 
@@ -3395,9 +3455,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 Icons.verified_user_outlined,
                 color: successGreen,
               ),
-              title: Text('خوندي تادیات'),
+              title: Text(t('walletSecurePayments')),
               subtitle: Text(
-                'د تادیې پټ کلیدونه باید یوازې په Backend کې وي.',
+                t('walletSecretKeysNote'),
               ),
             ),
           ),
@@ -3686,7 +3746,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             child: Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                'د ټکټ ثبتولو لپاره باید لومړی یوه معامله پیل شوې وي. بیا د معاملې له تاریخچې څخه هماغه معامله انتخاب کړئ.',
+                t('supportNoOrder'),
                 style: TextStyle(height: 1.45),
               ),
             ),
