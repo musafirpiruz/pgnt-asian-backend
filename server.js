@@ -667,8 +667,25 @@ async function getProduct(client, productId, requestedCountry = null, operator =
        OR
        ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
      )
+     AND (
+       $5::text IS NULL
+       OR EXISTS (
+         SELECT 1
+         FROM country_operator_products cop
+         JOIN country_operators co
+           ON co.country_code = cop.country_code
+          AND co.operator_key = cop.operator_key
+         WHERE cop.product_catalog_id = product_catalog.id
+           AND cop.country_code = product_catalog.country
+           AND cop.operator_key = $5
+           AND cop.active = TRUE
+           AND co.active = TRUE
+           AND cop.provider_operator_id = co.provider_operator_id
+           AND cop.provider_product_id = product_catalog.product_id::text
+       )
+     )
      LIMIT 1`,
-    [productId, requestedCountry, operator, amount]
+    [productId, requestedCountry, operator, amount, options.operatorKey || null]
   );
 
   if (result.rowCount !== 1) {
@@ -1066,7 +1083,10 @@ app.get('/api/pricing/quote', async (req, res) => {
       client, country, operatorKey, providerOperatorId
     );
     if (verifiedOperator) operator = verifiedOperator.display_name;
-    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
+    const product = await getProduct(client, null, country, operator, amount, {
+      allowInactive: true,
+      operatorKey: verifiedOperator ? operatorKey : null,
+    });
     const basePricing = await getPricingSettings(client, country);
     const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
@@ -1175,7 +1195,8 @@ app.post('/api/payments/checkout', async (req, res) => {
       input.productId,
       input.country,
       input.operator,
-      input.amount
+      input.amount,
+      { operatorKey: verifiedOperator ? input.operatorKey : null }
     );
 
     if (product.country !== input.country) {
@@ -5012,6 +5033,70 @@ app.post('/api/admin/countries/:countryCode/operators', requireAdmin, async (req
     if (error.code === '23503') return res.status(404).json({ error: 'Country does not exist.' });
     console.error('Admin country operator creation failed:', error.message);
     return res.status(500).json({ error: 'Could not create inactive operator mapping.' });
+  }
+});
+
+// Explicitly link a verified registry operator to an existing DT One catalog product.
+// The mapping is always created inactive; this endpoint never activates products or operators.
+app.post('/api/admin/countries/:countryCode/operators/:operatorKey/products', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorKey = String(req.params.operatorKey || '').trim().toLowerCase();
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const providerOperatorId = String(body.provider_operator_id || '').trim();
+  const providerProductId = String(body.provider_product_id || '').trim();
+  const catalogProductId = String(body.catalog_product_id || '').trim();
+
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !/^[a-z0-9][a-z0-9_-]{1,59}$/.test(operatorKey) ||
+      !providerOperatorId || providerOperatorId.length > 120 ||
+      !/^\d+$/.test(providerProductId) ||
+      !/^[1-9]\d*$/.test(catalogProductId)) {
+    return res.status(400).json({ error: 'Provide a valid operator, verified provider IDs, and catalog product ID.' });
+  }
+
+  try {
+    const operator = await pool.query(
+      `SELECT provider_operator_id FROM country_operators
+       WHERE country_code = $1 AND operator_key = $2 LIMIT 1`,
+      [countryCode, operatorKey]
+    );
+    if (operator.rowCount !== 1 ||
+        String(operator.rows[0].provider_operator_id || '') !== providerOperatorId) {
+      return res.status(409).json({ error: 'Provider operator ID does not match the saved country operator.' });
+    }
+
+    const product = await pool.query(
+      `SELECT id, country, product_id, amount, currency, active
+       FROM product_catalog WHERE id = $1 LIMIT 1`,
+      [catalogProductId]
+    );
+    if (product.rowCount !== 1) return res.status(404).json({ error: 'Catalog product not found.' });
+    const row = product.rows[0];
+    if (String(row.country).trim().toUpperCase() !== countryCode ||
+        String(row.product_id) !== providerProductId) {
+      return res.status(409).json({ error: 'Catalog product country or DT One product ID does not match the selected mapping.' });
+    }
+
+    const saved = await pool.query(
+      `INSERT INTO country_operator_products
+         (country_code, operator_key, product_catalog_id, provider_operator_id, provider_product_id, active)
+       VALUES ($1, $2, $3, $4, $5, FALSE)
+       RETURNING id, country_code, operator_key, product_catalog_id,
+                 provider_operator_id, provider_product_id, active`,
+      [countryCode, operatorKey, catalogProductId, providerOperatorId, providerProductId]
+    );
+    return res.status(201).json({
+      mapping: saved.rows[0],
+      activationPerformed: false,
+      productActivated: false,
+      note: 'Explicit operator-to-catalog mapping saved inactive. Complete provider, pricing, localization, and sandbox preflight before activation.',
+    });
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'This catalog product already has an operator mapping or this provider product is already mapped.' });
+    if (error.code === '23503') return res.status(404).json({ error: 'Country, operator, or catalog product does not exist.' });
+    console.error('Admin operator product mapping failed:', error.message);
+    return res.status(500).json({ error: 'Could not save inactive operator product mapping.' });
   }
 });
 
