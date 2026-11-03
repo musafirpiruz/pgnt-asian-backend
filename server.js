@@ -2920,7 +2920,7 @@ app.get('/api/countries/active', async (req, res) => {
       SELECT country_code AS code, country_name AS name,
              destination_currency AS currency, calling_code AS callingCode
       FROM country_registry
-      WHERE status = 'active'
+      WHERE status IN ('active','legacy')
       ORDER BY country_name ASC
     `);
     return res.json({ countries: result.rows, count: result.rowCount });
@@ -3630,13 +3630,20 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Country service is unavailable.' });
   const code = String(req.params.countryCode || '').trim().toUpperCase();
   try {
-    const country = await pool.query(`SELECT 1 FROM country_registry WHERE country_code=$1 AND status='active'`, [code]);
+    const country = await pool.query(`SELECT 1 FROM country_registry WHERE country_code=$1 AND status IN ('active','legacy')`, [code]);
     if (country.rowCount !== 1) return res.status(404).json({ error: 'Country is unavailable.' });
     const result = await pool.query(`
       SELECT id,operator_key AS code,display_name AS name
       FROM country_operators
       WHERE country_code=$1 AND active=TRUE
-      ORDER BY display_name
+      UNION
+      SELECT NULL::bigint AS id,
+             LOWER(REGEXP_REPLACE(operator,'[^a-zA-Z0-9]+','-','g')) AS code,
+             operator AS name
+      FROM product_catalog
+      WHERE country=$1 AND active=TRUE
+        AND NOT EXISTS (SELECT 1 FROM country_operators WHERE country_code=$1 AND active=TRUE)
+      ORDER BY name
     `, [code]);
     return res.json({ countryCode: code, operators: result.rows });
   } catch (error) {
@@ -3649,9 +3656,9 @@ app.get('/api/countries/:countryCode/products', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Country service is unavailable.' });
   const code = String(req.params.countryCode || '').trim().toUpperCase();
   try {
-    const country = await pool.query(`SELECT destination_currency FROM country_registry WHERE country_code=$1 AND status='active'`, [code]);
+    const country = await pool.query(`SELECT destination_currency,status FROM country_registry WHERE country_code=$1 AND status IN ('active','legacy')`, [code]);
     if (country.rowCount !== 1) return res.status(404).json({ error: 'Country is unavailable.' });
-    const result = await pool.query(`
+    let result = await pool.query(`
       SELECT p.id,p.provider_product_id AS "providerProductId",
              o.operator_key AS "operatorCode",o.display_name AS operator,
              p.denomination AS amount,p.destination_currency AS currency,
@@ -3663,6 +3670,16 @@ app.get('/api/countries/:countryCode/products', async (req, res) => {
         AND p.verification_status='verified' AND p.price_currency_verified=TRUE
       ORDER BY o.display_name,p.denomination
     `, [code]);
+    if (result.rowCount === 0 && country.rows[0].status === 'legacy') {
+      result = await pool.query(`
+        SELECT id,product_id AS "providerProductId",
+               LOWER(REGEXP_REPLACE(operator,'[^a-zA-Z0-9]+','-','g')) AS "operatorCode",
+               operator,amount,currency,price_eur_cents AS "providerRetailEurCents",
+               wholesale_price_eur_cents AS "wholesaleEurCents"
+        FROM product_catalog WHERE country=$1 AND active=TRUE
+        ORDER BY operator,amount
+      `, [code]);
+    }
     return res.json({ countryCode: code, currency: String(country.rows[0].destination_currency).trim(), products: result.rows });
   } catch (error) {
     console.error('Customer country product lookup failed:', error.message);
