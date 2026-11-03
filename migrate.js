@@ -863,9 +863,65 @@ async function runMigration() {
 
 
 
-    // Version 017 introduces a database-backed destination-country registry.
-    // Existing pricing, catalog, orders, refunds, and wallet data are untouched.
-    
+    // Version 018 repairs localized country labels even when migration 017
+    // was already applied with English fallback values. Only the four
+    // supported country-name rows are updated; financial/catalog data is untouched.
+    const countryLocalizationVersion = "018_repair_country_localizations";
+    const countryLocalizationCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [countryLocalizationVersion]
+    );
+    if (countryLocalizationCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          INSERT INTO country_localizations
+            (country_code, language_code, display_name, is_fallback)
+          VALUES
+            ('AF','en','Afghanistan',FALSE),
+            ('AF','ps','افغانستان',FALSE),
+            ('AF','fa','افغانستان',FALSE),
+            ('AF','ur','افغانستان',FALSE),
+            ('AF','hi','अफ़ग़ानिस्तान',FALSE),
+            ('AF','bn','আফগানিস্তান',FALSE),
+            ('PK','en','Pakistan',FALSE),
+            ('PK','ps','پاکستان',FALSE),
+            ('PK','fa','پاکستان',FALSE),
+            ('PK','ur','پاکستان',FALSE),
+            ('PK','hi','पाकिस्तान',FALSE),
+            ('PK','bn','পাকিস্তান',FALSE),
+            ('IN','en','India',FALSE),
+            ('IN','ps','هند',FALSE),
+            ('IN','fa','هند',FALSE),
+            ('IN','ur','بھارت',FALSE),
+            ('IN','hi','भारत',FALSE),
+            ('IN','bn','ভারত',FALSE),
+            ('BD','en','Bangladesh',FALSE),
+            ('BD','ps','بنګله‌دېش',FALSE),
+            ('BD','fa','بنگلادیش',FALSE),
+            ('BD','ur','بنگلہ دیش',FALSE),
+            ('BD','hi','बांग्लादेश',FALSE),
+            ('BD','bn','বাংলাদেশ',FALSE)
+          ON CONFLICT (country_code, language_code)
+          DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            is_fallback = FALSE,
+            updated_at = NOW();
+
+          INSERT INTO schema_migrations(version)
+          VALUES ('018_repair_country_localizations')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 018_repair_country_localizations completed; localized country labels were repaired.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 018_repair_country_localizations is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
