@@ -665,10 +665,27 @@ async function getProduct(client, productId, requestedCountry = null, operator =
      WHERE (
        ($1::bigint IS NOT NULL AND id = $1::bigint)
        OR
-       ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
+       ($1::bigint IS NULL AND country = $2 AND amount = $4 AND ($5::text IS NOT NULL OR LOWER(operator) = LOWER($3)))
+     )
+     AND (
+       $5::text IS NULL
+       OR EXISTS (
+         SELECT 1
+         FROM country_operator_products cop
+         JOIN country_operators co
+           ON co.country_code = cop.country_code
+          AND co.operator_key = cop.operator_key
+         WHERE cop.product_catalog_id = product_catalog.id
+           AND cop.country_code = product_catalog.country
+           AND cop.operator_key = $5
+           AND cop.active = TRUE
+           AND co.active = TRUE
+           AND cop.provider_operator_id = co.provider_operator_id
+           AND cop.provider_product_id = product_catalog.product_id::text
+       )
      )
      LIMIT 1`,
-    [productId, requestedCountry, operator, amount]
+    [productId, requestedCountry, operator, amount, options.operatorKey || null]
   );
 
   if (result.rowCount !== 1) {
@@ -1066,7 +1083,10 @@ app.get('/api/pricing/quote', async (req, res) => {
       client, country, operatorKey, providerOperatorId
     );
     if (verifiedOperator) operator = verifiedOperator.display_name;
-    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
+    const product = await getProduct(client, null, country, operator, amount, {
+      allowInactive: true,
+      operatorKey: verifiedOperator ? operatorKey : null,
+    });
     const basePricing = await getPricingSettings(client, country);
     const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
@@ -1175,7 +1195,8 @@ app.post('/api/payments/checkout', async (req, res) => {
       input.productId,
       input.country,
       input.operator,
-      input.amount
+      input.amount,
+      { operatorKey: verifiedOperator ? input.operatorKey : null }
     );
 
     if (product.country !== input.country) {
@@ -5012,6 +5033,126 @@ app.post('/api/admin/countries/:countryCode/operators', requireAdmin, async (req
     if (error.code === '23503') return res.status(404).json({ error: 'Country does not exist.' });
     console.error('Admin country operator creation failed:', error.message);
     return res.status(500).json({ error: 'Could not create inactive operator mapping.' });
+  }
+});
+
+// Explicitly link a verified registry operator to an existing DT One catalog product.
+// The mapping is always created inactive; this endpoint never activates products or operators.
+app.post('/api/admin/countries/:countryCode/operators/:operatorKey/products', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorKey = String(req.params.operatorKey || '').trim().toLowerCase();
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const providerOperatorId = String(body.provider_operator_id || '').trim();
+  const providerProductId = String(body.provider_product_id || '').trim();
+  const catalogProductId = String(body.catalog_product_id || '').trim();
+
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !/^[a-z0-9][a-z0-9_-]{1,59}$/.test(operatorKey) ||
+      !providerOperatorId || providerOperatorId.length > 120 ||
+      !/^\d+$/.test(providerProductId) ||
+      !/^[1-9]\d*$/.test(catalogProductId)) {
+    return res.status(400).json({ error: 'Provide a valid operator, verified provider IDs, and catalog product ID.' });
+  }
+
+  try {
+    const operator = await pool.query(
+      `SELECT provider_operator_id FROM country_operators
+       WHERE country_code = $1 AND operator_key = $2 LIMIT 1`,
+      [countryCode, operatorKey]
+    );
+    if (operator.rowCount !== 1 ||
+        String(operator.rows[0].provider_operator_id || '') !== providerOperatorId) {
+      return res.status(409).json({ error: 'Provider operator ID does not match the saved country operator.' });
+    }
+
+    const providerCountry = await pool.query(
+      `SELECT provider_country_code FROM country_provider_settings
+       WHERE country_code = $1 AND provider_code = 'DTONE' AND enabled = TRUE
+       LIMIT 1`,
+      [countryCode]
+    );
+    if (providerCountry.rowCount !== 1) {
+      return res.status(409).json({ error: 'No enabled DT One country mapping exists for this destination.' });
+    }
+
+    // Re-verify the exact provider product and its owning operator server-side.
+    // Client-submitted IDs and browser discovery results are not trusted as proof.
+    let verifiedProviderProduct = null;
+    let providerCatalogComplete = false;
+    for (let page = 1; page <= 20; page += 1) {
+      const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
+      url.searchParams.set('country_iso_code', String(providerCountry.rows[0].provider_country_code).trim().toUpperCase());
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(45000),
+      });
+      const responseText = await response.text();
+      let data;
+      try { data = responseText ? JSON.parse(responseText) : null; } catch (_) { data = null; }
+      if (!response.ok) {
+        console.warn('DT One operator-product mapping verification failed.', { providerHttpStatus: response.status, page });
+        return res.status(502).json({ error: 'Could not verify the selected product against DT One.', providerHttpStatus: response.status });
+      }
+      const products = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      verifiedProviderProduct = products.find((item) => String(item?.id ?? '') === providerProductId) || verifiedProviderProduct;
+      if (verifiedProviderProduct) {
+        providerCatalogComplete = true;
+        break;
+      }
+      if (products.length < 100) {
+        providerCatalogComplete = true;
+        break;
+      }
+      if (page === 20) providerCatalogComplete = false;
+    }
+    if (!verifiedProviderProduct && !providerCatalogComplete) {
+      return res.status(503).json({ error: 'DT One product catalog verification reached its page safety limit. No mapping was saved.' });
+    }
+    if (!verifiedProviderProduct) {
+      return res.status(404).json({ error: 'The selected product ID was not found in the verified DT One country catalog.' });
+    }
+    const providerProductOperatorId = String(verifiedProviderProduct?.operator?.id ?? '');
+    const providerProductCountry = String(verifiedProviderProduct?.operator?.country?.iso_code || '').toUpperCase();
+    if (providerProductOperatorId !== providerOperatorId ||
+        providerProductCountry !== String(providerCountry.rows[0].provider_country_code).trim().toUpperCase()) {
+      return res.status(409).json({ error: 'The DT One product does not belong to the selected verified operator and country.' });
+    }
+
+    const product = await pool.query(
+      `SELECT id, country, product_id, amount, currency, active
+       FROM product_catalog WHERE id = $1 LIMIT 1`,
+      [catalogProductId]
+    );
+    if (product.rowCount !== 1) return res.status(404).json({ error: 'Catalog product not found.' });
+    const row = product.rows[0];
+    if (String(row.country).trim().toUpperCase() !== countryCode ||
+        String(row.product_id) !== providerProductId) {
+      return res.status(409).json({ error: 'Catalog product country or DT One product ID does not match the selected mapping.' });
+    }
+
+    const saved = await pool.query(
+      `INSERT INTO country_operator_products
+         (country_code, operator_key, product_catalog_id, provider_operator_id, provider_product_id, active)
+       VALUES ($1, $2, $3, $4, $5, FALSE)
+       RETURNING id, country_code, operator_key, product_catalog_id,
+                 provider_operator_id, provider_product_id, active`,
+      [countryCode, operatorKey, catalogProductId, providerOperatorId, providerProductId]
+    );
+    return res.status(201).json({
+      mapping: saved.rows[0],
+      activationPerformed: false,
+      productActivated: false,
+      note: 'Explicit operator-to-catalog mapping saved inactive. Complete provider, pricing, localization, and sandbox preflight before activation.',
+    });
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'This catalog product already has an operator mapping or this provider product is already mapped.' });
+    if (error.code === '23503') return res.status(404).json({ error: 'Country, operator, or catalog product does not exist.' });
+    console.error('Admin operator product mapping failed:', error.message);
+    return res.status(500).json({ error: 'Could not save inactive operator product mapping.' });
   }
 });
 

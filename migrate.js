@@ -863,7 +863,51 @@ async function runMigration() {
 
 
 
-    // Version 017 introduces a database-backed destination-country registry.
+        // Version 019 adds an explicit, inactive-by-default link between
+    // registry operators and existing DT One product_catalog records.
+    // It does not import, activate, price, or modify any existing product.
+    const operatorProductMappingVersion = "019_country_operator_product_mapping";
+    const operatorProductMappingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [operatorProductMappingVersion]
+    );
+    if (operatorProductMappingCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_operator_products (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL,
+            operator_key TEXT NOT NULL,
+            product_catalog_id BIGINT NOT NULL UNIQUE REFERENCES product_catalog(id) ON DELETE RESTRICT,
+            provider_operator_id TEXT NOT NULL,
+            provider_product_id TEXT NOT NULL,
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            FOREIGN KEY (country_code, operator_key)
+              REFERENCES country_operators(country_code, operator_key) ON DELETE RESTRICT,
+            UNIQUE (country_code, operator_key, provider_product_id),
+            CHECK (length(provider_operator_id) BETWEEN 1 AND 120),
+            CHECK (provider_product_id ~ '^[0-9]{1,120}$')
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_operator_products_active
+            ON country_operator_products(country_code, operator_key, active);
+          INSERT INTO schema_migrations(version)
+          VALUES ('019_country_operator_product_mapping')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 019_country_operator_product_mapping completed; all mappings remain inactive.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 019_country_operator_product_mapping is already applied.");
+    }
+
+// Version 017 introduces a database-backed destination-country registry.
     // Existing pricing, catalog, orders, refunds, and wallet data are untouched.
     
   } catch (error) {
