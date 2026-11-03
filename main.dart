@@ -600,6 +600,7 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "د حساب امنیتي ځانګړتیاوې د حساب له جوړېدو وروسته فعالېږي.",
     'accountSecurityNotConnected': "د حساب امنیت لا نه دی نښلول شوی.",
     'couldNotSaveLanguage': "ستاسو ژبه ثبت نه شوه. بیا هڅه وکړئ.",
+    'countryDirectoryFallback': "د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.",
     'supportCreateTitle': "د مرستې ټکټ جوړ کړئ",
     'supportSelectOrder': "د معاملې شمېره",
     'supportSelectCategory': "د ستونزې ډول",
@@ -728,6 +729,7 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "ویژگی‌های امنیت حساب پس از راه‌اندازی حساب فعال می‌شوند.",
     'accountSecurityNotConnected': "امنیت حساب هنوز متصل نشده است.",
     'couldNotSaveLanguage': "ذخیره زبان ممکن نشد. دوباره تلاش کنید.",
+    'countryDirectoryFallback': "فهرست تازه کشورها دریافت نشد؛ از فهرست محلی امن استفاده می‌شود.",
     'supportCreateTitle': "ایجاد درخواست پشتیبانی",
     'supportSelectOrder': "شماره تراکنش",
     'supportSelectCategory': "نوع مشکل",
@@ -856,6 +858,7 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "Account security features require account setup.",
     'accountSecurityNotConnected': "Account security is not connected yet.",
     'couldNotSaveLanguage': "Could not save your language. Please try again.",
+    'countryDirectoryFallback': "The latest country list could not be loaded; the saved local list is being used.",
     'supportCreateTitle': "Create a support ticket",
     'supportSelectOrder': "Transaction number",
     'supportSelectCategory': "Issue type",
@@ -984,6 +987,7 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "اکاؤنٹ کی سیکیورٹی خصوصیات اکاؤنٹ بنانے کے بعد دستیاب ہوں گی۔",
     'accountSecurityNotConnected': "اکاؤنٹ کی سیکیورٹی ابھی منسلک نہیں ہے۔",
     'couldNotSaveLanguage': "زبان محفوظ نہیں ہو سکی۔ دوبارہ کوشش کریں۔",
+    'countryDirectoryFallback': "تازہ ملکوں کی فہرست حاصل نہیں ہو سکی؛ محفوظ مقامی فہرست استعمال ہو رہی ہے۔",
     'supportCreateTitle': "سپورٹ ٹکٹ بنائیں",
     'supportSelectOrder': "لین دین نمبر",
     'supportSelectCategory': "مسئلے کی قسم",
@@ -1112,6 +1116,7 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "खाता सुरक्षा सुविधाओं के लिए खाता सेटअप आवश्यक है।",
     'accountSecurityNotConnected': "खाता सुरक्षा अभी कनेक्ट नहीं है।",
     'couldNotSaveLanguage': "आपकी भाषा सहेजी नहीं जा सकी। फिर कोशिश करें।",
+    'countryDirectoryFallback': "देशों की नई सूची नहीं मिल सकी; सुरक्षित स्थानीय सूची का उपयोग किया जा रहा है।",
     'supportCreateTitle': "सहायता टिकट बनाएँ",
     'supportSelectOrder': "लेन-देन संख्या",
     'supportSelectCategory': "समस्या का प्रकार",
@@ -1240,6 +1245,7 @@ const Map<String, Map<String, String>> translations = {
     'accountSecurityNote': "অ্যাকাউন্ট নিরাপত্তা সুবিধার জন্য অ্যাকাউন্ট সেটআপ প্রয়োজন।",
     'accountSecurityNotConnected': "অ্যাকাউন্ট নিরাপত্তা এখনো সংযুক্ত নয়।",
     'couldNotSaveLanguage': "আপনার ভাষা সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।",
+    'countryDirectoryFallback': "দেশের নতুন তালিকা পাওয়া যায়নি; নিরাপদ স্থানীয় তালিকা ব্যবহার করা হচ্ছে।",
     'supportCreateTitle': "সাপোর্ট টিকিট তৈরি করুন",
     'supportSelectOrder': "লেনদেন নম্বর",
     'supportSelectCategory': "সমস্যার ধরন",
@@ -1943,8 +1949,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       setState(() {
         availableCountries = countries;
         directoryOperators = null;
-        countryDirectoryError =
-            'د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.';
+        countryDirectoryError = t('countryDirectoryFallback');
       });
     } finally {
       if (mounted) setState(() => isLoadingCountries = false);
