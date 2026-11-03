@@ -62,3 +62,8 @@ jobs:
             }
           '
           echo "npm audit exit code: $audit_exit (diagnostic only; no dependency upgrades applied)"
+
+      - name: Enforce production and full dependency audit
+        run: |
+          npm audit --omit=dev --audit-level=moderate
+          npm audit --audit-level=moderate
