@@ -34,7 +34,7 @@ test('new country creation is admin-only and hard-codes draft status', () => {
 
 test('customer country discovery returns only explicitly active registry entries', () => {
   const start = server.indexOf("app.get('/api/countries/active'");
-  const end = server.indexOf('// Read-only wallet integrity diagnostics.', start);
+  const end = server.indexOf('let registryFxRefreshInProgress', start);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start, end);
   assert.match(route, /FROM country_registry/);
