@@ -60,29 +60,32 @@ async function refreshCountryFxRates(pool, options = {}) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const updated = await client.query(
-      `UPDATE pricing_settings
-          SET local_currency_per_eur = $2,
-              fx_rate_source = $3,
-              fx_updated_at = NOW(),
-              fx_provider_updated_at = $4,
-              updated_at = NOW()
-        WHERE country = $1
-        RETURNING country`,
-      Object.entries(validated.rates).map(([country, rate]) => [country, rate])
-    );
-    // Use one parameterized update per country to keep the mapping explicit and auditable.
-    const updateRows = updated && Array.isArray(updated.rows) ? updated.rows : [];
-    if (updateRows.length !== 4) {
-      throw new Error('FX refresh expected exactly four configured country pricing rows.');
-    }
+    let updatedCountryCount = 0;
     for (const [country, rate] of Object.entries(validated.rates)) {
+      const updated = await client.query(
+        `UPDATE pricing_settings
+            SET local_currency_per_eur = $2,
+                fx_rate_source = $3,
+                fx_updated_at = NOW(),
+                fx_provider_updated_at = $4,
+                updated_at = NOW()
+          WHERE country = $1
+          RETURNING country`,
+        [country, rate, 'ExchangeRate-API Open Access', validated.providerUpdatedAt]
+      );
+      if (updated.rowCount !== 1) {
+        throw new Error(`FX refresh expected one configured pricing row for country ${country}.`);
+      }
+      updatedCountryCount += updated.rowCount;
       await client.query(
         `INSERT INTO fx_rate_history
            (country, currency, rate_per_eur, source, provider_updated_at)
          VALUES ($1, $2, $3, $4, $5)`,
         [country, COUNTRY_CURRENCIES[country], rate, 'ExchangeRate-API Open Access', validated.providerUpdatedAt]
       );
+    }
+    if (updatedCountryCount !== 4) {
+      throw new Error('FX refresh expected exactly four configured country pricing rows.');
     }
     await client.query('COMMIT');
     return {
