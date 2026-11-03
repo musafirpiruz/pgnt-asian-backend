@@ -66,9 +66,10 @@ test('FX refresh rolls back if all four configured pricing rows are not present'
   await assert.rejects(
     refreshCountryFxRates(pool, {
       now: () => now,
+      apiKey: 'test-api-key',
       fetchImpl: async () => ({ ok: true, json: async () => payload() }),
     }),
-    /exactly four configured country pricing rows/
+    /one configured pricing row for country BD/
   );
   assert.ok(calls.some(call => call.sql === 'ROLLBACK'));
   assert.ok(!calls.some(call => call.sql === 'COMMIT'));
