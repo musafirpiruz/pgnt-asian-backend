@@ -55,7 +55,7 @@ test('new provider mappings are admin-only and remain disabled', () => {
   assert.ok(start >= 0 && end > start, 'disabled provider mapping route exists');
   const route = serverSource.slice(start, end);
   assert.match(route, /country_provider_settings/);
-  assert.ok(route.includes('VALUES ($1, $2, $3, FALSE)'), 'provider mapping insert must explicitly remain disabled');
+  assert.match(route, /VALUES\s*\(\$1,\s*\$2,\s*\$3,\s*FALSE\)/, 'provider mapping insert must explicitly remain disabled');
   assert.match(route, /fulfillmentEnabled: false/);
   assert.match(route, /activationPerformed: false/);
 });
