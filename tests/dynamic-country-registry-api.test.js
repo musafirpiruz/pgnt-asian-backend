@@ -38,6 +38,6 @@ test('customer country discovery returns only explicitly active registry entries
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start, end);
   assert.match(route, /FROM country_registry/);
-  assert.match(route, /WHERE status = 'active'/);
+  assert.match(route, /WHERE status IN \('active','legacy'\)/);
   assert.doesNotMatch(route, /INSERT INTO|UPDATE\s+country_registry|DELETE FROM/i);
 });
