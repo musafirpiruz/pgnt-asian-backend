@@ -1069,7 +1069,6 @@ async function runMigration() {
       console.log("Migration 021_dynamic_operator_pricing_countries is already applied.");
     }
 
-
     // Version 022 stores discovered country currency candidates and explicit admin confirmation.
     const countryCurrencyDiscoveryVersion = "022_country_currency_discovery";
     const countryCurrencyDiscoveryCheck = await client.query(
@@ -1090,29 +1089,7 @@ async function runMigration() {
             selected_at TIMESTAMPTZ,
             selection_status VARCHAR(20) NOT NULL DEFAULT 'pending'
               CHECK (selection_status IN ('pending','confirmed')),
-            CHECK (selected_currency IS NULL OR selected_currency ~ '^[A-Z]{3}
-    );
-
-    console.error(
-      error.message
-    );
-
-    process.exitCode = 1;
-  } finally {
-    if (client) {
-      try {
-        await client.query("SELECT pg_advisory_unlock(738291);");
-      } catch (_) {}
-
-      client.release();
-    }
-
-    await pool.end();
-  }
-}
-
-runMigration();
-)
+            CHECK (selected_currency IS NULL OR selected_currency ~ '^[A-Z]{3}$')
           );
           INSERT INTO schema_migrations (version)
           VALUES ('022_country_currency_discovery')
