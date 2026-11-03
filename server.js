@@ -7119,7 +7119,7 @@ small{color:#555}.inline{display:flex;gap:8px;align-items:center}.inline input[t
 </div><div class="inline"><input id="pricingActive" type="checkbox"><label for="pricingActive">Activate reviewed pricing settings</label></div><button onclick="savePricing()">Save pricing</button>
 <p>Enter translations as a JSON array. Required language codes: en, ps, fa, ur, hi, bn.</p>
 <textarea id="localizations" rows="5" placeholder='[{"languageCode":"en","displayName":"Kenya"},{"languageCode":"ps","displayName":"کینیا"},{"languageCode":"fa","displayName":"کنیا"},{"languageCode":"ur","displayName":"کینیا"},{"languageCode":"hi","displayName":"केन्या"},{"languageCode":"bn","displayName":"কেনিয়া"}]'></textarea><button onclick="saveLocalizations()">Save translations</button></section>
-<section><h2>5. Review operator / product</h2><div class="grid">
+<section><h2>5. Review operator / product</h2><button class="secondary" onclick="loadOperators()">List imported operators and IDs</button><button class="secondary" onclick="loadProducts()">List imported products and IDs</button><div class="grid">
 <input id="operatorId" type="number" min="1" placeholder="Operator database ID">
 <input id="productId" type="number" min="1" placeholder="Product database ID">
 </div><div class="inline"><input id="operatorActive" type="checkbox"><label for="operatorActive">Approve operator</label></div><button class="secondary" onclick="reviewOperator()">Save operator review</button>
@@ -7169,6 +7169,8 @@ async function saveLocalizations(){
  let localizations;try{localizations=JSON.parse(el('localizations').value);}catch(_){show({error:'Translations JSON is invalid'});return;}
  await api('/api/admin/countries/'+encodeURIComponent(code())+'/localizations','PUT',{localizations});
 }
+async function loadOperators(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/operators');}
+async function loadProducts(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/products');}
 async function reviewOperator(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/operators/'+encodeURIComponent(el('operatorId').value),'PATCH',{active:el('operatorActive').checked});}
 async function reviewProduct(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/products/'+encodeURIComponent(el('productId').value),'PATCH',{catalogStatus:el('productStatus').value.trim().toLowerCase()});}
 async function preflight(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/validate','POST',{});}
