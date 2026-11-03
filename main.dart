@@ -3472,7 +3472,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -3498,7 +3498,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ],
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 t('supportIntro'),
                 style: TextStyle(color: Colors.white, height: 1.45),
               ),
@@ -3513,7 +3513,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ],
               ),
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 t('supportAutoNote'),
                 style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
               ),
@@ -3626,11 +3626,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
               backgroundColor: Color(0x147A0C10),
               child: Icon(Icons.history_rounded, color: primaryRed),
             ),
-            title: const Text(
+            title: Text(
               t('checkOrder'),
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
-            subtitle: const Text(
+            subtitle: Text(
               t('checkOrderDesc'),
             ),
             trailing: const Icon(Icons.chevron_right),
@@ -3643,11 +3643,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
               backgroundColor: Color(0x147A0C10),
               child: Icon(Icons.account_balance_wallet_outlined, color: primaryRed),
             ),
-            title: const Text(
+            title: Text(
               t('paymentWallet'),
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
-            subtitle: const Text(
+            subtitle: Text(
               t('paymentWalletDesc'),
             ),
             trailing: const Icon(Icons.chevron_right),
@@ -3693,7 +3693,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: primaryRed.withValues(alpha: 0.12)),
           ),
-          child: const Row(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.info_outline, color: primaryRed),
