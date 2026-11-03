@@ -848,8 +848,10 @@ function calculateFinalPrice(product, pricing) {
 // Legacy curated fallback operators have no registry key and retain the existing path.
 async function getVerifiedCountryOperator(client, country, operatorKey, providerOperatorId) {
   if (!operatorKey && !providerOperatorId) return null;
-  if (!operatorKey || !providerOperatorId) {
-    throw new Error('A complete verified operator mapping is required.');
+  if (!operatorKey || !providerOperatorId ||
+      !/^[a-z0-9][a-z0-9_-]{1,59}$/.test(operatorKey) ||
+      providerOperatorId.length > 120) {
+    throw new Error('A complete valid verified operator mapping is required.');
   }
   const result = await client.query(
     `SELECT operator_key, display_name, provider_operator_id
