@@ -3175,10 +3175,45 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
       });
     }
 
+    const existingCatalog = await pool.query(
+      'SELECT product_id,operator,amount,currency FROM product_catalog WHERE country=$1',
+      [countryCode]
+    );
+    const existingIds = new Set(existingCatalog.rows.map(row => String(row.product_id)));
+    const existingDenominations = new Map(existingCatalog.rows.map(row => [
+      String(row.operator).trim().toLowerCase() + '|' + Number(row.amount) + '|' + String(row.currency).trim().toUpperCase(),
+      String(row.product_id),
+    ]));
+    const importCandidates = [];
+    const alreadyPresent = [];
+    const catalogConflicts = [];
+    for (const product of validProducts) {
+      if (existingIds.has(product.productId)) {
+        alreadyPresent.push(product.productId);
+        continue;
+      }
+      const key = product.operatorName.trim().toLowerCase() + '|' + product.denomination + '|' + product.denominationCurrency;
+      if (existingDenominations.has(key)) {
+        catalogConflicts.push({
+          productId: product.productId,
+          existingProductId: existingDenominations.get(key),
+          operator: product.operatorName,
+          amount: product.denomination,
+          currency: product.denominationCurrency,
+          reason: 'The same operator denomination already exists with another provider product ID; manual review is required.',
+        });
+        continue;
+      }
+      importCandidates.push(product);
+    }
+
     const summary = {
       verified: true, complete: true, countryCode, providerCountryCode, destinationCurrency,
       pagesChecked, providerProductsSeen, uniqueProviderProducts: providerById.size,
       detailProductsVerified: detailed.length, validProducts: validProducts.length,
+      newProducts: importCandidates.length,
+      alreadyPresentCount: alreadyPresent.length, alreadyPresent,
+      catalogConflictCount: catalogConflicts.length, catalogConflicts,
       rejectedCount: rejected.length, rejected,
       settlementCurrencies: currencies,
       importRequiresExplicitConfirmation: true,
@@ -3192,7 +3227,7 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
           items_verified=$4, items_rejected=$5, finished_at=NOW(), diagnostics=diagnostics || $6::jsonb
         WHERE id=$1
       `, [syncRunId, pagesChecked, providerProductsSeen, validProducts.length, rejected.length,
-        JSON.stringify({ previewOnly: true, currencies, rejectedProductIds: rejected.map(item => item.productId) })]);
+        JSON.stringify({ previewOnly: true, currencies, alreadyPresent, catalogConflicts, rejectedProductIds: rejected.map(item => item.productId) })]);
       return res.json({ ...summary, syncRunId, importedCount: 0 });
     }
 
@@ -3200,7 +3235,7 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
     let imported = [];
     try {
       await client.query('BEGIN');
-      for (const product of validProducts) {
+      for (const product of importCandidates) {
         const keySlug = product.operatorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'operator';
         const operatorKey = `${keySlug}-${product.providerOperatorId.replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`;
         const operatorResult = await client.query(`
