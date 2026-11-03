@@ -42,3 +42,8 @@ test('support source tests do not call external services or issue refunds', () =
   const testSource = fs.readFileSync(__filename, 'utf8');
   assert.doesNotMatch(testSource, /fetch\(|stripe\.refunds\.create/);
 });
+test('Flutter support screen does not claim ticket submission is unavailable', () => {
+  const flutter = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
+  assert.match(flutter, /you can submit a support ticket using the transaction from your history/i);
+  assert.doesNotMatch(flutter, /Direct ticket submission and automatic refund review still require a connected support service/i);
+});
