@@ -3258,6 +3258,343 @@ app.post('/api/admin/fx/rates/refresh', requireAdmin, async (req, res) => {
   });
 });
 
+// Configure pricing, localization and catalog review independently. These
+// admin actions version the country configuration and never charge customers.
+app.put('/api/admin/countries/:countryCode/pricing', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  const fee = Number(req.body?.feeEurCents);
+  const feePercent = Number(req.body?.feePercent ?? 0);
+  const stripePercent = Number(req.body?.stripeFeePercent ?? 1.5);
+  const stripeFixed = Number(req.body?.stripeFixedFeeCents ?? 25);
+  const minPrice = Number(req.body?.minCustomerPriceEurCents ?? 1);
+  const maxPrice = Number(req.body?.maxCustomerPriceEurCents ?? 1000000);
+  const active = req.body?.active === true;
+  if (!/^[A-Z]{2}$/.test(code) || !Number.isSafeInteger(fee) || fee < 0 || fee > 100000 ||
+      !Number.isFinite(feePercent) || feePercent < 0 || feePercent > 100 ||
+      !Number.isFinite(stripePercent) || stripePercent < 0 || stripePercent >= 100 ||
+      !Number.isSafeInteger(stripeFixed) || stripeFixed < 0 ||
+      !Number.isSafeInteger(minPrice) || minPrice <= 0 ||
+      !Number.isSafeInteger(maxPrice) || maxPrice < minPrice) {
+    return res.status(400).json({ error: 'Invalid country pricing settings.' });
+  }
+  try {
+    const client = await pool.connect();
+    let result;
+    try {
+      await client.query('BEGIN');
+      result = await client.query(`
+        INSERT INTO country_pricing_settings
+          (country_code, fee_eur_cents, fee_percent, stripe_fee_percent,
+           stripe_fixed_fee_cents, min_customer_price_eur_cents,
+           max_customer_price_eur_cents, active, updated_by, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'admin',NOW())
+        ON CONFLICT (country_code) DO UPDATE SET
+          fee_eur_cents=EXCLUDED.fee_eur_cents, fee_percent=EXCLUDED.fee_percent,
+          stripe_fee_percent=EXCLUDED.stripe_fee_percent,
+          stripe_fixed_fee_cents=EXCLUDED.stripe_fixed_fee_cents,
+          min_customer_price_eur_cents=EXCLUDED.min_customer_price_eur_cents,
+          max_customer_price_eur_cents=EXCLUDED.max_customer_price_eur_cents,
+          active=EXCLUDED.active, updated_by='admin', updated_at=NOW()
+        RETURNING *
+      `, [code, fee, feePercent, stripePercent, stripeFixed, minPrice, maxPrice, active]);
+      await client.query(`
+        UPDATE country_registry SET configuration_version=configuration_version+1, updated_at=NOW()
+        WHERE country_code=$1 AND status <> 'active'
+      `, [code]);
+      await client.query(`
+        INSERT INTO country_configuration_audit (country_code,actor,action,configuration_version,after_state)
+        SELECT country_code,'admin','country_pricing_updated',configuration_version,$2::jsonb
+        FROM country_registry WHERE country_code=$1
+      `, [code, JSON.stringify(result.rows[0])]);
+      await client.query('COMMIT');
+    } catch (error) { try { await client.query('ROLLBACK'); } catch (_) {} throw error; }
+    finally { client.release(); }
+    return res.json({ pricing: result.rows[0], countryActivation: 'unchanged', customerPricesChanged: false });
+  } catch (error) {
+    console.error('Country pricing update failed:', error.message);
+    return res.status(500).json({ error: 'Could not save country pricing settings.' });
+  }
+});
+
+app.put('/api/admin/countries/:countryCode/localizations', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  const entries = Array.isArray(req.body?.localizations) ? req.body.localizations : [];
+  if (!/^[A-Z]{2}$/.test(code) || !entries.length || entries.length > 12 ||
+      entries.some(item => !/^[a-z]{2}(-[A-Z]{2})?$/.test(String(item?.languageCode || '')) ||
+        !String(item?.displayName || '').trim() || String(item.displayName).trim().length > 120)) {
+    return res.status(400).json({ error: 'Provide valid localized country names.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const item of entries) {
+      await client.query(`
+        INSERT INTO country_localizations (country_code,language_code,display_name,is_fallback)
+        VALUES ($1,$2,$3,$4)
+        ON CONFLICT (country_code,language_code) DO UPDATE SET
+          display_name=EXCLUDED.display_name,is_fallback=EXCLUDED.is_fallback,updated_at=NOW()
+      `, [code, item.languageCode, String(item.displayName).trim(), item.isFallback === true]);
+    }
+    await client.query(`
+      UPDATE country_registry SET configuration_version=configuration_version+1,updated_at=NOW()
+      WHERE country_code=$1 AND status <> 'active'
+    `, [code]);
+    await client.query(`
+      INSERT INTO country_configuration_audit (country_code,actor,action,configuration_version,after_state)
+      SELECT country_code,'admin','country_localizations_updated',configuration_version,$2::jsonb
+      FROM country_registry WHERE country_code=$1
+    `, [code, JSON.stringify(entries)]);
+    await client.query('COMMIT');
+    return res.json({ saved: entries.length, countryCode: code, activation: 'unchanged' });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Country localization update failed:', error.message);
+    return res.status(500).json({ error: 'Could not save country localizations.' });
+  } finally { client.release(); }
+});
+
+app.patch('/api/admin/countries/:countryCode/operators/:operatorId', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorId = Number(req.params.operatorId);
+  const active = req.body?.active === true;
+  if (!/^[A-Z]{2}$/.test(code) || !Number.isSafeInteger(operatorId) || operatorId <= 0) {
+    return res.status(400).json({ error: 'Invalid country or operator ID.' });
+  }
+  try {
+    const result = await pool.query(`
+      UPDATE country_operators SET active=$3,updated_at=NOW()
+      WHERE country_code=$1 AND id=$2 AND ($3=FALSE OR verified_at IS NOT NULL)
+      RETURNING id,operator_key,display_name,active
+    `, [code, operatorId, active]);
+    if (result.rowCount !== 1) return res.status(409).json({ error: 'Operator not found or not verified; it cannot be activated.' });
+    await pool.query(`
+      UPDATE country_registry SET configuration_version=configuration_version+1,updated_at=NOW()
+      WHERE country_code=$1 AND status <> 'active'
+    `, [code]);
+    return res.json({ operator: result.rows[0], countryActivation: 'unchanged' });
+  } catch (error) {
+    console.error('Country operator review failed:', error.message);
+    return res.status(500).json({ error: 'Could not update operator review status.' });
+  }
+});
+
+app.patch('/api/admin/countries/:countryCode/products/:productId', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  const productId = Number(req.params.productId);
+  const status = String(req.body?.catalogStatus || '').trim().toLowerCase();
+  if (!/^[A-Z]{2}$/.test(code) || !Number.isSafeInteger(productId) || productId <= 0 ||
+      !['disabled','review','active','retired'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid product review request.' });
+  }
+  try {
+    const product = await pool.query(`
+      SELECT p.id,p.wholesale_currency,p.price_currency_verified,p.verification_status,
+             p.wholesale_eur_cents,p.retail_eur_cents
+      FROM country_products p WHERE p.country_code=$1 AND p.id=$2
+    `, [code, productId]);
+    if (product.rowCount !== 1) return res.status(404).json({ error: 'Country product was not found.' });
+    if (status === 'active') {
+      const p = product.rows[0];
+      if (p.verification_status !== 'verified' || p.price_currency_verified !== true ||
+          Number(p.wholesale_eur_cents) <= 0 || Number(p.retail_eur_cents) < Number(p.wholesale_eur_cents)) {
+        return res.status(409).json({ error: 'Product price currency and EUR cost must be verified before activation.' });
+      }
+      if (String(p.wholesale_currency).trim() !== 'EUR') {
+        const fx = await pool.query(`
+          SELECT 1 FROM fx_currency_rates WHERE currency=$1
+            AND expires_at>NOW() AND observed_at>=NOW()-INTERVAL '5 days' LIMIT 1
+        `, [p.wholesale_currency]);
+        if (fx.rowCount !== 1) return res.status(409).json({ error: 'A fresh FX rate for the wholesale settlement currency is required.' });
+      }
+      const pricing = await pool.query('SELECT active FROM country_pricing_settings WHERE country_code=$1', [code]);
+      if (pricing.rowCount !== 1 || pricing.rows[0].active !== true) {
+        return res.status(409).json({ error: 'Configure and activate country pricing before activating products.' });
+      }
+    }
+    const updated = await pool.query(`
+      UPDATE country_products SET catalog_status=$3,updated_at=NOW()
+      WHERE country_code=$1 AND id=$2
+      RETURNING id,provider_product_id,catalog_status,verification_status,price_currency_verified
+    `, [code, productId, status]);
+    await pool.query(`
+      UPDATE country_registry SET configuration_version=configuration_version+1,updated_at=NOW()
+      WHERE country_code=$1 AND status <> 'active'
+    `, [code]);
+    return res.json({ product: updated.rows[0], countryActivation: 'unchanged' });
+  } catch (error) {
+    console.error('Country product review failed:', error.message);
+    return res.status(500).json({ error: 'Could not update product review status.' });
+  }
+});
+
+app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ error: 'Invalid country code.' });
+  try {
+    const countryResult = await pool.query('SELECT * FROM country_registry WHERE country_code=$1', [code]);
+    if (countryResult.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+    const country = countryResult.rows[0];
+    const mapping = await pool.query(`
+      SELECT 1 FROM country_provider_mappings WHERE country_code=$1
+        AND provider='dtone' AND verification_status='verified'
+    `, [code]);
+    const operators = await pool.query('SELECT COUNT(*)::int AS count FROM country_operators WHERE country_code=$1 AND active=TRUE AND verified_at IS NOT NULL', [code]);
+    const products = await pool.query(`
+      SELECT p.* FROM country_products p JOIN country_operators o ON o.id=p.operator_id
+      WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE
+    `, [code]);
+    const pricing = await pool.query('SELECT * FROM country_pricing_settings WHERE country_code=$1 AND active=TRUE', [code]);
+    const localizations = await pool.query('SELECT language_code FROM country_localizations WHERE country_code=$1', [code]);
+    const languages = new Set(localizations.rows.map(row => String(row.language_code).toLowerCase().split('-')[0]));
+    const requiredLanguages = ['en','ps','fa','ur','hi','bn'];
+    const missingLanguages = requiredLanguages.filter(language => !languages.has(language));
+    const destinationFx = String(country.destination_currency).trim() === 'EUR'
+      ? { rowCount: 1 }
+      : await pool.query(`
+          SELECT 1 FROM fx_currency_rates WHERE currency=$1 AND expires_at>NOW()
+            AND observed_at>=NOW()-INTERVAL '5 days' LIMIT 1
+        `, [country.destination_currency]);
+    let priceChecksPassed = products.rowCount > 0;
+    const priceFailures = [];
+    if (pricing.rowCount === 1) {
+      const settings = pricing.rows[0];
+      for (const product of products.rows) {
+        try {
+          const wholesale = Number(product.wholesale_eur_cents);
+          const fee = Number(settings.fee_eur_cents) + Math.ceil(wholesale * Number(settings.fee_percent) / 100);
+          const quote = calculateFinalPrice({
+            wholesalePriceCents: Math.round(wholesale),
+          }, {
+            feeCents: fee, bonusPercent: 0,
+            stripeFeePercent: Number(settings.stripe_fee_percent),
+            stripeFixedFeeCents: Number(settings.stripe_fixed_fee_cents),
+          });
+          if (quote.finalPriceCents < Number(settings.min_customer_price_eur_cents) ||
+              quote.finalPriceCents > Number(settings.max_customer_price_eur_cents)) {
+            throw new Error('Final EUR price is outside configured limits.');
+          }
+        } catch (error) {
+          priceChecksPassed = false;
+          priceFailures.push({ productId: product.provider_product_id, reason: error.message });
+        }
+      }
+    } else priceChecksPassed = false;
+
+    const checks = [
+      ['provider_mapping_verified', mapping.rowCount === 1, 'DT One country mapping must be verified.'],
+      ['phone_validation_configured', Boolean(country.calling_code && country.phone_min_digits && country.phone_max_digits), 'Calling code and phone digit rules are required.'],
+      ['active_operator_available', Number(operators.rows[0].count) > 0, 'At least one verified active operator is required.'],
+      ['active_product_available', products.rowCount > 0, 'At least one reviewed active product is required.'],
+      ['country_pricing_active', pricing.rowCount === 1, 'Country pricing must be configured and explicitly activated.'],
+      ['destination_fx_fresh', destinationFx.rowCount === 1, 'A fresh EUR reference rate for destination currency is required.'],
+      ['localizations_complete', missingLanguages.length === 0, 'Country name translations are required in en, ps, fa, ur, hi and bn.'],
+      ['product_prices_valid', priceChecksPassed, 'All active products must produce valid EUR customer prices within configured limits.'],
+    ];
+    const version = Number(country.configuration_version);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const [name, passed, message] of checks) {
+        await client.query(`
+          INSERT INTO country_activation_checks (country_code,configuration_version,check_name,status,details)
+          VALUES ($1,$2,$3,$4,$5::jsonb)
+        `, [code, version, name, passed ? 'pass' : 'fail', JSON.stringify({
+          message,
+          missingLanguages: name === 'localizations_complete' ? missingLanguages : undefined,
+          priceFailures: name === 'product_prices_valid' ? priceFailures : undefined,
+        })]);
+      }
+      await client.query('UPDATE country_registry SET status=$2,updated_at=NOW() WHERE country_code=$1 AND status <> \'active\'', [code, checks.every(item => item[1]) ? 'testing' : 'configuring']);
+      await client.query(`
+        INSERT INTO country_configuration_audit (country_code,actor,action,configuration_version,after_state)
+        VALUES ($1,'admin','country_preflight_completed',$2,$3::jsonb)
+      `, [code, version, JSON.stringify({ checks: checks.map(([name, passed]) => ({ name, passed })) })]);
+      await client.query('COMMIT');
+    } catch (error) { try { await client.query('ROLLBACK'); } catch (_) {} throw error; }
+    finally { client.release(); }
+    return res.json({
+      countryCode: code, configurationVersion: version,
+      passed: checks.filter(item => item[1]).length,
+      total: checks.length, readyToActivate: checks.every(item => item[1]),
+      checks: checks.map(([name, passed, message]) => ({ name, status: passed ? 'pass' : 'fail', message })),
+      missingLanguages, priceFailures,
+      note: 'Preflight only. No payment, top-up, product activation or customer visibility was triggered.',
+    });
+  } catch (error) {
+    console.error('Country activation preflight failed:', error.message);
+    return res.status(500).json({ error: 'Could not complete country activation preflight.' });
+  }
+});
+
+app.post('/api/admin/countries/:countryCode/activate', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ error: 'Invalid country code.' });
+  const required = ['provider_mapping_verified','phone_validation_configured','active_operator_available','active_product_available','country_pricing_active','destination_fx_fresh','localizations_complete','product_prices_valid'];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query('SELECT status,configuration_version FROM country_registry WHERE country_code=$1 FOR UPDATE', [code]);
+    if (current.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Country was not found.' });
+    }
+    const version = Number(current.rows[0].configuration_version);
+    const checks = await client.query(`
+      SELECT DISTINCT ON (check_name) check_name,status
+      FROM country_activation_checks
+      WHERE country_code=$1 AND configuration_version=$2
+      ORDER BY check_name,checked_at DESC,id DESC
+    `, [code, version]);
+    const statusByName = new Map(checks.rows.map(row => [row.check_name,row.status]));
+    const blockers = required.filter(name => statusByName.get(name) !== 'pass');
+    if (blockers.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ activated: false, blockers, error: 'Run preflight and resolve every failed check before activation.' });
+    }
+    const updated = await client.query(`
+      UPDATE country_registry SET status='active',configuration_version=configuration_version+1,updated_at=NOW()
+      WHERE country_code=$1 RETURNING country_code,country_name,status,configuration_version
+    `, [code]);
+    await client.query(`
+      INSERT INTO country_configuration_audit (country_code,actor,action,configuration_version,after_state)
+      VALUES ($1,'admin','country_activated',$2,$3::jsonb)
+    `, [code, Number(updated.rows[0].configuration_version), JSON.stringify(updated.rows[0])]);
+    await client.query('COMMIT');
+    return res.json({ activated: true, country: updated.rows[0], customerVisible: true });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Country activation failed:', error.message);
+    return res.status(500).json({ activated: false, error: 'Could not activate country.' });
+  } finally { client.release(); }
+});
+
+app.post('/api/admin/countries/:countryCode/disable', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const code = String(req.params.countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ error: 'Invalid country code.' });
+  try {
+    const result = await pool.query(`
+      UPDATE country_registry SET status='disabled',configuration_version=configuration_version+1,updated_at=NOW()
+      WHERE country_code=$1 RETURNING country_code,country_name,status,configuration_version
+    `, [code]);
+    if (result.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+    await pool.query(`
+      INSERT INTO country_configuration_audit (country_code,actor,action,configuration_version,after_state)
+      VALUES ($1,'admin','country_disabled',$2,$3::jsonb)
+    `, [code, Number(result.rows[0].configuration_version), JSON.stringify(result.rows[0])]);
+    return res.json({ disabled: true, country: result.rows[0], newOrdersBlocked: true, historyPreserved: true });
+  } catch (error) {
+    console.error('Country disable failed:', error.message);
+    return res.status(500).json({ error: 'Could not disable country.' });
+  }
+});
+
 // Read-only wallet integrity diagnostics. This deliberately exposes no
 // customer records and performs no wallet, ledger, payment, or refund writes.
 // Wallet APIs remain disabled until identity binding and ledger safeguards ship.
