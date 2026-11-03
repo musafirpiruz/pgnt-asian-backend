@@ -20,6 +20,7 @@ test('registry-backed product lookup requires an active explicit catalog mapping
   assert.match(lookup, /cop\.active = TRUE/);
   assert.match(lookup, /co\.active = TRUE/);
   assert.match(lookup, /options\.operatorKey \|\| null/);
+  assert.match(lookup, /amount = \$4 AND \(\$5::text IS NOT NULL OR LOWER\(operator\) = LOWER\(\$3\)\)/);
 });
 
 test('both quote and checkout pass verified registry operator identity to catalog lookup', () => {
