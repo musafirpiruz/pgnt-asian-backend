@@ -1007,6 +1007,38 @@ async function runMigration() {
       console.log("Migration 019_country_pricing_settings is already applied.");
     }
 
+
+    // Version 020 stores localized operator display names separately from provider names.
+    const operatorLocalizationVersion = "020_country_operator_localizations";
+    const operatorLocalizationCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [operatorLocalizationVersion]
+    );
+    if (operatorLocalizationCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_operator_localizations (
+            operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
+            language_code VARCHAR(8) NOT NULL,
+            display_name VARCHAR(120) NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (operator_id,language_code)
+          );
+          INSERT INTO schema_migrations (version)
+          VALUES ('020_country_operator_localizations')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 020_country_operator_localizations completed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 020_country_operator_localizations is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
