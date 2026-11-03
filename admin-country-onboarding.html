@@ -258,8 +258,8 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
       const providerProductId=$('selectedProviderProduct').value.trim();
       const catalogProductId=$('catalogProductId').value.trim();
       if(!country || !operatorKey || !providerOperatorId) throw new Error('Select or save the verified operator first.');
-      if(!providerProductId || !/^\\d+$/.test(providerProductId)) throw new Error('Select a discovered DT One product.');
-      if(!catalogProductId || !/^[1-9]\\d*$/.test(catalogProductId)) throw new Error('Enter the existing catalog product ID.');
+      if(!providerProductId || !/^\d+$/.test(providerProductId)) throw new Error('Select a discovered DT One product.');
+      if(!catalogProductId || !/^[1-9]\d*$/.test(catalogProductId)) throw new Error('Enter the existing catalog product ID.');
       message('Saving explicit inactive operator-to-product mapping…');
       const data=await api('/api/admin/countries/'+encodeURIComponent(country)+'/operators/'+encodeURIComponent(operatorKey)+'/products',{
         method:'POST',
