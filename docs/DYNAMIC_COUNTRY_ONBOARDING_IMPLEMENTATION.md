@@ -6,14 +6,14 @@ This implementation is developed in PR #204 and is not production-enabled until 
 
 1. Create a country as `draft`.
 2. Discover DT One countries using the read-only provider country endpoint.
-3. Verify an explicit ISO alpha-2 to DT One alpha-3 mapping against the provider response.
-4. Discover and verify the complete provider product list and every product detail.
-5. Refresh settlement and destination currency rates from Frankfurter v2. The rate is stored with source, observed date, and a five-day expiry. A failed refresh preserves the prior saved quote; an expired quote is not used for new pricing.
-6. Preview catalog candidates. Product denomination currency must match the configured destination currency. Wholesale and retail price currency units must both be present and match. A non-EUR settlement currency is converted using a fresh EUR-base rate. Ambiguous/duplicate catalog entries are excluded for review.
-7. Import only after explicit admin confirmation. Imported products and operators remain disabled.
-8. Configure pricing, translations, and manually review operators/products.
-9. Run preflight. Country activation requires a verified provider mapping, phone rules, an active operator, an active verified product, active pricing, fresh destination FX, all six app languages, and valid EUR price calculations.
-10. Activate explicitly. Disabling a country removes it from the runtime allowlist and blocks new orders while retaining records.
+3. Discover the country’s ISO 4217 currency candidates from country metadata; explicitly confirm the destination currency (never guess when multiple currencies are returned).\n4. Verify an explicit ISO alpha-2 to DT One alpha-3 mapping against the provider response.
+5. Discover and verify the complete provider product list and every product detail.
+6. Refresh settlement and destination currency rates from Frankfurter v2. The rate is stored with source, observed date, and a five-day expiry. A failed refresh preserves the prior saved quote; an expired quote is not used for new pricing.
+7. Preview catalog candidates. Product denomination currency must match the configured destination currency. Wholesale and retail price currency units must both be present and match. A non-EUR settlement currency is converted using a fresh EUR-base rate. Ambiguous/duplicate catalog entries are excluded for review.
+8. Import only after explicit admin confirmation. Imported products and operators remain disabled.
+9. Configure pricing, translations, and manually review operators/products.
+10. Run preflight. Country activation requires a verified provider mapping, phone rules, an active operator, an active verified product, active pricing, fresh destination FX, all six app languages, and valid EUR price calculations.
+11. Activate explicitly. Disabling a country removes it from the runtime allowlist and blocks new orders while retaining records.
 
 ## Admin page
 
@@ -23,7 +23,7 @@ Open `/admin-countries` on the backend. The page does not embed an admin key; th
 
 - `GET /api/admin/dtone/countries`
 - `GET /api/admin/countries`
-- `POST /api/admin/countries`
+- `POST /api/admin/countries`\n- `POST /api/admin/countries/:countryCode/currency-discovery` (discover candidate ISO 4217 currencies)\n- `PUT /api/admin/countries/:countryCode/destination-currency` (explicit admin confirmation)
 - `POST /api/admin/countries/:countryCode/dtone-mapping`
 - `POST /api/admin/countries/:countryCode/dtone-catalog/sync`
 - `POST /api/admin/fx/rates/refresh`
@@ -49,7 +49,7 @@ Open `/admin-countries` on the backend. The page does not embed an admin key; th
 - 018: global EUR-base settlement-currency FX rates and immutable history.
 - 019: per-country pricing settings, inactive by default.
 - 020: per-operator localized names for all six app languages.
-- 021: remove the legacy four-country restriction from operator-specific fee settings.
+- 021: remove the legacy four-country restriction from operator-specific fee settings.\n- 022: persist country currency discovery candidates, source and observation time, with explicit administrator confirmation.
 
 The existing AF/PK/IN/BD catalog and pricing data are not rewritten by these migrations. The four existing destinations remain in the legacy path until separately verified and migrated.
 
