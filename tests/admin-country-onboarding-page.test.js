@@ -25,6 +25,14 @@ test('country onboarding UI calls only protected draft and inactive mapping APIs
   assert.match(pageSource, /Save disabled provider mapping/);
 });
 
+test('country onboarding UI provides read-only DT One operator and product discovery', () => {
+  assert.match(pageSource, /\/api\/admin\/dtone\/operators/);
+  assert.match(pageSource, /\/api\/admin\/dtone\/products/);
+  assert.match(pageSource, /Discover DT One operators/);
+  assert.match(pageSource, /Read-only DT One product discovery/);
+  assert.match(pageSource, /No catalog records or activations changed/);
+});
+
 test('country onboarding UI does not persist admin credentials or offer activation controls', () => {
   assert.doesNotMatch(pageSource, /localStorage|sessionStorage/);
   assert.doesNotMatch(pageSource, /activateCountry|enableProvider|activateProduct/);
