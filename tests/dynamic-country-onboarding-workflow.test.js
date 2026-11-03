@@ -38,7 +38,7 @@ test('provider country mapping is verified against DT One before it is saved', (
 
 test('dynamic catalog sync checks both price currency units and refuses stale FX', () => {
   const start = server.indexOf("app.post('/api/admin/countries/:countryCode/dtone-catalog/sync'");
-  const end = server.indexOf('let registryFxRefreshInProgress', start);
+  const end = server.indexOf("app.post('/api/admin/fx/rates/refresh'", start);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start, end);
   assert.match(route, /prices\?\.wholesale\?\.unit/);
