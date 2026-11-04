@@ -60,3 +60,47 @@ Do not merge #204 or #206 until the checkout selection tests, operator identity 
 - The checkout-selection item above is therefore implemented and tested on PR #206, not yet merged to the integration branch.
 - Remaining blockers: stable operatorKey/providerOperatorId forwarding and server-side active registry verification; explicit inactive-by-default country/operator/product mapping and a uniquely numbered additive migration; one authoritative FX refresh strategy with dated/freshness-checked rates and legacy-country coverage.
 - PR #206 remains a draft review PR. No merge, production deployment, live transaction, product activation, SMS OTP enablement, or migration against production has occurred.
+
+
+## Priority review and safe implementation update (2026-11-04)
+
+### PR and exact-head CI verification
+
+The following PRs were re-read from GitHub. Each PR remains open and unmerged; the listed checks completed successfully on the exact head SHA recorded below.
+
+| PR | Head SHA (short) | State / base | Exact-head checks |
+|---|---|---|---|
+| #196 | `40c832a` | Open, base `main` | Backend tests, syntax, dependency audit, Android APK build — all passed |
+| #197 | `122a264` | Open, based on #196 branch | Backend tests and syntax — both passed |
+| #198 | `1600412` | Open, based on #197 branch | Backend tests and syntax — both passed |
+| #199 | `d64c744` | Open, based on #198 branch | Backend tests and syntax — both passed |
+| #200 | `ccc2989` | Open, based on #199 branch | Backend tests and syntax — both passed |
+| #201 | `94f8199` | Open, base `main` | Backend tests, syntax, dependency audit — all passed |
+
+These are stacked PRs (#197 → #196, #198 → #197, #199 → #198, #200 → #199), not six independent merge candidates. PR #201 is separate. Passing checks do not mean these PRs are merged or production-ready.
+
+### Country, operator, product and pricing security review
+
+- New country records are created as `draft`; customer discovery exposes only `active` or explicitly grandfathered `legacy` countries. The admin preflight requires a verified provider-country mapping, phone rules, active operator/product, active country pricing, fresh FX and complete translations before activation.
+- DT One country/product discovery is read-only by default. Catalog import requires explicit confirmation and imported products remain disabled. Provider country, product/operator identity, denomination currency and wholesale/retail currency units are checked. A missing/stale FX quote blocks conversion rather than inventing a rate.
+- PR #198's product-selection guard is present on this review branch: a supplied product ID must still match the selected country, operator and denomination before pricing.
+- A further contract gap was found in #204: registry operator identifiers were not being forwarded by Flutter, so the backend could not bind a selected dynamic operator to the exact provider operator and product. This review branch now exposes `providerOperatorId` from the customer operator endpoint, carries `operatorKey` and `providerOperatorId` from Flutter through both price quote and checkout, verifies the active operator and verified country mapping server-side, and restricts registry-backed product lookup to the matching verified `country_products` row and provider product ID. Existing legacy-country name-based selection remains available only for legacy countries.
+- The explicit mapping table proposed by PR #200 is not copied as migration 019 because #204 already uses that version for country pricing. The current `country_products` table already stores country, operator ID, provider product ID, verification state and activation state; the implementation reuses this relationship rather than introducing a conflicting duplicate table.
+- Pricing remains EUR-based for Stripe. Dynamic settlement FX currently has one Frankfurter source with a five-day freshness limit; there is no approved fallback source in this branch. AFN/PKR/BDT coverage and legacy four-country FX refresh therefore still require an explicit provider-coverage test and a single-source design before activation. Do not run two competing FX writers or overwrite the legacy AFN/PKR/INR/BDT settings.
+
+### Support, Wallet and Refund status
+
+- **Support:** Flutter submits tickets and reads ticket history through the registered `support-routes.js` endpoints. Customer access is proven by a per-order token whose SHA-256 hash is stored server-side and compared with `timingSafeEqual`; admin inbox and replies use `requireAdmin`. Runtime mock-database tests have been added for missing/wrong tokens, successful ticket creation, order-scoped history and admin middleware. This is a database-backed ticket workflow, not yet an email/push/live-agent notification integration; notification delivery and operational response SLA remain outstanding.
+- **Wallet:** no customer balance/history/deposit/spend API is enabled. Flutter still shows a placeholder balance. Admin diagnostics and migration preflight are read-only and report ledger consistency, duplicate references, negative balances, uniqueness and cascade-retention risks. Wallet activation remains blocked pending stable Firebase UID-to-wallet identity binding, approved immutable ledger and retention rules, concurrency-safe/idempotent writes, reconciliation, and a separately reviewed backup/restore and rollback plan.
+- **Refund:** an admin-only Stripe refund route exists and requires a final DT One failure, a matching succeeded EUR PaymentIntent, exact order metadata/amount/environment, a unique reservation and Stripe idempotency. Ambiguous or existing pending refunds require manual Stripe reconciliation; completed orders are rejected. A new `REFUNDS_ENABLED=true` deployment flag now fails closed by default before database or Stripe access. The flag is not enabled here; no refund was initiated. Support refund tickets do not themselves execute a refund.
+- Refund/Stripe/DT One end-to-end acceptance remains a test-mode task; no production refund, payment, top-up, wallet write, SMS OTP, migration or deployment was performed.
+
+### Code and test changes on the draft review branch
+
+1. Enforced the existing checkout product/country/operator/amount cross-check (PR #198 protection).
+2. Added stable operator key/provider ID forwarding and server-side verified operator/product binding.
+3. Added runtime support-route tests using a mock database; no external service is called.
+4. Added a default-off refund feature flag and a source-level test proving it is checked before database/Stripe work.
+5. Added operator-identity regression tests and updated checkout selection tests.
+
+The branch remains a draft review branch. Wait for its exact-head backend tests and syntax checks, review their logs, and resolve any failures before treating these changes as complete. PRs remain unmerged; no production migration/deployment, real payment/refund, or product activation is authorized by this work.
