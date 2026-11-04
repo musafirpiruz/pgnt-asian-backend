@@ -109,7 +109,7 @@ The branch remains a draft review branch. Wait for its exact-head backend tests 
 ### Additional UI alignment and CI coverage
 
 - The Flutter amount selector now groups active catalog denominations by the backend's `operatorCode`; selecting a network changes the available amounts to that network's products only. The server still independently verifies country/operator/amount before checkout.
-- Country preflight now rejects an active network that has no verified active product. It also checks that each active `country_products` record has an exact active `product_catalog` counterpart with matching provider product ID, operator, denomination, destination currency, wholesale EUR cents and retail EUR cents. Quote/checkout repeat this mapping-and-price parity check, so an out-of-band catalog price edit fails closed.
+- Country preflight now rejects an active network that has no verified active product. It also checks that each active `country_products` record has an exact active `product_catalog` counterpart with matching provider product ID, operator, denomination, destination currency, wholesale EUR cents and retail EUR cents. Quote/checkout repeat this mapping-and-price parity check, so an out-of-band catalog price edit fails closed. Customer operator/product discovery and checkout also require `verified_at` on active registry operators, preventing an accidentally flagged but unverified operator from appearing as a selectable network.
 - The APK workflow previously filtered pull requests to target `main` only, so it did not run for draft PR #206, whose base is `feat/dynamic-country-onboarding`. The workflow now includes that feature branch as a pull-request target, so Dart analysis and the release APK build run for this review chain as well.
 - This workflow change affects CI only; it does not deploy the APK or publish it to the Play Store.
 
@@ -117,3 +117,8 @@ The branch remains a draft review branch. Wait for its exact-head backend tests 
 ### PR #197 localization migration reconciliation
 
 PR #197 proposed migration version 018, but this review branch already assigns version 018 to global provider FX and 022 to country-currency discovery. To avoid a version collision, the reviewed AF/PK/IN/BD labels from #197 are applied in additive migration `023_repair_country_localizations`. It upserts only the 24 country/language label rows and clears their fallback marker; it does not touch pricing, products, orders, refunds or wallet records. A dedicated migration regression test was added.
+
+
+### PR #201 dependency CI reconciliation
+
+The review branch already carries the #201 runtime/dependency set (`Node >=22 <25`, `.node-version 22.22.0`, `firebase-admin 14.5.0`, and the `glob`/`minimatch` overrides). Its backend test workflow is also on Node 22. The dependency audit workflow previously targeted PRs to `main` only, so it now also runs for PRs targeting `feat/dynamic-country-onboarding`; this keeps the same enforced production and full-tree `npm audit --audit-level=moderate` gate active on draft PR #206.
