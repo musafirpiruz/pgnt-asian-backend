@@ -15,6 +15,7 @@ test('country operator discovery returns the stable registry key and provider op
   const route = server.slice(start, end);
   assert.match(route, /o\.operator_key AS code/);
   assert.match(route, /o\.provider_operator_id AS "providerOperatorId"/);
+  assert.match(route, /NULL::text AS "providerOperatorId"/, "legacy product_catalog fallback must return the same operator identity column");
 });
 
 test('active registry countries require an active operator with a verified provider-country mapping', () => {
