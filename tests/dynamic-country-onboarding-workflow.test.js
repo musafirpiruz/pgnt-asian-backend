@@ -206,3 +206,14 @@ test('customer country API and Flutter use the verified destination currency sym
   assert.match(flutter, /raw\['currencySymbol'\]/);
   assert.match(flutter, /discoveredSymbol\.isNotEmpty/);
 });
+
+
+test('country currency PostgreSQL integration check validates migration provenance without production activation', () => {
+  const sql = fs.readFileSync(path.join(__dirname, 'country-currency-discovery.integration.sql'), 'utf8');
+  assert.match(sql, /ON_ERROR_STOP/);
+  assert.match(sql, /country_currency_discoveries/);
+  assert.match(sql, /source_reference/);
+  assert.match(sql, /integration-test/);
+  assert.match(sql, /selection_status='pending'/);
+  assert.doesNotMatch(sql, /UPDATE country_registry|INSERT INTO orders|INSERT INTO payments|INSERT INTO refunds/i);
+});
