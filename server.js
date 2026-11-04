@@ -3976,6 +3976,19 @@ app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req,
     const products = await pool.query(`
       SELECT p.* FROM country_products p JOIN country_operators o ON o.id=p.operator_id
       WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE
+        AND p.verification_status='verified' AND p.price_currency_verified=TRUE
+    `, [code]);
+    const operatorCoverage = await pool.query(`
+      SELECT COUNT(*)::int AS count
+      FROM country_operators o
+      WHERE o.country_code=$1 AND o.active=TRUE AND o.verified_at IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM country_products p
+          WHERE p.country_code=o.country_code AND p.operator_id=o.id
+            AND p.catalog_status='active'
+            AND p.verification_status='verified'
+            AND p.price_currency_verified=TRUE
+        )
     `, [code]);
     const pricing = await pool.query('SELECT * FROM country_pricing_settings WHERE country_code=$1 AND active=TRUE', [code]);
     const localizations = await pool.query('SELECT language_code FROM country_localizations WHERE country_code=$1', [code]);
@@ -4027,6 +4040,7 @@ app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req,
       ['phone_validation_configured', Boolean(country.calling_code && country.phone_min_digits && country.phone_max_digits), 'Calling code and phone digit rules are required.'],
       ['active_operator_available', Number(operators.rows[0].count) > 0, 'At least one verified active operator is required.'],
       ['active_product_available', products.rowCount > 0, 'At least one reviewed active product is required.'],
+      ['operator_product_coverage', Number(operatorCoverage.rows[0].count) === 0 && Number(operators.rows[0].count) > 0, 'Every active operator must have at least one verified, price-checked active product.'],
       ['country_pricing_active', pricing.rowCount === 1, 'Country pricing must be configured and explicitly activated.'],
       ['destination_fx_fresh', destinationFx.rowCount === 1, 'A fresh EUR reference rate for destination currency is required.'],
       ['localizations_complete', missingLanguages.length === 0, 'Country name translations are required in en, ps, fa, ur, hi and bn.'],
@@ -4045,6 +4059,7 @@ app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req,
           message,
           missingLanguages: name === 'localizations_complete' ? missingLanguages : undefined,
           priceFailures: name === 'product_prices_valid' ? priceFailures : undefined,
+          operatorsWithoutActiveProducts: name === 'operator_product_coverage' ? Number(operatorCoverage.rows[0].count) : undefined,
         })]);
       }
       await client.query('UPDATE country_registry SET status=$2,updated_at=NOW() WHERE country_code=$1 AND status <> \'active\'', [code, checks.every(item => item[1]) ? 'testing' : 'configuring']);
@@ -4073,7 +4088,7 @@ app.post('/api/admin/countries/:countryCode/activate', requireAdmin, async (req,
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const code = String(req.params.countryCode || '').trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ error: 'Invalid country code.' });
-  const required = ['provider_mapping_verified','phone_validation_configured','active_operator_available','active_product_available','country_pricing_active','destination_fx_fresh','localizations_complete','operator_localizations_complete','product_prices_valid'];
+  const required = ['provider_mapping_verified','phone_validation_configured','active_operator_available','active_product_available','operator_product_coverage','country_pricing_active','destination_fx_fresh','localizations_complete','operator_localizations_complete','product_prices_valid'];
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
