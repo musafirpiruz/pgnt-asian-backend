@@ -3024,7 +3024,16 @@ app.get('/api/countries/active', async (req, res) => {
     const result = await pool.query(`
       SELECT c.country_code AS code,
              COALESCE(l.display_name,c.country_name) AS name,
-             c.destination_currency AS currency, c.calling_code AS "callingCode"
+             c.destination_currency AS currency,
+             COALESCE((
+               SELECT candidate->>'symbol'
+               FROM country_currency_discoveries d,
+                    LATERAL jsonb_array_elements(d.currencies) AS candidate
+               WHERE d.country_code=c.country_code
+                 AND candidate->>'currency'=c.destination_currency
+               LIMIT 1
+             ),'') AS "currencySymbol",
+             c.calling_code AS "callingCode"
       FROM country_registry c
       LEFT JOIN country_localizations l
         ON l.country_code=c.country_code AND LOWER(l.language_code)= $1
