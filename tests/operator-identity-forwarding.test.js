@@ -41,6 +41,10 @@ test('registry-backed product selection is bound to the exact verified country o
   assert.match(lookup, /cp\.catalog_status='active'/);
   assert.match(lookup, /cp\.verification_status='verified'/);
   assert.match(lookup, /cp\.price_currency_verified=TRUE/);
+  assert.match(lookup, /cp\.denomination=product_catalog\.amount/);
+  assert.match(lookup, /cp\.destination_currency=product_catalog\.currency/);
+  assert.match(lookup, /cp\.wholesale_eur_cents=product_catalog\.wholesale_price_eur_cents/);
+  assert.match(lookup, /cp\.retail_eur_cents=product_catalog\.price_eur_cents/);
 });
 
 test('both price quote and checkout verify the operator identity before looking up a product', () => {
