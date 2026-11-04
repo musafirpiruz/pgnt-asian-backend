@@ -99,8 +99,10 @@ test('dynamic country pricing reads the selected currency from the country regis
   const end = server.indexOf('// Read an enabled product from the database.', start);
   assert.ok(start >= 0 && end > start, 'pricing resolver should exist');
   const resolver = server.slice(start, end);
-  assert.match(resolver, /JOIN country_registry c ON c\.destination_currency = r\.currency/);
-  assert.match(resolver, /c\.country_code = \$1/);
+  assert.match(resolver, /SELECT destination_currency FROM country_registry WHERE country_code=\$1/);
+  assert.match(resolver, /destinationCurrency !== 'EUR'/);
+  assert.match(resolver, /FROM fx_currency_rates/);
+  assert.match(resolver, /WHERE currency=\$1/);
   assert.doesNotMatch(resolver, /\[countryCurrency\(code\)\]/);
 });
 
