@@ -41,6 +41,7 @@ test('refund HTTP route enforces admin auth and rejects invalid, unknown, and in
       STRIPE_SECRET_KEY: 'sk_test_ci_refund_route_only',
       STRIPE_WEBHOOK_SECRET: '',
       ADMIN_API_KEY: adminKey,
+      REFUNDS_ENABLED: 'true', // Explicitly enabled only for this isolated local Stripe-mock test.
       NODE_ENV: 'test',
       NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${path.join(__dirname, 'stripe-route-mock.js')}`].filter(Boolean).join(' '),
       STRIPE_MOCK_METADATA_ORDER_ID: 'intentionally-wrong-order-id',
