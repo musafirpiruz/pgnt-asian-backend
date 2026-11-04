@@ -129,6 +129,7 @@ test('customer catalog APIs only expose reviewed operators and products for acti
   const routes = server.slice(start, end);
   assert.match(routes, /status IN \('active','legacy'\)/);
   assert.match(routes, /active=TRUE/);
+  assert.match(routes, /verified_at IS NOT NULL/);
   assert.match(routes, /catalog_status='active'/);
   assert.match(routes, /verification_status='verified'/);
   assert.match(routes, /price_currency_verified=TRUE/);
