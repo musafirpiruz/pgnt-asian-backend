@@ -595,10 +595,14 @@ async function getPricingSettings(client, country) {
       throw new Error('Pricing settings are not configured or are inactive.');
     }
     const fx = await client.query(
-      `SELECT units_per_eur FROM fx_currency_rates
-       WHERE currency=$1 AND expires_at>NOW()
-         AND observed_at>=NOW()-INTERVAL '5 days' LIMIT 1`,
-      [countryCurrency(code)]
+      `SELECT r.units_per_eur
+       FROM fx_currency_rates r
+       JOIN country_registry c ON c.destination_currency = r.currency
+       WHERE c.country_code = $1
+         AND r.expires_at > NOW()
+         AND r.observed_at >= NOW() - INTERVAL '5 days'
+       LIMIT 1`,
+      [code]
     );
     if (fx.rowCount !== 1) throw new Error('A fresh destination-currency FX rate is required.');
     settings = {
@@ -5432,14 +5436,36 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
   }
 
   const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
-  const countryMap = Object.freeze({ AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' });
-  const country = countryMap[countryIsoCode];
-  if (!country) {
-    return res.status(400).json({ verified: false, error: 'Choose AFG, PAK, IND, or BGD.' });
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
+    return res.status(400).json({ verified: false, error: 'A valid three-letter DT One country code is required.' });
   }
   const confirmImport = req.body?.confirmImport === true;
 
   try {
+    // Resolve every destination through an explicitly verified provider mapping.
+    // This supports newly onboarded countries without maintaining a four-country allowlist.
+    const countryMapping = await pool.query(`
+      SELECT c.country_code, c.destination_currency, c.status
+      FROM country_provider_mappings m
+      JOIN country_registry c ON c.country_code = m.country_code
+      WHERE m.provider = 'dtone'
+        AND m.provider_country_code = $1
+        AND m.verification_status = 'verified'
+        AND c.status IN ('draft','active','legacy')
+      LIMIT 2
+    `, [countryIsoCode]);
+    if (countryMapping.rowCount !== 1) {
+      return res.status(409).json({
+        verified: false,
+        error: 'This DT One country code does not have exactly one verified country and destination-currency mapping. Verify the mapping first; no catalog rows were changed.',
+      });
+    }
+    const country = String(countryMapping.rows[0].country_code).trim().toUpperCase();
+    const destinationCurrency = String(countryMapping.rows[0].destination_currency || '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(destinationCurrency)) {
+      return res.status(409).json({ verified: false, error: 'The verified country mapping has no valid destination currency. No catalog rows were changed.' });
+    }
+
     const providerById = new Map();
     let pagesChecked = 0;
     let providerProductsSeen = 0;
@@ -5522,7 +5548,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
       const retailEur = Number(item?.prices?.retail?.amount);
       const wholesaleEur = Number(item?.prices?.wholesale?.amount);
-      if (!operator || currency !== countryCurrency(country) || !Number.isFinite(amount) || amount <= 0 ||
+      if (!operator || currency !== destinationCurrency || !Number.isFinite(amount) || amount <= 0 ||
           !Number.isFinite(retailEur) || retailEur <= 0 ||
           !Number.isFinite(wholesaleEur) || wholesaleEur <= 0 || retailEur < wholesaleEur) {
         rejected.push({ productId: String(item.id), reason: 'Missing or invalid operator, denomination, country currency, retail EUR price, or wholesale EUR price.' });
@@ -5620,7 +5646,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
         countryIsoCode,
         country,
-        recipientCurrency: countryCurrency(country),
+        recipientCurrency: destinationCurrency,
         pagesChecked,
         providerProductsSeen,
         uniqueProviderProducts: providerById.size,
