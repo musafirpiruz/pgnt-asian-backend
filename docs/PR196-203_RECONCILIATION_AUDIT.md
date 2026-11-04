@@ -38,3 +38,15 @@ The earlier explicit product-mapping branch defines migration `019_country_opera
 The six separately deferred acceptance tasks (DT One live/sandbox verification, Stripe/DT One end-to-end payment/refund/callback testing, Support acceptance, Firebase SMS OTP, physical-device acceptance, and release/deployment) remain deferred as requested.
 
 No live payment, refund, top-up, product activation, OTP enablement, Render deployment, or production migration is performed by this branch.
+## Follow-up source inspection (2026-11-04)
+
+A direct comparison of the PR #204 candidate against the source PR patches found concrete reconciliation requirements:
+
+1. **Checkout product selection regression:** PR #198 adds checks that the selected catalog product matches the requested country, operator, and denomination, and that operator plus amount are required even when a product ID is supplied. In the inspected #204 validateCheckoutInput, operator/amount are required only when productId is absent; the checkout route checks country but does not visibly compare the resolved product's operator and local amount with the submitted selection before pricing. Port the #198 protections as tests and implementation, while preserving legitimate catalog-ID flows.
+2. **Operator identity forwarding:** PR #199 tests that Flutter forwards operatorKey and providerOperatorId to both quote and checkout, and that the backend verifies the exact active registry mapping. The inspected #204 main.dart has no operatorKey or providerOperatorId references. This remains a client/server contract gap for registry-backed operators.
+3. **Explicit catalog mapping:** PR #200 introduces country_operator_products, inactive-by-default admin mapping, provider product/operator verification, and tests. These files/features are absent from the inspected #204 candidate file set. Reconcile with a newly numbered migration; do not copy migration 019 because #204 already assigns 019 to country pricing.
+4. **Legacy FX behavior:** PR #203 adds four-country dated EUR→AFN/PKR/INR/BDT refresh and history. #204's dynamic-country FX design is different and must not create a second competing writer. Decide on one authoritative refresh path and add coverage for the existing four-country pricing settings before enabling any scheduler.
+
+### Required implementation gate
+
+Do not merge #204 or #206 until the checkout selection tests, operator identity contract, explicit catalog mapping migration/API/admin workflow, and a single-source FX strategy are implemented and the full CI suite passes. The six user-deferred acceptance tasks remain out of scope for this reconciliation session.
