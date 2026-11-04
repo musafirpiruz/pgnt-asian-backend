@@ -3228,7 +3228,12 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
       detailed.push(...details);
     }
 
-    const currencies = [...new Set(detailed.map(item => String(item?.prices?.wholesale?.unit || '').trim().toUpperCase()).filter(code => /^[A-Z]{3}$/.test(code) && code !== 'EUR'))];
+    // Refresh both provider settlement currencies and the destination currency.
+    // The latter is required for the country's pricing resolver and activation checks.
+    const currencies = [...new Set([
+      ...detailed.map(item => String(item?.prices?.wholesale?.unit || '').trim().toUpperCase()),
+      destinationCurrency,
+    ].filter(code => /^[A-Z]{3}$/.test(code) && code !== 'EUR'))];
     for (const currency of currencies) {
       const saved = await pool.query(`
         SELECT 1 FROM fx_currency_rates WHERE currency=$1 AND expires_at>NOW()
@@ -3330,8 +3335,66 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
       importCandidates.push(product);
     }
 
+    let customerPricePreview = {
+      available: false,
+      reason: 'Country pricing is not active or a fresh destination-currency FX rate is unavailable. Products remain disabled.',
+      products: [],
+    };
+    let pricingClient = null;
+    try {
+      pricingClient = await pool.connect();
+      const basePricing = await getPricingSettings(pricingClient, countryCode);
+      const previews = await Promise.all(validProducts.map(async product => {
+        const productPricing = await resolveProductPricing(
+          pricingClient,
+          countryCode,
+          product.operatorName,
+          { wholesalePriceCents: product.wholesaleEurCents },
+          basePricing
+        );
+        const quote = calculateFinalPrice(
+          { wholesalePriceCents: product.wholesaleEurCents },
+          productPricing
+        );
+        return {
+          productId: product.productId,
+          operator: product.operatorName,
+          recipientAmount: product.denomination,
+          recipientCurrency: product.denominationCurrency,
+          wholesaleCostEur: Number((product.wholesaleEurCents / 100).toFixed(2)),
+          providerRetailPriceEur: Number((product.retailEurCents / 100).toFixed(2)),
+          appFeeEur: Number((quote.feeCents / 100).toFixed(2)),
+          estimatedStripeFeeEur: Number((quote.estimatedStripeFeeCents / 100).toFixed(2)),
+          estimatedCustomerPriceEur: Number((quote.finalPriceCents / 100).toFixed(2)),
+          estimatedCustomerPriceCents: quote.finalPriceCents,
+          operatorPricingApplied: productPricing.operatorPricingApplied === true,
+        };
+      }));
+      const cents = previews.map(item => item.estimatedCustomerPriceCents);
+      customerPricePreview = {
+        available: true,
+        paymentCurrency: 'EUR',
+        stripeFeePercent: basePricing.stripeFeePercent,
+        stripeFixedFeeEur: Number((basePricing.stripeFixedFeeCents / 100).toFixed(2)),
+        appFeeEur: Number((basePricing.feeCents / 100).toFixed(2)),
+        minimumCustomerPriceEur: cents.length ? Number((Math.min(...cents) / 100).toFixed(2)) : null,
+        maximumCustomerPriceEur: cents.length ? Number((Math.max(...cents) / 100).toFixed(2)) : null,
+        products: previews,
+        note: 'Prices are calculated server-side from verified wholesale EUR costs, active country/operator fees and estimated Stripe fees. Preview only; no product is activated.',
+      };
+    } catch (pricingError) {
+      customerPricePreview = {
+        available: false,
+        reason: String(pricingError.message || 'Country pricing is unavailable.').slice(0, 300),
+        products: [],
+      };
+    } finally {
+      if (pricingClient) pricingClient.release();
+    }
+
     const summary = {
       verified: true, complete: true, countryCode, providerCountryCode, destinationCurrency,
+      customerPricePreview,
       pagesChecked, providerProductsSeen, uniqueProviderProducts: providerById.size,
       detailProductsVerified: detailed.length, validProducts: validProducts.length,
       newProducts: importCandidates.length,
