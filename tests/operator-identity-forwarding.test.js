@@ -28,7 +28,7 @@ test('active registry countries require an active operator with a verified provi
   assert.match(helper, /o\.active=TRUE/);
   assert.match(helper, /o\.verified_at IS NOT NULL/);
   assert.match(helper, /m\.verification_status='verified'/);
-  assert.match(helper, /c\.status IN \('active','legacy'\)/);
+  assert.match(helper, /c\.status='active'/);
 });
 
 test('registry-backed product selection is bound to the exact verified country operator and provider product ID', () => {
