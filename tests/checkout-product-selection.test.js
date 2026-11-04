@@ -29,6 +29,6 @@ test('checkout verifies catalog product country, operator, and denomination befo
   assert.ok(operator > country);
   assert.ok(amount > operator);
   assert.ok(pricing > amount);
-  assert.ok(route.includes("product.name.trim().toLowerCase() !== input.operator.trim().toLowerCase()"));
+  assert.ok(route.includes("product.name.trim().toLowerCase() !== selectedOperatorName.trim().toLowerCase()"));
   assert.ok(route.includes("product.localAmount !== input.amount"));
 });
