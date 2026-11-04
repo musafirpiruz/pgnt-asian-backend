@@ -594,21 +594,28 @@ async function getPricingSettings(client, country) {
     if (dynamic.rowCount !== 1 || dynamic.rows[0].active !== true) {
       throw new Error('Pricing settings are not configured or are inactive.');
     }
-    const fx = await client.query(
-      `SELECT r.units_per_eur
-       FROM fx_currency_rates r
-       JOIN country_registry c ON c.destination_currency = r.currency
-       WHERE c.country_code = $1
-         AND r.expires_at > NOW()
-         AND r.observed_at >= NOW() - INTERVAL '5 days'
-       LIMIT 1`,
+    const countryCurrencyResult = await client.query(
+      'SELECT destination_currency FROM country_registry WHERE country_code=$1 LIMIT 1',
       [code]
     );
-    if (fx.rowCount !== 1) throw new Error('A fresh destination-currency FX rate is required.');
+    if (countryCurrencyResult.rowCount !== 1) throw new Error('Country destination currency is not configured.');
+    const destinationCurrency = String(countryCurrencyResult.rows[0].destination_currency || '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(destinationCurrency)) throw new Error('Country destination currency is invalid.');
+    let destinationUnitsPerEur = 1;
+    if (destinationCurrency !== 'EUR') {
+      const fx = await client.query(
+        `SELECT units_per_eur FROM fx_currency_rates
+         WHERE currency=$1 AND expires_at>NOW()
+           AND observed_at>=NOW()-INTERVAL '5 days' LIMIT 1`,
+        [destinationCurrency]
+      );
+      if (fx.rowCount !== 1) throw new Error('A fresh destination-currency FX rate is required.');
+      destinationUnitsPerEur = Number(fx.rows[0].units_per_eur);
+    }
     settings = {
       ...dynamic.rows[0],
-      local_currency_per_eur: fx.rows[0].units_per_eur,
-      afn_per_eur: fx.rows[0].units_per_eur,
+      local_currency_per_eur: destinationUnitsPerEur,
+      afn_per_eur: destinationUnitsPerEur,
       bonus_percent: 0,
     };
     feePercent = Number(settings.fee_percent || 0);
