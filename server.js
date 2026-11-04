@@ -4168,7 +4168,8 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
       UNION
       SELECT NULL::bigint AS id,
              LOWER(REGEXP_REPLACE(operator,'[^a-zA-Z0-9]+','-','g')) AS code,
-             operator AS name, operator AS "providerName"
+             operator AS name, operator AS "providerName",
+             NULL::text AS "providerOperatorId"
       FROM product_catalog
       WHERE country=$1 AND active=TRUE
         AND NOT EXISTS (SELECT 1 FROM country_operators WHERE country_code=$1 AND active=TRUE)
