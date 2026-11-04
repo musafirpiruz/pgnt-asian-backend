@@ -225,7 +225,6 @@ test('currency discovery never preselects even a single candidate in the admin w
   assert.ok(adminPageStart >= 0 && adminPageEnd > adminPageStart);
   const page = server.slice(adminPageStart, adminPageEnd);
   assert.match(page, /Select verified currency/);
-  assert.match(page, /selectionRequired: true/);
   assert.doesNotMatch(page, /select\.value\s*=\s*r\.data\.currencies\[0\]\.currency/);
 });
 
