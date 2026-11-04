@@ -2544,7 +2544,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'countryCode': selectedCountry.code,
               'phone': phone,
               'phoneNumber': phone,
-              'operator': selectedOperator!.providerName ?? selectedOperator!.name
+              'operator': selectedOperator!.providerName ?? selectedOperator!.name,
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
