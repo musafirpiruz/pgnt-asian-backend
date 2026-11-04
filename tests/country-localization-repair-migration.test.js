@@ -30,7 +30,7 @@ test('migration 023 contains reviewed labels for AF, PK, IN and BD in all six ap
     "('AF','ps','افغانستان',FALSE)",
     "('AF','fa','افغانستان',FALSE)",
     "('AF','hi','अफ़ग़ानिस्तान',FALSE)",
-    "('AF','bn','আফগানিস্তان',FALSE)",
+    "('AF','bn','আফগানিস্তান',FALSE)",
     "('PK','ur','پاکستان',FALSE)",
     "('IN','ps','هند',FALSE)",
     "('IN','ur','بھارت',FALSE)",
