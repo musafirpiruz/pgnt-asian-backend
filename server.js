@@ -2818,8 +2818,8 @@ app.post('/api/admin/countries/:countryCode/currency-discovery', requireAdmin, a
   if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ discovered: false, error: 'A valid ISO alpha-2 country code is required.' });
   try {
     const country = await pool.query('SELECT country_code,status FROM country_registry WHERE country_code=$1', [code]);
-    if (country.rowCount !== 1) return res.status(404).json({ discovered: false, error: 'Country draft was not found.' });
-    if (country.rows[0].status === 'active') return res.status(409).json({ discovered: false, error: 'Disable the country before changing currency metadata.' });
+    if (country.rowCount === 1 && country.rows[0].status === 'active') return res.status(409).json({ discovered: false, error: 'Disable the country before changing currency metadata.' });
+    const countryDraftExists = country.rowCount === 1;
     const response = await fetch('https://restcountries.com/v3.1/alpha/' + encodeURIComponent(code) + '?fields=cca2,name,currencies,idd', {
       method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
     });
@@ -2836,17 +2836,19 @@ app.post('/api/admin/countries/:countryCode/currency-discovery', requireAdmin, a
       symbol: String(details?.symbol || '').trim(),
     })).filter(item => /^[A-Z]{3}$/.test(item.currency));
     if (!currencies.length) return res.status(422).json({ discovered: false, error: 'The country metadata provider returned no valid ISO 4217 currency.' });
-    await pool.query(`
-      INSERT INTO country_currency_discoveries
-        (country_code,currencies,source,source_reference,observed_at,selection_status)
-      VALUES ($1,$2::jsonb,'restcountries-v3.1',$3,NOW(),'pending')
-      ON CONFLICT (country_code) DO UPDATE SET
-        currencies=EXCLUDED.currencies,source=EXCLUDED.source,
-        source_reference=EXCLUDED.source_reference,observed_at=NOW(),
-        selection_status='pending',selected_currency=NULL,selected_at=NULL
-    `, [code, JSON.stringify(currencies), 'https://restcountries.com/v3.1/alpha/' + code]);
+    if (countryDraftExists) {
+      await pool.query(`
+        INSERT INTO country_currency_discoveries
+          (country_code,currencies,source,source_reference,observed_at,selection_status)
+        VALUES ($1,$2::jsonb,'restcountries-v3.1',$3,NOW(),'pending')
+        ON CONFLICT (country_code) DO UPDATE SET
+          currencies=EXCLUDED.currencies,source=EXCLUDED.source,
+          source_reference=EXCLUDED.source_reference,observed_at=NOW(),
+          selection_status='pending',selected_currency=NULL,selected_at=NULL
+      `, [code, JSON.stringify(currencies), 'https://restcountries.com/v3.1/alpha/' + code]);
+    }
     return res.json({
-      discovered: true, countryCode: code, countryName: String(record.name?.common || ''),
+      discovered: true, countryCode: code, countryDraftExists, countryName: String(record.name?.common || ''),
       currencies, selectionRequired: true, selectedAutomatically: false,
       source: 'restcountries-v3.1', observedAt: new Date().toISOString(),
       message: currencies.length > 1 ? 'Multiple currencies were reported. Select the DT One product denomination currency after catalog verification.' : 'Confirm the candidate currency before catalog import.',
@@ -7278,7 +7280,7 @@ small{color:#555}.inline{display:flex;gap:8px;align-items:center}.inline input[t
 <section><h2>1. Create draft country</h2><div class="grid">
 <input id="newCode" maxlength="2" placeholder="Country code, e.g. KE">
 <input id="newName" placeholder="Country name">
-<input id="newCurrency" maxlength="3" placeholder="Destination currency">
+<select id="newCurrency"><option value="">Discover currency first</option></select><button class="secondary" onclick="discoverNewCurrency()">Discover country currency</button>
 <input id="newCalling" placeholder="Calling code, e.g. +254">
 <input id="newMin" type="number" min="1" max="15" placeholder="Phone min digits">
 <input id="newMax" type="number" min="1" max="15" placeholder="Phone max digits">
@@ -7321,6 +7323,21 @@ async function api(path,method='GET',body=null){
  show({httpStatus:response.status,...data});return {ok:response.ok,data};
 }
 async function loadCountries(){const r=await api('/api/admin/countries');el('countryList').textContent=JSON.stringify(r.data,null,2);}
+async function discoverNewCurrency(){
+ const countryCode=el('newCode').value.trim().toUpperCase();
+ if(!/^[A-Z]{2}$/.test(countryCode)){show({error:'Enter the two-letter country code first.'});return;}
+ const r=await api('/api/admin/countries/'+encodeURIComponent(countryCode)+'/currency-discovery','POST',{});
+ if(r.ok){
+  const select=el('newCurrency');select.innerHTML='';
+  const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Select verified currency';select.appendChild(placeholder);
+  for(const item of (r.data.currencies||[])){
+   const option=document.createElement('option');option.value=item.currency;
+   option.textContent=item.currency+' — '+item.name+(item.symbol?' ('+item.symbol+')':'');
+   select.appendChild(option);
+  }
+  if((r.data.currencies||[]).length===1)select.value=r.data.currencies[0].currency;
+ }
+}
 async function createDraft(){
  const r=await api('/api/admin/countries','POST',{
   countryCode:el('newCode').value,countryName:el('newName').value,
