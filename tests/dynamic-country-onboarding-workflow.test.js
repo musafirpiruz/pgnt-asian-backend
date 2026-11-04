@@ -176,3 +176,12 @@ test('country currency discovery is source-backed and requires explicit admin co
   assert.match(migration, /source_reference TEXT NOT NULL/);
   assert.match(migration, /selection_status VARCHAR\(20\)/);
 });
+
+
+test('country onboarding admin page exposes currency discovery before draft creation', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(server, /onclick="discoverNewCurrency\(\)"/);
+  assert.match(server, /Discover country currency/);
+  assert.match(server, /Select verified currency/);
+  assert.match(server, /destination-currency','PUT'/);
+});
