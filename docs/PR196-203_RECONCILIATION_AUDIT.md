@@ -50,3 +50,13 @@ A direct comparison of the PR #204 candidate against the source PR patches found
 ### Required implementation gate
 
 Do not merge #204 or #206 until the checkout selection tests, operator identity contract, explicit catalog mapping migration/API/admin workflow, and a single-source FX strategy are implemented and the full CI suite passes. The six user-deferred acceptance tasks remain out of scope for this reconciliation session.
+
+## CI and implementation update (2026-11-04)
+
+- PR #206 head: `d0e2e49b1a5ae5f34c10d0d3a9355297b18b14a1`.
+- Backend Syntax Check run `41752919063`: completed successfully.
+- Backend tests run `41752919132`: completed successfully. Its PostgreSQL migration/integration steps and regression test step all completed successfully.
+- Checkout product-selection guard is implemented on this review branch in `server.js`: operator and positive integer amount are required even when productId is supplied; resolved product country, operator name and local amount are checked before pricing. Regression tests are in `tests/checkout-product-selection.test.js`.
+- The checkout-selection item above is therefore implemented and tested on PR #206, not yet merged to the integration branch.
+- Remaining blockers: stable operatorKey/providerOperatorId forwarding and server-side active registry verification; explicit inactive-by-default country/operator/product mapping and a uniquely numbered additive migration; one authoritative FX refresh strategy with dated/freshness-checked rates and legacy-country coverage.
+- PR #206 remains a draft review PR. No merge, production deployment, live transaction, product activation, SMS OTP enablement, or migration against production has occurred.
