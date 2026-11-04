@@ -77,4 +77,8 @@ test('Flutter retains provider identifiers and forwards them to both quote and c
   assert.match(flutter, /quoteParameters\['providerOperatorId'\]/);
   assert.match(flutter, /'operatorKey': selectedOperator!\.operatorKey!/);
   assert.match(flutter, /'providerOperatorId': selectedOperator!\.providerOperatorId!/);
+  assert.match(flutter, /Map<String, List<int>> _loadedCountryAmountsByOperator/);
+  assert.match(flutter, /raw\['operatorCode'\]/);
+  assert.match(flutter, /_loadedCountryAmountsByOperator\[_operatorCatalogCode\(selectedOperator!\)\]/);
+  assert.match(flutter, /_loadedCountryAmountsByOperator\[_operatorCatalogCode\(item\)\]/);
 });
