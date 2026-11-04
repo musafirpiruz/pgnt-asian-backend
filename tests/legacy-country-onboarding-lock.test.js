@@ -50,6 +50,16 @@ test('legacy pricing remains on pricing_settings; dynamic country pricing cannot
   assert.match(adminPricing, /\['active','legacy'\]\.includes/);
 });
 
+test('checkout keeps legacy countries on the original name-based product catalog path', () => {
+  const start = server.indexOf('async function getVerifiedCountryOperator');
+  const end = server.indexOf('async function getProduct', start);
+  assert.ok(start >= 0 && end > start);
+  const helper = server.slice(start, end);
+  assert.match(helper, /countryStatus === 'legacy'/);
+  assert.match(helper, /Legacy countries use the existing operator and product catalog/);
+  assert.match(helper, /countryStatus !== 'active' && countryStatus !== 'legacy'/);
+});
+
 test('customer registry operators and products require a verified DT One country mapping', () => {
   const operators = route("app.get('/api/countries/:countryCode/operators'", "app.get('/api/countries/:countryCode/products'");
   const products = route("app.get('/api/countries/:countryCode/products'", "// Read-only wallet integrity diagnostics.");
