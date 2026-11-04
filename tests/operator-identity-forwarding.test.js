@@ -45,6 +45,7 @@ test('registry-backed product selection is bound to the exact verified country o
   assert.match(lookup, /cp\.destination_currency=product_catalog\.currency/);
   assert.match(lookup, /cp\.wholesale_eur_cents=product_catalog\.wholesale_price_eur_cents/);
   assert.match(lookup, /cp\.retail_eur_cents=product_catalog\.price_eur_cents/);
+  assert.match(lookup, /product_catalog\.active=TRUE/);
 });
 
 test('both price quote and checkout verify the operator identity before looking up a product', () => {
