@@ -57,7 +57,7 @@ test('checkout keeps legacy countries on the original name-based product catalog
   const helper = server.slice(start, end);
   assert.match(helper, /countryStatus === 'legacy'/);
   assert.match(helper, /Legacy countries use the existing operator and product catalog/);
-  assert.match(helper, /countryStatus !== 'active' && countryStatus !== 'legacy'/);
+  assert.match(helper, /!\['active','legacy'\]\.includes/);
 });
 
 test('customer registry operators and products require a verified DT One country mapping', () => {
