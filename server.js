@@ -7344,7 +7344,7 @@ async function discoverNewCurrency(){
    option.textContent=item.currency+' — '+item.name+(item.symbol?' ('+item.symbol+')':'');
    select.appendChild(option);
   }
-  if((r.data.currencies||[]).length===1)select.value=r.data.currencies[0].currency;
+  // Never preselect a currency, even when only one candidate is returned.
  }
 }
 async function createDraft(){
