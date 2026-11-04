@@ -688,7 +688,7 @@ async function getVerifiedCountryOperator(client, countryValue, operatorKeyValue
     !/^[a-z0-9][a-z0-9_-]{0,99}$/.test(operatorKey) ||
     !/^[A-Za-z0-9._:-]{1,80}$/.test(providerOperatorId)
   ) {
-    throw new Error('Both valid operatorKey and providerOperatorId values are required.');
+    throw new Error('Both operatorKey and providerOperatorId are required and must be valid.');
   }
 
   const result = await client.query(`
