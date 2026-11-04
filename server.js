@@ -2930,7 +2930,7 @@ app.post('/api/admin/countries/:countryCode/currency-discovery', requireAdmin, a
   if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ discovered: false, error: 'A valid ISO alpha-2 country code is required.' });
   try {
     const country = await pool.query('SELECT country_code,status FROM country_registry WHERE country_code=$1', [code]);
-    if (country.rowCount === 1 && country.rows[0].status === 'active') return res.status(409).json({ discovered: false, error: 'Disable the country before changing currency metadata.' });
+    if (country.rowCount === 1 && ['active','legacy'].includes(country.rows[0].status)) return res.status(409).json({ discovered: false, error: 'Legacy country currency is locked to the existing pricing/catalog path.' });
     const countryDraftExists = country.rowCount === 1;
     const response = await fetch('https://restcountries.com/v3.1/alpha/' + encodeURIComponent(code) + '?fields=cca2,name,currencies,idd', {
       method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
@@ -2983,7 +2983,7 @@ app.put('/api/admin/countries/:countryCode/destination-currency', requireAdmin, 
     await client.query('BEGIN');
     const country = await client.query('SELECT country_name,status,configuration_version FROM country_registry WHERE country_code=$1 FOR UPDATE', [code]);
     if (country.rowCount !== 1) { await client.query('ROLLBACK'); return res.status(404).json({ updated: false, error: 'Country was not found.' }); }
-    if (country.rows[0].status === 'active') { await client.query('ROLLBACK'); return res.status(409).json({ updated: false, error: 'Disable the country before changing destination currency.' }); }
+    if (['active','legacy'].includes(country.rows[0].status)) { await client.query('ROLLBACK'); return res.status(409).json({ updated: false, error: 'Legacy destination currency is locked to the existing pricing/catalog path.' }); }
     const discovery = await client.query(`
       SELECT currencies FROM country_currency_discoveries
       WHERE country_code=$1 AND selection_status='pending'
@@ -3042,7 +3042,7 @@ app.post('/api/admin/countries/:countryCode/dtone-mapping', requireAdmin, async 
       [countryCode]
     );
     if (local.rowCount !== 1) return res.status(404).json({ verified: false, error: 'Country draft was not found.' });
-    if (local.rows[0].status === 'active') return res.status(409).json({ verified: false, error: 'Disable the country before changing its provider mapping.' });
+    if (['active','legacy'].includes(local.rows[0].status)) return res.status(409).json({ verified: false, error: 'Legacy provider mapping is locked to preserve the existing country integration.' });
 
     let providerCountry = null;
     let pagesChecked = 0;
@@ -3263,7 +3263,7 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
       return res.status(409).json({ verified: false, error: 'Verify the DT One country mapping before catalog discovery.' });
     }
     const config = configResult.rows[0];
-    if (config.status === 'active') {
+    if (['active','legacy'].includes(config.status)) {
       return res.status(409).json({ verified: false, error: 'Active country catalog changes require a separate reviewed change workflow.' });
     }
     const providerCountryCode = String(config.provider_country_code).trim().toUpperCase();
@@ -3709,7 +3709,7 @@ app.put('/api/admin/countries/:countryCode/pricing', requireAdmin, async (req, r
   try {
     const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
     if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (countryState.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing its pricing.' });
+    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Legacy country pricing is managed by the existing pricing settings.' });
     const client = await pool.connect();
     let result;
     try {
@@ -3798,7 +3798,7 @@ app.get('/api/admin/countries/:countryCode/operators', requireAdmin, async (req,
              operator_key AS "operatorKey",display_name AS "displayName",
              active,verified_at AS "verifiedAt"
       FROM country_operators WHERE country_code=$1 ORDER BY display_name
-    `, [code, ['en','ps','fa','ur','hi','bn'].includes(String(req.query.language || '').toLowerCase()) ? String(req.query.language).toLowerCase() : 'en']);
+    `, [code]);
     return res.json({ countryCode: code, operators: result.rows });
   } catch (error) {
     console.error('Admin country operator list failed:', error.message);
@@ -3846,7 +3846,7 @@ app.put('/api/admin/countries/:countryCode/operators/:operatorId/localizations',
   try {
     const state = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
     if (state.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (state.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing operator translations.' });
+    if (['active','legacy'].includes(state.rows[0].status)) return res.status(409).json({ error: 'Legacy operator translations are locked to preserve the existing customer catalog.' });
     const operator = await pool.query('SELECT id FROM country_operators WHERE country_code=$1 AND id=$2', [code, operatorId]);
     if (operator.rowCount !== 1) return res.status(404).json({ error: 'Operator was not found.' });
     const client = await pool.connect();
@@ -3890,7 +3890,7 @@ app.patch('/api/admin/countries/:countryCode/operators/:operatorId', requireAdmi
   try {
     const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
     if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (countryState.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing operators.' });
+    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Legacy operators are managed by the existing customer catalog.' });
     const result = await pool.query(`
       UPDATE country_operators SET active=$3,updated_at=NOW()
       WHERE country_code=$1 AND id=$2 AND ($3=FALSE OR verified_at IS NOT NULL)
@@ -3920,7 +3920,7 @@ app.patch('/api/admin/countries/:countryCode/products/:productId', requireAdmin,
   try {
     const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
     if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (countryState.rows[0].status === 'active') return res.status(409).json({ error: 'Disable the country before changing product review status.' });
+    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Legacy products are managed by the existing customer catalog.' });
     const product = await pool.query(`
       SELECT p.id,p.wholesale_currency,p.price_currency_verified,p.verification_status,
              p.wholesale_eur_cents,p.retail_eur_cents
@@ -3975,6 +3975,7 @@ app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req,
     const countryResult = await pool.query('SELECT * FROM country_registry WHERE country_code=$1', [code]);
     if (countryResult.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
     const country = countryResult.rows[0];
+    if (country.status === 'legacy') return res.status(409).json({ error: 'Legacy country activation preflight is disabled; preserve the existing pricing/catalog path.' });
     const mapping = await pool.query(`
       SELECT 1 FROM country_provider_mappings WHERE country_code=$1
         AND provider='dtone' AND verification_status='verified'
@@ -4124,6 +4125,10 @@ app.post('/api/admin/countries/:countryCode/activate', requireAdmin, async (req,
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Country was not found.' });
     }
+    if (current.rows[0].status === 'legacy') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ activated: false, error: 'Legacy countries cannot be switched to the dynamic onboarding pricing path.' });
+    }
     const version = Number(current.rows[0].configuration_version);
     const checks = await client.query(`
       SELECT DISTINCT ON (check_name) check_name,status
@@ -4172,6 +4177,9 @@ app.post('/api/admin/countries/:countryCode/disable', requireAdmin, async (req, 
   const code = String(req.params.countryCode || '').trim().toUpperCase();
   if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ error: 'Invalid country code.' });
   try {
+    const current = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
+    if (current.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
+    if (current.rows[0].status === 'legacy') return res.status(409).json({ error: 'Legacy countries cannot be disabled through the dynamic onboarding workflow.' });
     const result = await pool.query(`
       UPDATE country_registry SET status='disabled',configuration_version=configuration_version+1,updated_at=NOW()
       WHERE country_code=$1 RETURNING country_code,country_name,status,configuration_version
@@ -4204,6 +4212,8 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              o.display_name AS "providerName",
              o.provider_operator_id AS "providerOperatorId"
       FROM country_operators o
+      JOIN country_provider_mappings m
+        ON m.country_code=o.country_code AND m.provider=o.provider AND m.verification_status='verified'
       LEFT JOIN country_operator_localizations l
         ON l.operator_id=o.id AND LOWER(l.language_code)=$2
       WHERE o.country_code=$1 AND o.active=TRUE AND o.verified_at IS NOT NULL
@@ -4214,7 +4224,15 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              NULL::text AS "providerOperatorId"
       FROM product_catalog
       WHERE country=$1 AND active=TRUE
-        AND NOT EXISTS (SELECT 1 FROM country_operators WHERE country_code=$1 AND active=TRUE AND verified_at IS NOT NULL)
+        AND NOT EXISTS (
+          SELECT 1 FROM country_operators existing_operator
+          JOIN country_provider_mappings existing_mapping
+            ON existing_mapping.country_code=existing_operator.country_code
+           AND existing_mapping.provider=existing_operator.provider
+           AND existing_mapping.verification_status='verified'
+          WHERE existing_operator.country_code=$1
+            AND existing_operator.active=TRUE AND existing_operator.verified_at IS NOT NULL
+        )
       ORDER BY name
     `, [code, language]);
     return res.json({ countryCode: code, language, operators: result.rows });
@@ -4238,6 +4256,8 @@ app.get('/api/countries/:countryCode/products', async (req, res) => {
              p.wholesale_eur_cents AS "wholesaleEurCents"
       FROM country_products p
       JOIN country_operators o ON o.id=p.operator_id
+      JOIN country_provider_mappings m
+        ON m.country_code=o.country_code AND m.provider=o.provider AND m.verification_status='verified'
       WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE AND o.verified_at IS NOT NULL
         AND p.verification_status='verified' AND p.price_currency_verified=TRUE
         AND o.verified_at IS NOT NULL
