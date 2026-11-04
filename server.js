@@ -7344,7 +7344,7 @@ async function createDraft(){
  const r=await api('/api/admin/countries','POST',{
   countryCode:el('newCode').value,countryName:el('newName').value,
   destinationCurrency:selectedCurrency,callingCode:el('newCalling').value,
-  phoneMinDigits:Number(el('newMin').value),phoneMaxDigits:Number(el('newMax').value)
+  phoneMinDigits:el('newMin').value.trim()===''?null:Number(el('newMin').value),phoneMaxDigits:el('newMax').value.trim()===''?null:Number(el('newMax').value)
  });
  if(r.ok){
   el('countryCode').value=r.data.country.country_code;
