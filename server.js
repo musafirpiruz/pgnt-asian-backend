@@ -7339,12 +7339,20 @@ async function discoverNewCurrency(){
  }
 }
 async function createDraft(){
+ const selectedCurrency=el('newCurrency').value;
+ if(!selectedCurrency){show({error:'Discover and select the verified destination currency before creating the country.'});return;}
  const r=await api('/api/admin/countries','POST',{
   countryCode:el('newCode').value,countryName:el('newName').value,
-  destinationCurrency:el('newCurrency').value,callingCode:el('newCalling').value,
+  destinationCurrency:selectedCurrency,callingCode:el('newCalling').value,
   phoneMinDigits:Number(el('newMin').value),phoneMaxDigits:Number(el('newMax').value)
  });
- if(r.ok){el('countryCode').value=r.data.country.country_code;loadCountries();}
+ if(r.ok){
+  el('countryCode').value=r.data.country.country_code;
+  await discoverNewCurrency(); // Persist the latest metadata candidates for explicit confirmation.
+  el('newCurrency').value=selectedCurrency;
+  await api('/api/admin/countries/'+encodeURIComponent(code())+'/destination-currency','PUT',{currency:selectedCurrency});
+  await loadCountries();
+ }
 }
 async function discoverCountries(){const r=await api('/api/admin/dtone/countries');el('providerCountries').textContent=JSON.stringify(r.data,null,2);}
 async function verifyMapping(){await api('/api/admin/countries/'+encodeURIComponent(code())+'/dtone-mapping','POST',{providerCountryCode:el('providerCode').value});}
