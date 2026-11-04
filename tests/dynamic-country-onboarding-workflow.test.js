@@ -195,3 +195,14 @@ test('customer country discovery exposes the verified local currency symbol to F
   assert.match(flutter, /raw\['currencySymbol'\]/);
   assert.match(flutter, /discoveredSymbol\.isNotEmpty \? discoveredSymbol : _currencySymbol\(currency\)/);
 });
+
+test('customer country API and Flutter use the verified destination currency symbol', () => {
+  const activeCountriesStart = server.indexOf("app.get('/api/countries/active'");
+  const activeCountriesEnd = server.indexOf("\n});", activeCountriesStart);
+  assert.ok(activeCountriesStart >= 0 && activeCountriesEnd > activeCountriesStart);
+  const activeCountriesRoute = server.slice(activeCountriesStart, activeCountriesEnd);
+  assert.match(activeCountriesRoute, /currencySymbol/);
+  assert.match(activeCountriesRoute, /country_currency_discoveries/);
+  assert.match(flutter, /raw\['currencySymbol'\]/);
+  assert.match(flutter, /discoveredSymbol\.isNotEmpty/);
+});
