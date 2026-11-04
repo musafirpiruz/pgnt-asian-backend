@@ -26,6 +26,7 @@ test('active registry countries require an active operator with a verified provi
   assert.match(helper, /countryStatus === 'active'/);
   assert.match(helper, /Both operatorKey and providerOperatorId are required/);
   assert.match(helper, /o\.active=TRUE/);
+  assert.match(helper, /o\.verified_at IS NOT NULL/);
   assert.match(helper, /m\.verification_status='verified'/);
   assert.match(helper, /c\.status IN \('active','legacy'\)/);
 });
@@ -46,6 +47,7 @@ test('registry-backed product selection is bound to the exact verified country o
   assert.match(lookup, /cp\.wholesale_eur_cents=product_catalog\.wholesale_price_eur_cents/);
   assert.match(lookup, /cp\.retail_eur_cents=product_catalog\.price_eur_cents/);
   assert.match(lookup, /product_catalog\.active=TRUE/);
+  assert.match(lookup, /co\.verified_at IS NOT NULL/);
 });
 
 test('both price quote and checkout verify the operator identity before looking up a product', () => {
