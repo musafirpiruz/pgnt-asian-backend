@@ -35,6 +35,7 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --ignore-scripts
+      # Applies the full additive schema chain, including migration 022 currency discovery.
       - name: Apply migrations to isolated PostgreSQL test database
         run: node migrate.js
       - name: Verify safe payment currency defaults in PostgreSQL
