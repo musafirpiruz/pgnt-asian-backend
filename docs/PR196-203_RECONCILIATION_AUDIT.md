@@ -122,3 +122,10 @@ PR #197 proposed migration version 018, but this review branch already assigns v
 ### PR #201 dependency CI reconciliation
 
 The review branch already carries the #201 runtime/dependency set (`Node >=22 <25`, `.node-version 22.22.0`, `firebase-admin 14.5.0`, and the `glob`/`minimatch` overrides). Its backend test workflow is also on Node 22. The dependency audit workflow previously targeted PRs to `main` only, so it now also runs for PRs targeting `feat/dynamic-country-onboarding`; this keeps the same enforced production and full-tree `npm audit --audit-level=moderate` gate active on draft PR #206.
+
+
+### Legacy-country isolation and admin catalog fix
+
+A further compatibility review found that the new dynamic pricing table is only used when a country has no legacy `pricing_settings` row. The four seeded `legacy` countries therefore must not be moved through the new currency/provider/catalog activation workflow. The review branch now locks legacy currency discovery/selection, DT One remapping/import, dynamic country pricing, operator/product review, preflight, activation and disable operations. Their customer operator/product APIs always read the original active `product_catalog`, and checkout rejects dynamic operator IDs for legacy countries. New `active` countries require a verified mapping and registry operator IDs; `disabled`, draft and other non-customer-visible statuses are rejected by the checkout identity guard.
+
+The customer registry APIs now require a verified provider-country mapping before exposing dynamic operators/products. The admin operator-list endpoint also had an extra unused SQL bind parameter (two values supplied to a one-parameter query); it now supplies only the country code. Regression tests cover the legacy lock, direct legacy catalog branch, provider mapping requirement and corrected SQL binding.
