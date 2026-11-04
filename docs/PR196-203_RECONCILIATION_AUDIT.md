@@ -104,3 +104,10 @@ These are stacked PRs (#197 → #196, #198 → #197, #199 → #198, #200 → #19
 5. Added operator-identity regression tests and updated checkout selection tests.
 
 The branch remains a draft review branch. Wait for its exact-head backend tests and syntax checks, review their logs, and resolve any failures before treating these changes as complete. PRs remain unmerged; no production migration/deployment, real payment/refund, or product activation is authorized by this work.
+
+
+### Additional UI alignment and CI coverage
+
+- The Flutter amount selector now groups active catalog denominations by the backend's `operatorCode`; selecting a network changes the available amounts to that network's products only. The server still independently verifies country/operator/amount before checkout.
+- The APK workflow previously filtered pull requests to target `main` only, so it did not run for draft PR #206, whose base is `feat/dynamic-country-onboarding`. The workflow now includes that feature branch as a pull-request target, so Dart analysis and the release APK build run for this review chain as well.
+- This workflow change affects CI only; it does not deploy the APK or publish it to the Play Store.
