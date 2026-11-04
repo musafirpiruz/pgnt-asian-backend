@@ -719,7 +719,9 @@ async function getProduct(client, productId, requestedCountry = null, operator =
      )
        AND (
          $5::bigint IS NULL
-         OR EXISTS (
+         OR (
+           product_catalog.active=TRUE
+           AND EXISTS (
            SELECT 1
            FROM country_products cp
            JOIN country_operators co ON co.id=cp.operator_id
@@ -735,6 +737,7 @@ async function getProduct(client, productId, requestedCountry = null, operator =
              AND cp.verification_status='verified'
              AND cp.price_currency_verified=TRUE
              AND co.active=TRUE
+           )
          )
        )
      LIMIT 1`,
