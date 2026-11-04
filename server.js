@@ -3028,7 +3028,7 @@ app.get('/api/countries/active', async (req, res) => {
              COALESCE((
                SELECT candidate->>'symbol'
                FROM country_currency_discoveries d,
-                    LATERAL jsonb_array_elements(d.currencies) AS candidate
+                    LATERAL jsonb_array_elements(d.currencies) AS candidates(candidate)
                WHERE d.country_code=c.country_code
                  AND candidate->>'currency'=c.destination_currency
                LIMIT 1
