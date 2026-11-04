@@ -121,12 +121,16 @@ class MobileOperator {
   final String name;
   final String icon;
   final String? providerName;
+  final String? operatorKey;
+  final String? providerOperatorId;
 
   const MobileOperator(
     this.countryCode,
     this.name,
     this.icon, {
     this.providerName,
+    this.operatorKey,
+    this.providerOperatorId,
   });
 }
 
@@ -1720,11 +1724,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
           if (raw is! Map) continue;
           final name = (raw['name'] ?? '').toString().trim();
           if (name.isNotEmpty) {
+            final operatorKey = (raw['code'] ?? '').toString().trim();
+            final providerOperatorId = (raw['providerOperatorId'] ?? '').toString().trim();
+            final hasVerifiedIdentity = operatorKey.isNotEmpty && providerOperatorId.isNotEmpty;
             nextOperators.add(MobileOperator(
               countryCode,
               name,
               '📶',
               providerName: (raw['providerName'] ?? name).toString(),
+              operatorKey: hasVerifiedIdentity ? operatorKey : null,
+              providerOperatorId: hasVerifiedIdentity ? providerOperatorId : null,
             ));
           }
         }
@@ -1794,12 +1803,17 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() { isQuoteLoading = true; priceQuoteError = null; });
 
     try {
+      final quoteParameters = <String, String>{
+        'country': countryCode,
+        'operator': operator.providerName ?? operator.name,
+        'amount': '$amount',
+      };
+      if (operator.operatorKey != null && operator.providerOperatorId != null) {
+        quoteParameters['operatorKey'] = operator.operatorKey!;
+        quoteParameters['providerOperatorId'] = operator.providerOperatorId!;
+      }
       final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(
-        queryParameters: {
-          'country': countryCode,
-          'operator': operator.providerName ?? operator.name,
-          'amount': '$amount',
-        },
+        queryParameters: quoteParameters,
       );
 
       final response = await http
@@ -2552,6 +2566,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
+              if (selectedOperator!.operatorKey != null &&
+                  selectedOperator!.providerOperatorId != null) ...{
+                'operatorKey': selectedOperator!.operatorKey!,
+                'providerOperatorId': selectedOperator!.providerOperatorId!,
+              },
             }),
           )
           .timeout(const Duration(seconds: 30));
