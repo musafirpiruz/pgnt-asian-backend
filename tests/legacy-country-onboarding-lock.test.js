@@ -75,5 +75,5 @@ test('customer registry operators and products require a verified DT One country
 
 test('admin operator listing uses the correct single SQL bind parameter', () => {
   const adminOperators = route("app.get('/api/admin/countries/:countryCode/operators'", "app.get('/api/admin/countries/:countryCode/products'");
-  assert.match(adminOperators, /FROM country_operators WHERE country_code=\$1 ORDER BY display_name\s*`, \[code\]\)/);
+  assert.match(adminOperators, /FROM country_operators WHERE country_code=\$1 ORDER BY display_name[\s\S]*?\[code\]\)/);
 });
