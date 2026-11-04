@@ -2930,7 +2930,7 @@ app.post('/api/admin/countries/:countryCode/currency-discovery', requireAdmin, a
   if (!/^[A-Z]{2}$/.test(code)) return res.status(400).json({ discovered: false, error: 'A valid ISO alpha-2 country code is required.' });
   try {
     const country = await pool.query('SELECT country_code,status FROM country_registry WHERE country_code=$1', [code]);
-    if (country.rowCount === 1 && ['active','legacy'].includes(country.rows[0].status)) return res.status(409).json({ discovered: false, error: 'Legacy country currency is locked to the existing pricing/catalog path.' });
+    if (country.rowCount === 1 && ['active','legacy'].includes(country.rows[0].status)) return res.status(409).json({ discovered: false, error: 'Currency discovery is restricted to onboarding countries; active and legacy country currency is locked.' });
     const countryDraftExists = country.rowCount === 1;
     const response = await fetch('https://restcountries.com/v3.1/alpha/' + encodeURIComponent(code) + '?fields=cca2,name,currencies,idd', {
       method: 'GET', headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(12000),
@@ -2983,7 +2983,7 @@ app.put('/api/admin/countries/:countryCode/destination-currency', requireAdmin, 
     await client.query('BEGIN');
     const country = await client.query('SELECT country_name,status,configuration_version FROM country_registry WHERE country_code=$1 FOR UPDATE', [code]);
     if (country.rowCount !== 1) { await client.query('ROLLBACK'); return res.status(404).json({ updated: false, error: 'Country was not found.' }); }
-    if (['active','legacy'].includes(country.rows[0].status)) { await client.query('ROLLBACK'); return res.status(409).json({ updated: false, error: 'Legacy destination currency is locked to the existing pricing/catalog path.' }); }
+    if (['active','legacy'].includes(country.rows[0].status)) { await client.query('ROLLBACK'); return res.status(409).json({ updated: false, error: 'Active and legacy destination currency is locked to preserve the existing pricing/catalog path.' }); }
     const discovery = await client.query(`
       SELECT currencies FROM country_currency_discoveries
       WHERE country_code=$1 AND selection_status='pending'
@@ -3042,7 +3042,7 @@ app.post('/api/admin/countries/:countryCode/dtone-mapping', requireAdmin, async 
       [countryCode]
     );
     if (local.rowCount !== 1) return res.status(404).json({ verified: false, error: 'Country draft was not found.' });
-    if (['active','legacy'].includes(local.rows[0].status)) return res.status(409).json({ verified: false, error: 'Legacy provider mapping is locked to preserve the existing country integration.' });
+    if (['active','legacy'].includes(local.rows[0].status)) return res.status(409).json({ verified: false, error: 'Active and legacy provider mappings are locked to preserve the existing country integration.' });
 
     let providerCountry = null;
     let pagesChecked = 0;
@@ -3264,7 +3264,7 @@ app.post('/api/admin/countries/:countryCode/dtone-catalog/sync', requireAdmin, a
     }
     const config = configResult.rows[0];
     if (['active','legacy'].includes(config.status)) {
-      return res.status(409).json({ verified: false, error: 'Active country catalog changes require a separate reviewed change workflow.' });
+      return res.status(409).json({ verified: false, error: 'Active and legacy country catalogs require a separate reviewed migration workflow.' });
     }
     const providerCountryCode = String(config.provider_country_code).trim().toUpperCase();
     const destinationCurrency = String(config.destination_currency).trim().toUpperCase();
@@ -3709,7 +3709,7 @@ app.put('/api/admin/countries/:countryCode/pricing', requireAdmin, async (req, r
   try {
     const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
     if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Legacy country pricing is managed by the existing pricing settings.' });
+    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Active and legacy country pricing is managed by the existing pricing path.' });
     const client = await pool.connect();
     let result;
     try {
@@ -3846,7 +3846,7 @@ app.put('/api/admin/countries/:countryCode/operators/:operatorId/localizations',
   try {
     const state = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
     if (state.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (['active','legacy'].includes(state.rows[0].status)) return res.status(409).json({ error: 'Legacy operator translations are locked to preserve the existing customer catalog.' });
+    if (['active','legacy'].includes(state.rows[0].status)) return res.status(409).json({ error: 'Active and legacy operator translations are locked to preserve the existing customer catalog.' });
     const operator = await pool.query('SELECT id FROM country_operators WHERE country_code=$1 AND id=$2', [code, operatorId]);
     if (operator.rowCount !== 1) return res.status(404).json({ error: 'Operator was not found.' });
     const client = await pool.connect();
@@ -3890,7 +3890,7 @@ app.patch('/api/admin/countries/:countryCode/operators/:operatorId', requireAdmi
   try {
     const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
     if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Legacy operators are managed by the existing customer catalog.' });
+    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Active and legacy operators are managed by the existing customer catalog.' });
     const result = await pool.query(`
       UPDATE country_operators SET active=$3,updated_at=NOW()
       WHERE country_code=$1 AND id=$2 AND ($3=FALSE OR verified_at IS NOT NULL)
@@ -3920,7 +3920,7 @@ app.patch('/api/admin/countries/:countryCode/products/:productId', requireAdmin,
   try {
     const countryState = await pool.query('SELECT status FROM country_registry WHERE country_code=$1', [code]);
     if (countryState.rowCount !== 1) return res.status(404).json({ error: 'Country was not found.' });
-    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Legacy products are managed by the existing customer catalog.' });
+    if (['active','legacy'].includes(countryState.rows[0].status)) return res.status(409).json({ error: 'Active and legacy products are managed by the existing customer catalog.' });
     const product = await pool.query(`
       SELECT p.id,p.wholesale_currency,p.price_currency_verified,p.verification_status,
              p.wholesale_eur_cents,p.retail_eur_cents
