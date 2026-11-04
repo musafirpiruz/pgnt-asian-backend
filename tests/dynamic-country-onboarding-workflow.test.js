@@ -185,3 +185,13 @@ test('country onboarding admin page exposes currency discovery before draft crea
   assert.match(server, /Select verified currency/);
   assert.match(server, /destination-currency','PUT'/);
 });
+
+
+test('customer country discovery exposes the verified local currency symbol to Flutter', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const flutter = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
+  assert.match(server, /AS "currencySymbol"/);
+  assert.match(server, /jsonb_array_elements\(d\.currencies\)/);
+  assert.match(flutter, /raw\['currencySymbol'\]/);
+  assert.match(flutter, /discoveredSymbol\.isNotEmpty \? discoveredSymbol : _currencySymbol\(currency\)/);
+});
