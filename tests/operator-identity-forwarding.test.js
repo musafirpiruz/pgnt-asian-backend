@@ -64,8 +64,8 @@ test('checkout input rejects partial or malformed operator identity fields', () 
   const validation = server.slice(start, end);
   assert.match(validation, /Boolean\(operatorKey\) !== Boolean\(providerOperatorId\)/);
   assert.match(validation, /Invalid verified operator identifiers/);
-  assert.match(validation, /operatorKey,/);
-  assert.match(validation, /providerOperatorId,/);
+  assert.match(validation, /operatorKey: operatorKey \\|\\| null/);
+  assert.match(validation, /providerOperatorId: providerOperatorId \\|\\| null/);
 });
 
 test('Flutter retains provider identifiers and forwards them to both quote and checkout', () => {
