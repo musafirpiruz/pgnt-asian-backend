@@ -506,6 +506,8 @@ function validateCheckoutInput(body) {
   const rawProductId = String(body.productId || '').trim();
   const productId = rawProductId || null;
   const operator = String(body.operator || '').trim();
+  const operatorKey = String(body.operatorKey || '').trim().toLowerCase();
+  const providerOperatorId = String(body.providerOperatorId || '').trim();
   const amount = Number(body.amount);
 
   if (productId && !/^[1-9]\d*$/.test(productId)) {
@@ -521,12 +523,21 @@ function validateCheckoutInput(body) {
   ) {
     throw new Error('Select a valid operator and top-up amount.');
   }
+  if (
+    Boolean(operatorKey) !== Boolean(providerOperatorId) ||
+    (operatorKey && !/^[a-z0-9][a-z0-9_-]{0,99}$/.test(operatorKey)) ||
+    (providerOperatorId && !/^[A-Za-z0-9._:-]{1,80}$/.test(providerOperatorId))
+  ) {
+    throw new Error('Invalid verified operator identifiers.');
+  }
 
   return {
     country,
     phone: phoneResult.phone,
     productId,
     operator,
+    operatorKey: operatorKey || null,
+    providerOperatorId: providerOperatorId || null,
     amount,
     paymentCurrency,
     recipientCurrency: countryCurrency(country),
@@ -647,6 +658,46 @@ async function getPricingSettings(client, country) {
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
+async function getVerifiedCountryOperator(client, countryValue, operatorKeyValue, providerOperatorIdValue) {
+  const country = normalizeCountry(countryValue);
+  const operatorKey = String(operatorKeyValue || '').trim().toLowerCase();
+  const providerOperatorId = String(providerOperatorIdValue || '').trim();
+  const registry = await client.query(
+    'SELECT status FROM country_registry WHERE country_code=$1 LIMIT 1',
+    [country]
+  );
+  const countryStatus = registry.rowCount === 1 ? String(registry.rows[0].status) : null;
+
+  if (!operatorKey && !providerOperatorId) {
+    if (countryStatus === 'active') {
+      throw new Error('A verified operator selection is required for this country.');
+    }
+    return null;
+  }
+  if (!operatorKey || !providerOperatorId) {
+    throw new Error('Both operatorKey and providerOperatorId are required.');
+  }
+
+  const result = await client.query(`
+    SELECT o.id, o.operator_key AS "operatorKey",
+           o.provider_operator_id AS "providerOperatorId",
+           o.display_name AS "displayName"
+    FROM country_operators o
+    JOIN country_registry c ON c.country_code=o.country_code
+    JOIN country_provider_mappings m
+      ON m.country_code=o.country_code AND m.provider=o.provider
+    WHERE o.country_code=$1 AND c.status IN ('active','legacy')
+      AND o.operator_key=$2 AND o.provider_operator_id=$3
+      AND o.active=TRUE AND m.verification_status='verified'
+    LIMIT 1
+  `, [country, operatorKey, providerOperatorId]);
+
+  if (result.rowCount !== 1) {
+    throw new Error('Selected operator is not an active, verified provider mapping.');
+  }
+  return result.rows[0];
+}
+
 async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
   const result = await client.query(
     `SELECT
@@ -666,8 +717,24 @@ async function getProduct(client, productId, requestedCountry = null, operator =
        OR
        ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
      )
+       AND (
+         $5::bigint IS NULL
+         OR EXISTS (
+           SELECT 1
+           FROM country_products cp
+           JOIN country_operators co ON co.id=cp.operator_id
+           WHERE cp.country_code=product_catalog.country
+             AND cp.operator_id=$5::bigint
+             AND cp.provider=co.provider
+             AND cp.provider_product_id=product_catalog.product_id::text
+             AND cp.catalog_status='active'
+             AND cp.verification_status='verified'
+             AND cp.price_currency_verified=TRUE
+             AND co.active=TRUE
+         )
+       )
      LIMIT 1`,
-    [productId, requestedCountry, operator, amount]
+    [productId, requestedCountry, operator, amount, options.operatorId ?? null]
   );
 
   if (result.rowCount !== 1) {
@@ -951,9 +1018,19 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
+    const verifiedOperator = await getVerifiedCountryOperator(
+      client, country, req.query.operatorKey, req.query.providerOperatorId
+    );
+    if (verifiedOperator && String(verifiedOperator.displayName).trim().toLowerCase() !== operator.toLowerCase()) {
+      throw new Error('Selected operator name does not match its verified provider identity.');
+    }
+    const selectedOperatorName = verifiedOperator?.displayName || operator;
+    const product = await getProduct(client, null, country, selectedOperatorName, amount, {
+      allowInactive: true,
+      operatorId: verifiedOperator?.id ?? null,
+    });
     const basePricing = await getPricingSettings(client, country);
-    const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
+    const pricing = await resolveProductPricing(client, country, selectedOperatorName, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
     return res.json({
       productId: product.id,
@@ -1050,11 +1127,20 @@ app.post('/api/payments/checkout', async (req, res) => {
     await client.query('BEGIN');
     transactionOpen = true;
 
+    const verifiedOperator = await getVerifiedCountryOperator(
+      client, input.country, input.operatorKey, input.providerOperatorId
+    );
+    if (verifiedOperator && String(verifiedOperator.displayName).trim().toLowerCase() !== input.operator.trim().toLowerCase()) {
+      throw new Error('Selected operator name does not match its verified provider identity.');
+    }
+    const selectedOperatorName = verifiedOperator?.displayName || input.operator;
     const product = await getProduct(
       client,
-      input.productId,      input.country,
-      input.operator,
-      input.amount
+      input.productId,
+      input.country,
+      selectedOperatorName,
+      input.amount,
+      { operatorId: verifiedOperator?.id ?? null }
     );
 
     if (product.country !== input.country) {
@@ -1062,7 +1148,7 @@ app.post('/api/payments/checkout', async (req, res) => {
         'Product does not match selected country.'
       );
     }
-    if (product.name.trim().toLowerCase() !== input.operator.trim().toLowerCase()) {
+    if (product.name.trim().toLowerCase() !== selectedOperatorName.trim().toLowerCase()) {
       throw new Error('Product does not match selected operator.');
     }
     if (product.localAmount !== input.amount) {
@@ -1070,7 +1156,7 @@ app.post('/api/payments/checkout', async (req, res) => {
     }
 
     const basePricing = await getPricingSettings(client, input.country);
-    const pricing = await resolveProductPricing(client, input.country, product.name, product, basePricing);
+    const pricing = await resolveProductPricing(client, input.country, selectedOperatorName, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
 
     // Referral attribution is server-validated and tied to a stable
@@ -4073,7 +4159,8 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
     const result = await pool.query(`
       SELECT o.id,o.operator_key AS code,
              COALESCE(l.display_name,o.display_name) AS name,
-             o.display_name AS "providerName"
+             o.display_name AS "providerName",
+             o.provider_operator_id AS "providerOperatorId"
       FROM country_operators o
       LEFT JOIN country_operator_localizations l
         ON l.operator_id=o.id AND LOWER(l.language_code)=$2
@@ -7134,6 +7221,14 @@ app.post('/api/admin/orders/:orderId/archive-declined-sandbox', requireAdmin, as
 // constraint and Stripe's idempotency key. This endpoint deliberately
 // does not refund orders that are already completed by DT One.
 app.post('/api/admin/orders/:orderId/refund', requireAdmin, async (req, res) => {
+  // Fail closed by default: a real Stripe refund requires an explicit
+  // deployment-level opt-in after backup, rollback, and operational review.
+  if (String(process.env.REFUNDS_ENABLED || '').trim().toLowerCase() !== 'true') {
+    return res.status(503).json({
+      error: 'Refund processing is disabled by configuration. No refund was started.',
+    });
+  }
+
   if (!pool || !stripe) {
     return res.status(503).json({ error: 'Payment service is not configured.' });
   }
