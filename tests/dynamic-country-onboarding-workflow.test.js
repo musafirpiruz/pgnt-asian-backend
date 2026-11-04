@@ -228,3 +228,11 @@ test('currency discovery never preselects even a single candidate in the admin w
   assert.match(page, /selectionRequired: true/);
   assert.doesNotMatch(page, /select\.value\s*=\s*r\.data\.currencies\[0\]\.currency/);
 });
+
+
+test('Flutter dynamic country loader is syntactically complete and remains inside the state class', () => {
+  assert.match(flutter, /if \(!RegExp\(r'\^\[A-Z\]\{2\}\$'\)\.hasMatch\(code\)/);
+  assert.match(flutter, /parsed\.add\(AppCountry\(/);
+  assert.doesNotMatch(flutter, /\n\}\n\)\.hasMatch\(currency\)\) continue;/);
+  assert.equal((flutter.match(/Future<void> _loadActiveCountries\(\)/g) || []).length, 1);
+});
