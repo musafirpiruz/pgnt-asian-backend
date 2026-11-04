@@ -220,10 +220,10 @@ class OperatorBrandMark extends StatelessWidget {
       decoration: BoxDecoration(
         color: brandColor,
         shape: BoxShape.circle,
-        border: Border.all(color: brandColor.withOpacity(0.18), width: 2),
+        border: Border.all(color: brandColor.withValues(alpha: 0.18), width: 2),
         boxShadow: [
           BoxShadow(
-            color: brandColor.withOpacity(0.16),
+            color: brandColor.withValues(alpha: 0.16),
             blurRadius: 7,
             offset: const Offset(0, 2),
           ),
@@ -1104,7 +1104,7 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                     padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [primaryRed, darkRed],
+                        colors: const [primaryRed, darkRed],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -1157,7 +1157,13 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  ...languages.map((language) {
+                  RadioGroup<String>(
+                    groupValue: _selectedLanguage,
+                    onChanged: (value) {
+                      if (value != null) setState(() => _selectedLanguage = value);
+                    },
+                    child: Column(
+                      children: languages.map((language) {
                     final selected = language.code == _selectedLanguage;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -1173,13 +1179,7 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                         ),
                         child: RadioListTile<String>(
                           value: language.code,
-                          groupValue: _selectedLanguage,
                           activeColor: primaryRed,
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _selectedLanguage = value);
-                            }
-                          },
                           title: Text(
                             language.nativeName,
                             textDirection: language.code == 'ps' ||
@@ -1196,7 +1196,9 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                         ),
                       ),
                     );
-                  }),
+                      }).toList(),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: _continue,
@@ -1266,11 +1268,11 @@ class PgntBrandHeader extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [primaryRed, darkRed],
+          colors: const [primaryRed, darkRed],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.all(Radius.circular(22)),
+        borderRadius: const BorderRadius.all(Radius.circular(22)),
       ),
       child: Row(
         children: [
@@ -1671,7 +1673,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
         final currency = (raw['currency'] ?? '').toString().toUpperCase();
         final discoveredSymbol = (raw['currencySymbol'] ?? '').toString().trim();
         if (!RegExp(r'^[A-Z]{2}$').hasMatch(code) || name.isEmpty ||
-            !RegExp(r'^[A-Z]{3}$').hasMatch(currency)) continue;
+            !RegExp(r'^[A-Z]{3}$').hasMatch(currency)) {
+          continue;
+        }
         parsed.add(AppCountry(
           code: code,
           name: name,
@@ -2237,8 +2241,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = 2;
-        final spacing = 8.0;
+        const columns = 2;
+        const spacing = 8.0;
         final cardWidth =
             (constraints.maxWidth - spacing * (columns - 1)) / columns;
         return Wrap(
@@ -2466,7 +2470,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           Row(children: [const Icon(Icons.card_giftcard, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('bonus'))), Text(bonusPercent is num && bonusPercent > 0 ? '${bonusPercent.toString()}%' : '—')]),
           if (quote != null) ...[
             pgntGoldDivider(),
-            Row(children: [Expanded(child: Text('ټول تادیه', style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
+            Row(children: [Expanded(child: const Text('ټول تادیه', style: TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
           ],
           const SizedBox(height: 12),
           Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
@@ -2829,7 +2833,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [primaryRed, darkRed],
+                colors: const [primaryRed, darkRed],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -3163,7 +3167,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [primaryRed, darkRed],
+              colors: const [primaryRed, darkRed],
             ),
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
@@ -3259,7 +3263,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           )
         else ...[
           DropdownButtonFormField<String>(
-            value: supportOrders.any((item) => item.orderId == selectedSupportOrderId)
+            initialValue: supportOrders.any((item) => item.orderId == selectedSupportOrderId)
                 ? selectedSupportOrderId
                 : supportOrders.first.orderId,
             decoration: const InputDecoration(
@@ -3283,7 +3287,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
-            value: supportCategory,
+            initialValue: supportCategory,
             decoration: const InputDecoration(
               labelText: 'د ستونزې ډول',
               prefixIcon: Icon(Icons.category_outlined),
@@ -3656,24 +3660,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                ...languages.map(
-                  (language) => RadioListTile<String>(
-                    value: language.code,
-                    groupValue: languageCode,
-                    activeColor: primaryRed,
-                    title: Text(language.nativeName),
-                    subtitle: Text(language.name),
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        languageCode = value;
-                      });
-                      _loadActiveCountries();
-                      SharedPreferences.getInstance().then((preferences) {
-                        preferences.setString(_languagePreferenceKey, value);
-                      });
-                      Navigator.pop(sheetContext);
-                    },
+                RadioGroup<String>(
+                  groupValue: languageCode,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      languageCode = value;
+                    });
+                    _loadActiveCountries();
+                    SharedPreferences.getInstance().then((preferences) {
+                      preferences.setString(_languagePreferenceKey, value);
+                    });
+                    Navigator.pop(sheetContext);
+                  },
+                  child: Column(
+                    children: languages.map(
+                      (language) => RadioListTile<String>(
+                        value: language.code,
+                        activeColor: primaryRed,
+                        title: Text(language.nativeName),
+                        subtitle: Text(language.name),
+                      ),
+                    ).toList(),
                   ),
                 ),
               ],
