@@ -1205,6 +1205,18 @@ app.post('/api/payments/checkout', async (req, res) => {
       );
     }
 
+    // A catalog ID must not bypass the customer's selected denomination.
+    // Registry-backed operators are already tied to this product by the
+    // active country_operator_products mapping above. Legacy clients without
+    // registry IDs must still match the catalog operator name exactly.
+    if (!verifiedOperator &&
+        product.name.trim().toLowerCase() !== input.operator.trim().toLowerCase()) {
+      throw new Error('Product does not match selected operator.');
+    }
+    if (product.localAmount !== input.amount) {
+      throw new Error('Product does not match selected amount.');
+    }
+
     const basePricing = await getPricingSettings(client, input.country);
     const pricing = await resolveProductPricing(client, input.country, product.name, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
