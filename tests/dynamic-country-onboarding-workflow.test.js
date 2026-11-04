@@ -71,6 +71,16 @@ test('dynamic country catalog preview calculates customer EUR prices from FX, ap
   assert.match(route, /productsRemainDisabled: true/);
 });
  
+test('dynamic pricing treats EUR as the exact base rate without requiring an FX observation', () => {
+  const start = server.indexOf('async function getPricingSettings');
+  const end = server.indexOf('// Read an enabled product from the database.', start);
+  assert.ok(start >= 0 && end > start);
+  const resolver = server.slice(start, end);
+  assert.match(resolver, /destinationUnitsPerEur = 1/);
+  assert.match(resolver, /destinationCurrency !== 'EUR'/);
+  assert.match(resolver, /A fresh destination-currency FX rate is required/);
+});
+
 test('FX rates have source provenance, freshness and rejected quotes do not create fake rates', () => {
   const start = migration.indexOf('const globalFxVersion = "018_global_provider_currency_fx"');
   const end = migration.indexOf('const countryPricingVersion', start);
