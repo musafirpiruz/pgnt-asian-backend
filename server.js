@@ -688,7 +688,7 @@ async function getVerifiedCountryOperator(client, countryValue, operatorKeyValue
       ON m.country_code=o.country_code AND m.provider=o.provider
     WHERE o.country_code=$1 AND c.status IN ('active','legacy')
       AND o.operator_key=$2 AND o.provider_operator_id=$3
-      AND o.active=TRUE AND m.verification_status='verified'
+      AND o.active=TRUE AND o.verified_at IS NOT NULL AND m.verification_status='verified'
     LIMIT 1
   `, [country, operatorKey, providerOperatorId]);
 
@@ -736,7 +736,7 @@ async function getProduct(client, productId, requestedCountry = null, operator =
              AND cp.catalog_status='active'
              AND cp.verification_status='verified'
              AND cp.price_currency_verified=TRUE
-             AND co.active=TRUE
+             AND co.active=TRUE AND co.verified_at IS NOT NULL
            )
          )
        )
@@ -3982,7 +3982,7 @@ app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req,
     const operators = await pool.query('SELECT COUNT(*)::int AS count FROM country_operators WHERE country_code=$1 AND active=TRUE AND verified_at IS NOT NULL', [code]);
     const products = await pool.query(`
       SELECT p.* FROM country_products p JOIN country_operators o ON o.id=p.operator_id
-      WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE
+      WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE AND o.verified_at IS NOT NULL
         AND p.verification_status='verified' AND p.price_currency_verified=TRUE
     `, [code]);
     const operatorCoverage = await pool.query(`
@@ -4023,7 +4023,7 @@ app.post('/api/admin/countries/:countryCode/validate', requireAdmin, async (req,
     const operatorLocalizationResult = await pool.query(`
       SELECT COUNT(*)::int AS incomplete_count
       FROM country_operators o
-      WHERE o.country_code=$1 AND o.active=TRUE
+      WHERE o.country_code=$1 AND o.active=TRUE AND o.verified_at IS NOT NULL
         AND (SELECT COUNT(DISTINCT LOWER(language_code))
              FROM country_operator_localizations l
              WHERE l.operator_id=o.id AND LOWER(l.language_code)=ANY($2::text[])) < 6
@@ -4206,7 +4206,7 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
       FROM country_operators o
       LEFT JOIN country_operator_localizations l
         ON l.operator_id=o.id AND LOWER(l.language_code)=$2
-      WHERE o.country_code=$1 AND o.active=TRUE
+      WHERE o.country_code=$1 AND o.active=TRUE AND o.verified_at IS NOT NULL
       UNION
       SELECT NULL::bigint AS id,
              LOWER(REGEXP_REPLACE(operator,'[^a-zA-Z0-9]+','-','g')) AS code,
@@ -4214,7 +4214,7 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              NULL::text AS "providerOperatorId"
       FROM product_catalog
       WHERE country=$1 AND active=TRUE
-        AND NOT EXISTS (SELECT 1 FROM country_operators WHERE country_code=$1 AND active=TRUE)
+        AND NOT EXISTS (SELECT 1 FROM country_operators WHERE country_code=$1 AND active=TRUE AND verified_at IS NOT NULL)
       ORDER BY name
     `, [code, language]);
     return res.json({ countryCode: code, language, operators: result.rows });
@@ -4238,8 +4238,9 @@ app.get('/api/countries/:countryCode/products', async (req, res) => {
              p.wholesale_eur_cents AS "wholesaleEurCents"
       FROM country_products p
       JOIN country_operators o ON o.id=p.operator_id
-      WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE
+      WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE AND o.verified_at IS NOT NULL
         AND p.verification_status='verified' AND p.price_currency_verified=TRUE
+        AND o.verified_at IS NOT NULL
       ORDER BY o.display_name,p.denomination
     `, [code]);
     if (result.rowCount === 0 && country.rows[0].status === 'legacy') {
