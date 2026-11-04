@@ -109,6 +109,7 @@ The branch remains a draft review branch. Wait for its exact-head backend tests 
 ### Additional UI alignment and CI coverage
 
 - The Flutter amount selector now groups active catalog denominations by the backend's `operatorCode`; selecting a network changes the available amounts to that network's products only. The server still independently verifies country/operator/amount before checkout.
+- Country preflight now rejects an active network that has no verified active product. It also checks that each active `country_products` record has an exact active `product_catalog` counterpart with matching provider product ID, operator, denomination, destination currency, wholesale EUR cents and retail EUR cents. Quote/checkout repeat this mapping-and-price parity check, so an out-of-band catalog price edit fails closed.
 - The APK workflow previously filtered pull requests to target `main` only, so it did not run for draft PR #206, whose base is `feat/dynamic-country-onboarding`. The workflow now includes that feature branch as a pull-request target, so Dart analysis and the release APK build run for this review chain as well.
 - This workflow change affects CI only; it does not deploy the APK or publish it to the Play Store.
 
