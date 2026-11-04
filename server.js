@@ -666,16 +666,29 @@ async function getVerifiedCountryOperator(client, countryValue, operatorKeyValue
     'SELECT status FROM country_registry WHERE country_code=$1 LIMIT 1',
     [country]
   );
-  const countryStatus = registry.rowCount === 1 ? String(registry.rows[0].status) : null;
+  if (registry.rowCount !== 1 || !['active','legacy'].includes(String(registry.rows[0].status))) {
+    throw new Error('Country is not available for customer checkout.');
+  }
+  const countryStatus = String(registry.rows[0].status);
 
-  if (!operatorKey && !providerOperatorId) {
-    if (countryStatus === 'active') {
-      throw new Error('A verified operator selection is required for this country.');
+  // The four grandfathered destinations stay on the original product_catalog
+  // and pricing_settings path. They must never be switched implicitly.
+  if (countryStatus === 'legacy') {
+    if (operatorKey || providerOperatorId) {
+      throw new Error('Legacy countries use the existing operator and product catalog.');
     }
     return null;
   }
-  if (!operatorKey || !providerOperatorId) {
-    throw new Error('Both operatorKey and providerOperatorId are required.');
+
+  if (!operatorKey && !providerOperatorId) {
+    throw new Error('A verified operator selection is required for this country.');
+  }
+  if (
+    !operatorKey || !providerOperatorId ||
+    !/^[a-z0-9][a-z0-9_-]{0,99}$/.test(operatorKey) ||
+    !/^[A-Za-z0-9._:-]{1,80}$/.test(providerOperatorId)
+  ) {
+    throw new Error('Both valid operatorKey and providerOperatorId values are required.');
   }
 
   const result = await client.query(`
@@ -686,9 +699,10 @@ async function getVerifiedCountryOperator(client, countryValue, operatorKeyValue
     JOIN country_registry c ON c.country_code=o.country_code
     JOIN country_provider_mappings m
       ON m.country_code=o.country_code AND m.provider=o.provider
-    WHERE o.country_code=$1 AND c.status IN ('active','legacy')
+    WHERE o.country_code=$1 AND c.status='active'
       AND o.operator_key=$2 AND o.provider_operator_id=$3
-      AND o.active=TRUE AND o.verified_at IS NOT NULL AND m.verification_status='verified'
+      AND o.active=TRUE AND o.verified_at IS NOT NULL
+      AND m.verification_status='verified'
     LIMIT 1
   `, [country, operatorKey, providerOperatorId]);
 
@@ -4204,8 +4218,27 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
   const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
   const language = ['en','ps','fa','ur','hi','bn'].includes(requestedLanguage) ? requestedLanguage : 'en';
   try {
-    const country = await pool.query(`SELECT 1 FROM country_registry WHERE country_code=$1 AND status IN ('active','legacy')`, [code]);
+    const country = await pool.query(
+      `SELECT status FROM country_registry WHERE country_code=$1 AND status IN ('active','legacy')`,
+      [code]
+    );
     if (country.rowCount !== 1) return res.status(404).json({ error: 'Country is unavailable.' });
+
+    // Preserve the exact legacy operator list for AF/PK/IN/BD. Dynamic
+    // registry operators are used only for countries activated by onboarding.
+    if (country.rows[0].status === 'legacy') {
+      const legacy = await pool.query(`
+        SELECT DISTINCT NULL::bigint AS id,
+               LOWER(REGEXP_REPLACE(operator,'[^a-zA-Z0-9]+','-','g')) AS code,
+               operator AS name, operator AS "providerName",
+               NULL::text AS "providerOperatorId"
+        FROM product_catalog
+        WHERE country=$1 AND active=TRUE
+        ORDER BY name
+      `, [code]);
+      return res.json({ countryCode: code, language, operators: legacy.rows });
+    }
+
     const result = await pool.query(`
       SELECT o.id,o.operator_key AS code,
              COALESCE(l.display_name,o.display_name) AS name,
@@ -4213,26 +4246,11 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              o.provider_operator_id AS "providerOperatorId"
       FROM country_operators o
       JOIN country_provider_mappings m
-        ON m.country_code=o.country_code AND m.provider=o.provider AND m.verification_status='verified'
+        ON m.country_code=o.country_code AND m.provider=o.provider
+       AND m.verification_status='verified'
       LEFT JOIN country_operator_localizations l
         ON l.operator_id=o.id AND LOWER(l.language_code)=$2
       WHERE o.country_code=$1 AND o.active=TRUE AND o.verified_at IS NOT NULL
-      UNION
-      SELECT NULL::bigint AS id,
-             LOWER(REGEXP_REPLACE(operator,'[^a-zA-Z0-9]+','-','g')) AS code,
-             operator AS name, operator AS "providerName",
-             NULL::text AS "providerOperatorId"
-      FROM product_catalog
-      WHERE country=$1 AND active=TRUE
-        AND NOT EXISTS (
-          SELECT 1 FROM country_operators existing_operator
-          JOIN country_provider_mappings existing_mapping
-            ON existing_mapping.country_code=existing_operator.country_code
-           AND existing_mapping.provider=existing_operator.provider
-           AND existing_mapping.verification_status='verified'
-          WHERE existing_operator.country_code=$1
-            AND existing_operator.active=TRUE AND existing_operator.verified_at IS NOT NULL
-        )
       ORDER BY name
     `, [code, language]);
     return res.json({ countryCode: code, language, operators: result.rows });
@@ -4246,34 +4264,46 @@ app.get('/api/countries/:countryCode/products', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Country service is unavailable.' });
   const code = String(req.params.countryCode || '').trim().toUpperCase();
   try {
-    const country = await pool.query(`SELECT destination_currency,status FROM country_registry WHERE country_code=$1 AND status IN ('active','legacy')`, [code]);
+    const country = await pool.query(
+      `SELECT destination_currency,status FROM country_registry WHERE country_code=$1 AND status IN ('active','legacy')`,
+      [code]
+    );
     if (country.rowCount !== 1) return res.status(404).json({ error: 'Country is unavailable.' });
-    let result = await pool.query(`
-      SELECT p.id,p.provider_product_id AS "providerProductId",
-             o.operator_key AS "operatorCode",o.display_name AS operator,
-             p.denomination AS amount,p.destination_currency AS currency,
-             p.retail_eur_cents AS "providerRetailEurCents",
-             p.wholesale_eur_cents AS "wholesaleEurCents"
-      FROM country_products p
-      JOIN country_operators o ON o.id=p.operator_id
-      JOIN country_provider_mappings m
-        ON m.country_code=o.country_code AND m.provider=o.provider AND m.verification_status='verified'
-      WHERE p.country_code=$1 AND p.catalog_status='active' AND o.active=TRUE AND o.verified_at IS NOT NULL
-        AND p.verification_status='verified' AND p.price_currency_verified=TRUE
-        AND o.verified_at IS NOT NULL
-      ORDER BY o.display_name,p.denomination
-    `, [code]);
-    if (result.rowCount === 0 && country.rows[0].status === 'legacy') {
+
+    let result;
+    if (country.rows[0].status === 'legacy') {
       result = await pool.query(`
         SELECT id,product_id AS "providerProductId",
                LOWER(REGEXP_REPLACE(operator,'[^a-zA-Z0-9]+','-','g')) AS "operatorCode",
                operator,amount,currency,price_eur_cents AS "providerRetailEurCents",
                wholesale_price_eur_cents AS "wholesaleEurCents"
-        FROM product_catalog WHERE country=$1 AND active=TRUE
+        FROM product_catalog
+        WHERE country=$1 AND active=TRUE
         ORDER BY operator,amount
       `, [code]);
+    } else {
+      result = await pool.query(`
+        SELECT p.id,p.provider_product_id AS "providerProductId",
+               o.operator_key AS "operatorCode",o.display_name AS operator,
+               p.denomination AS amount,p.destination_currency AS currency,
+               p.retail_eur_cents AS "providerRetailEurCents",
+               p.wholesale_eur_cents AS "wholesaleEurCents"
+        FROM country_products p
+        JOIN country_operators o ON o.id=p.operator_id
+        JOIN country_provider_mappings m
+          ON m.country_code=o.country_code AND m.provider=o.provider
+         AND m.verification_status='verified'
+        WHERE p.country_code=$1 AND p.catalog_status='active'
+          AND o.active=TRUE AND o.verified_at IS NOT NULL
+          AND p.verification_status='verified' AND p.price_currency_verified=TRUE
+        ORDER BY o.display_name,p.denomination
+      `, [code]);
     }
-    return res.json({ countryCode: code, currency: String(country.rows[0].destination_currency).trim(), products: result.rows });
+    return res.json({
+      countryCode: code,
+      currency: String(country.rows[0].destination_currency).trim(),
+      products: result.rows,
+    });
   } catch (error) {
     console.error('Customer country product lookup failed:', error.message);
     return res.status(503).json({ error: 'Products are temporarily unavailable.' });
