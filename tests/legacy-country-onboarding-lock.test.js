@@ -55,9 +55,12 @@ test('customer registry operators and products require a verified DT One country
   const products = route("app.get('/api/countries/:countryCode/products'", "// Read-only wallet integrity diagnostics.");
   assert.match(operators, /JOIN country_provider_mappings/);
   assert.match(operators, /m\.verification_status='verified'/);
-  assert.match(operators, /existing_mapping\.verification_status='verified'/);
+  assert.match(operators, /country\.rows\[0\]\.status === 'legacy'/);
+  assert.match(operators, /FROM product_catalog/);
   assert.match(products, /JOIN country_provider_mappings/);
   assert.match(products, /m\.verification_status='verified'/);
+  assert.match(products, /country\.rows\[0\]\.status === 'legacy'/);
+  assert.match(products, /FROM product_catalog/);
 });
 
 test('admin operator listing uses the correct single SQL bind parameter', () => {
