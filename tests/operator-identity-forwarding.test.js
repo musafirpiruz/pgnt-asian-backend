@@ -23,7 +23,7 @@ test('active registry countries require an active operator with a verified provi
   const end = server.indexOf('async function getProduct', start);
   assert.ok(start >= 0 && end > start);
   const helper = server.slice(start, end);
-  assert.match(helper, /countryStatus === 'active'/);
+  assert.match(helper, /A verified operator selection is required for this country/);
   assert.match(helper, /Both operatorKey and providerOperatorId are required/);
   assert.match(helper, /o\.active=TRUE/);
   assert.match(helper, /o\.verified_at IS NOT NULL/);
