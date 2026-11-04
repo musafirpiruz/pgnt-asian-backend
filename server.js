@@ -512,11 +512,13 @@ function validateCheckoutInput(body) {
     throw new Error('Invalid product ID.');
   }
 
-  // Current Flutter clients send operator + local amount, not a catalog ID.
-  if (!productId && (
+  // Require the customer's selected operator and denomination even when
+  // a catalog product ID is supplied. The server must cross-check all three
+  // selection dimensions against its own catalog before calculating a price.
+  if (
     !operator || operator.length > 120 ||
     !Number.isSafeInteger(amount) || amount <= 0
-  )) {
+  ) {
     throw new Error('Select a valid operator and top-up amount.');
   }
 
@@ -1059,6 +1061,12 @@ app.post('/api/payments/checkout', async (req, res) => {
       throw new Error(
         'Product does not match selected country.'
       );
+    }
+    if (product.name.trim().toLowerCase() !== input.operator.trim().toLowerCase()) {
+      throw new Error('Product does not match selected operator.');
+    }
+    if (product.localAmount !== input.amount) {
+      throw new Error('Product does not match selected amount.');
     }
 
     const basePricing = await getPricingSettings(client, input.country);
