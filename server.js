@@ -7275,7 +7275,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#17191d;color:#e7e7e7
 small{color:#555}.inline{display:flex;gap:8px;align-items:center}.inline input[type=checkbox]{width:auto}
 </style></head><body><main>
 <h1>PGNT ASIAN TOPUP — Country Onboarding</h1>
-<p>Admin workflow: Draft → DT One mapping → Catalog preview/import → Pricing/localization → Review → Preflight → Activate.</p>
+<p>Admin workflow: Currency discovery → Draft → Currency confirmation → DT One mapping → Catalog preview/import → Pricing/localization → Review → Preflight → Activate.</p>
 <section><h2>Admin access</h2><input id="adminKey" type="password" autocomplete="off" placeholder="Admin API key"><div class="inline"><input id="countryCode" maxlength="2" placeholder="ISO alpha-2, e.g. KE"><button class="secondary" onclick="loadCountries()">Load countries</button></div><pre id="countryList">Country registry not loaded.</pre></section>
 <section><h2>1. Create draft country</h2><div class="grid">
 <input id="newCode" maxlength="2" placeholder="Country code, e.g. KE">
