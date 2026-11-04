@@ -1951,15 +1951,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
         break;
       }
     }
-    if (detected == null ||
-        (selectedOperator?.name == detected.name &&
-            selectedOperator?.countryCode == detected.countryCode)) {
+    final detectedOperator = detected;
+    if (detectedOperator == null ||
+        (selectedOperator?.name == detectedOperator.name &&
+            selectedOperator?.countryCode == detectedOperator.countryCode)) {
       return;
     }
 
     setState(() {
-      selectedOperator = detected;
-      final detectedAmounts = _loadedCountryAmountsByOperator[_operatorCatalogCode(detected)] ?? const <int>[];
+      selectedOperator = detectedOperator;
+      final detectedAmounts = _loadedCountryAmountsByOperator[_operatorCatalogCode(detectedOperator)] ?? const <int>[];
       if (detectedAmounts.isNotEmpty && !detectedAmounts.contains(selectedAmount)) {
         selectedAmount = detectedAmounts.first;
       }
