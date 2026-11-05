@@ -58,8 +58,19 @@ test('customer ticket creation stores a ticket only after constant-time order-to
       if (sql.includes('SELECT order_id, order_access_token_hash')) {
         return { rowCount: 1, rows: [{ order_id: ORDER_ID, order_access_token_hash: TOKEN_HASH }] };
       }
-      if (sql.includes('INSERT INTO support_tickets')) return { rowCount: 1, rows: [ticket] };
-      throw new Error('Unexpected support query');
+      throw new Error('Unexpected pool query');
+    },
+    async connect() {
+      return {
+        async query(sql, params) {
+          calls.push({ sql, params });
+          if (sql === 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))') return { rowCount: 1, rows: [] };
+          if (sql.includes('SELECT COUNT(*)::int AS ticket_count')) return { rowCount: 1, rows: [{ ticket_count: 0, oldest_ticket_at: null }] };
+          if (sql.includes('INSERT INTO support_tickets')) return { rowCount: 1, rows: [ticket] };
+          return { rowCount: 0, rows: [] };
+        },
+        release() { calls.push({ sql: 'RELEASE' }); },
+      };
     },
   };
   const { routes } = harness(pool);
@@ -70,8 +81,48 @@ test('customer ticket creation stores a ticket only after constant-time order-to
   }), res);
   assert.equal(res.statusCode, 201);
   assert.equal(res.body.ticket.id, 41);
-  assert.equal(calls.length, 2);
-  assert.deepEqual(calls[1].params, [ORDER_ID, 'Payment issue', 'Please review this order.', 'payment']);
+  assert.ok(calls.some((call) => call.sql === 'BEGIN'));
+  assert.ok(calls.some((call) => call.sql === 'COMMIT'));
+  assert.ok(calls.some((call) => call.sql === 'RELEASE'));
+  const insert = calls.find((call) => call.sql.includes('INSERT INTO support_tickets'));
+  assert.deepEqual(insert.params, [ORDER_ID, 'Payment issue', 'Please review this order.', 'payment']);
+});
+
+
+test('customer ticket creation is rate limited atomically after three tickets in fifteen minutes', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql) {
+      if (sql.includes('SELECT order_id, order_access_token_hash')) {
+        return { rowCount: 1, rows: [{ order_id: ORDER_ID, order_access_token_hash: TOKEN_HASH }] };
+      }
+      throw new Error('Unexpected pool query');
+    },
+    async connect() {
+      return {
+        async query(sql) {
+          calls.push(sql);
+          if (sql.includes('SELECT COUNT(*)::int AS ticket_count')) {
+            return { rowCount: 1, rows: [{ ticket_count: 3, oldest_ticket_at: new Date(Date.now() - 60_000).toISOString() }] };
+          }
+          return { rowCount: 0, rows: [] };
+        },
+        release() { calls.push('RELEASE'); },
+      };
+    },
+  };
+  const { routes } = harness(pool);
+  const res = response();
+  await routes.get('POST /api/support/tickets')[0](request({
+    body: { orderId: ORDER_ID, subject: 'Payment issue', message: 'Please review this order.', category: 'payment' },
+    headers: { 'x-order-access-token': TOKEN },
+  }), res);
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.body.code, 'SUPPORT_TICKET_RATE_LIMITED');
+  assert.ok(res.body.retryAfterSeconds > 0);
+  assert.ok(calls.includes('ROLLBACK'));
+  assert.ok(calls.includes('RELEASE'));
+  assert.equal(calls.some((sql) => String(sql).includes('INSERT INTO support_tickets')), false);
 });
 
 test('a token for another order cannot create a support ticket', async () => {
