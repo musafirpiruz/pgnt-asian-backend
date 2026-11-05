@@ -35,7 +35,7 @@ for (const language of ['ps', 'fa', 'en', 'ur', 'hi', 'bn']) {
 }
 
 test('support guidance tells customers not to repay immediately and distinguishes payment from top-up completion', () => {
-  const english = /['"]en['"]\\s*:\\s*\\{([\\s\\S]*?)\\n\\s*\\},/.exec(translations)?.[1] || '';
+  const english = /['"]en['"]\s*:\s*\{([\s\S]*?)\n\s*\},/.exec(translations)?.[1] || '';
   assert.match(english, /Do not pay again immediately/);
   assert.match(english, /does not by itself mean the mobile operator has completed the top-up/);
   assert.match(english, /Never share your password, full card details/);
