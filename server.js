@@ -3133,6 +3133,36 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <div id="supportTickets" aria-live="polite"></div>
 <h2>Result</h2><pre id="result">Waiting for verification.</pre>
 <script>
+/* Admin-page diagnostics: capture browser-side failures independently of the main admin script. */
+(function(){
+  function report(message){
+    var output=document.getElementById('result');
+    if(output) output.textContent='Admin page diagnostic: '+message;
+  }
+  window.addEventListener('error',function(event){
+    report('JavaScript error: '+(event.message||'unknown error')+
+      (event.filename?' ('+event.filename.split('/').pop()+':'+event.lineno+')':''));
+  });
+  window.addEventListener('unhandledrejection',function(event){
+    var reason=event.reason;
+    report('Unhandled promise rejection: '+(reason&&reason.message?reason.message:String(reason)));
+  });
+  document.addEventListener('click',function(event){
+    var button=event.target&&event.target.closest?event.target.closest('button'):null;
+    if(button){
+      var output=document.getElementById('result');
+      if(output && output.textContent==='Waiting for verification.'){
+        output.textContent='Admin page diagnostic: click received for "'+(button.textContent||button.id||'button').trim()+'". Waiting for action result.';
+      }
+    }
+  },true);
+  document.addEventListener('DOMContentLoaded',function(){
+    var output=document.getElementById('result');
+    if(output) output.textContent='Admin page diagnostic: JavaScript is enabled and the page diagnostic is running.';
+  });
+})();
+</script>
+<script>
 const form=document.getElementById('check');
 const key=document.getElementById('key');
 const result=document.getElementById('result');
