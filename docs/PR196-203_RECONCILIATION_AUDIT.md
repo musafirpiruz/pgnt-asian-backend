@@ -20,9 +20,9 @@ Status: review-only reconciliation branch. This document does not authorize merg
 | #200 `feat/explicit-country-operator-product-mapping` | `country_operator_products` mapping, guarded product lookup, admin mapping endpoint, inactive-by-default behavior, and `tests/country-operator-product-mapping.test.js` | Reconcile schema and routes with #204's different migration numbering; do not copy migration 019 blindly because #204 uses 019 for country pricing |
 | #203 `feat/automatic-four-country-fx-rates` | `fx-rates.js` and `tests/fx-rates.test.js` validate AFN/PKR/INR/BDT dated EUR-base quotes and update legacy four-country pricing rows atomically | Compare behavior with #204's generic FX implementation and ensure existing four-country pricing remains supported; avoid duplicate or conflicting FX writers |
 
-## Important migration conflict
+## Migration numbering and namespace review
 
-The earlier explicit product-mapping branch defines migration `019_country_operator_product_mapping`. PR #204 uses migration 019 for `019_country_pricing_settings`. These migrations cannot be merged by copying their original version identifiers. Any mapping schema must receive a new unique migration version after checking the complete current migration chain, constraints, and existing data.
+Migration identifiers are stored as complete text keys in `schema_migrations`, not as numeric prefixes. Therefore `019_country_operator_product_mapping` and `019_country_pricing_settings` are distinct database keys; the shared `019` prefix is a sequencing/convention ambiguity, not by itself a primary-key collision or a reason one migration would be skipped. The same applies to PR #203's `020_automatic_country_fx_rates` versus PR #204's `020_country_operator_localizations`. Before combining branches, inventory every complete migration key and its schema dependencies, then assign a clear next sequence label to newly introduced migrations. Never renumber an already-applied migration or assume the numeric prefix enforces execution order.
 
 ## Safe implementation sequence
 
@@ -199,3 +199,12 @@ This section records the scheduled acceptance review. All checks in this section
 - Task 6 Play Store/Render readiness: **NOT READY; signing/AAB and Render dashboard/migration review remain outstanding**.
 
 Estimated overall project completion remains **68%** (judgment estimate of implementation plus production readiness, not test coverage). The remaining 32% is concentrated in live provider evidence and sandbox E2E, missing rate limiting, operational support escalation, physical-device validation, signed AAB/Play Console and controlled Render deployment/backup readiness.
+
+
+## Follow-up verification: legacy FX isolation (2026-11-06)
+
+- The reconciled #206 source uses two intentionally separate pricing paths: the four grandfathered countries read their existing `pricing_settings.local_currency_per_eur` / `afn_per_eur` values; registry-backed countries read fresh, dated observations from `fx_currency_rates`.
+- `refreshFxCurrencyRate` writes only `fx_currency_rates` and `fx_currency_rate_history`. It does not update the legacy `pricing_settings` rows. The registry refresh may collect legacy destination currencies for comparison/history, but this does not replace the legacy checkout rate.
+- PR #203's separate scheduler is not integrated. Its `refreshCountryFxRates` explicitly updates `pricing_settings.local_currency_per_eur` for AF/PK/IN/BD and therefore would overwrite the manually curated rates if enabled. It must remain excluded unless a separately approved rate-source policy authorizes that behavior.
+- Added `tests/legacy-fx-isolation.test.js` on the review branch. It guards the legacy read path, verifies the generic refresh does not write legacy pricing tables, verifies migration 012 only backfills a null generic rate from the existing AFN rate, and checks migration key uniqueness.
+- This test-only change does not alter application behavior, FX values, provider credentials, catalog activation, production data, or deployment configuration. Full CI for the new exact head is required before considering the review branch complete.
