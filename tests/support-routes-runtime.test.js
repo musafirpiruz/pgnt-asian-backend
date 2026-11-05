@@ -125,3 +125,63 @@ test('admin support inbox and updates retain the shared admin authentication mid
   assert.equal(routes.get('GET /api/admin/support/tickets')[0], requireAdmin);
   assert.equal(routes.get('PATCH /api/admin/support/tickets/:ticketId')[0], requireAdmin);
 });
+
+test('admin escalation can move a ticket to in-progress, set priority, and reply', async () => {
+  const calls = [];
+  const ticket = {
+    id: 41,
+    order_id: ORDER_ID,
+    status: 'in_progress',
+    priority: 'high',
+    admin_reply: 'We are reviewing the provider result.',
+  };
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      assert.match(sql, /UPDATE support_tickets/);
+      return { rowCount: 1, rows: [ticket] };
+    },
+  };
+  const { routes, requireAdmin } = harness(pool);
+  const handlers = routes.get('PATCH /api/admin/support/tickets/:ticketId');
+  assert.equal(handlers[0], requireAdmin, 'admin authentication must run before ticket updates');
+  const res = response();
+  await handlers[1](request({
+    params: { ticketId: '41' },
+    body: {
+      status: 'in_progress',
+      priority: 'high',
+      adminReply: 'We are reviewing the provider result.',
+    },
+  }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ticket.status, 'in_progress');
+  assert.equal(res.body.ticket.priority, 'high');
+  assert.equal(res.body.ticket.admin_reply, 'We are reviewing the provider result.');
+  assert.deepEqual(calls[0].params, [
+    41,
+    'in_progress',
+    'high',
+    true,
+    'We are reviewing the provider result.',
+  ]);
+});
+
+test('admin escalation rejects invalid status, priority, and empty updates before database access', async () => {
+  let queries = 0;
+  const { routes } = harness({ async query() { queries += 1; throw new Error('must not query'); } });
+  const handler = routes.get('PATCH /api/admin/support/tickets/:ticketId')[1];
+  const cases = [
+    { params: { ticketId: '41' }, body: { status: 'paid' } },
+    { params: { ticketId: '41' }, body: { priority: 'blocker' } },
+    { params: { ticketId: '41' }, body: {} },
+    { params: { ticketId: 'not-an-id' }, body: { status: 'open' } },
+  ];
+  for (const input of cases) {
+    const res = response();
+    await handler(request(input), res);
+    assert.equal(res.statusCode, 400);
+  }
+  assert.equal(queries, 0);
+});
+
