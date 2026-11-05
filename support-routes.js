@@ -44,13 +44,46 @@ module.exports = function registerSupportRoutes({ app, pool, requireAdmin }) {
         return res.status(404).json({ error: 'Order not found.' });
       }
 
-      const inserted = await pool.query(
-        `INSERT INTO support_tickets (order_id, subject, message, category, status, priority)
-         VALUES ($1, $2, $3, $4, 'open', 'normal')
-         RETURNING id, order_id, subject, message, category, status, priority, admin_reply, created_at, updated_at`,
-        [orderId, subject, message, category]
-      );
-      return res.status(201).json({ ticket: inserted.rows[0] });
+      // Enforce a database-backed per-order quota. The transaction-scoped
+      // advisory lock serializes concurrent ticket submissions for this order
+      // across all application instances (unlike an in-memory rate limiter).
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [orderId]);
+        const recent = await client.query(
+          `SELECT COUNT(*)::int AS ticket_count, MIN(created_at) AS oldest_ticket_at
+           FROM support_tickets
+           WHERE order_id = $1 AND created_at >= NOW() - INTERVAL '15 minutes'`,
+          [orderId]
+        );
+        if (Number(recent.rows[0]?.ticket_count || 0) >= 3) {
+          const oldestAt = recent.rows[0].oldest_ticket_at
+            ? new Date(recent.rows[0].oldest_ticket_at).getTime()
+            : Date.now();
+          const retryAfterSeconds = Math.max(1, Math.ceil((oldestAt + 15 * 60 * 1000 - Date.now()) / 1000));
+          await client.query('ROLLBACK');
+          return res.status(429).json({
+            error: 'Too many support tickets for this order. Please try again later.',
+            code: 'SUPPORT_TICKET_RATE_LIMITED',
+            retryAfterSeconds,
+          });
+        }
+
+        const inserted = await client.query(
+          `INSERT INTO support_tickets (order_id, subject, message, category, status, priority)
+           VALUES ($1, $2, $3, $4, 'open', 'normal')
+           RETURNING id, order_id, subject, message, category, status, priority, admin_reply, created_at, updated_at`,
+          [orderId, subject, message, category]
+        );
+        await client.query('COMMIT');
+        return res.status(201).json({ ticket: inserted.rows[0] });
+      } catch (transactionError) {
+        try { await client.query('ROLLBACK'); } catch (_) { /* preserve original error */ }
+        throw transactionError;
+      } finally {
+        client.release();
+      }
     } catch (error) {
       console.error('Support ticket creation failed:', error.message);
       return res.status(500).json({ error: 'Could not create support ticket.' });
