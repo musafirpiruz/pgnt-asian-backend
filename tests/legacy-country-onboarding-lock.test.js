@@ -29,13 +29,13 @@ test('legacy countries cannot enter the new country-currency, provider-mapping o
 
 test('legacy countries cannot be switched to dynamic pricing, operator/product review or activation', () => {
   const checks = [
-    ["app.put('/api/admin/countries/:countryCode/pricing'", "app.put('/api/admin/countries/:countryCode/localizations'"),
-    ["app.put('/api/admin/countries/:countryCode/operators/:operatorId/localizations'", "app.patch('/api/admin/countries/:countryCode/operators/:operatorId'"),
-    ["app.patch('/api/admin/countries/:countryCode/operators/:operatorId'", "app.patch('/api/admin/countries/:countryCode/products/:productId'"),
-    ["app.patch('/api/admin/countries/:countryCode/products/:productId'", "app.post('/api/admin/countries/:countryCode/validate'"),
-    ["app.post('/api/admin/countries/:countryCode/validate'", "app.post('/api/admin/countries/:countryCode/activate'"),
-    ["app.post('/api/admin/countries/:countryCode/activate'", "app.post('/api/admin/countries/:countryCode/disable'"),
-    ["app.post('/api/admin/countries/:countryCode/disable'", "// Customer APIs expose only active, reviewed country configuration."),
+    ["app.put('/api/admin/countries/:countryCode/pricing'", "app.put('/api/admin/countries/:countryCode/localizations'"],
+    ["app.put('/api/admin/countries/:countryCode/operators/:operatorId/localizations'", "app.patch('/api/admin/countries/:countryCode/operators/:operatorId'"],
+    ["app.patch('/api/admin/countries/:countryCode/operators/:operatorId'", "app.patch('/api/admin/countries/:countryCode/products/:productId'"],
+    ["app.patch('/api/admin/countries/:countryCode/products/:productId'", "app.post('/api/admin/countries/:countryCode/validate'"],
+    ["app.post('/api/admin/countries/:countryCode/validate'", "app.post('/api/admin/countries/:countryCode/activate'"],
+    ["app.post('/api/admin/countries/:countryCode/activate'", "app.post('/api/admin/countries/:countryCode/disable'"],
+    ["app.post('/api/admin/countries/:countryCode/disable'", "// Customer APIs expose only active, reviewed country configuration."],
   ];
   for (const [start, end] of checks) assert.match(route(start, end), /legacy/, start + ' must protect legacy countries');
 });
