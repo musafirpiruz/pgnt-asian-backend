@@ -3136,6 +3136,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 /* Admin-page diagnostics: capture browser-side failures independently of the main admin script. */
 (function(){
   function report(message){
+    window.__pgntAdminDiagnosticLastError=message;
     var output=document.getElementById('result');
     if(output) output.textContent='Admin page diagnostic: '+message;
   }
@@ -3152,7 +3153,15 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
     if(button){
       var output=document.getElementById('result');
       if(output){
-        output.textContent='Admin page diagnostic: click received for "'+(button.textContent||button.id||'button').trim()+'". Waiting for action result.';
+        var clickMessage='Admin page diagnostic: click received for "'+(button.textContent||button.id||'button').trim()+'". Waiting for action result.';
+        output.textContent=clickMessage;
+        window.setTimeout(function(){
+          if(output.textContent===clickMessage){
+            output.textContent=window.__pgntAdminDiagnosticLastError
+              ? 'Admin page diagnostic: '+window.__pgntAdminDiagnosticLastError
+              : clickMessage+' No action handler updated the result.';
+          }
+        },0);
       }
     }
   },true);
