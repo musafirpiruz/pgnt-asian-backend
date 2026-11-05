@@ -102,7 +102,7 @@ test('country preflight requires provider, phone, operator, product, pricing, FX
   const route = server.slice(start, end);
   for (const check of [
     'provider_mapping_verified','phone_validation_configured','active_operator_available',
-    'active_product_available','country_pricing_active','destination_fx_fresh',
+    'active_product_available','operator_product_coverage','product_catalog_linkage','country_pricing_active','destination_fx_fresh',
     'localizations_complete','operator_localizations_complete','product_prices_valid',
   ]) assert.ok(route.includes(check), check);
   for (const language of ['en','ps','fa','ur','hi','bn']) assert.ok(route.includes(language), language);
@@ -129,6 +129,7 @@ test('customer catalog APIs only expose reviewed operators and products for acti
   const routes = server.slice(start, end);
   assert.match(routes, /status IN \('active','legacy'\)/);
   assert.match(routes, /active=TRUE/);
+  assert.match(routes, /verified_at IS NOT NULL/);
   assert.match(routes, /catalog_status='active'/);
   assert.match(routes, /verification_status='verified'/);
   assert.match(routes, /price_currency_verified=TRUE/);

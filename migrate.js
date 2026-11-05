@@ -1105,6 +1105,64 @@ async function runMigration() {
       console.log("Migration 022_country_currency_discovery is already applied.");
     }
 
+    // Version 023 repairs legacy country labels when earlier migrations
+    // inserted fallback or incorrect translations. It changes labels only.
+    const countryLocalizationRepairVersion = "023_repair_country_localizations";
+    const countryLocalizationRepairCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [countryLocalizationRepairVersion]
+    );
+    if (countryLocalizationRepairCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          INSERT INTO country_localizations
+            (country_code, language_code, display_name, is_fallback)
+          VALUES
+            ('AF','en','Afghanistan',FALSE),
+            ('AF','ps','افغانستان',FALSE),
+            ('AF','fa','افغانستان',FALSE),
+            ('AF','ur','افغانستان',FALSE),
+            ('AF','hi','अफ़ग़ानिस्तान',FALSE),
+            ('AF','bn','আফগানিস্তান',FALSE),
+            ('PK','en','Pakistan',FALSE),
+            ('PK','ps','پاکستان',FALSE),
+            ('PK','fa','پاکستان',FALSE),
+            ('PK','ur','پاکستان',FALSE),
+            ('PK','hi','पाकिस्तान',FALSE),
+            ('PK','bn','পাকিস্তান',FALSE),
+            ('IN','en','India',FALSE),
+            ('IN','ps','هند',FALSE),
+            ('IN','fa','هند',FALSE),
+            ('IN','ur','بھارت',FALSE),
+            ('IN','hi','भारत',FALSE),
+            ('IN','bn','ভারত',FALSE),
+            ('BD','en','Bangladesh',FALSE),
+            ('BD','ps','بنګله‌دېش',FALSE),
+            ('BD','fa','بنگلادیش',FALSE),
+            ('BD','ur','بنگلہ دیش',FALSE),
+            ('BD','hi','बांग्लादेश',FALSE),
+            ('BD','bn','বাংলাদেশ',FALSE)
+          ON CONFLICT (country_code, language_code)
+          DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            is_fallback = FALSE,
+            updated_at = NOW();
+
+          INSERT INTO schema_migrations(version)
+          VALUES ('023_repair_country_localizations')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 023_repair_country_localizations completed; only four-country labels were repaired.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 023_repair_country_localizations is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"

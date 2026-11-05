@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - feat/dynamic-country-onboarding
   workflow_dispatch:
 
 permissions:

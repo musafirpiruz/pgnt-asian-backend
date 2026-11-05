@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - main
+      - feat/dynamic-country-onboarding
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
