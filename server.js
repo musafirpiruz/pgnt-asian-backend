@@ -3151,7 +3151,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
     var button=event.target&&event.target.closest?event.target.closest('button'):null;
     if(button){
       var output=document.getElementById('result');
-      if(output && output.textContent==='Waiting for verification.'){
+      if(output){
         output.textContent='Admin page diagnostic: click received for "'+(button.textContent||button.id||'button').trim()+'". Waiting for action result.';
       }
     }
