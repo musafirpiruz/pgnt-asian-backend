@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PGNT ASIAN TOPUP — Country Onboarding</title>
+<style>
+:root{color-scheme:light;--red:#7a0c10;--gold:#d4b896;--ink:#292522;--muted:#6c625b;--bg:#f8f5f0;--card:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:linear-gradient(120deg,#450609,var(--red));color:#fff;padding:22px max(16px,calc((100vw - 1100px)/2))}
+header strong{color:#ffd700;letter-spacing:.6px}main{max-width:1100px;margin:22px auto;padding:0 16px}
+.panel{background:var(--card);border:1px solid var(--gold);border-radius:16px;padding:18px;margin:0 0 16px;box-shadow:0 4px 18px #291b100d}
+h1{font-size:22px;margin:0 0 5px}h2{font-size:18px;margin:0 0 12px;color:var(--red)}p.note{color:var(--muted);margin:4px 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+label{display:block;font-size:13px;font-weight:650;color:#514740}input,select{display:block;width:100%;margin-top:5px;padding:11px;border:1px solid #d8cfc5;border-radius:10px;font:inherit;background:white}
+button{border:0;border-radius:10px;background:var(--red);color:#ffd700;padding:11px 16px;font-weight:750;cursor:pointer;margin-top:12px}
+button.secondary{background:#eee7df;color:var(--ink)}button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.row label{flex:1;min-width:220px}
+.status{padding:10px 12px;border-radius:10px;background:#f2eee8;color:#514740;margin:10px 0;white-space:pre-wrap}
+.status.error{background:#fff0ef;color:#a11b17}.status.ok{background:#eaf7ed;color:#176b2c}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:10px;border-bottom:1px solid #eee6dd;vertical-align:top}th{color:#5d5148}
+.pill{display:inline-block;padding:3px 8px;border-radius:30px;background:#f2eee8;font-size:12px;font-weight:700}
+.warning{border-left:4px solid #b7791f;padding:10px 12px;background:#fff8e8;color:#694b13;border-radius:6px}
+@media(max-width:600px){main{margin:12px auto}.panel{padding:14px}th,td{padding:7px 5px;font-size:12px}}
+</style>
+</head>
+<body>
+<header><strong>PGNT ASIAN TOPUP</strong><div>Admin · Country & Operator Registry</div></header>
+<main>
+<section class="panel">
+<h1>Country onboarding</h1>
+<p class="note">Create draft country records and inactive mappings. This page cannot activate providers, products, checkout, or fulfillment.</p>
+<div class="row">
+<label>Admin API key<input id="adminKey" type="password" autocomplete="off" placeholder="Enter ADMIN_API_KEY for this session"></label>
+<button id="loadBtn" type="button">Load registry</button>
+</div>
+<div id="message" class="status" role="status">Enter the admin key to load the registry.</div>
+</section>
+<section class="panel">
+<h2>Registered countries</h2>
+<div style="overflow-x:auto"><table><thead><tr><th>Country</th><th>Currency</th><th>Calling code</th><th>Status</th><th>Operators</th><th>Products</th></tr></thead><tbody id="countriesBody"><tr><td colspan="6">Not loaded</td></tr></tbody></table></div>
+</section>
+<section class="panel">
+<h2>Create a draft country</h2>
+<div class="grid">
+<label>ISO country code<input id="countryCode" maxlength="2" placeholder="e.g. NP"></label>
+<label>Country name (English)<input id="countryName" maxlength="100" placeholder="Country name"></label>
+<label>Local currency (ISO 4217)<input id="currency" maxlength="3" placeholder="e.g. NPR"></label>
+<label>Calling code<input id="callingCode" maxlength="5" placeholder="+977"></label>
+<label>Minimum phone digits<input id="minDigits" type="number" min="4" max="15" value="10"></label>
+<label>Maximum phone digits<input id="maxDigits" type="number" min="4" max="15" value="10"></label>
+</div>
+<button id="createCountry" type="button">Create draft country</button>
+</section>
+<section class="panel">
+<h2>Discover official DT One operators</h2>
+<p class="note">Read-only lookup in the configured DT One environment. Results are candidates only; saving below creates an inactive mapping.</p>
+<div class="row">
+<label>Destination country<select id="discoverOperatorCountry">
+<option value="AFG">Afghanistan (AFG)</option><option value="PAK">Pakistan (PAK)</option>
+<option value="IND">India (IND)</option><option value="BGD">Bangladesh (BGD)</option>
+</select></label>
+<button id="discoverOperators" type="button">Discover DT One operators</button>
+</div>
+<div id="operatorDiscovery" class="status">No provider lookup has been run.</div>
+<div class="grid">
+<label>Verified operator result<select id="discoveredOperator"><option value="">Run discovery first</option></select></label>
+<label>Country registry<select id="operatorCountry"><option value="">Load countries first</option></select></label>
+<label>Operator key<input id="operatorKey" maxlength="60" placeholder="operator_key"></label>
+<label>Display name<input id="operatorName" maxlength="120" placeholder="Operator name"></label>
+<label>Verified provider operator ID<input id="operatorProviderId" maxlength="120" placeholder="DT One operator ID" readonly></label>
+</div>
+<button id="createOperator" type="button">Save selected operator as inactive</button>
+</section>
+<section class="panel">
+<h2>Read-only DT One product discovery</h2>
+<p class="note">Inspect candidate airtime products for the selected destination country. This does not import or activate products.</p>
+<div class="row">
+<label>Destination country<select id="discoverProductCountry">
+<option value="AFG">Afghanistan (AFG)</option><option value="PAK">Pakistan (PAK)</option>
+<option value="IND">India (IND)</option><option value="BGD">Bangladesh (BGD)</option>
+</select></label>
+<label>Operator name filter<input id="productOperator" placeholder="e.g. ROSHAN, AWCC, JAZZ"></label>
+<label>Amount filter (optional)<input id="productAmount" type="number" min="0" step="any" placeholder="e.g. 100"></label>
+<button id="discoverProducts" type="button">Find DT One products</button>
+</div>
+<div id="productDiscovery" class="status">No product lookup has been run.</div>
+<div style="overflow-x:auto"><table><thead><tr><th>Product ID</th><th>Name</th><th>Operator</th><th>Amount / Benefit</th><th>Country</th></tr></thead><tbody id="productsBody"><tr><td colspan="5">No results</td></tr></tbody></table></div>
+</section>
+<section class="panel">
+<h2>Add a disabled provider-country mapping</h2>
+<div class="grid">
+<label>Country<select id="providerCountry"><option value="">Load countries first</option></select></label>
+<label>Provider code<input id="providerCode" value="DTONE" maxlength="32"></label>
+<label>Verified provider country code<input id="providerCountryCode" maxlength="32" placeholder="DT One country code"></label>
+</div>
+<button id="createProvider" type="button">Save disabled provider mapping</button>
+</section>
+<section class="panel">
+<div class="warning"><strong>Safety:</strong> new countries stay draft, operator mappings stay inactive, and provider mappings stay disabled. Verify operator IDs, products, FX and pricing, and complete a separate preflight before any activation. Never paste Stripe or DT One secret keys here.</div>
+</section>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let countryRows = [];
+  const message = (text, kind='') => {
+    const box = $('message'); box.textContent = text; box.className = 'status' + (kind ? ' ' + kind : '');
+  };
+  const key = () => $('adminKey').value.trim();
+  async function api(path, options={}) {
+    if (!key()) throw new Error('Enter the Admin API key first.');
+    const response = await fetch(path, {
+      ...options,
+      headers: {
+        'Accept':'application/json',
+        'Content-Type':'application/json',
+        'x-admin-api-key':key(),
+        ...(options.headers || {})
+      }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+    return data;
+  }
+  function fillCountrySelect(id) {
+    const select = $(id); select.replaceChildren();
+    countryRows.forEach(row => {
+      const option = document.createElement('option');
+      option.value = String(row.code).trim();
+      option.textContent = String(row.code).trim() + ' — ' + row.name_en + ' (' + row.status + ')';
+      select.append(option);
+    });
+  }
+  function renderCountries() {
+    const body = $('countriesBody'); body.replaceChildren();
+    if (!countryRows.length) {
+      const row=document.createElement('tr'), cell=document.createElement('td');
+      cell.colSpan=6; cell.textContent='No countries returned'; row.append(cell); body.append(row); return;
+    }
+    countryRows.forEach(country => {
+      const row=document.createElement('tr');
+      [String(country.code).trim()+' — '+country.name_en,country.local_currency,country.calling_code || '—',country.status,country.operator_count,country.catalog_product_count].forEach((value,index)=>{
+        const cell=document.createElement('td');
+        if(index===3){const pill=document.createElement('span');pill.className='pill';pill.textContent=value;cell.append(pill);}
+        else cell.textContent=value == null ? '—' : String(value);
+        row.append(cell);
+      });
+      body.append(row);
+    });
+  }
+  async function load() {
+    try {
+      message('Loading country registry…');
+      const data=await api('/api/admin/countries');
+      countryRows=Array.isArray(data.countries)?data.countries:[];
+      renderCountries(); fillCountrySelect('operatorCountry'); fillCountrySelect('providerCountry');
+      message('Registry loaded. Draft and inactive states are preserved.','ok');
+    } catch(error) { message(error.message,'error'); }
+  }
+  $('loadBtn').addEventListener('click',load);
+  $('createCountry').addEventListener('click',async()=>{
+    try {
+      message('Creating draft country…');
+      const data=await api('/api/admin/countries',{method:'POST',body:JSON.stringify({
+        code:$('countryCode').value.trim().toUpperCase(),
+        name_en:$('countryName').value.trim(),
+        local_currency:$('currency').value.trim().toUpperCase(),
+        calling_code:$('callingCode').value.trim(),
+        phone_min_digits:Number($('minDigits').value),
+        phone_max_digits:Number($('maxDigits').value)
+      })});
+      message('Draft country created: '+data.country.code+'. Activation: '+data.activationPerformed+'.','ok');
+      await load();
+    } catch(error) { message(error.message,'error'); }
+  });
+  let discoveredOperators = [];
+  $('discoverOperators').addEventListener('click',async()=>{
+    try {
+      const country=$('discoverOperatorCountry').value;
+      message('Reading verified DT One operator list for '+country+'…');
+      const data=await api('/api/admin/dtone/operators?country_iso_code='+encodeURIComponent(country));
+      if(!data.verified) throw new Error(data.error || 'DT One operator lookup was not verified.');
+      discoveredOperators=Array.isArray(data.operators)?data.operators:[];
+      const select=$('discoveredOperator'); select.replaceChildren();
+      discoveredOperators.forEach(item=>{
+        const option=document.createElement('option');
+        option.value=String(item.id); option.textContent=item.name+' (ID '+item.id+')';
+        select.append(option);
+      });
+      $('operatorDiscovery').textContent='Verified read-only response: '+data.operatorCount+' operators; pages checked: '+data.pagesChecked+'. Complete: '+data.complete+'. No provider mapping was activated.';
+      $('operatorDiscovery').className='status ok';
+      if(discoveredOperators.length) select.dispatchEvent(new Event('change'));
+    } catch(error) {
+      $('operatorDiscovery').textContent=error.message;
+      $('operatorDiscovery').className='status error';
+      message(error.message,'error');
+    }
+  });
+  $('discoveredOperator').addEventListener('change',()=>{
+    const item=discoveredOperators.find(x=>String(x.id)===$('discoveredOperator').value);
+    if(!item) return;
+    $('operatorName').value=item.name;
+    $('operatorProviderId').value=String(item.id);
+    $('operatorKey').value=item.name.toLowerCase().normalize('NFKD')
+      .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,60);
+    const map={AFG:'AF',PAK:'PK',IND:'IN',BGD:'BD'};
+    $('operatorCountry').value=map[$('discoverOperatorCountry').value] || '';
+  });
+  $('discoverProducts').addEventListener('click',async()=>{
+    try {
+      const params=new URLSearchParams({country_iso_code:$('discoverProductCountry').value});
+      if($('productOperator').value.trim()) params.set('operator',$('productOperator').value.trim());
+      if($('productAmount').value.trim()) params.set('amount',$('productAmount').value.trim());
+      message('Reading DT One product candidates…');
+      const data=await api('/api/admin/dtone/products?'+params.toString());
+      if(!data.verified) throw new Error(data.error || 'DT One product lookup was not verified.');
+      const body=$('productsBody'); body.replaceChildren();
+      (data.products||[]).forEach(product=>{
+        const row=document.createElement('tr');
+        const operator=product.operator?.name || 'Unknown';
+        const amount=product.benefits?.map(b=>b.amount?.total_excluding_tax ?? b.amount?.base).filter(x=>x!=null).join(', ')
+          || product.destination?.amount || product.amount?.base || '—';
+        [product.id,product.name,operator,amount,product.operator?.country?.iso_code || data.countryIsoCode].forEach(value=>{
+          const cell=document.createElement('td'); cell.textContent=String(value ?? '—'); row.append(cell);
+        });
+        body.append(row);
+      });
+      $('productDiscovery').textContent='Verified read-only response: '+data.resultCount+' candidate products; pages checked: '+data.providerPagesChecked+'. Complete: '+data.complete+'. No catalog records or activations changed.';
+      $('productDiscovery').className='status ok';
+      message('DT One product discovery completed safely.','ok');
+    } catch(error) {
+      $('productDiscovery').textContent=error.message;
+      $('productDiscovery').className='status error';
+      message(error.message,'error');
+    }
+  });
+  $('createOperator').addEventListener('click',async()=>{
+    try {
+      const code=$('operatorCountry').value;
+      if(!code) throw new Error('Select a country first.');
+      message('Saving inactive operator mapping…');
+      const data=await api('/api/admin/countries/'+encodeURIComponent(code)+'/operators',{method:'POST',body:JSON.stringify({
+        operator_key:$('operatorKey').value.trim().toLowerCase(),
+        display_name:$('operatorName').value.trim(),
+        provider_operator_id:$('operatorProviderId').value.trim()
+      })});
+      message('Operator saved. Active: '+data.operator.active+'. No activation performed.','ok');
+      await load();
+    } catch(error) { message(error.message,'error'); }
+  });
+  $('createProvider').addEventListener('click',async()=>{
+    try {
+      const code=$('providerCountry').value;
+      if(!code) throw new Error('Select a country first.');
+      message('Saving disabled provider mapping…');
+      const data=await api('/api/admin/countries/'+encodeURIComponent(code)+'/providers',{method:'POST',body:JSON.stringify({
+        provider_code:$('providerCode').value.trim().toUpperCase(),
+        provider_country_code:$('providerCountryCode').value.trim().toUpperCase()
+      })});
+      message('Provider mapping saved. Enabled: '+data.provider.enabled+'. No fulfillment activation performed.','ok');
+      await load();
+    } catch(error) { message(error.message,'error'); }
+  });
+})();
+</script>
+</body>
+</html>
