@@ -2,11 +2,18 @@
 
 This implementation is developed in PR #204 and is not production-enabled until the PR checks, review, and deployment verification pass.
 
+
+
+## Checkout and fulfillment
+
+- Customer price quotes and checkout resolve reviewed dynamic `country_products` first, with the legacy `product_catalog` path retained as fallback.
+- Dynamic lookup requires an active country/operator, verified provider mapping and price currency, matching destination currency, and a non-loss-making EUR retail price.
+- Checkout and paid-order fulfillment recheck the product ID together with country, operator, and denomination before using the saved DT One provider product ID.
 ## Workflow
 
-1. Create a country as `draft`.
-2. Discover DT One countries using the read-only provider country endpoint.
-3. Discover the country’s ISO 4217 currency candidates from country metadata; explicitly confirm the destination currency (never guess when multiple currencies are returned).
+1. Discover the country’s ISO 4217 currency candidates from country metadata before draft creation; select the intended destination denomination explicitly (never guess when multiple currencies are returned).
+2. Create the country as `draft` with the selected currency; store the metadata source and require administrator confirmation.
+3. Discover DT One countries using the read-only provider country endpoint.
 4. Verify an explicit ISO alpha-2 to DT One alpha-3 mapping against the provider response.
 5. Discover and verify the complete provider product list and every product detail.
 6. Refresh settlement and destination currency rates from Frankfurter v2. The rate is stored with source, observed date, and a five-day expiry. A failed refresh preserves the prior saved quote; an expired quote is not used for new pricing.

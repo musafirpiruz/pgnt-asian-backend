@@ -708,6 +708,403 @@ async function runMigration() {
       console.log("Migration 016_payment_currency_settings is already applied.");
     }
 
+
+    // Version 017 introduces the additive, database-backed country onboarding registry.
+    const countryRegistryVersion = "017_dynamic_country_registry";
+    const countryRegistryCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [countryRegistryVersion]
+    );
+    if (countryRegistryCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_registry (
+            country_code CHAR(2) PRIMARY KEY CHECK (country_code ~ '^[A-Z]{2}$'),
+            country_name VARCHAR(120) NOT NULL,
+            destination_currency CHAR(3) NOT NULL CHECK (destination_currency ~ '^[A-Z]{3}$'),
+            calling_code VARCHAR(8),
+            phone_min_digits SMALLINT,
+            phone_max_digits SMALLINT,
+            provider VARCHAR(32) NOT NULL DEFAULT 'dtone',
+            provider_country_code VARCHAR(8),
+            status VARCHAR(20) NOT NULL DEFAULT 'draft'
+              CHECK (status IN ('draft','configuring','testing','active','disabled','legacy')),
+            configuration_version INTEGER NOT NULL DEFAULT 1 CHECK (configuration_version > 0),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (
+              (phone_min_digits IS NULL AND phone_max_digits IS NULL)
+              OR (phone_min_digits BETWEEN 1 AND 15 AND phone_max_digits BETWEEN phone_min_digits AND 15)
+            )
+          );
+
+          CREATE TABLE IF NOT EXISTS country_localizations (
+            country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            language_code VARCHAR(8) NOT NULL,
+            display_name VARCHAR(120) NOT NULL,
+            is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (country_code, language_code)
+          );
+
+          CREATE TABLE IF NOT EXISTS country_provider_mappings (
+            country_code CHAR(2) PRIMARY KEY REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            provider VARCHAR(32) NOT NULL,
+            provider_country_code VARCHAR(8) NOT NULL,
+            verified_at TIMESTAMPTZ,
+            verification_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+              CHECK (verification_status IN ('pending','verified','rejected')),
+            diagnostics JSONB NOT NULL DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (provider, provider_country_code)
+          );
+
+          CREATE TABLE IF NOT EXISTS country_operators (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            provider VARCHAR(32) NOT NULL DEFAULT 'dtone',
+            provider_operator_id VARCHAR(80) NOT NULL,
+            operator_key VARCHAR(100) NOT NULL,
+            display_name VARCHAR(120) NOT NULL,
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            verified_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (country_code, provider, provider_operator_id),
+            UNIQUE (country_code, operator_key)
+          );
+
+          CREATE TABLE IF NOT EXISTS country_operator_prefixes (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
+            prefix VARCHAR(20) NOT NULL,
+            priority SMALLINT NOT NULL DEFAULT 100,
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            UNIQUE (country_code, prefix, operator_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_operator_prefix_lookup
+            ON country_operator_prefixes(country_code, prefix) WHERE active = TRUE;
+
+          CREATE TABLE IF NOT EXISTS country_products (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
+            provider VARCHAR(32) NOT NULL DEFAULT 'dtone',
+            provider_product_id VARCHAR(100) NOT NULL,
+            denomination NUMERIC(18,4) NOT NULL CHECK (denomination > 0),
+            destination_currency CHAR(3) NOT NULL,
+            wholesale_amount NUMERIC(18,6),
+            wholesale_currency CHAR(3),
+            wholesale_eur_cents INTEGER,
+            retail_eur_cents INTEGER,
+            price_currency_verified BOOLEAN NOT NULL DEFAULT FALSE,
+            verification_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+              CHECK (verification_status IN ('pending','verified','rejected')),
+            catalog_status VARCHAR(20) NOT NULL DEFAULT 'disabled'
+              CHECK (catalog_status IN ('disabled','review','active','retired')),
+            provider_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            verified_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (provider, provider_product_id),
+            CHECK (
+              catalog_status <> 'active'
+              OR (verification_status = 'verified' AND price_currency_verified = TRUE
+                  AND wholesale_eur_cents > 0 AND retail_eur_cents > 0)
+            )
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_products_country_status
+            ON country_products(country_code, catalog_status);
+
+          CREATE TABLE IF NOT EXISTS country_fx_rates (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            base_currency CHAR(3) NOT NULL DEFAULT 'EUR',
+            quote_currency CHAR(3) NOT NULL,
+            quote_per_base NUMERIC(20,8) NOT NULL CHECK (quote_per_base > 0),
+            source VARCHAR(80) NOT NULL,
+            source_reference TEXT,
+            observed_at TIMESTAMPTZ NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (base_currency = 'EUR'),
+            CHECK (expires_at > observed_at)
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_fx_rates_latest
+            ON country_fx_rates(country_code, quote_currency, observed_at DESC);
+
+          CREATE TABLE IF NOT EXISTS country_sync_runs (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) REFERENCES country_registry(country_code) ON DELETE SET NULL,
+            provider VARCHAR(32) NOT NULL,
+            run_type VARCHAR(32) NOT NULL,
+            status VARCHAR(20) NOT NULL CHECK (status IN ('running','succeeded','partial','failed','cancelled')),
+            pages_read INTEGER NOT NULL DEFAULT 0,
+            items_seen INTEGER NOT NULL DEFAULT 0,
+            items_verified INTEGER NOT NULL DEFAULT 0,
+            items_rejected INTEGER NOT NULL DEFAULT 0,
+            diagnostics JSONB NOT NULL DEFAULT '{}'::jsonb,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMPTZ
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_sync_runs_country_time
+            ON country_sync_runs(country_code, started_at DESC);
+
+          CREATE TABLE IF NOT EXISTS country_activation_checks (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            configuration_version INTEGER NOT NULL,
+            check_name VARCHAR(80) NOT NULL,
+            status VARCHAR(12) NOT NULL CHECK (status IN ('pass','warn','fail')),
+            details JSONB NOT NULL DEFAULT '{}'::jsonb,
+            checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_activation_checks_latest
+            ON country_activation_checks(country_code, configuration_version, checked_at DESC);
+
+          CREATE TABLE IF NOT EXISTS country_configuration_audit (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE RESTRICT,
+            actor VARCHAR(160) NOT NULL DEFAULT 'system',
+            action VARCHAR(80) NOT NULL,
+            configuration_version INTEGER NOT NULL,
+            before_state JSONB,
+            after_state JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_configuration_audit_country_time
+            ON country_configuration_audit(country_code, created_at DESC);
+
+          INSERT INTO country_registry
+            (country_code,country_name,destination_currency,calling_code,phone_min_digits,phone_max_digits,provider,provider_country_code,status)
+          VALUES
+            ('AF','Afghanistan','AFN','+93',9,9,'dtone','AFG','legacy'),
+            ('PK','Pakistan','PKR','+92',10,10,'dtone','PAK','legacy'),
+            ('IN','India','INR','+91',10,10,'dtone','IND','legacy'),
+            ('BD','Bangladesh','BDT','+880',10,10,'dtone','BGD','legacy')
+          ON CONFLICT (country_code) DO NOTHING;
+
+          INSERT INTO country_provider_mappings
+            (country_code,provider,provider_country_code,verification_status)
+          VALUES
+            ('AF','dtone','AFG','pending'),
+            ('PK','dtone','PAK','pending'),
+            ('IN','dtone','IND','pending'),
+            ('BD','dtone','BGD','pending')
+          ON CONFLICT (country_code) DO NOTHING;
+
+          INSERT INTO country_localizations (country_code,language_code,display_name)
+          VALUES
+            ('AF','ps','افغانستان'),('AF','fa','افغانستان'),('AF','en','Afghanistan'),('AF','ur','افغانستان'),('AF','hi','अफ़ग़ानिस्तान'),('AF','bn','আফগানিস্তান'),
+            ('PK','ps','پاکستان'),('PK','fa','پاکستان'),('PK','en','Pakistan'),('PK','ur','پاکستان'),('PK','hi','पाकिस्तान'),('PK','bn','পাকিস্তান'),
+            ('IN','ps','هند'),('IN','fa','هند'),('IN','en','India'),('IN','ur','بھارت'),('IN','hi','भारत'),('IN','bn','ভারত'),
+            ('BD','ps','بنګله دېش'),('BD','fa','بنگلادش'),('BD','en','Bangladesh'),('BD','ur','بنگلہ دیش'),('BD','hi','बांग्लादेश'),('BD','bn','বাংলাদেশ')
+          ON CONFLICT (country_code,language_code) DO NOTHING;
+
+          INSERT INTO schema_migrations (version)
+          VALUES ('017_dynamic_country_registry')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 017_dynamic_country_registry completed; existing pricing and catalog data were not changed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 017_dynamic_country_registry is already applied.");
+    }
+
+    // Version 018 adds auditable EUR-base rates for provider settlement currencies.
+    const globalFxVersion = "018_global_provider_currency_fx";
+    const globalFxCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [globalFxVersion]
+    );
+    if (globalFxCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS fx_currency_rates (
+            currency CHAR(3) PRIMARY KEY CHECK (currency ~ '^[A-Z]{3}$'),
+            units_per_eur NUMERIC(20,8) NOT NULL CHECK (units_per_eur > 0),
+            source VARCHAR(80) NOT NULL,
+            source_reference TEXT,
+            observed_at TIMESTAMPTZ NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (currency <> 'EUR' OR units_per_eur = 1),
+            CHECK (expires_at > observed_at)
+          );
+          CREATE TABLE IF NOT EXISTS fx_currency_rate_history (
+            id BIGSERIAL PRIMARY KEY,
+            currency CHAR(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+            units_per_eur NUMERIC(20,8),
+            source VARCHAR(80) NOT NULL,
+            source_reference TEXT,
+            observed_at TIMESTAMPTZ NOT NULL,
+            fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            accepted BOOLEAN NOT NULL DEFAULT FALSE,
+            rejection_reason TEXT,
+            CHECK ((accepted = TRUE AND units_per_eur > 0) OR (accepted = FALSE AND units_per_eur IS NULL))
+          );
+          CREATE INDEX IF NOT EXISTS idx_fx_currency_history_currency_time
+            ON fx_currency_rate_history(currency, observed_at DESC);
+          INSERT INTO fx_currency_rates
+            (currency,units_per_eur,source,source_reference,observed_at,expires_at)
+          VALUES ('EUR',1,'base-currency','EUR base',NOW(),NOW()+INTERVAL '36500 days')
+          ON CONFLICT (currency) DO NOTHING;
+          INSERT INTO schema_migrations (version)
+          VALUES ('018_global_provider_currency_fx')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 018_global_provider_currency_fx completed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 018_global_provider_currency_fx is already applied.");
+    }
+
+    // Version 019 adds per-country EUR pricing controls, disabled by default.
+    const countryPricingVersion = "019_country_pricing_settings";
+    const countryPricingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [countryPricingVersion]
+    );
+    if (countryPricingCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_pricing_settings (
+            country_code CHAR(2) PRIMARY KEY REFERENCES country_registry(country_code) ON DELETE RESTRICT,
+            fee_eur_cents INTEGER NOT NULL DEFAULT 0 CHECK (fee_eur_cents >= 0 AND fee_eur_cents <= 100000),
+            fee_percent NUMERIC(7,4) NOT NULL DEFAULT 0 CHECK (fee_percent >= 0 AND fee_percent <= 100),
+            stripe_fee_percent NUMERIC(6,3) NOT NULL DEFAULT 1.500 CHECK (stripe_fee_percent >= 0 AND stripe_fee_percent < 100),
+            stripe_fixed_fee_cents INTEGER NOT NULL DEFAULT 25 CHECK (stripe_fixed_fee_cents >= 0),
+            min_customer_price_eur_cents INTEGER NOT NULL DEFAULT 1 CHECK (min_customer_price_eur_cents > 0),
+            max_customer_price_eur_cents INTEGER NOT NULL DEFAULT 1000000 CHECK (max_customer_price_eur_cents >= min_customer_price_eur_cents),
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            updated_by VARCHAR(160) NOT NULL DEFAULT 'system',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          INSERT INTO schema_migrations (version)
+          VALUES ('019_country_pricing_settings')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 019_country_pricing_settings completed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 019_country_pricing_settings is already applied.");
+    }
+
+
+    // Version 020 stores localized operator display names separately from provider names.
+    const operatorLocalizationVersion = "020_country_operator_localizations";
+    const operatorLocalizationCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [operatorLocalizationVersion]
+    );
+    if (operatorLocalizationCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_operator_localizations (
+            operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
+            language_code VARCHAR(8) NOT NULL,
+            display_name VARCHAR(120) NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (operator_id,language_code)
+          );
+          INSERT INTO schema_migrations (version)
+          VALUES ('020_country_operator_localizations')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 020_country_operator_localizations completed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 020_country_operator_localizations is already applied.");
+    }
+
+
+    // Version 021 removes the original four-country restriction from operator fees.
+    const operatorPricingRegistryVersion = "021_dynamic_operator_pricing_countries";
+    const operatorPricingRegistryCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [operatorPricingRegistryVersion]
+    );
+    if (operatorPricingRegistryCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE operator_pricing_settings
+            DROP CONSTRAINT IF EXISTS operator_pricing_settings_country_check;
+          ALTER TABLE operator_pricing_settings
+            ADD CONSTRAINT operator_pricing_settings_country_iso2_check
+            CHECK (country ~ '^[A-Z]{2}$');
+          INSERT INTO schema_migrations (version)
+          VALUES ('021_dynamic_operator_pricing_countries')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 021_dynamic_operator_pricing_countries completed; existing operator fee rows were preserved.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 021_dynamic_operator_pricing_countries is already applied.");
+    }
+
+    // Version 022 stores discovered country currency candidates and explicit admin confirmation.
+    const countryCurrencyDiscoveryVersion = "022_country_currency_discovery";
+    const countryCurrencyDiscoveryCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [countryCurrencyDiscoveryVersion]
+    );
+    if (countryCurrencyDiscoveryCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_currency_discoveries (
+            country_code CHAR(2) PRIMARY KEY REFERENCES country_registry(country_code) ON DELETE CASCADE,
+            currencies JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(currencies) = 'array'),
+            source VARCHAR(80) NOT NULL,
+            source_reference TEXT NOT NULL,
+            observed_at TIMESTAMPTZ NOT NULL,
+            selected_currency CHAR(3),
+            selected_at TIMESTAMPTZ,
+            selection_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+              CHECK (selection_status IN ('pending','confirmed')),
+            CHECK (selected_currency IS NULL OR selected_currency ~ '^[A-Z]{3}$')
+          );
+          INSERT INTO schema_migrations (version)
+          VALUES ('022_country_currency_discovery')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 022_country_currency_discovery completed.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 022_country_currency_discovery is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
