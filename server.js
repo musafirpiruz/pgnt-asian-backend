@@ -1680,7 +1680,8 @@ async function processPaidStripeSession(session) {
   let product = await pool.query(
     `SELECT p.provider_product_id AS dtone_product_id,
             BTRIM(p.country_code) AS country,
-            BTRIM(p.destination_currency) AS currency
+            BTRIM(p.destination_currency) AS currency,
+            o.display_name AS operator, p.denomination AS amount
      FROM country_products p
      JOIN country_operators o ON o.id = p.operator_id
      JOIN country_registry c ON c.country_code = p.country_code
@@ -1699,17 +1700,21 @@ async function processPaidStripeSession(session) {
   );
   if (product.rowCount === 0) {
     product = await pool.query(
-      `SELECT product_id AS dtone_product_id, country, currency
+      `SELECT product_id AS dtone_product_id, country, currency, operator, amount
        FROM product_catalog
-       WHERE id = $1 AND (active = TRUE OR $2::boolean = TRUE)
+       WHERE id = $1 AND country = $3
+         AND LOWER(operator) = LOWER($4) AND amount = $5
+         AND (active = TRUE OR $2::boolean = TRUE)
        LIMIT 1`,
-      [order.product_id, sandboxOrderIsSafe]
+      [order.product_id, sandboxOrderIsSafe, order.country, order.operator, order.amount]
     );
   }
 
   if (
     product.rowCount !== 1 ||
     product.rows[0].country !== order.country ||
+    String(product.rows[0].operator || '').trim().toLowerCase() !== String(order.operator || '').trim().toLowerCase() ||
+    Number(product.rows[0].amount) !== Number(order.amount) ||
     product.rows[0].currency !==
       countryCurrency(order.country) ||
     (isSandboxOrder && Number(product.rows[0].dtone_product_id) !== 7194)
