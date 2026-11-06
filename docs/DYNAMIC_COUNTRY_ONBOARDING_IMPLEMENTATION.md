@@ -2,6 +2,13 @@
 
 This implementation is developed in PR #204 and is not production-enabled until the PR checks, review, and deployment verification pass.
 
+
+
+## Checkout and fulfillment
+
+- Customer price quotes and checkout resolve reviewed dynamic `country_products` first, with the legacy `product_catalog` path retained as fallback.
+- Dynamic lookup requires an active country/operator, verified provider mapping and price currency, matching destination currency, and a non-loss-making EUR retail price.
+- Checkout and paid-order fulfillment recheck the product ID together with country, operator, and denomination before using the saved DT One provider product ID.
 ## Workflow
 
 1. Discover the country’s ISO 4217 currency candidates from country metadata before draft creation; select the intended destination denomination explicitly (never guess when multiple currencies are returned).
