@@ -1651,7 +1651,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   String _currencySymbol(String currency) {
     const symbols = <String, String>{
       'AFN': '؋', 'PKR': 'Rs', 'INR': '₹', 'BDT': '৳',
-      'EUR': '€', 'USD': '
+      'EUR': '€', 'USD': '$', 'GBP': '£',
     };
     return symbols[currency.toUpperCase()] ?? currency.toUpperCase();
   }
