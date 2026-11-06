@@ -55,3 +55,10 @@ test('response confirms no new top-up was created or retried', () => {
   assert.match(route, /topupCreated: false/);
   assert.match(route, /topupRetried: false/);
 });
+
+test('admin page exposes an explicit sandbox-only reconciliation control', () => {
+  assert.match(server, /id="confirmDtOneReconcile"/);
+  assert.match(server, /id="reconcileDtOneStatus"/);
+  assert.match(server, /confirmReconcile:true/);
+  assert.match(server, /\/api\/admin\/dtone\/reconcile-status/);
+});
