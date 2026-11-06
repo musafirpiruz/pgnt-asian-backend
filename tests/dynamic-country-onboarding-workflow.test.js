@@ -293,4 +293,7 @@ test('dynamic product checkout requires active country, operator, verified prici
   assert.ok(lookup.includes('o.active = TRUE'));
   assert.ok(lookup.includes('p.wholesale_eur_cents > 0'));
   assert.ok(lookup.includes('p.retail_eur_cents > 0'));
+  assert.ok(lookup.includes('BTRIM(p.destination_currency) = BTRIM(c.destination_currency)'));
+  assert.ok(lookup.includes("p.provider = 'dtone'"));
+  assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
 });
