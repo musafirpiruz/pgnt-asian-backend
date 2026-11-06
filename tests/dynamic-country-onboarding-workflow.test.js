@@ -307,4 +307,7 @@ test('paid-order fulfillment resolves dynamic products only with matching order 
   assert.ok(lookup.includes('p.id = $1 AND p.country_code = $2'));
   assert.ok(lookup.includes('LOWER(o.display_name) = LOWER($3) AND p.denomination = $4'));
   assert.ok(lookup.includes('FROM product_catalog'));
+  assert.ok(lookup.includes('LOWER(operator) = LOWER($4) AND amount = $5'));
+  assert.ok(lookup.includes("String(product.rows[0].operator || '').trim().toLowerCase()"));
+  assert.ok(lookup.includes('Number(product.rows[0].amount) !== Number(order.amount)'));
 });
