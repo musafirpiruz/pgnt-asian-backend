@@ -2088,7 +2088,7 @@ app.post('/api/admin/dtone/reconcile-status', requireAdmin, async (req, res) => 
     if ((!saved.paid_at || !saved.stripe_payment_intent_id) && !isIsolatedSandbox) {
       return res.status(409).json({ error: 'Verified Stripe payment evidence is required.' });
     }
-    if (!saved.dtone_transaction_id || !/^\\d+$/.test(String(saved.dtone_transaction_id))) {
+    if (!saved.dtone_transaction_id || !/^\d+$/.test(String(saved.dtone_transaction_id))) {
       return res.status(409).json({ error: 'Saved DT One transaction ID is missing or invalid.' });
     }
 
