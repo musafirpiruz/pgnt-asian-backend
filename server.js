@@ -663,6 +663,7 @@ async function getProduct(client, productId, requestedCountry = null, operator =
        JOIN country_operators o ON o.id = p.operator_id
        JOIN country_registry c ON c.country_code = p.country_code
        WHERE c.status IN ('active','legacy')
+         AND p.country_code = $2
          AND BTRIM(p.destination_currency) = BTRIM(c.destination_currency)
          AND o.active = TRUE AND p.provider = 'dtone'
          AND p.catalog_status = 'active'
