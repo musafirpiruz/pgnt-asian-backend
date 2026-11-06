@@ -2173,7 +2173,7 @@ app.post('/api/admin/dtone/reconcile-status', requireAdmin, async (req, res) => 
            failed_at = CASE WHEN $4 = 'failed' THEN COALESCE(failed_at, NOW()) ELSE failed_at END,
            updated_at = NOW()
        WHERE order_id = $5`,
-      [nextStatus, storedStatus.slice(0, 80), JSON.stringify(transaction), providerStatus, orderId]
+      [nextStatus, storedStatus.slice(0, 80), JSON.stringify({ id: transaction.id, external_id: transaction.external_id, status: transaction.status, creation_date: transaction.creation_date ?? null, confirmation_date: transaction.confirmation_date ?? null }), providerStatus, orderId]
     );
     await client.query('COMMIT');
     return res.status(200).json({
