@@ -282,7 +282,7 @@ test('dynamic country products resolve through the verified country catalog and 
   assert.ok(lookup.includes('p.price_currency_verified = TRUE'));
   assert.ok(lookup.includes('Selected operator does not match product.'));
   assert.ok(lookup.includes('Selected amount does not match product.'));
-  assert.ok(server.includes("cp_[1-9]"));
+  assert.ok(server.includes("cp_([1-9]"));
 });
 
 test('dynamic product checkout requires active country, operator, verified pricing and wholesale cost', () => {
