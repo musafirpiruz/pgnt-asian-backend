@@ -296,3 +296,14 @@ test('dynamic product checkout requires active country, operator, verified prici
   assert.ok(lookup.includes("p.provider = 'dtone'"));
   assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
 });
+
+test('paid-order fulfillment resolves dynamic products only with matching order identity', () => {
+  const start = server.indexOf('// Re-read trusted product information. Dynamic catalog rows are preferred');
+  const end = server.indexOf('if (product.rowCount === 0)', start);
+  assert.ok(start >= 0 && end > start);
+  const lookup = server.slice(start, end + 1600);
+  assert.ok(lookup.includes('FROM country_products p'));
+  assert.ok(lookup.includes('p.id = $1 AND p.country_code = $2'));
+  assert.ok(lookup.includes('LOWER(o.display_name) = LOWER($3) AND p.denomination = $4'));
+  assert.ok(lookup.includes('FROM product_catalog'));
+});
