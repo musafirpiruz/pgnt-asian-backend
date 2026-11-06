@@ -62,3 +62,13 @@ test('admin page exposes an explicit sandbox-only reconciliation control', () =>
   assert.match(server, /confirmReconcile:true/);
   assert.match(server, /\/api\/admin\/dtone\/reconcile-status/);
 });
+
+
+test('numeric DT One transaction IDs are accepted and nonnumeric IDs are rejected', () => {
+  const numericIdGuard = "!/^\\d+$/.test(String(saved.dtone_transaction_id))";
+  assert.ok(route.includes(numericIdGuard), 'route must use a single-backslash decimal digit regex');
+  const transactionIdPattern = /^\d+$/;
+  assert.equal(transactionIdPattern.test('2240961013'), true);
+  assert.equal(transactionIdPattern.test('2240961013x'), false);
+  assert.equal(transactionIdPattern.test(''), false);
+});
