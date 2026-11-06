@@ -269,7 +269,7 @@ test('USD currency fallback renders a plain dollar sign', () => {
   assert.equal(match[1], '$');
 });
 
-test('dynamic country products resolve through the verified country catalog and retain namespaced IDs', () => {
+test('dynamic country products resolve through the verified country catalog using order-compatible IDs', () => {
   const start = server.indexOf('async function getProduct(');
   const end = server.indexOf('// Calculate the final customer price.', start);
   assert.ok(start >= 0 && end > start);
@@ -291,7 +291,8 @@ test('dynamic product checkout requires active country, operator, verified prici
   assert.ok(lookup.includes("c.status IN ('active','legacy')"));
   assert.ok(lookup.includes('o.active = TRUE'));
   assert.ok(lookup.includes('p.wholesale_eur_cents > 0'));
-  assert.ok(lookup.includes('p.retail_eur_cents > 0'));
+  assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
+  assert.ok(lookup.includes('p.country_code = $2'));
   assert.ok(lookup.includes('BTRIM(p.destination_currency) = BTRIM(c.destination_currency)'));
   assert.ok(lookup.includes("p.provider = 'dtone'"));
   assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
