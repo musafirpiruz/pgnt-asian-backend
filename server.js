@@ -670,7 +670,9 @@ async function getProduct(client, productId, requestedCountry = null, operator =
          AND p.price_currency_verified = TRUE
          AND p.wholesale_eur_cents > 0
          AND p.retail_eur_cents >= p.wholesale_eur_cents
-         AND (($1::bigint IS NOT NULL AND p.id = $1::bigint)
+         AND (($1::bigint IS NOT NULL AND p.id = $1::bigint
+             AND ($3::text IS NULL OR LOWER(o.display_name) = LOWER($3))
+             AND ($4::numeric IS NULL OR p.denomination = $4::numeric))
            OR ($1::bigint IS NULL AND p.country_code = $2
              AND LOWER(o.display_name) = LOWER($3) AND p.denomination = $4))
        LIMIT 2`,
@@ -1672,14 +1674,37 @@ async function processPaidStripeSession(session) {
     throw new Error('Sandbox order failed strict environment/recipient checks.');
   }
 
-  // Re-read trusted product information from the database.
-  const product = await pool.query(
-    `SELECT product_id AS dtone_product_id, country, currency
-     FROM product_catalog
-     WHERE id = $1 AND (active = TRUE OR $2::boolean = TRUE)
+  // Re-read trusted product information. Dynamic catalog rows are preferred
+  // only when product ID, country, operator and denomination all match.
+  let product = await pool.query(
+    `SELECT p.provider_product_id AS dtone_product_id,
+            BTRIM(p.country_code) AS country,
+            BTRIM(p.destination_currency) AS currency
+     FROM country_products p
+     JOIN country_operators o ON o.id = p.operator_id
+     JOIN country_registry c ON c.country_code = p.country_code
+     WHERE p.id = $1 AND p.country_code = $2
+       AND LOWER(o.display_name) = LOWER($3) AND p.denomination = $4
+       AND c.status IN ('active','legacy')
+       AND BTRIM(p.destination_currency) = BTRIM(c.destination_currency)
+       AND o.active = TRUE AND p.provider = 'dtone'
+       AND p.catalog_status = 'active'
+       AND p.verification_status = 'verified'
+       AND p.price_currency_verified = TRUE
+       AND p.wholesale_eur_cents > 0
+       AND p.retail_eur_cents >= p.wholesale_eur_cents
      LIMIT 1`,
-    [order.product_id, sandboxOrderIsSafe]
+    [order.product_id, order.country, order.operator, order.amount]
   );
+  if (product.rowCount === 0) {
+    product = await pool.query(
+      `SELECT product_id AS dtone_product_id, country, currency
+       FROM product_catalog
+       WHERE id = $1 AND (active = TRUE OR $2::boolean = TRUE)
+       LIMIT 1`,
+      [order.product_id, sandboxOrderIsSafe]
+    );
+  }
 
   if (
     product.rowCount !== 1 ||
