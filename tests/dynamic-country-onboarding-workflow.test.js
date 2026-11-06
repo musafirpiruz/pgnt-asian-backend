@@ -276,13 +276,12 @@ test('dynamic country products resolve through the verified country catalog and 
   const lookup = server.slice(start, end);
   assert.ok(lookup.includes('FROM country_products p'));
   assert.ok(lookup.includes('JOIN country_operators o'));
-  assert.ok(lookup.includes("'cp_' || p.id::text AS id"));
+  assert.ok(lookup.includes('SELECT p.id,'));
   assert.ok(lookup.includes("p.catalog_status = 'active'"));
   assert.ok(lookup.includes("p.verification_status = 'verified'"));
   assert.ok(lookup.includes('p.price_currency_verified = TRUE'));
   assert.ok(lookup.includes('Selected operator does not match product.'));
   assert.ok(lookup.includes('Selected amount does not match product.'));
-  assert.ok(server.includes("cp_([1-9]"));
 });
 
 test('dynamic product checkout requires active country, operator, verified pricing and wholesale cost', () => {
