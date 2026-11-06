@@ -667,12 +667,14 @@ async function getProduct(client, productId, requestedCountry = null, operator =
        JOIN country_operators o ON o.id = p.operator_id
        JOIN country_registry c ON c.country_code = p.country_code
        WHERE c.status IN ('active','legacy')
+         AND BTRIM(p.destination_currency) = BTRIM(c.destination_currency)
          AND o.active = TRUE
+         AND p.provider = 'dtone'
          AND p.catalog_status = 'active'
          AND p.verification_status = 'verified'
          AND p.price_currency_verified = TRUE
          AND p.wholesale_eur_cents > 0
-         AND p.retail_eur_cents > 0
+         AND p.retail_eur_cents >= p.wholesale_eur_cents
          AND (($1::bigint IS NOT NULL AND p.id = $1::bigint)
            OR ($1::bigint IS NULL AND p.country_code = $2
              AND LOWER(o.display_name) = LOWER($3) AND p.denomination = $4))
