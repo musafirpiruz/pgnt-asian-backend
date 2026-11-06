@@ -3232,6 +3232,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="stripeSessionId">Stripe Checkout Session ID (optional; from Stripe event)</label>
 <input id="stripeSessionId" autocomplete="off" placeholder="cs_test_… or cs_live_…">
 <button type="button" id="checkSandboxStatus">Check saved order status</button><button type="button" id="checkStripePaymentStatus">Check Stripe payment status (read-only)</button><button type="button" id="checkStripeCandidates">Check additional Stripe evidence (read-only)</button><small>Scans bounded Stripe records and saved webhook evidence. It never links payments, refunds, or submits a top-up.</small><button type="button" id="checkLiveDtOneStatus">Query DT One live status (read-only)</button><small>This queries DT One directly for the entered external/order ID. It does not create, retry, or modify a transaction.</small>
+<label style="display:flex;gap:8px;align-items:center"><input id="confirmDtOneReconcile" type="checkbox" style="width:auto"> I confirm reconciling the existing ATOMA Stripe-test / DT One pre-production order only</label><button type="button" id="reconcileDtOneStatus">Save verified DT One status to this sandbox order</button><small>Uses a read-only DT One lookup by the saved transaction ID. It never creates or retries a top-up.</small>
 <button type="button" id="loadReviewQueue">Load admin review queue (read-only)</button>
 <label for="archiveReason">Archive note (required)</label><input id="archiveReason" autocomplete="off" placeholder="Stripe checked: no payment; DT One final DECLINED">
 <label style="display:flex;gap:8px;align-items:center"><input id="confirmNoStripePayment" type="checkbox" style="width:auto"> I checked Stripe Dashboard and confirmed no payment was collected for this sandbox order</label>
@@ -3817,6 +3818,24 @@ checkSandboxStatus.addEventListener('click',async()=>{
  catch(error){result.textContent='Could not verify saved status: '+error.message;}
  finally{key.value='';}
 });
+document.getElementById('reconcileDtOneStatus').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const id=orderId.value.trim();
+ if(!/^[0-9a-f-]{36}$/i.test(id)){result.textContent='Enter the existing sandbox order UUID first.';return;}
+ if(!document.getElementById('confirmDtOneReconcile').checked){result.textContent='Confirm the existing sandbox-only reconciliation first.';return;}
+ const button=document.getElementById('reconcileDtOneStatus');
+ button.disabled=true;
+ result.textContent='Checking the saved DT One transaction (read-only), then reconciling the local sandbox status…';
+ try{
+  const data=await adminRequest('/api/admin/dtone/reconcile-status',{
+   method:'POST',
+   body:JSON.stringify({orderId:id,confirmReconcile:true})
+  });
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not reconcile DT One status: '+error.message;}
+ finally{key.value='';button.disabled=false;}
+});
+
 checkLiveDtOneStatus.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const externalId=orderId.value.trim();
