@@ -264,7 +264,7 @@ test('Flutter dynamic country loader is syntactically complete and remains insid
 
 
 test('USD currency fallback renders a plain dollar sign', () => {
-  const match = flutter.match(/'USD':\\s*'([^']*)'/);
+  const match = flutter.match(/'USD':\s*'([^']*)'/);
   assert.ok(match, 'USD fallback must be defined');
   assert.equal(match[1], '$');
 });
