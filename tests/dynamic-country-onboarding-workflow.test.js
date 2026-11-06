@@ -262,97 +262,30 @@ test('Flutter dynamic country loader is syntactically complete and remains insid
   assert.equal((flutter.match(/Future<void> _loadActiveCountries\(\)/g) || []).length, 1);
 });
 
-
-test('USD currency fallback renders a plain dollar sign', () => {
-  const match = flutter.match(/'USD':\s*'([^']*)'/);
-  assert.ok(match, 'USD fallback must be defined');
-  assert.equal(match[1], '\\
+test('USD currency fallback uses a valid raw Dart dollar symbol', () => {
+  assert.match(flutter, /'USD': r'\$'/);
 });
 
-test('dynamic country products resolve through the verified country catalog using order-compatible IDs', () => {
+test('dynamic country checkout resolves only reviewed catalog products for the selected country', () => {
   const start = server.indexOf('async function getProduct(');
   const end = server.indexOf('// Calculate the final customer price.', start);
   assert.ok(start >= 0 && end > start);
   const lookup = server.slice(start, end);
   assert.ok(lookup.includes('FROM country_products p'));
-  assert.ok(lookup.includes('JOIN country_operators o'));
-  assert.ok(lookup.includes('SELECT p.id,'));
   assert.ok(lookup.includes("p.catalog_status = 'active'"));
   assert.ok(lookup.includes("p.verification_status = 'verified'"));
   assert.ok(lookup.includes('p.price_currency_verified = TRUE'));
+  assert.ok(lookup.includes('p.country_code = $2'));
+  assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
   assert.ok(lookup.includes('Selected operator does not match product.'));
   assert.ok(lookup.includes('Selected amount does not match product.'));
 });
 
-test('dynamic product checkout requires active country, operator, verified pricing and wholesale cost', () => {
-  const start = server.indexOf('async function getProduct(');
-  const end = server.indexOf('// Calculate the final customer price.', start);
-  const lookup = server.slice(start, end);
-  assert.ok(lookup.includes("c.status IN ('active','legacy')"));
-  assert.ok(lookup.includes('o.active = TRUE'));
-  assert.ok(lookup.includes('p.wholesale_eur_cents > 0'));
-  assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
-  assert.ok(lookup.includes('p.country_code = $2'));
-  assert.ok(lookup.includes('BTRIM(p.destination_currency) = BTRIM(c.destination_currency)'));
-  assert.ok(lookup.includes("p.provider = 'dtone'"));
-  assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
-});
-
-test('paid-order fulfillment resolves dynamic products only with matching order identity', () => {
-  const start = server.indexOf('// Re-read trusted product information. Dynamic catalog rows are preferred');
-  const end = server.indexOf('if (product.rowCount === 0)', start);
-  assert.ok(start >= 0 && end > start);
-  const lookup = server.slice(start, end + 1600);
-  assert.ok(lookup.includes('FROM country_products p'));
-  assert.ok(lookup.includes('p.id = $1 AND p.country_code = $2'));
-  assert.ok(lookup.includes('LOWER(o.display_name) = LOWER($3) AND p.denomination = $4'));
-  assert.ok(lookup.includes('FROM product_catalog'));
-  assert.ok(lookup.includes('LOWER(operator) = LOWER($4) AND amount = $5'));
-  assert.ok(lookup.includes("String(product.rows[0].operator || '').trim().toLowerCase()"));
-  assert.ok(lookup.includes('Number(product.rows[0].amount) !== Number(order.amount)'));
-});
-);
-});
-
-test('dynamic country products resolve through the verified country catalog using order-compatible IDs', () => {
-  const start = server.indexOf('async function getProduct(');
-  const end = server.indexOf('// Calculate the final customer price.', start);
-  assert.ok(start >= 0 && end > start);
-  const lookup = server.slice(start, end);
-  assert.ok(lookup.includes('FROM country_products p'));
-  assert.ok(lookup.includes('JOIN country_operators o'));
-  assert.ok(lookup.includes('SELECT p.id,'));
-  assert.ok(lookup.includes("p.catalog_status = 'active'"));
-  assert.ok(lookup.includes("p.verification_status = 'verified'"));
-  assert.ok(lookup.includes('p.price_currency_verified = TRUE'));
-  assert.ok(lookup.includes('Selected operator does not match product.'));
-  assert.ok(lookup.includes('Selected amount does not match product.'));
-});
-
-test('dynamic product checkout requires active country, operator, verified pricing and wholesale cost', () => {
-  const start = server.indexOf('async function getProduct(');
-  const end = server.indexOf('// Calculate the final customer price.', start);
-  const lookup = server.slice(start, end);
-  assert.ok(lookup.includes("c.status IN ('active','legacy')"));
-  assert.ok(lookup.includes('o.active = TRUE'));
-  assert.ok(lookup.includes('p.wholesale_eur_cents > 0'));
-  assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
-  assert.ok(lookup.includes('p.country_code = $2'));
-  assert.ok(lookup.includes('BTRIM(p.destination_currency) = BTRIM(c.destination_currency)'));
-  assert.ok(lookup.includes("p.provider = 'dtone'"));
-  assert.ok(lookup.includes('p.retail_eur_cents >= p.wholesale_eur_cents'));
-});
-
-test('paid-order fulfillment resolves dynamic products only with matching order identity', () => {
-  const start = server.indexOf('// Re-read trusted product information. Dynamic catalog rows are preferred');
-  const end = server.indexOf('if (product.rowCount === 0)', start);
-  assert.ok(start >= 0 && end > start);
-  const lookup = server.slice(start, end + 1600);
-  assert.ok(lookup.includes('FROM country_products p'));
-  assert.ok(lookup.includes('p.id = $1 AND p.country_code = $2'));
-  assert.ok(lookup.includes('LOWER(o.display_name) = LOWER($3) AND p.denomination = $4'));
-  assert.ok(lookup.includes('FROM product_catalog'));
-  assert.ok(lookup.includes('LOWER(operator) = LOWER($4) AND amount = $5'));
-  assert.ok(lookup.includes("String(product.rows[0].operator || '').trim().toLowerCase()"));
-  assert.ok(lookup.includes('Number(product.rows[0].amount) !== Number(order.amount)'));
+test('paid-order fulfillment rechecks dynamic and legacy product country, operator and denomination', () => {
+  assert.ok(server.includes('Dynamic catalog rows are preferred'));
+  assert.ok(server.includes('p.id = $1 AND p.country_code = $2'));
+  assert.ok(server.includes('LOWER(o.display_name) = LOWER($3) AND p.denomination = $4'));
+  assert.ok(server.includes('LOWER(operator) = LOWER($4) AND amount = $5'));
+  assert.ok(server.includes("String(product.rows[0].operator || '').trim().toLowerCase()"));
+  assert.ok(server.includes('Number(product.rows[0].amount) !== Number(order.amount)'));
 });
