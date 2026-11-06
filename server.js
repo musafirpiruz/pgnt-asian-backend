@@ -508,7 +508,7 @@ function validateCheckoutInput(body) {
   const operator = String(body.operator || '').trim();
   const amount = Number(body.amount);
 
-  if (productId && !/^[1-9]\d*$/.test(productId)) {
+  if (productId && !/^(?:[1-9]\d*|cp_[1-9]\d*)$/.test(productId)) {
     throw new Error('Invalid product ID.');
   }
 
@@ -646,92 +646,88 @@ async function getPricingSettings(client, country) {
 // Read an enabled product from the database.
 // Expected database table: product_catalog
 async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
-  const result = await client.query(
-    `SELECT
-       id,
-       country,
-       currency,
-       product_id AS dtone_product_id,
-       operator AS name,
-       NULL::text AS description,
-       amount AS local_amount,
-       price_eur_cents,
-       wholesale_price_eur_cents,
-       active AS enabled
-     FROM product_catalog
-     WHERE (
-       ($1::bigint IS NOT NULL AND id = $1::bigint)
-       OR
-       ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
-     )
-     LIMIT 1`,
-    [productId, requestedCountry, operator, amount]
-  );
+  const requestedId = productId == null ? null : String(productId).trim();
+  const dynamicIdMatch = requestedId && requestedId.match(/^cp_([1-9]\d*)$/);
+  let result = { rowCount: 0, rows: [] };
 
-  if (result.rowCount !== 1) {
-    throw new Error(
-      'Product not found.'
+  // Dynamic products use a namespaced ID so they cannot collide with legacy IDs.
+  if (dynamicIdMatch || requestedId === null) {
+    result = await client.query(
+      `SELECT 'cp_' || p.id::text AS id,
+              BTRIM(p.country_code) AS country,
+              BTRIM(p.destination_currency) AS currency,
+              p.provider_product_id AS dtone_product_id,
+              o.display_name AS name,
+              NULL::text AS description,
+              p.denomination AS local_amount,
+              p.retail_eur_cents AS price_eur_cents,
+              p.wholesale_eur_cents AS wholesale_price_eur_cents,
+              TRUE AS enabled
+       FROM country_products p
+       JOIN country_operators o ON o.id = p.operator_id
+       JOIN country_registry c ON c.country_code = p.country_code
+       WHERE c.status IN ('active','legacy')
+         AND o.active = TRUE
+         AND p.catalog_status = 'active'
+         AND p.verification_status = 'verified'
+         AND p.price_currency_verified = TRUE
+         AND p.wholesale_eur_cents > 0
+         AND p.retail_eur_cents > 0
+         AND (($1::bigint IS NOT NULL AND p.id = $1::bigint)
+           OR ($1::bigint IS NULL AND p.country_code = $2
+             AND LOWER(o.display_name) = LOWER($3) AND p.denomination = $4))
+       LIMIT 2`,
+      [dynamicIdMatch ? dynamicIdMatch[1] : null, requestedCountry, operator, amount]
     );
+    if (result.rowCount > 1) {
+      throw new Error('Product selection is ambiguous; select a verified operator product.');
+    }
   }
 
+  // Preserve the existing product_catalog path for legacy products.
+  if (result.rowCount === 0 && !dynamicIdMatch) {
+    result = await client.query(
+      `SELECT id, country, currency, product_id AS dtone_product_id,
+              operator AS name, NULL::text AS description, amount AS local_amount,
+              price_eur_cents, wholesale_price_eur_cents, active AS enabled
+       FROM product_catalog
+       WHERE (($1::bigint IS NOT NULL AND id = $1::bigint)
+         OR ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4))
+       LIMIT 2`,
+      [requestedId, requestedCountry, operator, amount]
+    );
+    if (result.rowCount > 1) {
+      throw new Error('Product selection is ambiguous; select a verified operator product.');
+    }
+  }
+
+  if (result.rowCount !== 1) throw new Error('Product not found.');
   const product = result.rows[0];
-
-  // Read-only quote requests may inspect inactive catalog products.
-  // All checkout/order callers remain strict unless explicitly opted in.
   if (product.enabled !== true && options.allowInactive !== true) {
-    throw new Error(
-      'This product is currently unavailable.'
-    );
+    throw new Error('This product is currently unavailable.');
   }
-
-  const country = normalizeCountry(
-    product.country
-  );
-
-  if (!isValidCountry(country)) {
-    throw new Error(
-      'Product country is not supported.'
-    );
+  const country = normalizeCountry(product.country);
+  if (!isValidCountry(country)) throw new Error('Product country is not supported.');
+  if (country !== normalizeCountry(requestedCountry)) {
+    throw new Error('Product does not match selected country.');
   }
-
-  // Recipient currency must match the selected country.
-  if (
-    product.currency !== countryCurrency(country)
-  ) {
-    throw new Error(
-      'Product currency does not match its country.'
-    );
+  if (product.currency !== countryCurrency(country)) {
+    throw new Error('Product currency does not match its country.');
   }
-
-  const priceCents = requirePositiveInteger(
-    product.price_eur_cents,
-    'product price in EUR cents'
-  );
-
-  const localAmount = requirePositiveInteger(
-    product.local_amount,
-    'local top-up amount'
-  );
-
-  if (!product.dtone_product_id) {
-    throw new Error(
-      'DT One product mapping is missing.'
-    );
+  const priceCents = requirePositiveInteger(product.price_eur_cents, 'product price in EUR cents');
+  const localAmount = requirePositiveInteger(product.local_amount, 'local top-up amount');
+  if (operator && String(product.name).trim().toLowerCase() !== String(operator).trim().toLowerCase()) {
+    throw new Error('Selected operator does not match product.');
   }
-
+  if (amount !== null && amount !== undefined && Number(amount) !== localAmount) {
+    throw new Error('Selected amount does not match product.');
+  }
+  if (!product.dtone_product_id) throw new Error('DT One product mapping is missing.');
   return {
-    id: String(product.id),
-    country,
-    currency: product.currency,
-    dtoneProductId: String(
-      product.dtone_product_id
-    ),
-    name: String(product.name || ''),
-    description: String(
-      product.description || ''
-    ),
-    localAmount,
-    priceCents,
+    id: String(product.id), country, currency: product.currency,
+    dtoneProductId: String(product.dtone_product_id),
+    name: String(product.name || ''), description: String(product.description || ''),
+    localAmount, priceCents,
     wholesalePriceCents: product.wholesale_price_eur_cents == null
       ? null
       : requirePositiveInteger(product.wholesale_price_eur_cents, 'DT One wholesale price in EUR cents'),
