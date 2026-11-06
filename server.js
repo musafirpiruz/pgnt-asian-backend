@@ -2051,6 +2051,155 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
   }
 });
 
+// Admin-triggered DT One status reconciliation.
+// This endpoint performs a provider GET only; it never creates or retries a top-up.
+// It persists only a transaction that exactly matches the saved order and provider ID.
+app.post('/api/admin/dtone/reconcile-status', requireAdmin, async (req, res) => {
+  if (!pool || !DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'Database or DT One service is not configured.' });
+  }
+
+  if (req.body?.confirmReconcile !== true) {
+    return res.status(400).json({ error: 'Explicit reconciliation confirmation is required.' });
+  }
+
+  const orderId = String(req.body?.orderId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return res.status(400).json({ error: 'A valid order ID is required.' });
+  }
+
+  let client;
+  try {
+    const local = await pool.query(
+      `SELECT order_id, operator, status, country, paid_at,
+              stripe_payment_intent_id, dtone_transaction_id
+       FROM orders WHERE order_id = $1 LIMIT 1`,
+      [orderId]
+    );
+    if (local.rowCount !== 1) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+    const saved = local.rows[0];
+    const isIsolatedSandbox =
+      saved.operator === 'ATOMA-SANDBOX-TEST' &&
+      STRIPE_SECRET_KEY.startsWith('sk_test_') &&
+      isDtOnePreproductionConfigured() &&
+      saved.country === 'AF';
+    if ((!saved.paid_at || !saved.stripe_payment_intent_id) && !isIsolatedSandbox) {
+      return res.status(409).json({ error: 'Verified Stripe payment evidence is required.' });
+    }
+    if (!saved.dtone_transaction_id || !/^\\d+$/.test(String(saved.dtone_transaction_id))) {
+      return res.status(409).json({ error: 'Saved DT One transaction ID is missing or invalid.' });
+    }
+
+    const endpoint = `${DTONE_API_BASE_URL}/v1/transactions/${encodeURIComponent(String(saved.dtone_transaction_id))}`;
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+    const responseText = await response.text();
+    let transaction;
+    try {
+      transaction = responseText ? JSON.parse(responseText) : null;
+    } catch (_) {
+      return res.status(502).json({ error: 'DT One returned a non-JSON status response.', providerHttpStatus: response.status });
+    }
+    if (!response.ok) {
+      return res.status(502).json({ error: 'DT One status lookup failed; no local status was changed.', providerHttpStatus: response.status });
+    }
+
+    const providerId = String(transaction?.id ?? '');
+    const providerExternalId = String(transaction?.external_id ?? '');
+    if (
+      providerId !== String(saved.dtone_transaction_id) ||
+      providerExternalId !== orderId
+    ) {
+      return res.status(409).json({ error: 'DT One transaction identity did not exactly match this order; no local status was changed.' });
+    }
+
+    const rawStatus = transaction?.status?.message ||
+      transaction?.status?.status || transaction?.status || '';
+    const providerStatus = normalizeDtOneStatus(rawStatus);
+    if (providerStatus === 'unknown') {
+      return res.status(409).json({ error: 'DT One returned an unrecognized status; no local status was changed.' });
+    }
+
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const locked = await client.query(
+      `SELECT order_id, operator, status, paid_at, stripe_payment_intent_id,
+              dtone_transaction_id
+       FROM orders WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    if (locked.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Order not found during reconciliation.' });
+    }
+    const order = locked.rows[0];
+    if (String(order.dtone_transaction_id || '') !== providerId) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Saved DT One transaction changed during reconciliation; no local status was changed.' });
+    }
+    if (['refunded', 'cancelled', 'canceled'].includes(String(order.status).toLowerCase())) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Order is refunded or cancelled; manual review is required.' });
+    }
+    const refund = await client.query(
+      'SELECT id FROM refunds WHERE order_id = $1 LIMIT 1',
+      [orderId]
+    );
+    if (refund.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'A refund record exists; callback reconciliation is required before changing order status.' });
+    }
+
+    let nextStatus = order.status;
+    if (order.status !== 'completed') {
+      if (providerStatus === 'completed') nextStatus = 'completed';
+      else if (providerStatus === 'failed') nextStatus = 'topup_review';
+      else if (order.status !== 'topup_review') nextStatus = 'topup_submitted';
+    }
+    const storedStatus = typeof rawStatus === 'string'
+      ? rawStatus
+      : String(rawStatus?.message || rawStatus?.status || JSON.stringify(rawStatus)).slice(0, 80);
+    await client.query(
+      `UPDATE orders
+       SET status = $1,
+           dtone_status = $2,
+           dtone_callback_payload = $3::jsonb,
+           completed_at = CASE WHEN $1 = 'completed' THEN COALESCE(completed_at, NOW()) ELSE completed_at END,
+           failed_at = CASE WHEN $4 = 'failed' THEN COALESCE(failed_at, NOW()) ELSE failed_at END,
+           updated_at = NOW()
+       WHERE order_id = $5`,
+      [nextStatus, storedStatus.slice(0, 80), JSON.stringify(transaction), providerStatus, orderId]
+    );
+    await client.query('COMMIT');
+    return res.status(200).json({
+      reconciled: true,
+      readOnlyProviderLookup: true,
+      providerHttpStatus: response.status,
+      orderId,
+      providerTransactionId: providerId,
+      providerStatus: storedStatus,
+      normalizedProviderStatus: providerStatus,
+      previousOrderStatus: order.status,
+      orderStatus: nextStatus,
+      topupCreated: false,
+      topupRetried: false,
+    });
+  } catch (error) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+    }
+    console.error('DT One admin status reconciliation failed.', { errorName: error?.name || 'Error' });
+    return res.status(502).json({ error: 'Could not reconcile DT One status; no new top-up was created.' });
+  } finally {
+    if (client) client.release();
+  }
+});
+
 app.post('/api/dtone/callback', async (req, res) => {
   // Safe receipt telemetry: no credentials, phone numbers, order IDs, or payloads.
   console.info('DT One callback received.', {
