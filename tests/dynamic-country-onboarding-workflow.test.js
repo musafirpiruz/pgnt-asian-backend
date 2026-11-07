@@ -140,7 +140,7 @@ test('Flutter loads country list, operators and denominations from backend endpo
   assert.match(flutter, /api\/countries\/\$countryCode\/products/);
   assert.match(flutter, /_availableCountries/);
   assert.match(flutter, /_loadedCountryOperators/);
-  assert.match(flutter, /_loadedCountryAmounts/);
+  assert.match(flutter, /_loadedAmountsByOperator/);
 });
 
 test('operator translations are stored per operator and required for activation', () => {
