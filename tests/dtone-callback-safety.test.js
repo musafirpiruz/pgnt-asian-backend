@@ -68,6 +68,14 @@ test('callback writes status and payload transactionally', () => {
   assert.match(callback, /client\.query\('ROLLBACK'\)/);
 });
 
+
+test('callback UPDATE uses separately typed parameters for status assignment and completion comparison', () => {
+  assert.match(callback, /SET status = \$1::varchar/);
+  assert.match(callback, /WHEN \$7::text = 'completed'/);
+  assert.match(callback, /WHEN \$5::text = 'failed'/);
+  assert.match(callback, /orderId,\s*providerStatus,\s*\]\s*\)/);
+});
+
 test('these checks are source-only and do not execute external side effects', () => {
   assert.doesNotMatch(fs.readFileSync(__filename, 'utf8'), /fetch\(|stripe\.refunds\.create/);
 });
