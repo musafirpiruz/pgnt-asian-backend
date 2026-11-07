@@ -120,12 +120,14 @@ class MobileOperator {
   final String countryCode;
   final String name;
   final String icon;
+  final String? providerName;
 
   const MobileOperator(
     this.countryCode,
     this.name,
-    this.icon,
-  );
+    this.icon, {
+    this.providerName,
+  });
 }
 
 // Brand-inspired compact marks keep operator cards recognizable without
@@ -218,10 +220,10 @@ class OperatorBrandMark extends StatelessWidget {
       decoration: BoxDecoration(
         color: brandColor,
         shape: BoxShape.circle,
-        border: Border.all(color: brandColor.withOpacity(0.18), width: 2),
+        border: Border.all(color: brandColor.withValues(alpha: 0.18), width: 2),
         boxShadow: [
           BoxShadow(
-            color: brandColor.withOpacity(0.16),
+            color: brandColor.withValues(alpha: 0.16),
             blurRadius: 7,
             offset: const Offset(0, 2),
           ),
@@ -1102,7 +1104,7 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                     padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [primaryRed, darkRed],
+                        colors: const [primaryRed, darkRed],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -1155,7 +1157,13 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  ...languages.map((language) {
+                  RadioGroup<String>(
+                    groupValue: _selectedLanguage,
+                    onChanged: (value) {
+                      if (value != null) setState(() => _selectedLanguage = value);
+                    },
+                    child: Column(
+                      children: languages.map((language) {
                     final selected = language.code == _selectedLanguage;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -1171,13 +1179,7 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                         ),
                         child: RadioListTile<String>(
                           value: language.code,
-                          groupValue: _selectedLanguage,
                           activeColor: primaryRed,
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _selectedLanguage = value);
-                            }
-                          },
                           title: Text(
                             language.nativeName,
                             textDirection: language.code == 'ps' ||
@@ -1194,7 +1196,9 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
                         ),
                       ),
                     );
-                  }),
+                      }).toList(),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: _continue,
@@ -1264,11 +1268,11 @@ class PgntBrandHeader extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [primaryRed, darkRed],
+          colors: const [primaryRed, darkRed],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.all(Radius.circular(22)),
+        borderRadius: const BorderRadius.all(Radius.circular(22)),
       ),
       child: Row(
         children: [
@@ -1352,6 +1356,10 @@ class PgntHomePage extends StatefulWidget {
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
   AppCountry selectedCountry = countries.first;
+  List<AppCountry> _availableCountries = countries;
+  List<MobileOperator> _loadedCountryOperators = [];
+  Map<String, List<int>> _loadedAmountsByOperator = {};
+  bool _countryCatalogLoaded = false;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   int selectedAmount = 100;
@@ -1390,6 +1398,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   void initState() {
     super.initState();
     _restoreFuture = _restoreLocalData();
+    _loadActiveCountries();
     _appLinks = AppLinks();
     _referralLinkSubscription = _appLinks.uriLinkStream.listen(
       _applyReferralUri,
@@ -1624,12 +1633,151 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
   }
 
-  List<MobileOperator> get countryOperators => operators
-      .where((item) => item.countryCode == selectedCountry.code)
-      .toList();
+  List<MobileOperator> get countryOperators {
+    if (_countryCatalogLoaded) return _loadedCountryOperators;
+    return operators.where((item) => item.countryCode == selectedCountry.code).toList();
+  }
 
-  List<int> get amounts =>
-      rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
+  List<int> get amounts {
+    if (_countryCatalogLoaded) {
+      final operator = selectedOperator;
+      if (operator == null) return const [];
+      final key = operator.providerName ?? operator.name;
+      return _loadedAmountsByOperator[key] ?? const [];
+    }
+    return rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
+  }
+
+  String _flagForCountry(String code) {
+    final normalized = code.toUpperCase();
+    if (!RegExp(r'^[A-Z]{2}$').hasMatch(normalized)) return '🌐';
+    return String.fromCharCodes(normalized.codeUnits.map((unit) => 0x1F1E6 + unit - 65));
+  }
+
+  String _currencySymbol(String currency) {
+    const symbols = <String, String>{
+      'AFN': '؋', 'PKR': 'Rs', 'INR': '₹', 'BDT': '৳',
+      'EUR': '€', 'USD': r'$', 'GBP': '£',
+    };
+    return symbols[currency.toUpperCase()] ?? currency.toUpperCase();
+  }
+
+  Future<void> _loadActiveCountries() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$backendBaseUrl/api/countries/active?language=$languageCode'),
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) return;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map || decoded['countries'] is! List) return;
+      final parsed = <AppCountry>[];
+      for (final raw in decoded['countries'] as List) {
+        if (raw is! Map) continue;
+        final code = (raw['code'] ?? '').toString().toUpperCase();
+        final name = (raw['name'] ?? '').toString().trim();
+        final currency = (raw['currency'] ?? '').toString().toUpperCase();
+        final discoveredSymbol = (raw['currencySymbol'] ?? '').toString().trim();
+        if (!RegExp(r'^[A-Z]{2}$').hasMatch(code) || name.isEmpty ||
+            !RegExp(r'^[A-Z]{3}$').hasMatch(currency)) {
+          continue;
+        }
+        parsed.add(AppCountry(
+          code: code,
+          name: name,
+          flag: _flagForCountry(code),
+          currency: currency,
+          symbol: discoveredSymbol.isNotEmpty ? discoveredSymbol : _currencySymbol(currency),
+        ));
+      }
+      if (parsed.isEmpty || !mounted) return;
+      setState(() {
+        _availableCountries = parsed;
+        selectedCountry = parsed.firstWhere(
+          (country) => country.code == selectedCountry.code,
+          orElse: () => parsed.first,
+        );
+      });
+      await _loadCountryCatalog();
+    } catch (_) {
+      // Keep bundled countries available while the backend is offline.
+    }
+  }
+
+  Future<void> _loadCountryCatalog() async {
+    final countryCode = selectedCountry.code;
+    try {
+      final responses = await Future.wait([
+        http.get(
+          Uri.parse('$backendBaseUrl/api/countries/$countryCode/operators?language=$languageCode'),
+          headers: const {'Accept': 'application/json'},
+        ).timeout(const Duration(seconds: 12)),
+        http.get(
+          Uri.parse('$backendBaseUrl/api/countries/$countryCode/products'),
+          headers: const {'Accept': 'application/json'},
+        ).timeout(const Duration(seconds: 12)),
+      ]);
+      if (!mounted || countryCode != selectedCountry.code) return;
+      final operatorBody = responses[0].statusCode == 200 ? jsonDecode(responses[0].body) : null;
+      final productBody = responses[1].statusCode == 200 ? jsonDecode(responses[1].body) : null;
+      final nextOperators = <MobileOperator>[];
+      if (operatorBody is Map && operatorBody['operators'] is List) {
+        for (final raw in operatorBody['operators'] as List) {
+          if (raw is! Map) continue;
+          final name = (raw['name'] ?? '').toString().trim();
+          if (name.isNotEmpty) {
+            nextOperators.add(MobileOperator(
+              countryCode,
+              name,
+              '📶',
+              providerName: (raw['providerName'] ?? name).toString(),
+            ));
+          }
+        }
+      }
+      final nextAmountsByOperator = <String, Set<int>>{};
+      if (productBody is Map && productBody['products'] is List) {
+        for (final raw in productBody['products'] as List) {
+          if (raw is! Map) continue;
+          final operatorName = (raw['operator'] ?? '').toString().trim();
+          if (operatorName.isEmpty) continue;
+          final amount = raw['amount'];
+          final value = amount is num ? amount.toInt() : int.tryParse('$amount');
+          final numericValue = amount is num ? amount.toDouble() : double.tryParse('$amount');
+          if (value != null && value > 0 && numericValue == value.toDouble()) {
+            nextAmountsByOperator.putIfAbsent(operatorName, () => <int>{}).add(value);
+          }
+        }
+      }
+      final normalizedAmountsByOperator = <String, List<int>>{
+        for (final entry in nextAmountsByOperator.entries)
+          entry.key: (entry.value.toList()..sort()),
+      };
+      setState(() {
+        _countryCatalogLoaded = responses.every((item) => item.statusCode == 200) && nextOperators.isNotEmpty;
+        _loadedCountryOperators = nextOperators;
+        _loadedAmountsByOperator = normalizedAmountsByOperator;
+        if (selectedOperator != null) {
+          final selectedKey = selectedOperator!.providerName ?? selectedOperator!.name;
+          final matching = _loadedCountryOperators
+              .where((item) => (item.providerName ?? item.name) == selectedKey)
+              .toList();
+          selectedOperator = matching.isEmpty ? null : matching.first;
+        }
+        final selectedAmounts = amounts;
+        if (selectedAmounts.isNotEmpty && !selectedAmounts.contains(selectedAmount)) {
+          selectedAmount = selectedAmounts.first;
+        }
+      });
+    } catch (_) {
+      if (!mounted || countryCode != selectedCountry.code) return;
+      setState(() {
+        _countryCatalogLoaded = false;
+        _loadedCountryOperators = [];
+        _loadedAmountsByOperator = {};
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -1662,7 +1810,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(
         queryParameters: {
           'country': countryCode,
-          'operator': operator.name,
+          'operator': operator.providerName ?? operator.name,
           'amount': '$amount',
         },
       );
@@ -1747,13 +1895,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() {
       selectedCountry = country;
       selectedOperator = null;
-      selectedAmount =
-          (rechargeAmounts[country.currency] ?? [100]).first;
+      _countryCatalogLoaded = false;
+      _loadedCountryOperators = [];
+      _loadedAmountsByOperator = {};
+      selectedAmount = (rechargeAmounts[country.currency] ?? [100]).first;
       phoneController.clear();
       customAmountController.clear();
       priceQuote = null;
       priceQuoteError = null;
     });
+    _loadCountryCatalog();
   }
 
   void handlePhoneChanged(String value) {
@@ -1990,7 +2141,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      country.currency,
+                      '${country.symbol}  ${country.currency}',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Colors.black54,
@@ -2033,7 +2184,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: countries
+              children: _availableCountries
                   .map((country) => countryCard(country, cardWidth))
                   .toList(),
             ),
@@ -2103,8 +2254,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = 2;
-        final spacing = 8.0;
+        const columns = 2;
+        const spacing = 8.0;
         final cardWidth =
             (constraints.maxWidth - spacing * (columns - 1)) / columns;
         return Wrap(
@@ -2116,8 +2267,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
             return InkWell(
               borderRadius: BorderRadius.circular(13),
               onTap: () {
+                final operatorAmounts = _loadedAmountsByOperator[item.providerName ?? item.name] ?? const <int>[];
                 setState(() {
                   selectedOperator = item;
+                  if (operatorAmounts.isNotEmpty && !operatorAmounts.contains(selectedAmount)) {
+                    selectedAmount = operatorAmounts.first;
+                  }
                   priceQuote = null;
                   priceQuoteError = null;
                 });
@@ -2183,7 +2338,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
         final selected = selectedAmount == amount;
 
         return ChoiceChip(
-          label: Text('$amount ${selectedCountry.currency}'),
+          label: Text('${selectedCountry.symbol} $amount ${selectedCountry.currency}'),
           selected: selected,
           selectedColor: gold,
           backgroundColor: Colors.white,
@@ -2332,7 +2487,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           Row(children: [const Icon(Icons.card_giftcard, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('bonus'))), Text(bonusPercent is num && bonusPercent > 0 ? '${bonusPercent.toString()}%' : '—')]),
           if (quote != null) ...[
             pgntGoldDivider(),
-            Row(children: [Expanded(child: Text('ټول تادیه', style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
+            Row(children: [Expanded(child: const Text('ټول تادیه', style: TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
           ],
           const SizedBox(height: 12),
           Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
@@ -2410,7 +2565,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'countryCode': selectedCountry.code,
               'phone': phone,
               'phoneNumber': phone,
-              'operator': selectedOperator!.name,
+              'operator': selectedOperator!.providerName ?? selectedOperator!.name,
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
@@ -2695,7 +2850,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [primaryRed, darkRed],
+                colors: const [primaryRed, darkRed],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -3029,7 +3184,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [primaryRed, darkRed],
+              colors: const [primaryRed, darkRed],
             ),
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
@@ -3125,7 +3280,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           )
         else ...[
           DropdownButtonFormField<String>(
-            value: supportOrders.any((item) => item.orderId == selectedSupportOrderId)
+            initialValue: supportOrders.any((item) => item.orderId == selectedSupportOrderId)
                 ? selectedSupportOrderId
                 : supportOrders.first.orderId,
             decoration: const InputDecoration(
@@ -3149,7 +3304,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
-            value: supportCategory,
+            initialValue: supportCategory,
             decoration: const InputDecoration(
               labelText: 'د ستونزې ډول',
               prefixIcon: Icon(Icons.category_outlined),
@@ -3288,7 +3443,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'For a failed or delayed order, save the transaction ID and receipt. Direct ticket submission and automatic refund review still require a connected support service.',
+                  'For a failed or delayed order, save the transaction ID and receipt. you can submit a support ticket using the transaction from your history. Ticket availability depends on a working internet connection and the backend service.',
                   style: TextStyle(height: 1.4),
                 ),
               ),
@@ -3522,23 +3677,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                ...languages.map(
-                  (language) => RadioListTile<String>(
-                    value: language.code,
-                    groupValue: languageCode,
-                    activeColor: primaryRed,
-                    title: Text(language.nativeName),
-                    subtitle: Text(language.name),
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        languageCode = value;
-                      });
-                      SharedPreferences.getInstance().then((preferences) {
-                        preferences.setString(_languagePreferenceKey, value);
-                      });
-                      Navigator.pop(sheetContext);
-                    },
+                RadioGroup<String>(
+                  groupValue: languageCode,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      languageCode = value;
+                    });
+                    _loadActiveCountries();
+                    SharedPreferences.getInstance().then((preferences) {
+                      preferences.setString(_languagePreferenceKey, value);
+                    });
+                    Navigator.pop(sheetContext);
+                  },
+                  child: Column(
+                    children: languages.map(
+                      (language) => RadioListTile<String>(
+                        value: language.code,
+                        activeColor: primaryRed,
+                        title: Text(language.nativeName),
+                        subtitle: Text(language.name),
+                      ),
+                    ).toList(),
                   ),
                 ),
               ],

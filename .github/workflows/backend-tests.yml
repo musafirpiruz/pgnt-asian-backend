@@ -32,11 +32,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install dependencies
         run: npm install --ignore-scripts
+      # Applies the full additive schema chain, including migration 022 currency discovery.
       - name: Apply migrations to isolated PostgreSQL test database
         run: node migrate.js
+      - name: Verify country currency discovery migration and provenance
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-currency-discovery.integration.sql
       - name: Verify safe payment currency defaults in PostgreSQL
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/payment-currency-settings.integration.sql
       - name: Prepare legacy refunds table without migration 013 uniqueness

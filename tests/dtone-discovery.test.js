@@ -54,7 +54,7 @@ test('product-name denomination matching uses the selected country local currenc
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
   const end = server.indexOf('// Read-only verification of a catalog product', start);
   const route = server.slice(start, end);
-  assert.match(route, /AFG:\s*'AFN'.*PAK:\s*'PKR'.*IND:\s*'INR'.*BGD:\s*'BDT'/s);
+  assert.match(route, /legacyDestinationCurrencies\s*=\s*\(\{ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' \}\)/);
   assert.match(route, /new RegExp\(`\\\\b\$\{amountQuery\}\\\\s\*\$\{localCurrency\}\\\\b/);
   const cases = [
     ['ATOMA 115 AFN', 115, 'AFN'],
@@ -80,13 +80,30 @@ test('product discovery explicitly flags a partial result when the page safety l
 });
 
 
-test('automatic country catalog discovery supports only the four configured countries', () => {
+test('automatic country catalog discovery supports every explicitly verified DT One country mapping', () => {
   const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
   const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
   assert.ok(start >= 0 && end > start, 'automatic country catalog sync route should exist');
   const route = server.slice(start, end);
-  for (const code of ['AFG', 'PAK', 'IND', 'BGD']) assert.ok(route.includes(code));
-  assert.match(route, /countryCurrency\(country\)/);
+  assert.match(route, /JOIN country_registry c ON c\.country_code = m\.country_code/);
+  assert.match(route, /m\.provider_country_code = \$1/);
+  assert.match(route, /m\.verification_status = 'verified'/);
+  assert.match(route, /c\.destination_currency/);
+  assert.match(route, /currency !== destinationCurrency/);
+  assert.doesNotMatch(route, /Object\.freeze\(\{ AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' \}\)/);
+  assert.match(route, /A valid three-letter DT One country code is required/);
+});
+
+test('dynamic country pricing reads the selected currency from the country registry', () => {
+  const start = server.indexOf('async function getPricingSettings');
+  const end = server.indexOf('// Read an enabled product from the database.', start);
+  assert.ok(start >= 0 && end > start, 'pricing resolver should exist');
+  const resolver = server.slice(start, end);
+  assert.match(resolver, /SELECT destination_currency FROM country_registry WHERE country_code=\$1/);
+  assert.match(resolver, /destinationCurrency !== 'EUR'/);
+  assert.match(resolver, /FROM fx_currency_rates/);
+  assert.match(resolver, /WHERE currency=\$1/);
+  assert.doesNotMatch(resolver, /\[countryCurrency\(code\)\]/);
 });
 
 test('automatic country catalog sync previews before import and requires explicit confirmation', () => {
@@ -164,7 +181,9 @@ test('DT One operator discovery accepts only the four supported provider country
   const route = server.slice(start, end);
   assert.match(route, /new Set\(\['AFG', 'PAK', 'IND', 'BGD'\]\)/);
   assert.match(route, /supportedOperatorCountries\.has\(countryIsoCode\)/);
-  assert.match(route, /one of AFG, PAK, IND, or BGD/);
+  assert.match(route, /country_provider_mappings/);
+  assert.match(route, /verification_status = 'verified'/);
+  assert.match(route, /provider code verified in the country registry/);
 });
 
 test('DT One operator discovery marks a page-limit result as partial', () => {
