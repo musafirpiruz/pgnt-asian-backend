@@ -19,6 +19,9 @@ test('admin reconciliation endpoint is explicit and sandbox-only', () => {
   assert.match(route, /ATOMA-SANDBOX-TEST/);
   assert.match(route, /sk_test_/);
   assert.match(route, /isDtOnePreproductionConfigured/);
+  assert.match(route, /if \(!isIsolatedSandbox\)/);
+  assert.match(route, /lockedIsIsolatedSandbox/);
+  assert.match(route, /Order no longer meets the isolated sandbox reconciliation requirements/);
 });
 
 test('reconciliation performs a provider GET only and never submits a top-up', () => {
@@ -46,6 +49,10 @@ test('final provider status is persisted transactionally and repeated success is
   assert.match(route, /providerStatus === 'completed'/);
   assert.match(route, /nextStatus = 'completed'/);
   assert.match(route, /order\.status !== 'completed'/);
+  assert.match(route, /\['topup_submitted', 'processing_topup', 'topup_review', 'completed'\]/);
+  assert.match(route, /status = \$1::varchar/);
+  assert.match(route, /CASE WHEN \$6::text = 'completed'/);
+  assert.match(route, /CASE WHEN \$4::text = 'failed'/);
   assert.match(route, /dtone_callback_payload = \$3::jsonb/);
   assert.match(route, /client\.query\('COMMIT'\)/);
   assert.match(route, /client\.query\('ROLLBACK'\)/);
