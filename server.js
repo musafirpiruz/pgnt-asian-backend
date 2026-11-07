@@ -2376,16 +2376,16 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     await client.query(
       `UPDATE orders
-       SET status = $1,
+       SET status = $1::varchar,
            dtone_transaction_id = $2,
            dtone_status = $3,
            dtone_callback_payload = $4::jsonb,
            completed_at = CASE
-             WHEN $1 = 'completed' THEN COALESCE(completed_at, NOW())
+             WHEN $7::text = 'completed' THEN COALESCE(completed_at, NOW())
              ELSE completed_at
            END,
            failed_at = CASE
-             WHEN $5 = 'failed' THEN COALESCE(failed_at, NOW())
+             WHEN $5::text = 'failed' THEN COALESCE(failed_at, NOW())
              ELSE failed_at
            END,
            updated_at = NOW()
@@ -2397,6 +2397,7 @@ app.post('/api/dtone/callback', async (req, res) => {
         JSON.stringify(body),
         providerStatus,
         orderId,
+        providerStatus,
       ]
     );
 
