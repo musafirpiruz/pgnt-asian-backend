@@ -38,5 +38,5 @@ test('failed webhook processing releases its event claim for Stripe retry', () =
 });
 test('this suite is source-only', () => {
  const source=fs.readFileSync(__filename,'utf8'); assert.ok(source.includes('Source-only regression checks'));
- assert.ok(!/^\\s*(?:await\\s+)?fetch\\s*\\(/m.test(source));
+ assert.ok(!source.includes('await fetch('));
 });
