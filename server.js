@@ -3870,6 +3870,7 @@ document.getElementById('reconcileDtOneStatus').addEventListener('click',async()
  try{
   const data=await adminRequest('/api/admin/dtone/reconcile-status',{
    method:'POST',
+   headers:{'Content-Type':'application/json'},
    body:JSON.stringify({orderId:id,confirmReconcile:true})
   });
   result.textContent=JSON.stringify(data,null,2);
