@@ -2085,8 +2085,8 @@ app.post('/api/admin/dtone/reconcile-status', requireAdmin, async (req, res) => 
       STRIPE_SECRET_KEY.startsWith('sk_test_') &&
       isDtOnePreproductionConfigured() &&
       saved.country === 'AF';
-    if ((!saved.paid_at || !saved.stripe_payment_intent_id) && !isIsolatedSandbox) {
-      return res.status(409).json({ error: 'Verified Stripe payment evidence is required.' });
+    if (!isIsolatedSandbox) {
+      return res.status(409).json({ error: 'This reconciliation endpoint is restricted to the isolated ATOMA Stripe-test / DT One pre-production sandbox.' });
     }
     if (!saved.dtone_transaction_id || !/^\d+$/.test(String(saved.dtone_transaction_id))) {
       return res.status(409).json({ error: 'Saved DT One transaction ID is missing or invalid.' });
@@ -2128,7 +2128,7 @@ app.post('/api/admin/dtone/reconcile-status', requireAdmin, async (req, res) => 
     client = await pool.connect();
     await client.query('BEGIN');
     const locked = await client.query(
-      `SELECT order_id, operator, status, paid_at, stripe_payment_intent_id,
+      `SELECT order_id, operator, status, country, paid_at, stripe_payment_intent_id,
               dtone_transaction_id
        FROM orders WHERE order_id = $1 FOR UPDATE`,
       [orderId]
@@ -2138,6 +2138,19 @@ app.post('/api/admin/dtone/reconcile-status', requireAdmin, async (req, res) => 
       return res.status(404).json({ error: 'Order not found during reconciliation.' });
     }
     const order = locked.rows[0];
+    const lockedIsIsolatedSandbox =
+      order.operator === 'ATOMA-SANDBOX-TEST' &&
+      STRIPE_SECRET_KEY.startsWith('sk_test_') &&
+      isDtOnePreproductionConfigured() &&
+      order.country === 'AF';
+    if (!lockedIsIsolatedSandbox) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Order no longer meets the isolated sandbox reconciliation requirements.' });
+    }
+    if (!['topup_submitted', 'processing_topup', 'topup_review', 'completed'].includes(String(order.status).toLowerCase())) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Order status is not eligible for sandbox reconciliation; manual review is required.' });
+    }
     if (String(order.dtone_transaction_id || '') !== providerId) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Saved DT One transaction changed during reconciliation; no local status was changed.' });
