@@ -629,6 +629,8 @@ async function getPricingSettings(client, country) {
     currency: 'EUR',
     feeCents,
     localCurrencyPerEur,
+    // Backward-compatible field consumed by the existing quote response.
+    afnPerEur: localCurrencyPerEur,
     bonusPercent,
     stripeFeePercent,
     stripeFixedFeeCents,
@@ -927,6 +929,25 @@ app.get('/api/payment-currencies', async (req, res) => {
   }
 });
 
+// Map only known product-selection outcomes to client errors.
+// Database/configuration/calculation failures are service errors, not HTTP 404.
+function classifyPricingQuoteError(error) {
+  const message = String(error?.message || '');
+  if (message === 'Product not found.') {
+    return { statusCode: 404, publicMessage: 'Product not found.' };
+  }
+  if (
+    message === 'This product is currently unavailable.' ||
+    message === 'Product selection is ambiguous; select a verified operator product.'
+  ) {
+    return { statusCode: 409, publicMessage: message };
+  }
+  return {
+    statusCode: 503,
+    publicMessage: 'Pricing service is temporarily unavailable. Please try again later.',
+  };
+}
+
 app.get('/api/pricing/quote', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Pricing service is not configured.' });
@@ -962,9 +983,22 @@ app.get('/api/pricing/quote', async (req, res) => {
       marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
     });
   } catch (error) {
-    const message = error.message === 'Product not found.' || error.message === 'This product is currently unavailable.' || error.message === 'DT One product mapping is missing.'
-      ? error.message : 'Could not calculate a verified price.';
-    return res.status(404).json({ error: message });
+    // Keep customer responses generic for configuration/database failures, but
+    // record enough non-sensitive context in Render logs to diagnose them.
+    // Never log phone numbers, access tokens, request headers, or credentials.
+    console.error('Pricing quote calculation failed.', {
+      country,
+      operator,
+      amount,
+      errorName: error?.name || 'Error',
+      errorCode: error?.code || null,
+      errorMessage: String(error?.message || 'Unknown pricing error').slice(0, 240),
+      databaseTable: error?.table || null,
+      databaseColumn: error?.column || null,
+      databaseConstraint: error?.constraint || null,
+    });
+    const failure = classifyPricingQuoteError(error);
+    return res.status(failure.statusCode).json({ error: failure.publicMessage });
   } finally {
     client.release();
   }
