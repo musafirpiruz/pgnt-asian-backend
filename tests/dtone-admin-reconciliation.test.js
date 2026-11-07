@@ -79,3 +79,24 @@ test('numeric DT One transaction IDs are accepted and nonnumeric IDs are rejecte
   assert.equal(transactionIdPattern.test('2240961013x'), false);
   assert.equal(transactionIdPattern.test(''), false);
 });
+
+const readOnlyStart = server.indexOf("app.get('/api/admin/dtone/transaction-status'");
+const readOnlyEnd = server.indexOf("app.post('/api/admin/dtone/reconcile-status'", readOnlyStart);
+const readOnlyRoute = readOnlyStart >= 0 && readOnlyEnd > readOnlyStart
+  ? server.slice(readOnlyStart, readOnlyEnd)
+  : '';
+
+test('read-only status lookup exposes sandbox eligibility without payment secrets', () => {
+  assert.notEqual(readOnlyStart, -1);
+  assert.match(readOnlyRoute, /SELECT order_id, status, operator, country, dtone_transaction_id, updated_at/);
+  assert.match(readOnlyRoute, /isolatedSandboxOrder/);
+  assert.match(readOnlyRoute, /operatorMatchesSandbox/);
+  assert.match(readOnlyRoute, /countryMatchesAfghanistan/);
+  assert.match(readOnlyRoute, /stripeTestMode/);
+  assert.match(readOnlyRoute, /dtOnePreproduction/);
+  assert.match(readOnlyRoute, /orderStatusEligible/);
+  assert.match(readOnlyRoute, /hasRefundRecord/);
+  assert.match(readOnlyRoute, /SELECT EXISTS \(SELECT 1 FROM refunds WHERE order_id = \$1\)/);
+  assert.doesNotMatch(readOnlyRoute, /stripe_payment_intent_id|client_secret|DTONE_API_SECRET/);
+  assert.match(readOnlyRoute, /lookup: 'read_only'/);
+});

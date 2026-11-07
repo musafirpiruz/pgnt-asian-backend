@@ -1964,12 +1964,38 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
 
   try {
     const local = await pool.query(
-      `SELECT order_id, status, dtone_transaction_id, updated_at
+      `SELECT order_id, status, operator, country, dtone_transaction_id, updated_at
        FROM orders
        WHERE order_id::text = $1
        LIMIT 1`,
       [externalId]
     );
+    const refundCheck = local.rows[0]
+      ? await pool.query(
+          'SELECT EXISTS (SELECT 1 FROM refunds WHERE order_id = $1) AS has_refund_record',
+          [externalId]
+        )
+      : null;
+    const savedOrder = local.rows[0] || null;
+    const reconciliationEligibility = {
+      isolatedSandboxOrder: Boolean(
+        savedOrder &&
+        savedOrder.operator === 'ATOMA-SANDBOX-TEST' &&
+        savedOrder.country === 'AF' &&
+        STRIPE_SECRET_KEY.startsWith('sk_test_') &&
+        isDtOnePreproductionConfigured()
+      ),
+      operatorMatchesSandbox: savedOrder?.operator === 'ATOMA-SANDBOX-TEST',
+      countryMatchesAfghanistan: savedOrder?.country === 'AF',
+      stripeTestMode: STRIPE_SECRET_KEY.startsWith('sk_test_'),
+      dtOnePreproduction: isDtOnePreproductionConfigured(),
+      orderStatusEligible: Boolean(
+        savedOrder &&
+        ['topup_submitted', 'processing_topup', 'topup_review', 'completed']
+          .includes(String(savedOrder.status).toLowerCase())
+      ),
+      hasRefundRecord: Boolean(refundCheck?.rows?.[0]?.has_refund_record),
+    };
 
     const endpoint = `${DTONE_API_BASE_URL}/v1/transactions?external_id=${encodeURIComponent(externalId)}`;
     let response = await fetch(endpoint, {
@@ -2040,6 +2066,7 @@ app.get('/api/admin/dtone/transaction-status', requireAdmin, async (req, res) =>
       lookup: 'read_only',
       providerHttpStatus: response.status,
       localOrder: local.rows[0] || null,
+      reconciliationEligibility,
       transactionCount: safeTransactions.length,
       transactions: safeTransactions,
     });
