@@ -1358,7 +1358,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   AppCountry selectedCountry = countries.first;
   List<AppCountry> _availableCountries = countries;
   List<MobileOperator> _loadedCountryOperators = [];
-  List<int> _loadedCountryAmounts = [];
+  Map<String, List<int>> _loadedAmountsByOperator = {};
   bool _countryCatalogLoaded = false;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
@@ -1638,9 +1638,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
     return operators.where((item) => item.countryCode == selectedCountry.code).toList();
   }
 
-  List<int> get amounts => _loadedCountryAmounts.isNotEmpty
-      ? _loadedCountryAmounts
-      : (rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500]);
+  List<int> get amounts {
+    if (_countryCatalogLoaded) {
+      final operator = selectedOperator;
+      if (operator == null) return const [];
+      final key = operator.providerName ?? operator.name;
+      return _loadedAmountsByOperator[key] ?? const [];
+    }
+    return rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
+  }
 
   String _flagForCountry(String code) {
     final normalized = code.toUpperCase();
@@ -1729,22 +1735,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
           }
         }
       }
-      final nextAmounts = <int>{};
+      final nextAmountsByOperator = <String, Set<int>>{};
       if (productBody is Map && productBody['products'] is List) {
         for (final raw in productBody['products'] as List) {
           if (raw is! Map) continue;
+          final operatorName = (raw['operator'] ?? '').toString().trim();
+          if (operatorName.isEmpty) continue;
           final amount = raw['amount'];
           final value = amount is num ? amount.toInt() : int.tryParse('$amount');
           final numericValue = amount is num ? amount.toDouble() : double.tryParse('$amount');
           if (value != null && value > 0 && numericValue == value.toDouble()) {
-            nextAmounts.add(value);
+            nextAmountsByOperator.putIfAbsent(operatorName, () => <int>{}).add(value);
           }
         }
       }
+      final normalizedAmountsByOperator = <String, List<int>>{
+        for (final entry in nextAmountsByOperator.entries)
+          entry.key: (entry.value.toList()..sort()),
+      };
       setState(() {
         _countryCatalogLoaded = responses.every((item) => item.statusCode == 200) && nextOperators.isNotEmpty;
         _loadedCountryOperators = nextOperators;
-        _loadedCountryAmounts = nextAmounts.toList()..sort();
+        _loadedAmountsByOperator = normalizedAmountsByOperator;
         if (selectedOperator != null) {
           final selectedKey = selectedOperator!.providerName ?? selectedOperator!.name;
           final matching = _loadedCountryOperators
@@ -1752,8 +1764,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
               .toList();
           selectedOperator = matching.isEmpty ? null : matching.first;
         }
-        if (_loadedCountryAmounts.isNotEmpty && !_loadedCountryAmounts.contains(selectedAmount)) {
-          selectedAmount = _loadedCountryAmounts.first;
+        final selectedAmounts = amounts;
+        if (selectedAmounts.isNotEmpty && !selectedAmounts.contains(selectedAmount)) {
+          selectedAmount = selectedAmounts.first;
         }
       });
     } catch (_) {
@@ -1761,7 +1774,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       setState(() {
         _countryCatalogLoaded = false;
         _loadedCountryOperators = [];
-        _loadedCountryAmounts = [];
+        _loadedAmountsByOperator = {};
       });
     }
   }
@@ -1884,7 +1897,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       selectedOperator = null;
       _countryCatalogLoaded = false;
       _loadedCountryOperators = [];
-      _loadedCountryAmounts = [];
+      _loadedAmountsByOperator = {};
       selectedAmount = (rechargeAmounts[country.currency] ?? [100]).first;
       phoneController.clear();
       customAmountController.clear();
@@ -2254,8 +2267,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
             return InkWell(
               borderRadius: BorderRadius.circular(13),
               onTap: () {
+                final operatorAmounts = _loadedAmountsByOperator[item.providerName ?? item.name] ?? const <int>[];
                 setState(() {
                   selectedOperator = item;
+                  if (operatorAmounts.isNotEmpty && !operatorAmounts.contains(selectedAmount)) {
+                    selectedAmount = operatorAmounts.first;
+                  }
                   priceQuote = null;
                   priceQuoteError = null;
                 });
