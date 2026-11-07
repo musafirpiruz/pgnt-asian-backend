@@ -56,7 +56,15 @@ test('pricing quote logs diagnostic fields without logging customer phone or acc
   assert.match(route, /databaseTable:\s*error\?\.table/);
   assert.match(route, /databaseColumn:\s*error\?\.column/);
   assert.match(route, /classifyPricingQuoteError\(error\)/);
-  assert.doesNotMatch(route, /phone|orderAccessToken|x-order-access-token|STRIPE_SECRET_KEY|DTONE_API_SECRET/i);
+  const diagnosticStart = route.indexOf("console.error('Pricing quote calculation failed.'");
+  const diagnosticEnd = route.indexOf("const failure = classifyPricingQuoteError(error)", diagnosticStart);
+  assert.ok(diagnosticStart >= 0 && diagnosticEnd > diagnosticStart,
+    'structured diagnostic block must exist');
+  const diagnostic = route.slice(diagnosticStart, diagnosticEnd);
+  assert.doesNotMatch(diagnostic, /req\.body|req\.headers|req\.query\.phone|orderAccessToken|x-order-access-token|STRIPE_SECRET_KEY|DTONE_API_SECRET/i);
+  assert.match(diagnostic, /country,/);
+  assert.match(diagnostic, /operator,/);
+  assert.match(diagnostic, /amount,/);
 });
 
 test('legacy AFN quote field uses the configured local-currency exchange rate', () => {
