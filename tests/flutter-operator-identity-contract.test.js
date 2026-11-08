@@ -12,10 +12,10 @@ test('Flutter operator model keeps stable registry identity separate from displa
   const end = flutter.indexOf('// Brand-inspired', start);
   assert.ok(start >= 0 && end > start);
   const model = flutter.slice(start, end);
-  assert.match(model, /final String\\? operatorKey;/);
-  assert.match(model, /final String\\? providerOperatorId;/);
-  assert.match(model, /this\\.operatorKey,/);
-  assert.match(model, /this\\.providerOperatorId,/);
+  assert.ok(model.includes('final String? operatorKey;'));
+  assert.ok(model.includes('final String? providerOperatorId;'));
+  assert.ok(model.includes('this.operatorKey,'));
+  assert.ok(model.includes('this.providerOperatorId,'));
 });
 
 test('quote request forwards operatorKey but never trusts or forwards providerOperatorId', () => {
@@ -23,9 +23,9 @@ test('quote request forwards operatorKey but never trusts or forwards providerOp
   const end = flutter.indexOf('void selectCountry(', start);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
-  assert.match(method, /'operatorKey': operator\\.operatorKey!/);
-  assert.match(method, /operator\\.operatorKey != null/);
-  assert.doesNotMatch(method, /providerOperatorId/);
+  assert.ok(method.includes("'operatorKey': operator.operatorKey!"));
+  assert.ok(method.includes('operator.operatorKey != null'));
+  assert.ok(!method.includes('providerOperatorId'));
 });
 
 test('checkout request forwards operatorKey but never trusts or forwards providerOperatorId', () => {
@@ -33,22 +33,18 @@ test('checkout request forwards operatorKey but never trusts or forwards provide
   const end = flutter.indexOf('Future<void>', start + 20);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
-  assert.match(method, /'operatorKey': selectedOperator!\\.operatorKey!/);
-  assert.match(method, /selectedOperator!\\.operatorKey != null/);
-  assert.doesNotMatch(method, /providerOperatorId/);
+  assert.ok(method.includes("'operatorKey': selectedOperator!.operatorKey!"));
+  assert.ok(method.includes('selectedOperator!.operatorKey != null'));
+  assert.ok(!method.includes('providerOperatorId'));
 });
 
 test('registry parser preserves stable IDs independently of localized display labels', () => {
   const start = flutter.indexOf('factory MobileOperator.fromRegistryJson');
-  const end = flutter.indexOf('\\n  }', start);
+  const end = flutter.indexOf('\n  }', start);
   assert.ok(start >= 0 && end > start);
   const factory = flutter.slice(start, end);
-  assert.match(factory, /json\\['display_name'\\]/);
-  assert.match(factory, /json\\['name'\\]/);
-  assert.match(factory, /json\\['operator_key'\\]/);
-  assert.match(factory, /json\\['code'\\]/);
-  assert.match(factory, /json\\['provider_operator_id'\\]/);
-  assert.match(factory, /operatorKey:/);
-  assert.match(factory, /providerOperatorId:/);
-  assert.doesNotMatch(factory, /operatorKey:.*displayName/s);
+  for (const field of ["json['display_name']", "json['name']", "json['operator_key']", "json['code']", "json['provider_operator_id']", 'operatorKey:', 'providerOperatorId:']) {
+    assert.ok(factory.includes(field), 'missing parser field: ' + field);
+  }
+  assert.ok(!factory.includes('operatorKey: displayName'));
 });
