@@ -51,12 +51,14 @@ CREATE TABLE IF NOT EXISTS country_operators (
 DO $$
 DECLARE
   has_countries BOOLEAN;
+  has_provider_settings BOOLEAN;
   conflict_count BIGINT;
   constraint_name TEXT;
   had_verified_at BOOLEAN;
   child_record RECORD;
 BEGIN
   SELECT to_regclass(current_schema() || '.countries') IS NOT NULL INTO has_countries;
+  SELECT to_regclass(current_schema() || '.country_provider_settings') IS NOT NULL INTO has_provider_settings;
 
   IF has_countries THEN
     -- Refuse ambiguous mappings before copying any country rows.
@@ -71,24 +73,41 @@ BEGIN
       RAISE EXCEPTION 'Country registry reconciliation found % conflicting country rows', conflict_count;
     END IF;
 
-    EXECUTE $q$
-      INSERT INTO country_registry
-        (country_code,country_name,destination_currency,calling_code,
-         phone_min_digits,phone_max_digits,provider,provider_country_code,status,
-         created_at,updated_at)
-      SELECT c.code,c.name_en,c.local_currency,c.calling_code,
-             c.phone_min_digits,c.phone_max_digits,
-             LOWER(COALESCE(NULLIF(c.provider_code,''),'dtone')),
-             ps.provider_country_code,
-             CASE WHEN c.status='active' THEN 'legacy'
-                  WHEN c.status IN ('testing','disabled') THEN c.status
-                  ELSE 'draft' END,
-             c.created_at,c.updated_at
-      FROM countries c
-      LEFT JOIN country_provider_settings ps
-        ON ps.country_code=c.code AND UPPER(ps.provider_code)='DTONE'
-      ON CONFLICT (country_code) DO NOTHING
-    $q$;
+    IF has_provider_settings THEN
+      EXECUTE $q$
+        INSERT INTO country_registry
+          (country_code,country_name,destination_currency,calling_code,
+           phone_min_digits,phone_max_digits,provider,provider_country_code,status,
+           created_at,updated_at)
+        SELECT c.code,c.name_en,c.local_currency,c.calling_code,
+               c.phone_min_digits,c.phone_max_digits,
+               LOWER(COALESCE(NULLIF(c.provider_code,''),'dtone')),
+               ps.provider_country_code,
+               CASE WHEN c.status='active' THEN 'legacy'
+                    WHEN c.status IN ('testing','disabled') THEN c.status
+                    ELSE 'draft' END,
+               c.created_at,c.updated_at
+        FROM countries c
+        LEFT JOIN country_provider_settings ps
+          ON ps.country_code=c.code AND UPPER(ps.provider_code)='DTONE'
+        ON CONFLICT (country_code) DO NOTHING
+      $q$;
+    ELSE
+      EXECUTE $q$
+        INSERT INTO country_registry
+          (country_code,country_name,destination_currency,calling_code,
+           phone_min_digits,phone_max_digits,provider,status,created_at,updated_at)
+        SELECT c.code,c.name_en,c.local_currency,c.calling_code,
+               c.phone_min_digits,c.phone_max_digits,
+               LOWER(COALESCE(NULLIF(c.provider_code,''),'dtone')),
+               CASE WHEN c.status='active' THEN 'legacy'
+                    WHEN c.status IN ('testing','disabled') THEN c.status
+                    ELSE 'draft' END,
+               c.created_at,c.updated_at
+        FROM countries c
+        ON CONFLICT (country_code) DO NOTHING
+      $q$;
+    END IF;
   END IF;
 
   -- Every canonical country must have an explicit provider code only when
