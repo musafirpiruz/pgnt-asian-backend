@@ -980,6 +980,17 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
          AND o.provider_operator_id IS NOT NULL
          AND BTRIM(o.provider_operator_id) <> ''
          AND o.verified_at IS NOT NULL
+         AND EXISTS (
+           SELECT 1
+           FROM country_operator_products cop
+           JOIN product_catalog p ON p.id = cop.product_catalog_id
+           WHERE cop.country_code = o.country_code
+             AND cop.operator_key = o.operator_key
+             AND cop.active = TRUE
+             AND cop.verified_at IS NOT NULL
+             AND p.country = c.country_code
+             AND p.currency = c.destination_currency
+         )
        ORDER BY COALESCE(localized.display_name, o.display_name), o.operator_key`,
       [countryCode, language]
     );
