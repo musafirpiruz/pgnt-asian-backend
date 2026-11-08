@@ -121,3 +121,8 @@ test('ranged activation fails closed when the canonical country/operator registr
   assert.match(route, /Canonical country\/operator registry or ranged-product migration is not installed/);
   assert.match(route, /No product was changed/);
 });
+test('admin ranged-product page exposes a separately confirmed activation action', () => {
+  assert.match(server, /id="activateRangedProduct"/);
+  assert.match(server, /confirmActivation:true/);
+  assert.match(server, /canonical country\/operator identity/);
+});
