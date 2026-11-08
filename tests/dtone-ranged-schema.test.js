@@ -10,6 +10,7 @@ const migration = fs.readFileSync(path.join(__dirname, '..', 'migrate.js'), 'utf
 test('DT One ranged-value migration is versioned and idempotent', () => {
   assert.match(migration, /018_dtone_ranged_value_foundation/);
   assert.match(migration, /SELECT version FROM schema_migrations WHERE version = \$1 LIMIT 1/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS dtone_ranged_products/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS dtone_product_capabilities/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS dtone_ranged_transactions/);
 });
@@ -29,12 +30,32 @@ test('ranged product capabilities preserve provider range and calculation-mode c
   assert.match(sql, /CHECK \(active = FALSE OR capability_verified_at IS NOT NULL\)/);
 });
 
+
+test('ranged provider products have their own disabled catalog, independent of fixed denominations', () => {
+  const start = migration.indexOf('CREATE TABLE IF NOT EXISTS dtone_ranged_products');
+  const end = migration.indexOf('CREATE INDEX IF NOT EXISTS idx_dtone_ranged_products_country_operator', start);
+  assert.ok(start >= 0 && end > start);
+  const sql = migration.slice(start, end);
+  assert.match(sql, /dtone_product_id BIGINT PRIMARY KEY/);
+  assert.match(sql, /country_iso_code CHAR\(3\)/);
+  assert.match(sql, /destination_currency CHAR\(3\)/);
+  assert.match(sql, /min_amount NUMERIC/);
+  assert.match(sql, /max_amount NUMERIC/);
+  assert.match(sql, /amount_increment NUMERIC/);
+  assert.match(sql, /wholesale_price_range JSONB/);
+  assert.match(sql, /provider_snapshot JSONB/);
+  assert.match(sql, /capability_verified_at TIMESTAMPTZ NOT NULL/);
+  assert.match(sql, /active BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(sql, /CHECK \(active = FALSE OR accepted_calculation_modes \? 'DESTINATION_AMOUNT'\)/);
+});
+
 test('ranged transaction ledger stores one provider transaction per order and confirmation deadline', () => {
   const start = migration.indexOf('CREATE TABLE IF NOT EXISTS dtone_ranged_transactions');
   const end = migration.indexOf('CREATE INDEX IF NOT EXISTS idx_dtone_ranged_transactions_status_deadline', start);
   assert.ok(start >= 0 && end > start);
   const sql = migration.slice(start, end);
   assert.match(sql, /order_id VARCHAR\(80\) NOT NULL UNIQUE/);
+  assert.match(sql, /REFERENCES dtone_ranged_products\(dtone_product_id\)/);
   assert.match(sql, /dtone_transaction_id VARCHAR\(255\) UNIQUE/);
   assert.match(sql, /external_id VARCHAR\(100\) NOT NULL UNIQUE/);
   assert.match(sql, /requested_amount NUMERIC/);
