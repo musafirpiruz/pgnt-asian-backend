@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - main
+      - integration/four-country-fx-dtone-reconciliation
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
