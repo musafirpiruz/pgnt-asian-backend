@@ -127,3 +127,17 @@ For every new country, tests must cover:
 - New-country support is not complete merely because a country appears in a dropdown. It is complete only after the entire quote → payment → provider fulfillment → callback/status → support/review path passes sandbox acceptance.
 
 These requirements are the target architecture. They do not assert that the current main branch or current PR already implements every item.
+
+### Country-independent customer amount policy (10–3000)
+
+The product requirement is that the customer-facing amount entry policy be configurable per country and not hard-coded to the initial four countries:
+
+- The default requested customer range is inclusive: minimum 10 and maximum 3000 in that country's destination currency.
+- Store the policy as country configuration (for example, `minimum_topup_amount`, `maximum_topup_amount`, and `amount_step`), with an explicit configuration version and audit history. Do not add country-specific constants or Flutter branches.
+- Flutter obtains the amount policy from the active country configuration API and validates the entered integer for immediate feedback. The backend independently validates every quote and checkout request against the same active country policy; client validation is never trusted.
+- Operators/products also have provider capability metadata: fixed denomination versus ranged/custom amount, provider minimum, provider maximum, and provider increment/step. A quote is allowed only when the requested amount is within both the country policy and the selected provider product's verified capabilities.
+- For a ranged DT One product, the backend must use the exact DT One transaction contract for ranged recharge and verify the provider's required amount/currency fields before accepting a quote. For fixed-denomination products, only the provider's exact supported denomination may be submitted; do not pretend that an arbitrary amount is supported.
+- If the country-wide 10–3000 policy cannot be fulfilled for a selected operator because the provider has narrower limits or only fixed denominations, show a clear unavailable-amount message and do not create a payment session or top-up order. Admin onboarding must report the unsupported range and block country/operator activation if the product requirement is mandatory.
+- A new country inherits the same requested 10–3000 policy by configuration, but it is not considered launch-ready until its provider/operator coverage has been verified across the range (including boundaries, representative interior values, and increment rules) in sandbox. If the provider cannot deliver the required range, do not mark that operator/country active or advertise full-range support.
+
+The requested 10–3000 range is a PGNT product policy, not a claim that every DT One operator currently supports every integer. Provider capability verification is a mandatory launch gate, not a reason to silently narrow the range or fabricate a quote.
