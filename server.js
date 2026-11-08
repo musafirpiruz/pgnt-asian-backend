@@ -3088,6 +3088,17 @@ app.post('/api/dtone/callback', async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: 'Ranged order has no verified Stripe payment evidence.' });
       }
+      if (order.status === 'completed') {
+        await client.query('COMMIT');
+        return res.status(200).json({
+          received: true,
+          rangedValue: true,
+          orderId,
+          status: 'completed',
+          duplicate: true,
+          staleCallbackIgnored: providerStatus !== 'completed',
+        });
+      }
       const nextStatus = providerStatus === 'completed'
         ? 'completed'
         : providerStatus === 'failed'
