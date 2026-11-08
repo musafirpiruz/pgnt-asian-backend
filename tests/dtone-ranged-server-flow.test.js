@@ -101,3 +101,23 @@ test('migration 019 adds nullable operator identity without activating existing 
   assert.match(migrate, /WHERE operator_key IS NOT NULL/);
   assert.doesNotMatch(migrate.slice(migrate.indexOf('019_dtone_ranged_operator_key')), /UPDATE dtone_ranged_products SET active = TRUE/i);
 });
+
+test('ranged product activation requires admin auth, explicit confirmation, and canonical provider identity', () => {
+  const route = section("app.post('/api/admin/dtone/ranged-products/:productId/activate'", '// Read-only verification of a catalog product');
+  assert.match(route, /requireAdmin/);
+  assert.match(route, /confirmActivation !== true/);
+  assert.match(route, /to_regclass\('country_registry'\)/);
+  assert.match(route, /to_regclass\('country_operators'\)/);
+  assert.match(route, /o\.provider_operator_id = r\.provider_snapshot->'operator'->>'id'/);
+  assert.match(route, /o\.verified_at IS NOT NULL/);
+  assert.match(route, /SET operator_key = \$2, active = TRUE/);
+  assert.match(route, /FOR UPDATE OF r/);
+  assert.match(route, /transactionCreated: false/);
+  assert.match(route, /paymentCreated: false/);
+});
+
+test('ranged activation fails closed when the canonical country/operator registry is absent', () => {
+  const route = section("app.post('/api/admin/dtone/ranged-products/:productId/activate'", '// Read-only verification of a catalog product');
+  assert.match(route, /Canonical country\/operator registry or ranged-product migration is not installed/);
+  assert.match(route, /No product was changed/);
+});
