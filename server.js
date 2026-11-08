@@ -5111,7 +5111,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
          destination_currency, min_amount, max_amount, amount_increment,
          accepted_calculation_modes, active, capability_verified_at`,
       [
-        Number(productId),
+        productId,
         countryIsoCode,
         operatorName,
         destinationCurrency,
