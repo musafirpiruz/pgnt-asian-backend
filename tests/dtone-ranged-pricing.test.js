@@ -26,6 +26,7 @@ const expected = {
   productId: '98765',
   destinationAmount: 150,
   destinationCurrency: 'AFN',
+  destinationUnitType: 'CURRENCY',
 };
 
 test('accepts a CREATED ranged quote with matching amount and explicit EUR wholesale price', () => {
