@@ -1423,6 +1423,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   final List<Map<String, dynamic>> supportTickets = [];
   bool isLoadingSupportTickets = false;
 
+  static const String _rangedIdempotencyStorageKey = 'pgnt_ranged_quote_idempotency_key_v1';
+  static const String _rangedFingerprintStorageKey = 'pgnt_ranged_quote_fingerprint_v1';
   static const String _historyStorageKey = 'pgnt_transaction_history_v1';
   static const String _tokensStorageKey = 'pgnt_order_access_tokens_v1';
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -2562,10 +2564,24 @@ class _PgntHomePageState extends State<PgntHomePage> {
           selectedOperator!.operatorKey,
           selectedAmount,
         ]);
+        if (_rangedIdempotencyKey == null) {
+          _rangedIdempotencyKey =
+              await _secureStorage.read(key: _rangedIdempotencyStorageKey);
+          _rangedRequestFingerprint =
+              await _secureStorage.read(key: _rangedFingerprintStorageKey);
+        }
         if (_rangedIdempotencyKey == null ||
             _rangedRequestFingerprint != requestFingerprint) {
           _rangedIdempotencyKey = _newRangedIdempotencyKey();
           _rangedRequestFingerprint = requestFingerprint;
+          await _secureStorage.write(
+            key: _rangedIdempotencyStorageKey,
+            value: _rangedIdempotencyKey,
+          );
+          await _secureStorage.write(
+            key: _rangedFingerprintStorageKey,
+            value: requestFingerprint,
+          );
         }
         final rangedResponse = await http
             .post(
@@ -2601,6 +2617,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
               rangedDecoded['orderId'] != null) {
             _rangedIdempotencyKey = null;
             _rangedRequestFingerprint = null;
+            await _secureStorage.delete(key: _rangedIdempotencyStorageKey);
+            await _secureStorage.delete(key: _rangedFingerprintStorageKey);
           }
           final detail = rangedDecoded is Map
               ? rangedDecoded['error']?.toString()
@@ -2692,6 +2710,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
       // receive a fresh idempotency key even if its inputs are identical.
       _rangedIdempotencyKey = null;
       _rangedRequestFingerprint = null;
+      await _secureStorage.delete(key: _rangedIdempotencyStorageKey);
+      await _secureStorage.delete(key: _rangedFingerprintStorageKey);
 
       final paymentUri = Uri.tryParse(rawUrl);
       if (paymentUri == null || paymentUri.scheme != 'https') {
