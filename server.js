@@ -4812,11 +4812,22 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
   const amountQuery = req.query.amount == null || String(req.query.amount).trim() === ''
     ? null
     : Number(req.query.amount);
+  const requestedType = String(req.query.type || '').trim().toUpperCase();
+  const allowedProductTypes = new Set([
+    'FIXED_VALUE_RECHARGE',
+    'RANGED_VALUE_RECHARGE',
+    'FIXED_VALUE_PIN_PURCHASE',
+    'RANGED_VALUE_PIN_PURCHASE',
+    'RANGED_VALUE_PAYMENT',
+  ]);
   if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
     return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
   }
   if (amountQuery !== null && (!Number.isFinite(amountQuery) || amountQuery <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number.' });
+  }
+  if (requestedType && !allowedProductTypes.has(requestedType)) {
+    return res.status(400).json({ error: 'type must be a documented DT One product type.' });
   }
 
   try {
@@ -4831,6 +4842,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       url.searchParams.set('country_iso_code', countryIsoCode);
       url.searchParams.set('per_page', '100');
       url.searchParams.set('page', String(page));
+      if (requestedType) url.searchParams.set('type', requestedType);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -4875,18 +4887,50 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
         const operatorName = String(product?.operator?.name || '').toUpperCase();
         const countryCode = String(product?.operator?.country?.iso_code || '').toUpperCase();
         const name = String(product?.name || '');
+        const productType = String(product?.type || '').trim().toUpperCase();
         const benefitAmounts = Array.isArray(product?.benefits)
-          ? product.benefits.map((benefit) => Number(benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base))
+          ? product.benefits.flatMap((benefit) => {
+              const amount = benefit?.amount || {};
+              const values = [
+                amount?.total_excluding_tax,
+                amount?.base,
+                amount?.total_including_tax,
+              ];
+              return values.flatMap((value) => {
+                if (value && typeof value === 'object') {
+                  return [value.min, value.max].filter((n) => n != null).map(Number);
+                }
+                return value == null ? [] : [Number(value)];
+              });
+            })
           : [];
         const productAmounts = [
           product?.destination?.amount,
           product?.amount?.base,
           typeof product?.amount === 'number' ? product.amount : NaN,
-        ].map(Number);
+        ].flatMap((value) => {
+          if (value && typeof value === 'object') {
+            return [value.min, value.max].filter((n) => n != null).map(Number);
+          }
+          return value == null ? [] : [Number(value)];
+        });
+        const rangeCandidates = [
+          product?.destination?.amount,
+          ...(Array.isArray(product?.benefits) ? product.benefits.map((benefit) => benefit?.amount?.total_excluding_tax ?? benefit?.amount?.base) : []),
+        ].filter((value) => value && typeof value === 'object');
+        const providerMinimum = rangeCandidates.map((value) => Number(value.min)).filter(Number.isFinite);
+        const providerMaximum = rangeCandidates.map((value) => Number(value.max)).filter(Number.isFinite);
+        const rangeMin = providerMinimum.length ? Math.max(...providerMinimum) : null;
+        const rangeMax = providerMaximum.length ? Math.min(...providerMaximum) : null;
+        const isRanged = productType.startsWith('RANGED_VALUE_') ||
+          (rangeMin !== null && rangeMax !== null && rangeMax >= rangeMin);
         const localCurrency = ({ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' })[countryIsoCode];
+        const exactAmountMatch = benefitAmounts.includes(amountQuery) || productAmounts.includes(amountQuery);
+        const rangeAmountMatch = isRanged && rangeMin !== null && rangeMax !== null &&
+          amountQuery >= rangeMin && amountQuery <= rangeMax;
         const mentionsAmount = amountQuery === null
-          || benefitAmounts.includes(amountQuery)
-          || productAmounts.includes(amountQuery)
+          || exactAmountMatch
+          || rangeAmountMatch
           || (localCurrency && new RegExp(`\\b${amountQuery}\\s*${localCurrency}\\b|\\b${localCurrency}\\s*${amountQuery}\\b`, 'i').test(name));
         const operatorAliases = {
           ROSHAN: ['ROSHAN'],
@@ -4897,10 +4941,28 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
         };
         const requestedAliases = operatorAliases[operatorQuery] || [operatorQuery];
         const isRequestedOperator = !operatorQuery || requestedAliases.some((alias) => operatorName.includes(alias));
-        const isLikelyRelevant = isRequestedOperator && mentionsAmount;
+        const isRequestedType = !requestedType || productType === requestedType;
+        const isLikelyRelevant = isRequestedOperator && isRequestedType && mentionsAmount;
         if (countryCode === countryIsoCode && isLikelyRelevant) {
           const id = product?.id;
-          if (id !== undefined && id !== null) matchesById.set(String(id), product);
+          if (id !== undefined && id !== null) {
+            matchesById.set(String(id), {
+              ...product,
+              pgntCapability: {
+                productType: productType || null,
+                amountMode: isRanged ? 'ranged' : 'fixed_or_unclassified',
+                destinationCurrency: product?.destination?.unit || product?.benefits?.[0]?.unit || null,
+                minimumAmount: rangeMin,
+                maximumAmount: rangeMax,
+                acceptedCalculationModes: Array.isArray(product?.accepted_calculation_modes)
+                  ? product.accepted_calculation_modes
+                  : [],
+                amountQuerySupported: amountQuery === null || exactAmountMatch || rangeAmountMatch,
+                adminApprovalRequiredForEachAmount: false,
+                requiresProviderCapabilityVerification: true,
+              },
+            });
+          }
         }
       }
 
@@ -4915,6 +4977,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       countryIsoCode,
       requestedOperator: operatorQuery || null,
       requestedAmount: amountQuery,
+      requestedType: requestedType || null,
       providerPagesChecked,
       providerProductsSeen: totalSeen,
       truncated,
@@ -4923,7 +4986,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
       products,
       catalogActivation: 'unchanged',
       transactionCreated: false,
-      note: truncated ? 'Partial read-only search: the twenty-page safety limit was reached. Results are incomplete candidates; do not treat them as the full provider catalog.' : 'Read-only search completed within the twenty-page safety limit. Results are candidates; confirm operator, denomination, and pre-production availability before mapping. No product is activated and no transaction is created.',
+      note: truncated ? 'Partial read-only search: the twenty-page safety limit was reached. Results are incomplete candidates; do not treat them as the full provider catalog.' : 'Read-only search completed within the twenty-page safety limit. Results include DT One product type and available amount-range metadata. Admin approval is per operator/product configuration, not per customer amount; every entered amount is still checked against the provider capability. No product is activated and no transaction is created.',
     });
   } catch (error) {
     const errorName = String(error?.name || 'Error').slice(0, 80);
