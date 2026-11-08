@@ -66,13 +66,14 @@ These observations are not sufficient to conclude which values are currently aut
 
 No production setting was changed as part of this reconciliation note.
 
-## Latest integration branch update — parser groundwork is not activation
+## Latest integration branch update — registry loader groundwork is present, activation remains gated
 
-- Commit `c20de99035abd9663b0150e68e181dc17d0e8a01` adds `MobileOperator.fromRegistryJson`, which preserves `operator_key` and `provider_operator_id` separately from the localized display label and accepts the observed snake_case response keys plus compatibility aliases.
-- Commit `cf25f850978be3e23d8a18b6e561b7abd2d3cf53` adds a source-contract test for that parser.
-- Follow-up inspection confirms the PR #225 Flutter file still contains no `/api/countries` request and no dynamic country/operator loader. The factory is therefore not called by the app yet; the current curated operator list remains the active path.
-- The current main backend also has no country registry operator route or registry-aware quote contract. The dynamic-country branch's public operator route returns `code`, `name`, and `providerName` from the registry query but does not explicitly expose `operator_key` / `provider_operator_id` under the agreed names.
-- Do not turn on the client path until the registry migrations and backend route are brought into a reviewed integration branch, the public JSON contract is explicit, and quote/checkout resolve identity and product mappings server-side. Client-supplied provider IDs remain untrusted hints only.
+- The current PR #225 head `f7451b3d07ccf88b65f313caf233dfe2902af8dd` includes the Flutter `MobileOperator.fromRegistryJson` parser and a dynamic loader that requests `/api/countries/:countryCode/operators` with the selected language.
+- The parser keeps `operator_key` and `provider_operator_id` separate from localized display labels. The loader accepts only entries with a non-empty stable operator key and retains the curated list as a fallback when the registry endpoint is unavailable.
+- Quote and checkout requests forward `operatorKey` when a registry-backed operator is selected. The Flutter client does not send `providerOperatorId`; the backend must resolve provider identity from its own trusted registry.
+- The loader is not yet active end-to-end against deployed main: main does not currently expose the registry operator route, and the required backend schema/quote/checkout contract has not been integrated.
+- The source-contract tests and successful CI validate source shape and buildability; they do not prove PostgreSQL migration compatibility, live registry API behavior, quote correctness, or checkout fulfillment.
+- Keep the curated operator list as fallback and do not treat the registry path as production-ready until the backend contract, canonical migration, PostgreSQL integration tests, and sandbox acceptance tests pass.
 
 
 ## Newly verified blocking schema incompatibility — PR #196 vs PR #204
