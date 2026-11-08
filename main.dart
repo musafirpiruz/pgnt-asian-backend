@@ -1805,7 +1805,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted ||
           countryCode != selectedCountry.code ||
           amount != selectedAmount ||
-          operator.name != selectedOperator?.name) {
+          operator.operatorKey != selectedOperator?.operatorKey || operator.name != selectedOperator?.name) {
         return;
       }
 
@@ -1817,7 +1817,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted ||
           countryCode != selectedCountry.code ||
           amount != selectedAmount ||
-          operator.name != selectedOperator?.name) {
+          operator.operatorKey != selectedOperator?.operatorKey || operator.name != selectedOperator?.name) {
         return;
       }
 
@@ -3647,6 +3647,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       setState(() {
                         languageCode = value;
                       });
+                      _loadRegistryOperators(selectedCountry.code);
                       SharedPreferences.getInstance().then((preferences) {
                         preferences.setString(_languagePreferenceKey, value);
                       });
