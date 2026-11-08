@@ -1394,6 +1394,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   MobileOperator? selectedOperator;
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
+  int _registryOperatorsRequestGeneration = 0;
   int selectedAmount = 100;
   int selectedTab = 0;
   bool isLoading = false;
@@ -1678,10 +1679,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Future<void> _loadRegistryOperators(String countryCode) async {
+    // Ignore stale responses when the user changes country or language while
+    // an earlier registry request is still in flight.
+    final requestGeneration = ++_registryOperatorsRequestGeneration;
+    final requestedLanguage = languageCode;
     try {
       final uri = Uri.parse(
         '$backendBaseUrl/api/countries/$countryCode/operators',
-      ).replace(queryParameters: {'language': languageCode});
+      ).replace(queryParameters: {'language': requestedLanguage});
       final response = await http.get(
         uri,
         headers: const {'Accept': 'application/json'},
@@ -1705,7 +1710,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
         }
         parsed.add(item);
       }
-      if (!mounted || countryCode != selectedCountry.code || parsed.isEmpty) {
+      if (!mounted ||
+          requestGeneration != _registryOperatorsRequestGeneration ||
+          countryCode != selectedCountry.code ||
+          requestedLanguage != languageCode ||
+          parsed.isEmpty) {
         return;
       }
 
