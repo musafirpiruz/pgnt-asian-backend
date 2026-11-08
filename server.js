@@ -4376,7 +4376,7 @@ document.getElementById('importCatalogProduct').addEventListener('click',async()
 document.getElementById('activateRangedProduct').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  if(!confirm('Activate ranged DT One product '+productId+' only if its provider operator ID matches exactly one active, verified operator in the canonical registry? This makes the verified product available for customer-entered amounts within its provider range. No payment or top-up will be performed.'))return;
  result.textContent='Checking canonical country/operator identity and activating one product…';
  try{
