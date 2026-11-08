@@ -5786,6 +5786,79 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
   }
 });
 
+// Explicitly map and activate one ranged product only when the canonical
+// country/operator registry independently verifies its provider operator ID.
+// This fails closed when PR #225's canonical registry is not yet installed.
+app.post('/api/admin/dtone/ranged-products/:productId/activate', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ activated: false, error: 'Database is not configured.' });
+  const productId = String(req.params.productId || '').trim();
+  if (!/^[1-9]\\d{0,17}$/.test(productId)) {
+    return res.status(400).json({ activated: false, error: 'A valid DT One product ID is required.' });
+  }
+  if (req.body?.confirmActivation !== true) {
+    return res.status(400).json({ activated: false, error: 'Explicit confirmActivation=true is required. No product was changed.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const registry = await client.query(
+      "SELECT to_regclass('country_registry') IS NOT NULL AS has_country_registry, to_regclass('country_operators') IS NOT NULL AS has_country_operators, to_regclass('dtone_ranged_products') IS NOT NULL AS has_ranged_products"
+    );
+    const ready = registry.rows[0]?.has_country_registry && registry.rows[0]?.has_country_operators && registry.rows[0]?.has_ranged_products;
+    if (!ready) {
+      await client.query('ROLLBACK');
+      return res.status(503).json({ activated: false, error: 'Canonical country/operator registry or ranged-product migration is not installed. No product was changed.' });
+    }
+    const matches = await client.query(
+      `SELECT r.dtone_product_id, r.country_iso_code, r.operator_name,
+              r.destination_currency, r.min_amount, r.max_amount,
+              r.amount_increment, r.accepted_calculation_modes,
+              r.capability_verified_at, r.active,
+              c.country_code, o.operator_key, o.provider_operator_id
+       FROM dtone_ranged_products r
+       JOIN country_registry c
+         ON c.country_code = CASE r.country_iso_code
+           WHEN 'AFG' THEN 'AF' WHEN 'PAK' THEN 'PK'
+           WHEN 'IND' THEN 'IN' WHEN 'BGD' THEN 'BD' ELSE NULL END
+        AND c.status = 'active'
+        AND c.destination_currency = r.destination_currency
+       JOIN country_operators o
+         ON o.country_code = c.country_code
+        AND o.provider_operator_id = r.provider_snapshot->'operator'->>'id'
+        AND o.active = TRUE
+        AND o.verified_at IS NOT NULL
+        AND BTRIM(o.provider_operator_id) <> ''
+       WHERE r.dtone_product_id = $1
+         AND r.capability_verified_at IS NOT NULL
+         AND r.accepted_calculation_modes ? 'DESTINATION_AMOUNT'
+       FOR UPDATE OF r`,
+      [productId]
+    );
+    if (matches.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ activated: false, error: matches.rowCount === 0 ? 'No verified canonical operator mapping matches this provider product. No product was changed.' : 'Provider operator identity is ambiguous in the canonical registry. No product was changed.' });
+    }
+    const match = matches.rows[0];
+    const saved = await client.query(
+      `UPDATE dtone_ranged_products
+       SET operator_key = $2, active = TRUE, updated_at = NOW()
+       WHERE dtone_product_id = $1 AND capability_verified_at IS NOT NULL
+       RETURNING dtone_product_id, country_iso_code, operator_name,
+                 operator_key, destination_currency, min_amount,
+                 max_amount, amount_increment, active, capability_verified_at`,
+      [productId, match.operator_key]
+    );
+    if (saved.rowCount !== 1) throw new Error('Ranged product activation did not update exactly one row.');
+    await client.query('COMMIT');
+    return res.json({ activated: true, product: saved.rows[0], matchedProviderOperatorId: match.provider_operator_id, transactionCreated: false, paymentCreated: false, note: 'One explicitly confirmed product was mapped to one verified canonical operator. No payment or top-up was performed.' });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Ranged product activation failed:', error.message);
+    return res.status(503).json({ activated: false, error: 'Could not safely map and activate this ranged product.', transactionCreated: false, paymentCreated: false });
+  } finally {
+    client.release();
+  }
+});
 // Read-only verification of a catalog product and its country pricing settings.
 // Does not change product activation, prices, orders, or payments.
 app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) => {
