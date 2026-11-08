@@ -191,3 +191,24 @@ test('treats malformed or unexpected successful create responses as unknown outc
     fetchImpl: mockFetch(200, createdResponse()),
   }), (error) => error instanceof DTOneOutcomeUnknownError && error.statusCode === 200);
 });
+
+
+test('treats provider conflict, timeout, and rate-limit responses as reconciliation-required outcomes', async () => {
+  const common = {
+    ...base,
+    productId: 98765, externalId: 'PGNT-ORDER-8',
+    destinationAmount: 150, destinationCurrency: 'AFN',
+    mobileNumber: '+93700100100', capability,
+  };
+  for (const status of [408, 409, 429]) {
+    let calls = 0;
+    await assert.rejects(createRangedTransaction({
+      ...common,
+      fetchImpl: async () => {
+        calls++;
+        return new Response(JSON.stringify({ error: 'provider response' }), { status });
+      },
+    }), (error) => error instanceof DTOneOutcomeUnknownError && error.statusCode === status);
+    assert.equal(calls, 1);
+  }
+});
