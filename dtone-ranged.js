@@ -32,6 +32,10 @@ function parseRangedProductCapability(product) {
     return null;
   }
 
+  const selectableMinAmount = minAmount + Math.ceil((Math.max(minAmount, PGNT_MIN_AMOUNT) - minAmount) / increment) * increment;
+  const selectableMaxAmount = minAmount + Math.floor((Math.min(maxAmount, PGNT_MAX_AMOUNT) - minAmount) / increment) * increment;
+  if (selectableMinAmount > selectableMaxAmount) return null;
+
   return Object.freeze({
     productId: product.id == null ? null : String(product.id),
     productType,
@@ -43,8 +47,8 @@ function parseRangedProductCapability(product) {
     acceptedCalculationModes,
     pgntMinAmount: PGNT_MIN_AMOUNT,
     pgntMaxAmount: PGNT_MAX_AMOUNT,
-    selectableMinAmount: minAmount + Math.ceil((Math.max(minAmount, PGNT_MIN_AMOUNT) - minAmount) / increment) * increment,
-    selectableMaxAmount: minAmount + Math.floor((Math.min(maxAmount, PGNT_MAX_AMOUNT) - minAmount) / increment) * increment,
+    selectableMinAmount,
+    selectableMaxAmount,
     active: false,
   });
 }
