@@ -21,7 +21,7 @@ test('ranged quote endpoint requires an idempotency key before creating a provid
   assert.match(route, /hashRangedIdempotencyKey\(idempotencyHeader\)/);
   assert.match(route, /request_key_hash, request_fingerprint/);
   assert.match(route, /WHERE r\.request_key_hash = \$1/);
-  assert.match(route, /createRangedOrderAccessToken\(orderId, accessSecret\)/);
+  assert.match(route, /createRangedOrderAccessToken\(orderId, ORDER_ACCESS_TOKEN_SECRET\)/);
   assert.match(route, /createRangedTransaction\(/);
 });
 
