@@ -54,6 +54,14 @@ async function assertCanonical(client, schema) {
     ORDER BY child.relname
   `, [schema]);
   for (const row of fks.rows) assert.equal(row.parent_table, 'country_registry');
+  const legacyParentRefs = await client.query(
+    `SELECT COUNT(*)::int AS count FROM pg_constraint c
+     JOIN pg_class parent ON parent.oid=c.confrelid
+     JOIN pg_namespace n ON n.oid=parent.relnamespace
+     WHERE c.contype='f' AND n.nspname=$1 AND parent.relname='countries'`,
+    [schema]
+  );
+  assert.equal(legacyParentRefs.rows[0].count, 0, 'no child foreign key may retain countries as its parent');
   if (await client.query(`SELECT to_regclass($1) AS name`, [`${schema}.country_localizations`]).then(r=>r.rows[0].name)) {
     const orphan = await client.query(`
       SELECT COUNT(*)::int AS count FROM country_localizations l
@@ -91,10 +99,27 @@ test('canonical registry reconciliation upgrades the PR #196 schema and preserve
       INSERT INTO country_operator_localizations(country_code,operator_key,language_code,display_name)
       VALUES ('AF','af-test-net','ps','ازمایښتي شبکه')
     `);
+    await client.query(`
+      INSERT INTO country_exchange_rates(country_code,quote_currency,rate,source,observed_at)
+      VALUES ('AF','AFN',70,'fixture',NOW())
+    `);
+    await client.query(`
+      INSERT INTO operator_prefixes(country_code,operator_id,prefix)
+      VALUES ('AF',$1,'070')
+    `, [inserted.rows[0].id]);
     await client.query(reconcile);
     await assertCanonical(client, schema);
     const after = await client.query('SELECT COUNT(*)::int AS count FROM country_localizations');
     assert.equal(after.rows[0].count, 24);
+    const preservedChildren = await client.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM country_provider_settings) AS provider_settings,
+        (SELECT COUNT(*)::int FROM country_exchange_rates) AS fx_rates,
+        (SELECT COUNT(*)::int FROM operator_prefixes) AS prefixes
+    `);
+    assert.equal(preservedChildren.rows[0].provider_settings, 4);
+    assert.equal(preservedChildren.rows[0].fx_rates, 1);
+    assert.equal(preservedChildren.rows[0].prefixes, 1);
     const legacy = await client.query(`SELECT status FROM country_registry WHERE country_code='AF'`);
     assert.equal(legacy.rows[0].status, 'legacy');
     const operator = await client.query(`
