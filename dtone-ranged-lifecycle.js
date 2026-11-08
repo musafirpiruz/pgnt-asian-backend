@@ -101,7 +101,12 @@ async function requestJson(transport, operation, path, body) {
     throw new DTOneOutcomeUnknownError(operation, error);
   }
 
-  const responseText = await response.text();
+  let responseText;
+  try {
+    responseText = await response.text();
+  } catch (error) {
+    throw new DTOneOutcomeUnknownError(operation, error);
+  }
   let data = null;
   if (responseText) {
     try { data = JSON.parse(responseText); } catch (_) {
