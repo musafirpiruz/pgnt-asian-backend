@@ -5804,7 +5804,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
 app.post('/api/admin/dtone/ranged-products/:productId/activate', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ activated: false, error: 'Database is not configured.' });
   const productId = String(req.params.productId || '').trim();
-  if (!/^[1-9]\\d{0,17}$/.test(productId)) {
+  if (!/^[1-9]\d{1,17}$/.test(productId)) {
     return res.status(400).json({ activated: false, error: 'A valid DT One product ID is required.' });
   }
   if (req.body?.confirmActivation !== true) {
