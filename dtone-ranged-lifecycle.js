@@ -8,6 +8,7 @@ class DTOneOutcomeUnknownError extends Error {
     this.name = 'DTOneOutcomeUnknownError';
     this.operation = operation;
     this.cause = cause;
+    this.statusCode = Number.isInteger(cause?.statusCode) ? cause.statusCode : null;
   }
 }
 
@@ -109,12 +110,21 @@ async function requestJson(transport, operation, path, body) {
   }
   let data = null;
   if (responseText) {
-    try { data = JSON.parse(responseText); } catch (_) {
-      throw new Error(`DT One ${operation} returned a non-JSON response (HTTP ${response.status}).`);
+    try { data = JSON.parse(responseText); } catch (cause) {
+      if (response.ok || response.status >= 500) {
+        cause.statusCode = response.status;
+        throw new DTOneOutcomeUnknownError(operation, cause);
+      }
+      throw new Error(`DT One ${operation} was rejected with a non-JSON response (HTTP ${response.status}).`);
     }
   }
+  if (!response.ok && response.status >= 500) {
+    const cause = new Error(`DT One returned HTTP ${response.status}; provider state must be reconciled.`);
+    cause.statusCode = response.status;
+    throw new DTOneOutcomeUnknownError(operation, cause);
+  }
   if (!response.ok) {
-    const error = new Error(`DT One ${operation} failed with HTTP ${response.status}; reconcile provider state before retrying.`);
+    const error = new Error(`DT One ${operation} was rejected with HTTP ${response.status}; do not retry without correcting the request.`);
     error.name = 'DTOneHttpError';
     error.statusCode = response.status;
     error.providerErrorCode = data?.errors?.[0]?.code || data?.code || null;
@@ -132,8 +142,14 @@ async function createRangedTransaction(options) {
     '/v1/async/transactions',
     payload
   );
+  if (result.statusCode >= 200 && result.statusCode < 300 &&
+      (result.statusCode !== 201 || !result.data || typeof result.data !== 'object')) {
+    const cause = new Error(`Unexpected successful create response (HTTP ${result.statusCode}); reconcile by external_id.`);
+    cause.statusCode = result.statusCode;
+    throw new DTOneOutcomeUnknownError('ranged transaction creation', cause);
+  }
   if (result.statusCode !== 201 || !result.data || typeof result.data !== 'object') {
-    throw new Error('DT One ranged transaction creation did not return HTTP 201 with a transaction object.');
+    throw new Error('DT One ranged transaction creation was not accepted.');
   }
   // Return the provider response intact so the caller can persist the provider
   // transaction ID/external ID before validating price evidence. Never retry
