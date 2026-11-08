@@ -45,7 +45,9 @@ async function enforceRangedQuoteRateLimit(req, res, next) {
     );
     rangedRateLimitCleanupCounter += 1;
     if (rangedRateLimitCleanupCounter % 100 === 0) {
-      await pool.query("DELETE FROM ranged_quote_rate_limits WHERE updated_at < NOW() - INTERVAL '1 day'");
+      // Cleanup is best-effort and must not turn an otherwise valid quote
+      // request into a service outage.
+      await pool.query("DELETE FROM ranged_quote_rate_limits WHERE updated_at < NOW() - INTERVAL '1 day'").catch(() => {});
     }
     if (Number(result.rows[0]?.request_count || 0) > 10) {
       res.set('Retry-After', '60');
