@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS country_operators (
   UNIQUE (country_code, operator_key)
 );
 
-DO $
+DO $$
 DECLARE
   has_countries BOOLEAN;
   conflict_count BIGINT;
