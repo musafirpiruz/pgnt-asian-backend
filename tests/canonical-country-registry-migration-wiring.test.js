@@ -32,3 +32,23 @@ test('ranged activation route validates positive numeric product IDs with digit 
   const route = server.slice(start, end);
   assert.match(route, /\/\^\[1-9\]\\d\{0,17\}\$\//);
 });
+
+
+test('ranged quote idempotency migration is wired after the ranged transaction table exists', () => {
+  const idempotencyMigration = fs.readFileSync(
+    path.join(__dirname, '..', 'migrations', '021_ranged_quote_idempotency.sql'),
+    'utf8'
+  );
+  assert.match(migrate, /021_ranged_quote_idempotency/);
+  assert.match(migrate, /path\\.join\\(__dirname, "migrations", "021_ranged_quote_idempotency\\.sql"\\)/);
+  assert.match(idempotencyMigration, /request_key_hash CHAR\\(64\\)/);
+  assert.match(idempotencyMigration, /CREATE UNIQUE INDEX/);
+  assert.match(idempotencyMigration, /WHERE request_key_hash IS NOT NULL/);
+});
+
+test('country registry migration preserves existing FK definitions rather than forcing cascade', () => {
+  assert.match(migration, /pg_get_constraintdef\\(fk\\.oid\\)/);
+  assert.match(migration, /child_record\\.definition/);
+  assert.match(migration, /child_record\\.is_valid/);
+  assert.doesNotMatch(migration, /REFERENCES country_registry\\(country_code\\) ON DELETE CASCADE',/);
+});
