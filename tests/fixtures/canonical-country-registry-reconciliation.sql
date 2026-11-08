@@ -29,6 +29,7 @@ DO $$
 DECLARE
   has_countries BOOLEAN;
   conflict_count BIGINT;
+  constraint_name TEXT;
 BEGIN
   SELECT to_regclass(current_schema() || '.countries') IS NOT NULL INTO has_countries;
 
@@ -99,23 +100,12 @@ BEGIN
   -- Replace only country-parent FKs on the two shared tables. Preserve all
   -- other constraints and data. Names are generated deterministically.
   IF to_regclass(current_schema() || '.country_localizations') IS NOT NULL THEN
-    FOR conflict_count IN
-      SELECT c.oid FROM pg_constraint c
-      WHERE c.conrelid='country_localizations'::regclass AND c.contype='f'
-        AND c.confrelid IN (
-          COALESCE(to_regclass('countries'), 'pg_class'::regclass),
-          'country_registry'::regclass
-        )
-    LOOP
-      -- handled below by name-based loop; this integer loop is intentionally unused
-      NULL;
-    END LOOP;
-    FOR conflict_count IN
+    FOR constraint_name IN
       SELECT c.conname FROM pg_constraint c
       WHERE c.conrelid='country_localizations'::regclass AND c.contype='f'
         AND c.confrelid <> 'country_registry'::regclass
     LOOP
-      EXECUTE format('ALTER TABLE country_localizations DROP CONSTRAINT %I', conflict_count::text);
+      EXECUTE format('ALTER TABLE country_localizations DROP CONSTRAINT %I', constraint_name);
     END LOOP;
     IF NOT EXISTS (
       SELECT 1 FROM pg_constraint c
@@ -129,12 +119,12 @@ BEGIN
   END IF;
 
   IF to_regclass(current_schema() || '.country_operators') IS NOT NULL THEN
-    FOR conflict_count IN
+    FOR constraint_name IN
       SELECT c.conname FROM pg_constraint c
       WHERE c.conrelid='country_operators'::regclass AND c.contype='f'
         AND c.confrelid <> 'country_registry'::regclass
     LOOP
-      EXECUTE format('ALTER TABLE country_operators DROP CONSTRAINT %I', conflict_count::text);
+      EXECUTE format('ALTER TABLE country_operators DROP CONSTRAINT %I', constraint_name);
     END LOOP;
     IF NOT EXISTS (
       SELECT 1 FROM pg_constraint c
