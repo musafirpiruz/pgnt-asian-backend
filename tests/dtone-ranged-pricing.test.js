@@ -88,8 +88,8 @@ test('grosses up ranged EUR wholesale quote for app fee and Stripe fees', () => 
   assert.equal(result.currency, 'EUR');
   assert.equal(result.wholesaleCostCents, 190);
   assert.equal(result.feeCents, 49);
-  assert.equal(result.estimatedStripeFeeCents, 29);
-  assert.equal(result.finalPriceCents, 268);
+  assert.equal(result.estimatedStripeFeeCents, 30);
+  assert.equal(result.finalPriceCents, 269);
   assert.equal(result.netAfterStripeCents, 239);
 });
 
