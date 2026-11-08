@@ -79,3 +79,13 @@ test('ranged Stripe Checkout discloses wholesale, PGNT, and estimated Stripe fee
   assert.match(route, /PGNT fee: \$\{formatEuro\(Number\(order\.fee_cents\)\)\}/);
   assert.match(route, /estimated Stripe fee:/);
 });
+
+
+test('ranged checkout safely recovers a crash after awaiting_payment but before session persistence', () => {
+  const start = server.indexOf("app.post('/api/payments/checkout'");
+  const end = server.indexOf("// Create a checkout session and store its order.", start);
+  const route = server.slice(start, end > start ? end : start + 12000);
+  assert.match(route, /!\['ranged_quote_ready', 'awaiting_payment'\]\.includes\(order\.status\)/);
+  assert.ok(route.includes('idempotencyKey: `ranged-checkout-${orderId}`'));
+  assert.match(route, /persistStripeCheckoutSession\(orderId, session\.id\)/);
+});
