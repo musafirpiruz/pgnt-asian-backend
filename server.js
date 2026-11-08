@@ -18,6 +18,7 @@ const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
 const { createRangedTransaction, confirmRangedTransaction, cancelRangedTransaction, DTOneOutcomeUnknownError } = require('./dtone-ranged-lifecycle');
 const { parseRangedWholesalePrice, calculateRangedCustomerPrice } = require('./dtone-ranged-pricing');
+const { hashRangedIdempotencyKey, fingerprintRangedQuote, createRangedOrderAccessToken } = require('./ranged-request-idempotency');
 
 const PGNT_MIN_AMOUNT = 10;
 const PGNT_MAX_AMOUNT = 3000;
@@ -1174,6 +1175,14 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res
     return res.status(503).json({ error: 'Referral rewards are not yet enabled for ranged-value orders.' });
   }
 
+  const idempotencyHeader = req.get('Idempotency-Key');
+  let requestKeyHash;
+  try {
+    requestKeyHash = hashRangedIdempotencyKey(idempotencyHeader);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
   const country = normalizeCountry(req.body?.country);
   const productId = String(req.body?.productId || '').trim();
   const operatorKey = String(req.body?.operatorKey || '').trim();
@@ -1229,11 +1238,60 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res
       return res.status(400).json({ error: 'Amount is outside this provider product range or increment.' });
     }
 
+    const internationalPhone = `${SUPPORTED_COUNTRIES[country].callingCode}${phoneResult.phone}`;
+    const requestFingerprint = fingerprintRangedQuote({
+      country, productId, operatorKey, amount, phone: internationalPhone,
+    });
+
+    const existingResult = await client.query(
+      `SELECT r.request_fingerprint, r.provider_status, r.confirm_by,
+              o.order_id, o.status, o.product_price_cents, o.fee_cents, o.charge_cents
+       FROM dtone_ranged_transactions r
+       JOIN orders o ON o.order_id = r.order_id
+       WHERE r.request_key_hash = $1
+       LIMIT 1`,
+      [requestKeyHash]
+    );
+    if (existingResult.rowCount === 1) {
+      const existing = existingResult.rows[0];
+      if (String(existing.request_fingerprint || '').trim() !== requestFingerprint) {
+        return res.status(409).json({ error: 'This Idempotency-Key was already used for a different top-up request.' });
+      }
+      if (existing.status !== 'ranged_quote_ready' || existing.provider_status !== 'CREATED' ||
+          !existing.confirm_by || new Date(existing.confirm_by).getTime() <= Date.now()) {
+        return res.status(409).json({
+          error: 'This top-up request is already being processed or requires review. Do not submit a new request until it is reconciled.',
+          orderId: existing.order_id,
+          reviewRequired: existing.status === 'topup_review' || existing.provider_status === 'REVIEW',
+        });
+      }
+      const accessSecret = process.env.ORDER_ACCESS_TOKEN_SECRET || STRIPE_SECRET_KEY;
+      orderAccessToken = createRangedOrderAccessToken(existing.order_id, accessSecret);
+      return res.status(200).json({
+        orderId: existing.order_id,
+        orderAccessToken,
+        productId: String(row.dtone_product_id),
+        operator: String(row.operator_name),
+        country,
+        recipientAmount: amount,
+        recipientCurrency: capability.destinationCurrency,
+        paymentCurrency: 'EUR',
+        appFeeCents: Number(existing.fee_cents),
+        estimatedStripeFeeCents: Math.max(0, Number(existing.charge_cents) - Number(existing.product_price_cents) - Number(existing.fee_cents)),
+        amountCents: Number(existing.charge_cents),
+        amountFormatted: formatEuro(Number(existing.charge_cents)),
+        quoteExpiresAt: new Date(existing.confirm_by).toISOString(),
+        providerTransactionCreated: true,
+        autoConfirmed: false,
+        replayed: true,
+      });
+    }
+
     const pricing = await getPricingSettings(client, country);
     orderId = createOrderId();
-    orderAccessToken = crypto.randomBytes(32).toString('hex');
+    const accessSecret = process.env.ORDER_ACCESS_TOKEN_SECRET || STRIPE_SECRET_KEY;
+    orderAccessToken = createRangedOrderAccessToken(orderId, accessSecret);
     const tokenHash = crypto.createHash('sha256').update(orderAccessToken, 'utf8').digest('hex');
-    const internationalPhone = `${SUPPORTED_COUNTRIES[country].callingCode}${phoneResult.phone}`;
 
     await client.query('BEGIN');
     await client.query(
@@ -1248,9 +1306,11 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res
     await client.query(
       `INSERT INTO dtone_ranged_transactions
          (order_id, dtone_product_id, external_id, requested_amount,
-          destination_currency, calculation_mode, provider_status)
-       VALUES ($1,$2,$3,$4,$5,'DESTINATION_AMOUNT','REVIEW')`,
-      [orderId, Number(row.dtone_product_id), orderId, amount, capability.destinationCurrency]
+          destination_currency, calculation_mode, provider_status,
+          request_key_hash, request_fingerprint)
+       VALUES ($1,$2,$3,$4,$5,'DESTINATION_AMOUNT','REVIEW',$6,$7)`,
+      [orderId, Number(row.dtone_product_id), orderId, amount, capability.destinationCurrency,
+       requestKeyHash, requestFingerprint]
     );
     await client.query('COMMIT');
 
@@ -1385,6 +1445,25 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res
     }
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
+    if (error?.code === '23505') {
+      try {
+        const existing = await pool.query(
+          `SELECT r.request_fingerprint, r.provider_status, r.confirm_by,
+                  o.order_id, o.status
+           FROM dtone_ranged_transactions r
+           JOIN orders o ON o.order_id = r.order_id
+           WHERE r.request_key_hash = $1 LIMIT 1`,
+          [requestKeyHash]
+        );
+        if (existing.rowCount === 1) {
+          return res.status(409).json({
+            error: 'This top-up request is already being processed. Reuse the same Idempotency-Key and wait for its result; do not create another request.',
+            orderId: existing.rows[0].order_id,
+            reviewRequired: existing.rows[0].status === 'topup_review' || existing.rows[0].provider_status === 'REVIEW',
+          });
+        }
+      } catch (_) {}
+    }
     console.error('Ranged quote setup failed.', {
       errorName: error?.name || 'Error',
       errorCode: error?.code || null,
