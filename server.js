@@ -1168,6 +1168,10 @@ app.post('/api/ranged-quotes', async (req, res) => {
     return res.status(503).json({ error: 'Payment and fulfillment environments are not safely matched.' });
   }
 
+  if (String(req.body?.referralCode || '').trim() || String(req.body?.referralInstallId || '').trim()) {
+    return res.status(503).json({ error: 'Referral rewards are not yet enabled for ranged-value orders.' });
+  }
+
   const country = normalizeCountry(req.body?.country);
   const productId = String(req.body?.productId || '').trim();
   const amount = Number(req.body?.amount);
@@ -3360,14 +3364,54 @@ async function markCheckoutPaymentFailed(session) {
        RETURNING order_id`,
       [session.id]
     );
+    let rangedToCancel = null;
     if (changed.rowCount === 1) {
+      const orderId = changed.rows[0].order_id;
       await client.query(
         `UPDATE referral_ledger SET status = 'reversed', updated_at = NOW()
          WHERE order_id = $1 AND status = 'reserved'`,
-        [changed.rows[0].order_id]
+        [orderId]
       );
+      const ranged = await client.query(
+        `SELECT dtone_transaction_id, provider_status
+         FROM dtone_ranged_transactions WHERE order_id = $1 FOR UPDATE`,
+        [orderId]
+      );
+      if (ranged.rowCount === 1 && ranged.rows[0].provider_status === 'CREATED') {
+        rangedToCancel = { orderId, transactionId: ranged.rows[0].dtone_transaction_id };
+      }
     }
     await client.query('COMMIT');
+    if (rangedToCancel?.transactionId) {
+      try {
+        await cancelRangedTransaction({
+          baseUrl: DTONE_API_BASE_URL,
+          authorization: getDtOneAuthHeader(),
+          fetchImpl: fetch,
+          transactionId: rangedToCancel.transactionId,
+        });
+        await pool.query(
+          `UPDATE dtone_ranged_transactions SET provider_status = 'CANCELLED', updated_at = NOW()
+           WHERE order_id = $1 AND dtone_transaction_id = $2 AND provider_status = 'CREATED'`,
+          [rangedToCancel.orderId, rangedToCancel.transactionId]
+        );
+      } catch (cancelError) {
+        await pool.query(
+          `UPDATE dtone_ranged_transactions SET provider_status = 'REVIEW', updated_at = NOW()
+           WHERE order_id = $1 AND dtone_transaction_id = $2`,
+          [rangedToCancel.orderId, rangedToCancel.transactionId]
+        );
+        await pool.query(
+          `UPDATE orders SET status = 'topup_review', dtone_status = 'REVIEW', updated_at = NOW()
+           WHERE order_id = $1 AND status = 'payment_failed'`,
+          [rangedToCancel.orderId]
+        );
+        console.error('Ranged DT One cancellation after failed payment requires reconciliation.', {
+          errorName: cancelError?.name || 'Error',
+          statusCode: cancelError?.statusCode || null,
+        });
+      }
+    }
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
     throw error;
