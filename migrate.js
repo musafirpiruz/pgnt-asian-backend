@@ -947,6 +947,35 @@ async function runMigration() {
     } else {
       console.log("Migration 020_canonical_country_registry is already applied.");
     }
+
+    // Version 021 prevents duplicate provider reservations when a customer
+    // retries the same ranged quote request after a timeout or double tap.
+    const rangedQuoteIdempotencyVersion = "021_ranged_quote_idempotency";
+    const rangedQuoteIdempotencyCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedQuoteIdempotencyVersion]
+    );
+    if (rangedQuoteIdempotencyCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        const idempotencySql = fs.readFileSync(
+          path.join(__dirname, "migrations", "021_ranged_quote_idempotency.sql"),
+          "utf8"
+        );
+        await client.query(idempotencySql);
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [rangedQuoteIdempotencyVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 021 completed; ranged quote request keys are unique.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 021_ranged_quote_idempotency is already applied.");
+    }
     } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
