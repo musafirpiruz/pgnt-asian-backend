@@ -55,5 +55,7 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/referral-migration-upgrade-verify.sql
       - name: Diagnose both country registry migration orders in isolated PostgreSQL schemas
         run: node --test tests/country-registry-migration-order.integration.test.js
+      - name: Reconcile country registry schemas in isolated PostgreSQL schemas
+        run: node --test tests/canonical-country-registry-reconciliation.integration.test.js
       - name: Run regression tests
         run: npm test
