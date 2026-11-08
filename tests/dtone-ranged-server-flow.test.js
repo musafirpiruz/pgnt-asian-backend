@@ -28,7 +28,7 @@ test('ranged discovery exposes only active products with verified destination-am
 test('ranged quote persists a pending order before creating a non-auto-confirmed provider transaction', () => {
   const route = section("app.post('/api/ranged-quotes'", "app.get('/api/pricing/quote'");
   assert.ok(route.indexOf("await client.query('COMMIT')") < route.indexOf('createRangedTransaction'));
-  assert.match(route, /auto_confirm:false/);
+  assert.match(lifecycle, /auto_confirm: false/);
   assert.match(route, /parseRangedWholesalePrice/);
   assert.match(route, /wholesaleCurrency/);
   assert.match(route, /order_access_token_hash/);
