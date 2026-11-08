@@ -2536,46 +2536,96 @@ class _PgntHomePageState extends State<PgntHomePage> {
       showMessage(t('invalidPhone'));
       return;
     }
-
     if (selectedOperator == null) {
       showMessage(t('chooseOperator'));
       return;
     }
 
     final enteredAmount = int.tryParse(customAmountController.text.trim());
-    if (enteredAmount == null || enteredAmount < 10 || enteredAmount > 3000 || enteredAmount != selectedAmount) {
+    if (enteredAmount == null ||
+        enteredAmount < 10 ||
+        enteredAmount > 3000 ||
+        enteredAmount != selectedAmount) {
       showMessage('لومړی د ۱۰ او ۳۰۰۰ ترمنځ مبلغ ولیکئ او د تایید نښه کېکاږئ.');
       return;
     }
 
     setState(() => isLoading = true);
-
     try {
       String? rangedOrderId;
       String? rangedAccessToken;
+
+      // Create the DT One quote only after the customer explicitly continues.
       if (priceQuote?['isRangedAvailable'] == true) {
-        final rangedResponse = await http.post(
-          Uri.parse('$backendBaseUrl/api/ranged-quotes'),
-          headers: const {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: jsonEncode({
-            'country': selectedCountry.code,
-            'phone': phone,
-            'productId': priceQuote!['productId'],
-            'amount': selectedAmount,
-          }),
-        ).timeout(const Duration(seconds: 60));
-        final rangedDecoded = jsonDecode(rangedResponse.body);
-        if (rangedResponse.statusCode != 201 || rangedDecoded is! Map<String, dynamic>) {
-          final detail = rangedDecoded is Map ? rangedDecoded['error']?.toString() : null;
+        final rangedResponse = await http
+            .post(
+              Uri.parse('$backendBaseUrl/api/ranged-quotes'),
+              headers: const {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({
+                'country': selectedCountry.code,
+                'phone': phone,
+                'productId': priceQuote!['productId'],
+                'amount': selectedAmount,
+              }),
+            )
+            .timeout(const Duration(seconds: 60));
+
+        dynamic rangedDecoded;
+        try {
+          rangedDecoded = jsonDecode(rangedResponse.body);
+        } on FormatException {
+          throw Exception('د DT One سرور ناسم ځواب راکړ.');
+        }
+        if (rangedResponse.statusCode != 201 ||
+            rangedDecoded is! Map<String, dynamic>) {
+          final detail = rangedDecoded is Map
+              ? rangedDecoded['error']?.toString()
+              : null;
           throw Exception(detail ?? 'د DT One قیمت تایید نه شو.');
         }
+
         rangedOrderId = rangedDecoded['orderId']?.toString();
         rangedAccessToken = rangedDecoded['orderAccessToken']?.toString();
         if (rangedOrderId == null ||
-            !RegExp(r'^[0-9a-f-]{36}
+            !RegExp(r'^[0-9a-f-]{36}$', caseSensitive: false)
+                .hasMatch(rangedOrderId) ||
+            rangedAccessToken == null ||
+            !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false)
+                .hasMatch(rangedAccessToken)) {
+          throw Exception('د خوندي نرخ د تعقیب معلومات نشته.');
+        }
+      }
+
+      final Map<String, dynamic> checkoutBody;
+      if (rangedOrderId != null && rangedAccessToken != null) {
+        checkoutBody = {
+          'rangedQuote': {
+            'orderId': rangedOrderId,
+            'orderAccessToken': rangedAccessToken,
+          },
+        };
+      } else {
+        checkoutBody = {
+          'country': selectedCountry.code,
+          'countryCode': selectedCountry.code,
+          'phone': phone,
+          'phoneNumber': phone,
+          'operator': selectedOperator!.name,
+          if (selectedOperator!.operatorKey != null &&
+              selectedOperator!.operatorKey!.isNotEmpty)
+            'operatorKey': selectedOperator!.operatorKey!,
+          'amount': selectedAmount,
+          'currency': selectedCountry.currency,
+          'productId': priceQuote?['productId'],
+        };
+      }
+
+      final response = await http
+          .post(
+            Uri.parse('$backendBaseUrl/api/payments/checkout'),
             headers: const {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
@@ -2584,43 +2634,46 @@ class _PgntHomePageState extends State<PgntHomePage> {
           )
           .timeout(const Duration(seconds: 30));
 
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
-        throw Exception('Checkout request failed');
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception('د تادیې سرور ناسم ځواب راکړ.');
       }
-
-      final dynamic decoded = jsonDecode(response.body);
-
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final detail = decoded is Map ? decoded['error']?.toString() : null;
+        throw Exception(detail ?? 'Checkout request failed');
+      }
       if (decoded is! Map<String, dynamic>) {
         throw Exception('Invalid checkout response');
       }
 
-      final dynamic rawUrl = decoded['checkoutUrl'] ??
+      final rawUrl = decoded['checkoutUrl'] ??
           decoded['url'] ??
           decoded['sessionUrl'];
       final orderId = decoded['orderId']?.toString();
-      final accessToken = (decoded['orderAccessToken'] ?? rangedAccessToken)?.toString();
+      final accessToken =
+          (decoded['orderAccessToken'] ?? rangedAccessToken)?.toString();
 
       if (rawUrl is! String || rawUrl.isEmpty) {
         throw Exception('Checkout URL is missing');
       }
       if (orderId == null ||
-          !RegExp(r'^[0-9a-f-]{36}$', caseSensitive: false).hasMatch(orderId) ||
+          !RegExp(r'^[0-9a-f-]{36}$', caseSensitive: false)
+              .hasMatch(orderId) ||
           accessToken == null ||
-          !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false).hasMatch(accessToken)) {
+          !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false)
+              .hasMatch(accessToken)) {
         throw Exception('Secure order tracking information is missing');
       }
 
       final paymentUri = Uri.tryParse(rawUrl);
-
       if (paymentUri == null || paymentUri.scheme != 'https') {
         throw Exception('Invalid payment URL');
       }
-
       if (!mounted) return;
 
-      // Save the order and its access token before opening the external
-      // payment app, so closing or backgrounding the app does not lose them.
+      // Persist the secure order token before opening the payment application.
       _orderAccessTokens[orderId] = accessToken;
       setState(() {
         selectedSupportOrderId ??= orderId;
@@ -2649,21 +2702,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
         paymentUri,
         mode: LaunchMode.externalApplication,
       );
-
-      if (!opened) {
-        throw Exception('Could not open payment page');
-      }
+      if (!opened) throw Exception('Could not open payment page');
 
       await refreshOrderStatus(orderId);
       _pollOrderStatus(orderId);
-
       showMessage(t('success'));
-    } catch (_) {
-      showMessage(t('paymentError'));
+    } catch (error) {
+      final message = error.toString().replaceFirst('Exception: ', '').trim();
+      showMessage(message.isEmpty ? t('paymentError') : message);
     } finally {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
