@@ -503,6 +503,8 @@ function validateCheckoutInput(body) {
   const rawProductId = String(body.productId || '').trim();
   const productId = rawProductId || null;
   const operator = String(body.operator || '').trim();
+  const rawOperatorKey = String(body.operatorKey || '').trim();
+  const operatorKey = rawOperatorKey || null;
   const amount = Number(body.amount);
 
   if (productId && !/^[1-9]\d*$/.test(productId)) {
@@ -511,7 +513,8 @@ function validateCheckoutInput(body) {
 
   // Current Flutter clients send operator + local amount, not a catalog ID.
   if (!productId && (
-    !operator || operator.length > 120 ||
+    (!operatorKey && (!operator || operator.length > 120)) ||
+    (operatorKey && (!/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) ||
     !Number.isSafeInteger(amount) || amount <= 0
   )) {
     throw new Error('Select a valid operator and top-up amount.');
@@ -522,6 +525,7 @@ function validateCheckoutInput(body) {
     phone: phoneResult.phone,
     productId,
     operator,
+    operatorKey,
     amount,
     paymentCurrency,
     recipientCurrency: countryCurrency(country),
@@ -640,8 +644,53 @@ async function getPricingSettings(client, country) {
 // Read an enabled product from the database.
 // Expected database table: product_catalog
 async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
-  const result = await client.query(
-    `SELECT
+  let result;
+
+  // Stable-key selection is authoritative. Resolve the internal operator and
+  // its explicitly reviewed catalog mapping on the server; never use a
+  // localized display label or a client-supplied provider ID as identity.
+  if (options.operatorKey) {
+    result = await client.query(
+      `SELECT
+         p.id,
+         p.country,
+         p.currency,
+         p.product_id AS dtone_product_id,
+         p.operator AS name,
+         NULL::text AS description,
+         p.amount AS local_amount,
+         p.price_eur_cents,
+         p.wholesale_price_eur_cents,
+         p.active AS enabled
+       FROM country_registry c
+       JOIN country_operators o
+         ON o.country_code = c.country_code
+       JOIN country_operator_products cop
+         ON cop.country_code = o.country_code
+        AND cop.operator_key = o.operator_key
+       JOIN product_catalog p
+         ON p.id = cop.product_catalog_id
+       WHERE c.country_code = $1
+         AND c.status = 'active'
+         AND o.operator_key = $2
+         AND o.active = TRUE
+         AND o.provider_operator_id IS NOT NULL
+         AND BTRIM(o.provider_operator_id) <> ''
+         AND o.verified_at IS NOT NULL
+         AND cop.active = TRUE
+         AND cop.verified_at IS NOT NULL
+         AND p.country = c.country_code
+         AND p.amount = $3
+         AND p.currency = c.destination_currency
+       LIMIT 2`,
+      [normalizeCountry(requestedCountry), String(options.operatorKey), amount]
+    );
+    if (result.rowCount > 1) {
+      throw new Error('Product selection is ambiguous; select a verified operator product.');
+    }
+  } else {
+    result = await client.query(
+      `SELECT
        id,
        country,
        currency,
@@ -659,8 +708,9 @@ async function getProduct(client, productId, requestedCountry = null, operator =
        ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
      )
      LIMIT 1`,
-    [productId, requestedCountry, operator, amount]
-  );
+      [productId, requestedCountry, operator, amount]
+    );
+  }
 
   if (result.rowCount !== 1) {
     throw new Error(
@@ -1018,13 +1068,14 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const country = normalizeCountry(req.query.country);
   const operator = String(req.query.operator || '').trim();
+  const operatorKey = String(req.query.operatorKey || '').trim();
   const amount = Number(req.query.amount);
-  if (!isValidCountry(country) || !operator || operator.length > 120 || !Number.isSafeInteger(amount) || amount <= 0) {
+  if (!isValidCountry(country) || ((!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) || !Number.isSafeInteger(amount) || amount <= 0) {
     return res.status(400).json({ error: 'Select a valid country, operator, and amount.' });
   }
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true });
+    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true, operatorKey: operatorKey || null });
     const basePricing = await getPricingSettings(client, country);
     const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
@@ -1140,7 +1191,8 @@ app.post('/api/payments/checkout', async (req, res) => {
       client,
       input.productId,      input.country,
       input.operator,
-      input.amount
+      input.amount,
+      { operatorKey: input.operatorKey || null }
     );
 
     if (product.country !== input.country) {
