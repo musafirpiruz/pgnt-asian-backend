@@ -708,6 +708,62 @@ async function runMigration() {
       console.log("Migration 016_payment_currency_settings is already applied.");
     }
 
+    // Version 017 creates an explicit stable-key-to-catalog mapping. It is
+    // deliberately deferred until the canonical registry exists; this keeps
+    // current installations safe while the registry reconciliation is still
+    // under review. No legacy display-name mappings are guessed or inserted.
+    const operatorProductMappingVersion = "017_country_operator_product_mapping";
+    const operatorProductMappingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [operatorProductMappingVersion]
+    );
+    if (operatorProductMappingCheck.rows.length === 0) {
+      const registryReady = await client.query(
+        `SELECT to_regclass('country_registry') IS NOT NULL AS has_registry,
+                to_regclass('country_operators') IS NOT NULL AS has_operators,
+                to_regclass('product_catalog') IS NOT NULL AS has_catalog`
+      );
+      const ready = registryReady.rows[0].has_registry &&
+        registryReady.rows[0].has_operators && registryReady.rows[0].has_catalog;
+      if (!ready) {
+        console.log("Migration 017_country_operator_product_mapping deferred: canonical country registry is not installed.");
+      } else {
+        await client.query("BEGIN");
+        try {
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS country_operator_products (
+              id BIGSERIAL PRIMARY KEY,
+              country_code CHAR(2) NOT NULL,
+              operator_key VARCHAR(100) NOT NULL,
+              product_catalog_id BIGINT NOT NULL REFERENCES product_catalog(id) ON DELETE RESTRICT,
+              active BOOLEAN NOT NULL DEFAULT FALSE,
+              verified_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              CONSTRAINT country_operator_products_operator_fk
+                FOREIGN KEY (country_code, operator_key)
+                REFERENCES country_operators(country_code, operator_key) ON DELETE RESTRICT,
+              CONSTRAINT country_operator_products_unique
+                UNIQUE (country_code, operator_key, product_catalog_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_country_operator_products_active
+              ON country_operator_products(country_code, operator_key, active)
+              WHERE active = TRUE;
+            INSERT INTO schema_migrations (version)
+            VALUES ('017_country_operator_product_mapping')
+            ON CONFLICT (version) DO NOTHING;
+          `);
+          await client.query("COMMIT");
+          console.log("Migration 017_country_operator_product_mapping completed; no mappings or products were activated.");
+        } catch (migrationError) {
+          await client.query("ROLLBACK");
+          throw migrationError;
+        }
+      }
+    } else {
+      console.log("Migration 017_country_operator_product_mapping is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
