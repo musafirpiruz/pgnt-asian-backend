@@ -2706,13 +2706,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
         throw Exception('Secure order tracking information is missing');
       }
 
-      // The quote/checkout succeeded. A later, distinct customer action must
-      // receive a fresh idempotency key even if its inputs are identical.
-      _rangedIdempotencyKey = null;
-      _rangedRequestFingerprint = null;
-      await _secureStorage.delete(key: _rangedIdempotencyStorageKey);
-      await _secureStorage.delete(key: _rangedFingerprintStorageKey);
-
       final paymentUri = Uri.tryParse(rawUrl);
       if (paymentUri == null || paymentUri.scheme != 'https') {
         throw Exception('Invalid payment URL');
@@ -2749,6 +2742,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
         mode: LaunchMode.externalApplication,
       );
       if (!opened) throw Exception('Could not open payment page');
+
+      // Keep the same key until the existing Stripe session has actually
+      // opened; this also makes recovery safe after an app restart.
+      _rangedIdempotencyKey = null;
+      _rangedRequestFingerprint = null;
+      await _secureStorage.delete(key: _rangedIdempotencyStorageKey);
+      await _secureStorage.delete(key: _rangedFingerprintStorageKey);
 
       await refreshOrderStatus(orderId);
       _pollOrderStatus(orderId);
