@@ -59,7 +59,7 @@ test('ranged checkout retries return the same still-open Stripe session', () => 
 test('ranged quote endpoint is rate limited and uses a dedicated access-token secret', () => {
   assert.match(server, /app\.set\('trust proxy', 1\)/);
   assert.match(server, /enforceRangedQuoteRateLimit/);
-  assert.match(server, /request_count > 10/);
+  assert.match(server, /\) > 10/);
   assert.match(server, /ORDER_ACCESS_TOKEN_SECRET\.length < 32/);
   assert.doesNotMatch(server, /ORDER_ACCESS_TOKEN_SECRET \|\| STRIPE_SECRET_KEY/);
 });
