@@ -44,6 +44,8 @@ test('quote and checkout both pass operatorKey to the same server resolver', () 
 test('operator listing excludes operators without active verified product mappings', () => {
   const route = section("app.get('/api/countries/:countryCode/operators'", '// Public, read-only list of configured payment currencies.');
   assert.match(route, /EXISTS\s*\([\s\S]*country_operator_products[\s\S]*cop\.active = TRUE[\s\S]*cop\.verified_at IS NOT NULL/);
+  assert.match(route, /localized\.operator_id = o\.id/);
+  assert.doesNotMatch(route, /localized\.country_code|localized\.operator_key/);
 });
 
 test('mapping migration is deferred until registry tables exist and never seeds or activates mappings', () => {
