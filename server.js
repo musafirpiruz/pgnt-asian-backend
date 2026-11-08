@@ -1560,9 +1560,14 @@ app.post('/api/payments/checkout', async (req, res) => {
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch (_) {}
       if (orderId) {
-        if (stripeSessionCreated) {
-          // A Stripe session may already be payable. Preserve the provider
-          // transaction and force reconciliation instead of cancelling it.
+        const stripeStatus = Number(error?.statusCode);
+        const stripeOutcomeUnknown = !stripeSessionCreated &&
+          (!Number.isInteger(stripeStatus) || stripeStatus >= 500 ||
+           [408, 409, 429].includes(stripeStatus));
+        if (stripeSessionCreated || stripeOutcomeUnknown) {
+          // Stripe may have created a session even if the response/persistence
+          // failed. Never cancel the provider reservation on an uncertain
+          // Stripe outcome; hold both records for reconciliation.
           await pool.query(
             `UPDATE dtone_ranged_transactions SET provider_status = 'REVIEW', updated_at = NOW()
              WHERE order_id = $1`,
