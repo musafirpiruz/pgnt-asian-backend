@@ -33,7 +33,7 @@ function parseRangedWholesalePrice(response, expected = {}) {
     ? new Date(response.confirmation_expiration_date)
     : null;
 
-  if (!/^\d+$/.test(transactionId) ||
+  if (!/^\d+$/.test(transactionId) || BigInt(transactionId) <= 0n ||
       !externalId ||
       (expected.externalId && externalId !== String(expected.externalId)) ||
       (expected.productId && productId !== String(expected.productId)) ||
