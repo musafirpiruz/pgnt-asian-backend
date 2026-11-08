@@ -118,7 +118,12 @@ async function requestJson(transport, operation, path, body) {
       throw new Error(`DT One ${operation} was rejected with a non-JSON response (HTTP ${response.status}).`);
     }
   }
-  if (!response.ok && response.status >= 500) {
+  if (!response.ok && (
+    response.status >= 500 ||
+    response.status === 408 ||
+    response.status === 409 ||
+    response.status === 429
+  )) {
     const cause = new Error(`DT One returned HTTP ${response.status}; provider state must be reconciled.`);
     cause.statusCode = response.status;
     throw new DTOneOutcomeUnknownError(operation, cause);
