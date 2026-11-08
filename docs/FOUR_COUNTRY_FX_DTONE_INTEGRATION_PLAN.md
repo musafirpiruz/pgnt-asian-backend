@@ -65,3 +65,11 @@ These observations are not sufficient to conclude which values are currently aut
 - Record the verified result and obtain explicit approval before changing production pricing.
 
 No production setting was changed as part of this reconciliation note.
+
+## Latest integration branch update — parser groundwork is not activation
+
+- Commit `c20de99035abd9663b0150e68e181dc17d0e8a01` adds `MobileOperator.fromRegistryJson`, which preserves `operator_key` and `provider_operator_id` separately from the localized display label and accepts the observed snake_case response keys plus compatibility aliases.
+- Commit `cf25f850978be3e23d8a18b6e561b7abd2d3cf53` adds a source-contract test for that parser.
+- Follow-up inspection confirms the PR #225 Flutter file still contains no `/api/countries` request and no dynamic country/operator loader. The factory is therefore not called by the app yet; the current curated operator list remains the active path.
+- The current main backend also has no country registry operator route or registry-aware quote contract. The dynamic-country branch's public operator route returns `code`, `name`, and `providerName` from the registry query but does not explicitly expose `operator_key` / `provider_operator_id` under the agreed names.
+- Do not turn on the client path until the registry migrations and backend route are brought into a reviewed integration branch, the public JSON contract is explicit, and quote/checkout resolve identity and product mappings server-side. Client-supplied provider IDs remain untrusted hints only.
