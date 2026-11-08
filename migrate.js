@@ -764,6 +764,101 @@ async function runMigration() {
       console.log("Migration 017_country_operator_product_mapping is already applied.");
     }
 
+
+    // Version 018 lays down an isolated, fail-closed data model for DT One
+    // ranged-value products. It does not import, activate, price, or transact
+    // any product. Runtime integration must be delivered and tested separately.
+    const rangedValueVersion = "018_dtone_ranged_value_foundation";
+    const rangedValueCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedValueVersion]
+    );
+    if (rangedValueCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS dtone_product_capabilities (
+            id BIGSERIAL PRIMARY KEY,
+            product_catalog_id BIGINT NOT NULL UNIQUE
+              REFERENCES product_catalog(id) ON DELETE RESTRICT,
+            dtone_product_id BIGINT NOT NULL UNIQUE,
+            product_type VARCHAR(40) NOT NULL
+              CHECK (product_type IN ('FIXED_VALUE_RECHARGE', 'RANGED_VALUE_RECHARGE')),
+            amount_mode VARCHAR(40) NOT NULL
+              CHECK (amount_mode IN ('FIXED', 'DESTINATION_AMOUNT', 'SOURCE_AMOUNT')),
+            destination_currency CHAR(3) NOT NULL,
+            min_amount NUMERIC(18,4),
+            max_amount NUMERIC(18,4),
+            amount_increment NUMERIC(18,4),
+            accepted_calculation_modes JSONB NOT NULL DEFAULT '[]'::jsonb
+              CHECK (jsonb_typeof(accepted_calculation_modes) = 'array'),
+            provider_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb
+              CHECK (jsonb_typeof(provider_snapshot) = 'object'),
+            capability_verified_at TIMESTAMPTZ,
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (
+              (product_type = 'FIXED_VALUE_RECHARGE'
+                AND min_amount IS NULL AND max_amount IS NULL AND amount_increment IS NULL)
+              OR
+              (product_type = 'RANGED_VALUE_RECHARGE'
+                AND min_amount > 0 AND max_amount >= min_amount
+                AND amount_increment > 0)
+            ),
+            CHECK (active = FALSE OR capability_verified_at IS NOT NULL)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_dtone_product_capabilities_inactive
+            ON dtone_product_capabilities(active, product_type);
+
+          CREATE TABLE IF NOT EXISTS dtone_ranged_transactions (
+            id BIGSERIAL PRIMARY KEY,
+            order_id VARCHAR(80) NOT NULL UNIQUE
+              REFERENCES orders(order_id) ON DELETE RESTRICT,
+            capability_id BIGINT NOT NULL
+              REFERENCES dtone_product_capabilities(id) ON DELETE RESTRICT,
+            dtone_transaction_id VARCHAR(255) UNIQUE,
+            external_id VARCHAR(100) NOT NULL UNIQUE,
+            requested_amount NUMERIC(18,4) NOT NULL CHECK (requested_amount > 0),
+            destination_currency CHAR(3) NOT NULL,
+            calculation_mode VARCHAR(40) NOT NULL
+              CHECK (calculation_mode IN ('DESTINATION_AMOUNT', 'SOURCE_AMOUNT')),
+            wholesale_amount NUMERIC(18,6)
+              CHECK (wholesale_amount IS NULL OR wholesale_amount > 0),
+            wholesale_currency CHAR(3),
+            provider_status VARCHAR(40) NOT NULL DEFAULT 'CREATED'
+              CHECK (provider_status IN ('CREATED','CONFIRMED','COMPLETED','FAILED','CANCELLED','REVIEW')),
+            confirm_by TIMESTAMPTZ,
+            confirmed_at TIMESTAMPTZ,
+            price_evidence JSONB NOT NULL DEFAULT '{}'::jsonb
+              CHECK (jsonb_typeof(price_evidence) = 'object'),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CHECK (
+              (wholesale_amount IS NULL AND wholesale_currency IS NULL)
+              OR
+              (wholesale_amount IS NOT NULL AND wholesale_currency IS NOT NULL)
+            ),
+            CHECK (provider_status <> 'CONFIRMED' OR confirmed_at IS NOT NULL)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_dtone_ranged_transactions_status_deadline
+            ON dtone_ranged_transactions(provider_status, confirm_by);
+          INSERT INTO schema_migrations (version)
+            VALUES ('018_dtone_ranged_value_foundation')
+            ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 018_dtone_ranged_value_foundation completed; ranged products remain inactive and no transactions were created.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 018_dtone_ranged_value_foundation is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
