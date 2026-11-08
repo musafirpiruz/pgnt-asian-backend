@@ -1486,6 +1486,7 @@ app.post('/api/payments/checkout', async (req, res) => {
     const tokenHash = crypto.createHash('sha256').update(quoteToken, 'utf8').digest('hex');
     const client = await pool.connect();
     let order;
+    let stripeSessionCreated = false;
     try {
       await client.query('BEGIN');
       const result = await client.query(
@@ -1506,7 +1507,7 @@ app.post('/api/payments/checkout', async (req, res) => {
       const nowMs = Date.now();
       if (order.status !== 'ranged_quote_ready' || order.provider_status !== 'CREATED' ||
           !order.dtone_transaction_id || !Number.isFinite(confirmByMs) ||
-          confirmByMs <= nowMs + 30 * 60 * 1000) {
+          confirmByMs <= nowMs + 31 * 60 * 1000) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: 'Ranged quote is expired or not eligible for checkout. Request a new quote after reconciliation.' });
       }
@@ -1545,6 +1546,7 @@ app.post('/api/payments/checkout', async (req, res) => {
         success_url: urls.successUrl,
         cancel_url: urls.cancelUrl,
       }, { idempotencyKey: `ranged-checkout-${orderId}` });
+      stripeSessionCreated = true;
 
       await persistStripeCheckoutSession(orderId, session.id);
       return res.status(201).json({
@@ -1558,9 +1560,22 @@ app.post('/api/payments/checkout', async (req, res) => {
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch (_) {}
       if (orderId) {
-        // If checkout creation fails, the provider transaction remains unconfirmed.
-        // Cancel only the saved ID; an uncertain cancel is left for reconciliation.
-        if (order?.dtone_transaction_id) {
+        if (stripeSessionCreated) {
+          // A Stripe session may already be payable. Preserve the provider
+          // transaction and force reconciliation instead of cancelling it.
+          await pool.query(
+            `UPDATE dtone_ranged_transactions SET provider_status = 'REVIEW', updated_at = NOW()
+             WHERE order_id = $1`,
+            [orderId]
+          );
+          await pool.query(
+            `UPDATE orders SET status = 'topup_review', dtone_status = 'REVIEW', updated_at = NOW()
+             WHERE order_id = $1`,
+            [orderId]
+          );
+        } else if (order?.dtone_transaction_id) {
+          // If Stripe did not create a session, the provider transaction remains
+          // unconfirmed. Cancel only the saved ID; uncertain cancel => review.
           try {
             await cancelRangedTransaction({
               baseUrl: DTONE_API_BASE_URL,
