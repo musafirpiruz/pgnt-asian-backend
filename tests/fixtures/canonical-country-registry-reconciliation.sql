@@ -53,6 +53,7 @@ DECLARE
   has_countries BOOLEAN;
   conflict_count BIGINT;
   constraint_name TEXT;
+  had_verified_at BOOLEAN;
 BEGIN
   SELECT to_regclass(current_schema() || '.countries') IS NOT NULL INTO has_countries;
 
@@ -92,12 +93,22 @@ BEGIN
   -- Every canonical country must have an explicit provider code only when
   -- the source already contained one. Never infer a provider mapping here.
   IF to_regclass(current_schema() || '.country_operators') IS NOT NULL THEN
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema=current_schema() AND table_name='country_operators'
+        AND column_name='verified_at'
+    ) INTO had_verified_at;
     ALTER TABLE country_operators ADD COLUMN IF NOT EXISTS provider VARCHAR(32);
     ALTER TABLE country_operators ADD COLUMN IF NOT EXISTS provider_operator_id VARCHAR(80);
+    ALTER TABLE country_operators ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
     UPDATE country_operators
        SET provider=COALESCE(NULLIF(provider,''),'dtone'),
-           active=CASE WHEN provider_operator_id IS NULL OR btrim(provider_operator_id)=''
-                       THEN FALSE ELSE active END;
+           active=CASE
+             WHEN provider_operator_id IS NULL OR btrim(provider_operator_id)='' THEN FALSE
+             WHEN NOT had_verified_at THEN FALSE
+             WHEN verified_at IS NULL THEN FALSE
+             ELSE active
+           END;
     ALTER TABLE country_operators ALTER COLUMN provider SET DEFAULT 'dtone';
     ALTER TABLE country_operators ALTER COLUMN provider SET NOT NULL;
   END IF;
