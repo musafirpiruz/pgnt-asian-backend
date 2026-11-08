@@ -141,3 +141,18 @@ The product requirement is that the customer-facing amount entry policy be confi
 - A new country inherits the same requested 10–3000 policy by configuration, but it is not considered launch-ready until its provider/operator coverage has been verified across the range (including boundaries, representative interior values, and increment rules) in sandbox. If the provider cannot deliver the required range, do not mark that operator/country active or advertise full-range support.
 
 The requested 10–3000 range is a PGNT product policy, not a claim that every DT One operator currently supports every integer. Provider capability verification is a mandatory launch gate, not a reason to silently narrow the range or fabricate a quote.
+
+
+### One-time operator approval and automatic amount handling
+
+The administrative approval unit is the verified operator/product capability configuration, not every customer-entered amount.
+
+1. An administrator reviews and approves the operator once for a country/provider combination, including the provider operator ID, eligible product IDs/types, destination currency, provider amount limits/step, pricing source, and required beneficiary fields.
+2. The approval is versioned and auditable. Any change to provider mapping, product type, currency, min/max/step, or pricing contract invalidates the prior approval and returns the configuration to review/testing.
+3. After approval, a customer amount is automatically eligible only when it passes the active country policy and the exact selected provider product capability. No separate administrator approval is needed for each amount.
+4. For `RANGED_VALUE_RECHARGE`, the backend validates the requested destination amount against the verified provider minimum, maximum, currency, and increment. The transaction adapter must send the documented `calculation_mode: DESTINATION_AMOUNT` and `destination: { unit_type: CURRENCY, unit, amount }` fields. The provider price must be verified before final confirmation; the ranged-value flow must not reuse a fixed-denomination wholesale price as though it were the customer's chosen amount.
+5. For `FIXED_VALUE_RECHARGE`, only the exact fixed denomination is eligible. Other values are rejected with an unavailable-amount response and cannot create a payment session.
+6. Product discovery is read-only. A discovered operator/product is never automatically approved, imported as active, or offered to customers. Approval and activation remain separate explicit admin actions after sandbox acceptance.
+7. The admin dashboard should show one operator approval state and the verified supported range/denominations. It should show a clear coverage warning when the provider cannot cover the full required 10–3000 range. It must not label the operator as full-range ready unless min, max, interior values, and increments have passed sandbox tests.
+
+The read-only DT One discovery endpoint may classify products using the documented `type`, `accepted_calculation_modes`, and min/max amount metadata. Discovery results are candidates only; they do not themselves establish account-specific price-list availability or authorize a transaction.
