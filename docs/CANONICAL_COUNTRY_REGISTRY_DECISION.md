@@ -156,3 +156,31 @@ The administrative approval unit is the verified operator/product capability con
 7. The admin dashboard should show one operator approval state and the verified supported range/denominations. It should show a clear coverage warning when the provider cannot cover the full required 10–3000 range. It must not label the operator as full-range ready unless min, max, interior values, and increments have passed sandbox tests.
 
 The read-only DT One discovery endpoint may classify products using the documented `type`, `accepted_calculation_modes`, and min/max amount metadata. Discovery results are candidates only; they do not themselves establish account-specific price-list availability or authorize a transaction.
+
+## Ranged-value checkout: required two-phase contract
+
+Status: implementation blocker; discovery metadata is not a checkout authorization.
+
+The current customer checkout path resolves an exact `product_catalog.amount`, requires a stored `price_eur_cents` and `wholesale_price_eur_cents`, creates a Stripe Checkout Session, and only after canonical Stripe payment verification submits a new DT One transaction with `auto_confirm: true`. This is a fixed-denomination flow. It must not be widened to accept arbitrary values by changing the SQL amount predicate alone: doing so would reuse a stale/static catalog price and could charge the customer incorrectly.
+
+For a verified `RANGED_VALUE_RECHARGE` product, the target flow is:
+
+1. Resolve the selected country, stable operator key, verified provider operator/product mapping, destination currency, and the approved provider amount range from server-side records. Ignore any client-supplied provider product ID or price.
+2. Validate the requested destination amount against the provider's exact minimum, maximum, and increment. Reject unsupported amounts; do not infer that every integer in 10–3000 is supported.
+3. Create one DT One asynchronous transaction with a unique order `external_id`, `calculation_mode: DESTINATION_AMOUNT`, `destination: { unit_type: CURRENCY, unit: <verified destination currency>, amount: <requested amount> }`, recipient identifier, callback URL, and `auto_confirm: false`.
+4. Persist the DT One transaction ID, provider state, exact quoted wholesale amount/currency, confirmation expiry, product/config version, destination amount, and a stable idempotency key before creating Stripe Checkout. A retry must retrieve/reconcile the existing reservation, never create a second transaction.
+5. Convert the provider wholesale amount to EUR only using a documented, account-approved settlement currency/rate and explicit rounding policy. If DT One returns a non-EUR wholesale unit and no trusted conversion is configured, stop checkout. Never assume USD equals EUR or reuse the AFN market-comparison rate as a settlement FX rate.
+6. Calculate the EUR customer charge from the verified wholesale cost plus configured app fee and Stripe fee gross-up. Persist the complete immutable quote snapshot used for the Stripe amount.
+7. After Stripe's canonical paid webhook re-fetches and validates the exact session/payment intent, confirm the same saved DT One transaction ID. Never create a replacement transaction from the paid webhook.
+8. If payment fails, expires, or is abandoned, cancel the still-CREATED DT One reservation where supported; if confirmation expiry has passed or provider outcome is uncertain, move the order to reconciliation review. Never retry a possibly accepted provider request blindly.
+9. Reconcile callbacks and read-only status queries against the saved transaction ID and external ID. Idempotently handle duplicate/out-of-order Stripe events and DT One callbacks.
+
+### Mandatory release gates
+
+- Verify the actual DT One account's wholesale price currency and balance/settlement currency from account configuration or a sandbox transaction response. This is not established by the repository's current EUR pricing fields.
+- Verify the exact transaction create/confirm/cancel/status endpoint version and response schema against the account-enabled DVS API.
+- Add isolated tests for min/max/increment boundaries, non-EUR or missing wholesale currency, quote rounding, Stripe amount mismatch, duplicate webhook, transaction create timeout/unknown outcome, payment failure/cancel, reservation expiry, confirm retry, callback replay, and fixed-product regression.
+- Run sandbox-only end-to-end tests for each supported country/operator/product mapping. Do not enable catalog rows or customer checkout until the evidence is reviewed.
+- Keep the fixed-denomination path unchanged while ranged-value support is introduced behind an explicit product capability and versioned admin approval.
+
+DT One's current public DVS documentation describes `DESTINATION_AMOUNT` for ranged products, a separate confirmation endpoint when `auto_confirm` is false, and automatic cancellation of unconfirmed CREATED transactions after 60 minutes. It recommends the two-step flow for checking ranged-product prices before confirmation. These provider rules do not establish this account's wholesale settlement currency or approve any particular country/operator mapping.
