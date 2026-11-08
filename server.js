@@ -1693,7 +1693,7 @@ app.post('/api/payments/checkout', express.json({ limit: '100kb' }), async (req,
             currency: 'eur',
             product_data: {
               name: `PGNT ASIAN TOPUP - ${order.operator}`,
-              description: `${order.amount} ${order.currency} mobile top-up for ${order.country}`,
+              description: `${order.amount} ${order.currency} mobile top-up for ${order.country}. Wholesale: ${formatEuro(Number(order.product_price_cents))}; PGNT fee: ${formatEuro(Number(order.fee_cents))}; estimated Stripe fee: ${formatEuro(Math.max(0, Number(order.charge_cents) - Number(order.product_price_cents) - Number(order.fee_cents)))}.`,
             },
             unit_amount: Number(order.charge_cents),
           },
