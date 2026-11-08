@@ -919,6 +919,34 @@ async function runMigration() {
       console.log("Migration 019_dtone_ranged_operator_key is already applied.");
     }
 
+    // Version 020 reconciles legacy country tables into one canonical registry.
+    // It is forward-only, conflict-sensitive, and preserves existing rows.
+    const canonicalCountryRegistryVersion = "020_canonical_country_registry";
+    const canonicalCountryRegistryCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [canonicalCountryRegistryVersion]
+    );
+    if (canonicalCountryRegistryCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        const reconciliationSql = fs.readFileSync(
+          path.join(__dirname, "migrations", "020_canonical_country_registry.sql"),
+          "utf8"
+        );
+        await client.query(reconciliationSql);
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [canonicalCountryRegistryVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 020 completed; country_registry is the canonical parent and legacy rows are preserved.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 020_canonical_country_registry is already applied.");
+    }
     } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
