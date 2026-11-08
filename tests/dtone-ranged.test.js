@@ -73,6 +73,12 @@ test('accepts only integer customer amounts inside provider bounds and on exact 
   }
 });
 
+test('rejects fractional local-currency bounds and increments until an integer-amount path is supported', () => {
+  assert.equal(parseRangedProductCapability(product({
+    destination: { unit: 'AFN', amount: { min: 10.5, max: 3000, increment: 0.5 } },
+  })), null);
+});
+
 test('requires PGNT policy and a verified ranged capability before amount selection', () => {
   const capability = parseRangedProductCapability(product());
   assert.equal(isValidRangedDestinationAmount(10, capability), true);
