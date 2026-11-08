@@ -2593,6 +2593,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
         }
         if ((rangedResponse.statusCode != 201 && rangedResponse.statusCode != 200) ||
             rangedDecoded is! Map<String, dynamic>) {
+          // A definite provider rejection can be retried with a fresh key.
+          // Unknown/review outcomes retain the original key to prevent a
+          // second provider reservation after a lost response.
+          if (rangedDecoded is Map &&
+              rangedDecoded['reviewRequired'] != true &&
+              rangedDecoded['orderId'] != null) {
+            _rangedIdempotencyKey = null;
+            _rangedRequestFingerprint = null;
+          }
           final detail = rangedDecoded is Map
               ? rangedDecoded['error']?.toString()
               : null;
