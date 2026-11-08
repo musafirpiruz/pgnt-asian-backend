@@ -36,7 +36,7 @@ test('registry product resolution uses server-side verified mapping and paramete
 
 test('quote and checkout both pass operatorKey to the same server resolver', () => {
   const quote = section("app.get('/api/pricing/quote'", '// =====================================================\n// PART 4/8');
-  const checkout = section("app.post('/api/payments/checkout'", "app.post('/api/");
+  const checkout = section("app.post('/api/payments/checkout'", "app.post('/api/admin/stripe-dtone/sandbox-checkout'");
   assert.match(quote, /operatorKey: operatorKey \|\| null/);
   assert.match(checkout, /operatorKey: input\.operatorKey \|\| null/);
 });
