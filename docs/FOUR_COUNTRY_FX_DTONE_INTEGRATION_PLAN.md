@@ -104,3 +104,21 @@ The integration branch now runs both migration SQL fixtures against isolated Pos
 - The `country_operators` column contract also depends on order: the PR #196-first schema has no required `provider` column and permits a nullable `provider_operator_id`; the PR #204-first schema has a required `provider` column and non-null `provider_operator_id`.
 
 The diagnostic suite passed in PostgreSQL CI, and the complete backend regression suite passed (259 tests, zero failures). These are **expected-finding tests**, not proof of compatibility: they deliberately confirm that migration order changes the resulting schema. The forward-only canonical reconciliation migration and tests for clean install / deployed-main upgrade remain outstanding. The two registry migration fixtures are test-only and are not applied to Render or any production database.
+
+
+## CI update — 2026-11-08 (PR #225)
+
+Latest integration head `e74aa691c9fe9d2009abc55b2650d348434dba44` has:
+- Backend regression suite: 264 passed, 0 failed.
+- Canonical registry reconciliation: 5 PostgreSQL integration cases passed, including PR #196 without `country_provider_settings`.
+- Dependency security audit: passed.
+- Android APK workflow: passed; artifact `pgnt-asian-topup-apk` was created for this exact head.
+
+## Remaining end-to-end blockers (do not treat CI as production acceptance)
+
+- Current `main` server does not expose `GET /api/countries/:countryCode/operators`; the dynamic Flutter loader therefore cannot use the registry against the deployed main backend yet.
+- Current `main` `validateCheckoutInput`, quote route, and checkout product resolution do not accept/resolve the stable `operatorKey` contract. They still resolve legacy operator display name + amount or product ID.
+- The PR #204 customer operators route returns legacy aliases (`code`, `name`, `providerName`) and does not return the full canonical public contract (`operator_key`, `provider_operator_id`, `display_name`). It must be adapted and provider IDs must remain server-trusted.
+- The reconciliation SQL currently exists only as a test fixture. It is not a production migration and must not be wired into Render startup until reviewed against the actual deployed schema, migration ledger, all child constraints, duplicate identities, and a verified backup/restore rehearsal.
+- Quote-only tests must prove stable operator-key resolution to a unique verified product for AF/PK/IN/BD. Checkout tests must prove the same mapping is re-resolved server-side inside the order transaction; client provider IDs must be ignored/rejected.
+- No live country/operator/product activation, Stripe charge, DT One top-up, refund, production migration, or deploy is authorized by these CI results.
