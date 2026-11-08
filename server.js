@@ -1327,7 +1327,6 @@ app.post('/api/ranged-quotes', async (req, res) => {
         recipientAmount: amount,
         recipientCurrency: capability.destinationCurrency,
         paymentCurrency: 'EUR',
-        wholesaleCostCents: price.wholesaleCostCents,
         appFeeCents: price.feeCents,
         estimatedStripeFeeCents: price.estimatedStripeFeeCents,
         amountCents: price.finalPriceCents,
@@ -2252,6 +2251,74 @@ async function processPaidStripeSession(session) {
     client.release();
   }
 
+  // Ranged-value orders already have a provider transaction created with
+  // auto_confirm=false. Confirm only that saved transaction ID after canonical
+  // Stripe payment verification; never create a second DT One transaction.
+  const rangedLedger = await pool.query(
+    `SELECT dtone_transaction_id, provider_status, confirm_by
+     FROM dtone_ranged_transactions WHERE order_id = $1 LIMIT 1`,
+    [orderId]
+  );
+  if (rangedLedger.rowCount === 1) {
+    const ranged = rangedLedger.rows[0];
+    if (!ranged.dtone_transaction_id || String(order.dtone_transaction_id || '') !== String(ranged.dtone_transaction_id) ||
+        ranged.provider_status !== 'CREATED' || !ranged.confirm_by ||
+        new Date(ranged.confirm_by).getTime() <= Date.now()) {
+      await pool.query(
+        `UPDATE dtone_ranged_transactions SET provider_status = 'REVIEW', updated_at = NOW()
+         WHERE order_id = $1 AND provider_status = 'CREATED'`,
+        [orderId]
+      );
+      await pool.query(
+        `UPDATE orders SET status = 'topup_review', dtone_status = 'REVIEW', updated_at = NOW()
+         WHERE order_id = $1 AND status = 'processing_topup'`,
+        [orderId]
+      );
+      throw new Error('Ranged provider transaction reference or confirmation window requires review.');
+    }
+
+    try {
+      await confirmRangedTransaction({
+        baseUrl: DTONE_API_BASE_URL,
+        authorization: getDtOneAuthHeader(),
+        fetchImpl: fetch,
+        transactionId: ranged.dtone_transaction_id,
+        confirmBy: ranged.confirm_by,
+      });
+      await pool.query(
+        `UPDATE dtone_ranged_transactions
+         SET provider_status = 'CONFIRMED', confirmed_at = COALESCE(confirmed_at, NOW()),
+             updated_at = NOW()
+         WHERE order_id = $1 AND dtone_transaction_id = $2 AND provider_status = 'CREATED'`,
+        [orderId, ranged.dtone_transaction_id]
+      );
+      await pool.query(
+        `UPDATE orders SET status = 'topup_submitted', dtone_status = 'CONFIRMED',
+             updated_at = NOW()
+         WHERE order_id = $1 AND status = 'processing_topup'`,
+        [orderId]
+      );
+      return { status: 'topup_submitted', rangedValue: true, confirmedExistingTransaction: true };
+    } catch (confirmError) {
+      await pool.query(
+        `UPDATE dtone_ranged_transactions SET provider_status = 'REVIEW', updated_at = NOW()
+         WHERE order_id = $1 AND dtone_transaction_id = $2`,
+        [orderId, ranged.dtone_transaction_id]
+      );
+      await pool.query(
+        `UPDATE orders SET status = 'topup_review', dtone_status = 'REVIEW', updated_at = NOW()
+         WHERE order_id = $1 AND status = 'processing_topup'`,
+        [orderId]
+      );
+      console.error('Ranged DT One confirmation requires reconciliation.', {
+        errorName: confirmError?.name || 'Error',
+        statusCode: confirmError?.statusCode || null,
+        hasSavedProviderTransactionId: true,
+      });
+      throw new Error('Ranged DT One confirmation outcome requires review; no new transaction was created.');
+    }
+  }
+
   // Sandbox Stripe orders may use the fixed pre-production product while
   // it remains inactive in the customer catalog. This exception is restricted
   // to an authenticated admin-created test order, Stripe test mode, and the
@@ -2968,6 +3035,62 @@ app.post('/api/dtone/callback', async (req, res) => {
         status: 'refund_review',
         ignored: true,
         recordedForReview: true,
+      });
+    }
+
+    // Ranged transactions are reconciled against the exact saved provider ID.
+    // Their callbacks never pass through the fixed-product status path.
+    const rangedCallback = await client.query(
+      `SELECT dtone_transaction_id, provider_status
+       FROM dtone_ranged_transactions WHERE order_id = $1 FOR UPDATE`,
+      [orderId]
+    );
+    if (rangedCallback.rowCount === 1) {
+      const ranged = rangedCallback.rows[0];
+      if (!ranged.dtone_transaction_id ||
+          String(ranged.dtone_transaction_id) !== providerTransactionId) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Ranged transaction reference mismatch.' });
+      }
+      if (!order.paid_at || !order.stripe_payment_intent_id) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Ranged order has no verified Stripe payment evidence.' });
+      }
+      const nextStatus = providerStatus === 'completed'
+        ? 'completed'
+        : providerStatus === 'failed'
+          ? 'topup_review'
+          : order.status === 'topup_review' ? 'topup_review' : 'topup_submitted';
+      const rangedProviderStatus = providerStatus === 'completed'
+        ? 'COMPLETED'
+        : providerStatus === 'failed'
+          ? 'FAILED'
+          : providerStatus === 'cancelled'
+            ? 'CANCELLED'
+            : 'CONFIRMED';
+      await client.query(
+        `UPDATE dtone_ranged_transactions
+         SET provider_status = $1, updated_at = NOW()
+         WHERE order_id = $2 AND dtone_transaction_id = $3`,
+        [rangedProviderStatus, orderId, providerTransactionId]
+      );
+      await client.query(
+        `UPDATE orders
+         SET status = $1, dtone_status = $2, dtone_callback_payload = $3::jsonb,
+             completed_at = CASE WHEN $4::text = 'completed' THEN COALESCE(completed_at, NOW()) ELSE completed_at END,
+             failed_at = CASE WHEN $4::text = 'failed' THEN COALESCE(failed_at, NOW()) ELSE failed_at END,
+             updated_at = NOW()
+         WHERE order_id = $5`,
+        [nextStatus, storedProviderStatus.slice(0, 80), JSON.stringify(body),
+         providerStatus, orderId]
+      );
+      await client.query('COMMIT');
+      return res.status(200).json({
+        received: true,
+        rangedValue: true,
+        orderId,
+        status: nextStatus,
+        providerStatus: rangedProviderStatus,
       });
     }
 
