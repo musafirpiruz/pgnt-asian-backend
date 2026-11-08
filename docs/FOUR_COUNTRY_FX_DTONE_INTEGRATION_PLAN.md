@@ -31,3 +31,24 @@ Preserve the existing Flutter and Node.js application. Complete Afghanistan (AFN
 - No products activated.
 - No payment, refund, or top-up executed.
 - No deployment initiated.
+
+
+## Verified source-level blockers (reviewed against current main and PR patches)
+
+### Operator identity contract is currently incompatible end-to-end
+- PR #196's public operator endpoint returns rows with `operator_key`, `provider_operator_id`, and `display_name`.
+- PR #204's Flutter dynamic-catalog parser currently reads `name` and `providerName` from operator rows. Those keys do not match the PR #196 response contract, so the registry operator list would be parsed as empty unless the API or parser is aligned.
+- PR #204's Flutter `MobileOperator` addition retains only `providerName`; it does not retain `operator_key` or `provider_operator_id`.
+- Current main's quote request sends only `country`, `operator`, and `amount`; current checkout sends display `operator`, amount, currency, and product ID, but neither `operatorKey` nor `providerOperatorId`.
+- PR #200's quote and checkout lookup path relies on a verified `operatorKey` to require an explicit active `country_operator_products` mapping. Therefore Flutter must preserve the stable operator key and send it on both quote and checkout; provider IDs must be checked against the server-side registry, not trusted from the client.
+- The current main checkout path therefore cannot safely consume PR #200's explicit operator/product mapping until the Flutter/API contract is completed.
+
+### Required contract before integration
+- Operator list response: `{ operators: [{ operator_key, provider_operator_id, display_name }] }` (optionally include localized display metadata, but preserve these stable fields).
+- Flutter model: retain `operatorKey` and `providerOperatorId` separately from localized/display name; never identify an operator by translated name.
+- Quote: send `country`, `operatorKey`, and `amount`; server resolves provider operator ID and product mapping from its database. A display-name field may be included for compatibility/diagnostics only.
+- Checkout: send `country`, `operatorKey`, `amount`, and the server-issued quote/product reference; server re-resolves and validates the active mapping and price. Do not accept a client-supplied provider ID as authority.
+- Add integration tests that exercise the exact API JSON shape through Flutter parsing, quote lookup, and checkout validation, including localized names and duplicate display names.
+
+### Current quote/checkout regression risk
+The currently deployed main branch Flutter code uses the legacy display-name lookup and does not send stable operator identity. Keep the new registry mapping path inactive until the aligned Flutter client and backend are built and tested together. Do not infer that a successful legacy quote proves registry identity validation is working.
