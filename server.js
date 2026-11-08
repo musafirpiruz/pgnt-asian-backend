@@ -1,3 +1,1093 @@
+'use strict';
+
+// =====================================================
+// PGNT ASIAN TOPUP
+// PART 1/8 — SERVER CONFIGURATION
+// Customer payment currency: EUR (€)
+// USD is not used.
+// =====================================================
+
+require('dotenv').config();
+
+const express = require('express');
+const cors = require('cors');
+const crypto = require('crypto');
+const Stripe = require('stripe');
+const { Pool } = require('pg');
+const { executeReservedRefund } = require('./refund-flow');
+const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
+const { createRangedTransaction, confirmRangedTransaction, cancelRangedTransaction, DTOneOutcomeUnknownError } = require('./dtone-ranged-lifecycle');
+const { parseRangedWholesalePrice, calculateRangedCustomerPrice } = require('./dtone-ranged-pricing');
+
+const PGNT_MIN_AMOUNT = 10;
+const PGNT_MAX_AMOUNT = 3000;
+
+const app = express();
+
+app.disable('x-powered-by');
+
+const PORT = Number(process.env.PORT) || 10000;
+
+const APP_BASE_URL = (
+  process.env.APP_BASE_URL ||
+  'https://pgnt-asian-backend.onrender.com'
+).replace(/\/+$/, '');
+
+// Stripe configuration
+const STRIPE_SECRET_KEY =
+  process.env.STRIPE_SECRET_KEY || '';
+
+const STRIPE_WEBHOOK_SECRET =
+  process.env.STRIPE_WEBHOOK_SECRET || '';
+
+// PostgreSQL configuration
+const DATABASE_URL =
+  process.env.DATABASE_URL || '';
+
+// DT One configuration
+const DTONE_API_KEY =
+  process.env.DTONE_API_KEY || '';
+
+const DTONE_API_SECRET =
+  process.env.DTONE_API_SECRET || '';
+
+const configuredDtOneBaseUrl = (
+  process.env.DTONE_API_BASE_URL ||
+  process.env.DTONE_BASE_URL ||
+  'https://preprod-dvs-api.dtone.com'
+).replace(/\/+$/, '');
+
+// Normalize the legacy pre-production hostname to the current
+// DVS API hostname documented by DT One.
+const DTONE_API_BASE_URL = configuredDtOneBaseUrl
+  .replace(/^https:\/\/preprod-api\.dtone\.com$/i, 'https://preprod-dvs-api.dtone.com')
+  .replace(/\/v1$/i, '');
+
+const DTONE_CALLBACK_URL =
+  process.env.DTONE_CALLBACK_URL ||
+  `${APP_BASE_URL}/api/dtone/callback`;
+
+// Safe startup diagnostics: report only the public callback host and path,
+// never credentials, query strings, or transaction/customer details.
+try {
+  const callbackUrl = new URL(DTONE_CALLBACK_URL);
+  console.info('DT One callback URL configured.', {
+    protocol: callbackUrl.protocol,
+    hostname: callbackUrl.hostname,
+    pathname: callbackUrl.pathname,
+    https: callbackUrl.protocol === 'https:',
+  });
+} catch (_) {
+  console.error('DT One callback URL is invalid.');
+}
+
+// Admin API configuration
+const ADMIN_API_KEY =
+  process.env.ADMIN_API_KEY || '';
+
+// Fail closed when Stripe mode and DT One environment do not match.
+// Test Stripe keys may only be paired with the exact DT One pre-production host;
+// live Stripe keys must not be paired with DT One pre-production.
+function isDtOnePreproductionConfigured() {
+  try {
+    const url = new URL(DTONE_API_BASE_URL);
+    return url.protocol === 'https:' &&
+      url.hostname === 'preprod-dvs-api.dtone.com' &&
+      (url.pathname === '' || url.pathname === '/');
+  } catch (_) {
+    return false;
+  }
+}
+
+function arePaymentAndFulfillmentEnvironmentsCompatible() {
+  const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
+  const dtOneIsPreproduction = isDtOnePreproductionConfigured();
+  return stripeIsTest === dtOneIsPreproduction;
+}
+
+// Initialize Stripe only when configured
+const stripe = STRIPE_SECRET_KEY
+  ? new Stripe(STRIPE_SECRET_KEY)
+  : null;
+
+// PostgreSQL connection pool
+const pool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl:
+        process.env.NODE_ENV === 'production'
+          ? { rejectUnauthorized: false }
+          : false,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    })
+  : null;
+
+// Country codes and recipient currencies.
+// Customer payment currency remains EUR.
+const COUNTRY_CURRENCIES = Object.freeze({
+  AF: 'AFN',
+  PK: 'PKR',
+  IN: 'INR',
+  BD: 'BDT',
+});
+
+// One standard customer payment currency.
+const PAYMENT_CURRENCY = 'eur';
+
+// Store and calculate customer prices in euro cents.
+// Example: 164 cents = €1.64.
+const EUR_CURRENCY = 'EUR';
+
+// Basic CORS configuration.
+// Set CORS_ORIGIN in Render to your trusted app/web origins.
+const configuredCorsOrigins = (
+  process.env.CORS_ORIGIN || ''
+)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+// Always allow the backend's own configured public origin so
+// its same-origin admin pages can call authenticated API routes.
+// Keep all other browser origins explicitly allowlisted.
+const ownServiceOrigins = [
+  process.env.APP_BASE_URL,
+  'https://pgnt-asian-backend.onrender.com',
+]
+  .filter(Boolean)
+  .map((value) => {
+    try { return new URL(value).origin; } catch (_) { return null; }
+  })
+  .filter(Boolean);
+
+const allowedOrigins = [...new Set([
+  ...configuredCorsOrigins,
+  ...ownServiceOrigins,
+])];
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Permit requests without an Origin header,
+      // such as server-to-server requests and mobile clients.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error('Origin not allowed by CORS')
+      );
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-admin-api-key',
+      'x-order-access-token',
+    ],
+  })
+);
+
+// IMPORTANT:
+// Do not add express.json() here.
+// The Stripe webhook must receive the raw request body.
+// We will add express.json() in the correct order later.
+
+function getCountryCurrency(countryCode) {
+  const country = String(countryCode || '')
+    .trim()
+    .toUpperCase();
+
+  return COUNTRY_CURRENCIES[country] || null;
+}
+
+// Persist the exact Stripe Checkout Session even if a webhook advances the
+// order status before this request finishes. Never overwrite a different session.
+async function persistStripeCheckoutSession(orderId, sessionId) {
+  const saved = await pool.query(
+    `UPDATE orders
+     SET stripe_session_id = $1, updated_at = NOW()
+     WHERE order_id = $2
+       AND (stripe_session_id IS NULL OR stripe_session_id = $1)`,
+    [sessionId, orderId]
+  );
+
+  if (saved.rowCount === 1) return;
+
+  const current = await pool.query(
+    'SELECT stripe_session_id FROM orders WHERE order_id = $1 LIMIT 1',
+    [orderId]
+  );
+  if (current.rowCount === 1 && current.rows[0].stripe_session_id === sessionId) {
+    return; // Idempotent: the exact session was already stored.
+  }
+  throw new Error('Could not safely associate the Stripe Checkout Session with its order.');
+}
+
+function formatEuro(cents) {
+  if (!Number.isSafeInteger(cents) || cents < 0) {
+    throw new Error('Invalid EUR amount in cents.');
+  }
+
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: EUR_CURRENCY,
+  }).format(cents / 100);
+}
+
+// Health check
+app.get('/health', async (req, res) => {
+  let databaseStatus = 'not_configured';
+
+  if (pool) {
+    try {
+      await pool.query('SELECT 1');
+      databaseStatus = 'connected';
+    } catch (error) {
+      databaseStatus = 'error';
+
+      console.error(
+        'Database health check failed:',
+        error.message
+      );
+    }
+  }
+
+  const healthy =
+    Boolean(pool) &&
+    databaseStatus === 'connected' &&
+    Boolean(stripe);
+
+  return res.status(healthy ? 200 : 503).json({
+    app: 'PGNT ASIAN TOPUP',
+    status: healthy ? 'ok' : 'configuration_required',
+    paymentCurrency: PAYMENT_CURRENCY,
+    database: databaseStatus,
+    stripeConfigured: Boolean(stripe),
+    stripeWebhookConfigured: Boolean(
+      STRIPE_WEBHOOK_SECRET
+    ),
+    dtoneConfigured: Boolean(
+      DTONE_API_KEY && DTONE_API_SECRET
+    ),
+  });
+});
+// Customer-facing Stripe return pages.
+// These pages do not fulfill orders; fulfillment remains webhook-controlled.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[char]));
+}
+
+app.get('/payment-success', async (req, res) => {
+  const sessionId = String(req.query.session_id || '');
+  if (!sessionId.startsWith('cs_test_') && !sessionId.startsWith('cs_live_')) {
+    return res.status(400).type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment status</title><h1>Payment status unavailable</h1><p>The Stripe checkout session ID is missing or invalid. Please return to PGNT ASIAN TOPUP support.</p></html>');
+  }
+  if (!stripe || !pool) {
+    return res.status(503).type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment status</title><h1>Payment status unavailable</h1><p>Please contact PGNT ASIAN TOPUP support.</p></html>');
+  }
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const orderResult = await pool.query(
+      'SELECT order_id, status FROM orders WHERE stripe_session_id = $1 LIMIT 1',
+      [session.id]
+    );
+    const paid = session.payment_status === 'paid';
+    const orderStatus = orderResult.rowCount ? orderResult.rows[0].status : 'processing';
+    const heading = paid ? 'Payment received' : 'Payment not confirmed';
+    const message = paid
+      ? (orderStatus === 'completed'
+        ? 'Your payment and top-up are complete.'
+        : orderStatus === 'topup_review'
+          ? 'Your payment was received, but the top-up needs review. Please do not pay again.'
+          : 'Your payment was received. The top-up status is being confirmed. Please do not pay again.')
+      : 'Stripe has not confirmed a successful payment. No top-up completion is confirmed.';
+    return res.status(200).type('html').send(
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PGNT ASIAN TOPUP — Payment status</title><style>body{font-family:system-ui,sans-serif;max-width:620px;margin:10vh auto;padding:24px;line-height:1.5;color:#222}h1{color:#7A0C10}section{border:1px solid #ddd;border-radius:12px;padding:20px}small{color:#666}</style></head><body><h1>PGNT ASIAN TOPUP</h1><section><h2>' + escapeHtml(heading) + '</h2><p>' + escapeHtml(message) + '</p><p><strong>Order status:</strong> ' + escapeHtml(orderStatus) + '</p><small>Keep this page for reference. Do not submit another payment for the same order.</small></section></body></html>'
+    );
+  } catch (error) {
+    console.error('Stripe payment-success lookup failed:', error.message);
+    return res.status(502).type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Payment status</title><h1>Payment status could not be checked</h1><p>Please do not pay again. Contact PGNT ASIAN TOPUP support to verify your order.</p></html>');
+  }
+});
+
+app.get('/payment-cancelled', (req, res) => {
+  return res.status(200).type('html').send('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PGNT ASIAN TOPUP — Payment cancelled</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui,sans-serif;max-width:620px;margin:10vh auto;padding:24px;line-height:1.5;color:#222}h1{color:#7A0C10}</style></head><body><h1>PGNT ASIAN TOPUP</h1><h2>Checkout cancelled</h2><p>The checkout was cancelled. A successful payment has not been confirmed and no top-up completion is confirmed.</p><p>If you believe you completed a payment, contact support before trying again.</p></body></html>');
+});
+
+// =====================================================
+// PART 2/8 — COUNTRIES, CURRENCIES & VALIDATION
+// PGNT ASIAN TOPUP
+// Customer payment currency: EUR (€)
+// =====================================================
+
+const SUPPORTED_COUNTRIES = Object.freeze({
+  AF: {
+    name: 'Afghanistan',
+    currency: 'AFN',
+    phoneDigits: [9, 9],
+    callingCode: '+93',
+  },
+
+  PK: {
+    name: 'Pakistan',
+    currency: 'PKR',
+    phoneDigits: [10, 10],
+    callingCode: '+92',
+  },
+
+  IN: {
+    name: 'India',
+    currency: 'INR',
+    phoneDigits: [10, 10],
+    callingCode: '+91',
+  },
+
+  BD: {
+    name: 'Bangladesh',
+    currency: 'BDT',
+    phoneDigits: [10, 10],
+    callingCode: '+880',
+  },
+});
+
+// Normalize and validate country code.
+function normalizeCountry(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase();
+}
+
+function isValidCountry(country) {
+  return Object.prototype.hasOwnProperty.call(
+    SUPPORTED_COUNTRIES,
+    normalizeCountry(country)
+  );
+}
+
+// Get the recipient's local currency.
+function countryCurrency(country) {
+  return getCountryCurrency(
+    normalizeCountry(country)
+  );
+}
+
+// Customer payments always use EUR.
+function normalizePaymentCurrency(value) {
+  const currency = String(value || '')
+    .trim()
+    .toUpperCase();
+
+  if (currency !== 'EUR') {
+    throw new Error(
+      'Customer payment currency must be EUR.'
+    );
+  }
+
+  return 'eur';
+}
+
+// Normalize phone input.
+// Accepts local digits or an international number
+// beginning with the country's calling code.
+function normalizePhone(value, country) {
+  const code = normalizeCountry(country);
+  const config = SUPPORTED_COUNTRIES[code];
+
+  if (!config) {
+    throw new Error('Unsupported country.');
+  }
+
+  let phone = String(value || '').trim();
+
+  // Remove common visual separators only.
+  phone = phone.replace(/[\s().-]/g, '');
+
+  if (!/^\+?\d+$/.test(phone)) {
+    throw new Error(
+      'Phone number contains invalid characters.'
+    );
+  }
+
+  const callingCode = config.callingCode;
+
+  // Convert a full international number into local format.
+  if (phone.startsWith(callingCode)) {
+    phone = phone.slice(callingCode.length);
+  } else if (
+    phone.startsWith('00') &&
+    phone.slice(2).startsWith(callingCode.slice(1))
+  ) {
+    phone = phone.slice(callingCode.length + 1);
+  }
+
+  // Accept local numbers only after normalization.
+  // Do not silently remove a national trunk prefix.
+  if (phone.startsWith('0')) {
+    phone = phone.slice(1);
+  }
+
+  return phone;
+}
+
+function validatePhone(phone, country) {
+  const code = normalizeCountry(country);
+  const config = SUPPORTED_COUNTRIES[code];
+
+  if (!config) {
+    return {
+      valid: false,
+      error: 'Unsupported country.',
+    };
+  }
+
+  const normalized = normalizePhone(phone, code);
+  const [minDigits, maxDigits] = config.phoneDigits;
+
+  if (!/^\d+$/.test(normalized)) {
+    return {
+      valid: false,
+      error: 'Phone number must contain digits only.',
+    };
+  }
+
+  if (
+    normalized.length < minDigits ||
+    normalized.length > maxDigits
+  ) {
+    return {
+      valid: false,
+      error:
+        `Invalid phone number length for ${config.name}.`,
+    };
+  }
+
+  return {
+    valid: true,
+    country: code,
+    phone: normalized,
+    currency: config.currency,
+  };
+}
+
+// Validate data received from the checkout request.
+function validateCheckoutInput(body) {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Invalid checkout request.');
+  }
+
+  const country = normalizeCountry(body.country);
+
+  if (!isValidCountry(country)) {
+    throw new Error('Unsupported country.');
+  }
+
+  // Reject USD, and any other non-EUR payment currency.
+  // The Flutter app's `currency` is the recipient currency (AFN/PKR/INR/BDT),
+  // not the Stripe payment currency. Customer payment is always EUR.
+  const paymentCurrency = normalizePaymentCurrency(
+    body.paymentCurrency || 'EUR'
+  );
+
+  const phoneResult = validatePhone(
+    body.phone || body.phoneNumber,
+    country
+  );
+
+  if (!phoneResult.valid) {
+    throw new Error(phoneResult.error);
+  }
+
+  const rawProductId = String(body.productId || '').trim();
+  const productId = rawProductId || null;
+  const operator = String(body.operator || '').trim();
+  const rawOperatorKey = String(body.operatorKey || '').trim();
+  const operatorKey = rawOperatorKey || null;
+  const amount = Number(body.amount);
+
+  if (productId && !/^[1-9]\d*$/.test(productId)) {
+    throw new Error('Invalid product ID.');
+  }
+
+  // Current Flutter clients send operator + local amount, not a catalog ID.
+  if ((!productId || operatorKey) && (
+    (!operatorKey && (!operator || operator.length > 120)) ||
+    (operatorKey && (!/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) ||
+    !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT
+  )) {
+    throw new Error('Select a valid operator and top-up amount.');
+  }
+
+  return {
+    country,
+    phone: phoneResult.phone,
+    productId,
+    operator,
+    operatorKey,
+    amount,
+    paymentCurrency,
+    recipientCurrency: countryCurrency(country),
+  };}
+// =====================================================
+// PART 3/8 — PRODUCTS, PRICING, FEES & BONUSES
+// All customer prices are stored in EUR cents.
+// Example: 164 = €1.64
+// =====================================================
+
+// Validate database price fields.
+function requireNonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+
+  if (
+    !Number.isSafeInteger(number) ||
+    number < 0
+  ) {
+    throw new Error(
+      `Invalid ${fieldName}.`
+    );
+  }
+
+  return number;
+}
+
+function requirePositiveInteger(value, fieldName) {
+  const number = Number(value);
+
+  if (
+    !Number.isSafeInteger(number) ||
+    number <= 0
+  ) {
+    throw new Error(
+      `Invalid ${fieldName}.`
+    );
+  }
+
+  return number;
+}
+
+// Read the current Admin pricing settings.
+// Expected database table: pricing_settings
+async function getPricingSettings(client, country) {
+  const code = normalizeCountry(country);
+
+  const result = await client.query(
+    `SELECT
+       country,
+       fee_eur_cents,
+       COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
+       afn_per_eur,
+       bonus_percent,
+       stripe_fee_percent,
+       stripe_fixed_fee_cents,
+       active
+     FROM pricing_settings
+     WHERE country = $1
+     LIMIT 1`,
+    [code]
+  );
+
+  if (result.rowCount !== 1) {
+    throw new Error(
+      'Pricing settings are not configured.'
+    );
+  }
+
+  const settings = result.rows[0];
+
+  if (
+    settings.active !== true
+  ) {
+    throw new Error(
+      'Pricing settings are disabled or invalid.'
+    );
+  }
+
+  const feeCents = requireNonNegativeInteger(
+    settings.fee_eur_cents,
+    'fee in EUR cents'
+  );
+
+  const localCurrencyPerEur = Number(settings.local_currency_per_eur);
+  if (!Number.isFinite(localCurrencyPerEur) || localCurrencyPerEur <= 0) {
+    throw new Error('Invalid local-currency-per-EUR exchange rate.');
+  }
+
+  const bonusPercent = Number(settings.bonus_percent);
+  if (!Number.isFinite(bonusPercent) || bonusPercent < 0 || bonusPercent > 100) {
+    throw new Error('Invalid bonus percentage.');
+  }
+
+  const stripeFeePercent = Number(settings.stripe_fee_percent);
+  const stripeFixedFeeCents = requireNonNegativeInteger(
+    settings.stripe_fixed_fee_cents,
+    'Stripe fixed fee in EUR cents'
+  );
+  if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
+    throw new Error('Invalid Stripe fee percentage.');
+  }
+
+  return {
+    country: code,
+    currency: 'EUR',
+    feeCents,
+    localCurrencyPerEur,
+    // Backward-compatible field consumed by the existing quote response.
+    afnPerEur: localCurrencyPerEur,
+    bonusPercent,
+    stripeFeePercent,
+    stripeFixedFeeCents,
+  };
+}
+
+// Read an enabled product from the database.
+// Expected database table: product_catalog
+async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
+  let result;
+
+  // Stable-key selection is authoritative. Resolve the internal operator and
+  // its explicitly reviewed catalog mapping on the server; never use a
+  // localized display label or a client-supplied provider ID as identity.
+  if (options.operatorKey) {
+    result = await client.query(
+      `SELECT
+         p.id,
+         p.country,
+         p.currency,
+         p.product_id AS dtone_product_id,
+         p.operator AS name,
+         NULL::text AS description,
+         p.amount AS local_amount,
+         p.price_eur_cents,
+         p.wholesale_price_eur_cents,
+         p.active AS enabled
+       FROM country_registry c
+       JOIN country_operators o
+         ON o.country_code = c.country_code
+       JOIN country_operator_products cop
+         ON cop.country_code = o.country_code
+        AND cop.operator_key = o.operator_key
+       JOIN product_catalog p
+         ON p.id = cop.product_catalog_id
+       WHERE c.country_code = $1
+         AND c.status = 'active'
+         AND o.operator_key = $2
+         AND o.active = TRUE
+         AND o.provider_operator_id IS NOT NULL
+         AND BTRIM(o.provider_operator_id) <> ''
+         AND o.verified_at IS NOT NULL
+         AND cop.active = TRUE
+         AND cop.verified_at IS NOT NULL
+         AND p.country = c.country_code
+         AND p.amount = $3
+         AND p.currency = c.destination_currency
+       LIMIT 2`,
+      [normalizeCountry(requestedCountry), String(options.operatorKey), amount]
+    );
+    if (result.rowCount > 1) {
+      throw new Error('Product selection is ambiguous; select a verified operator product.');
+    }
+  } else {
+    result = await client.query(
+      `SELECT
+       id,
+       country,
+       currency,
+       product_id AS dtone_product_id,
+       operator AS name,
+       NULL::text AS description,
+       amount AS local_amount,
+       price_eur_cents,
+       wholesale_price_eur_cents,
+       active AS enabled
+     FROM product_catalog
+     WHERE (
+       ($1::bigint IS NOT NULL AND id = $1::bigint)
+       OR
+       ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
+     )
+     LIMIT 1`,
+      [productId, requestedCountry, operator, amount]
+    );
+  }
+
+  if (result.rowCount !== 1) {
+    throw new Error(
+      'Product not found.'
+    );
+  }
+
+  const product = result.rows[0];
+
+  // Read-only quote requests may inspect inactive catalog products.
+  // All checkout/order callers remain strict unless explicitly opted in.
+  if (product.enabled !== true && options.allowInactive !== true) {
+    throw new Error(
+      'This product is currently unavailable.'
+    );
+  }
+
+  const country = normalizeCountry(
+    product.country
+  );
+
+  if (!isValidCountry(country)) {
+    throw new Error(
+      'Product country is not supported.'
+    );
+  }
+
+  // Recipient currency must match the selected country.
+  if (
+    product.currency !== countryCurrency(country)
+  ) {
+    throw new Error(
+      'Product currency does not match its country.'
+    );
+  }
+
+  const priceCents = requirePositiveInteger(
+    product.price_eur_cents,
+    'product price in EUR cents'
+  );
+
+  const localAmount = requirePositiveInteger(
+    product.local_amount,
+    'local top-up amount'
+  );
+
+  if (!product.dtone_product_id) {
+    throw new Error(
+      'DT One product mapping is missing.'
+    );
+  }
+
+  return {
+    id: String(product.id),
+    country,
+    currency: product.currency,
+    dtoneProductId: String(
+      product.dtone_product_id
+    ),
+    name: String(product.name || ''),
+    description: String(
+      product.description || ''
+    ),
+    localAmount,
+    priceCents,
+    wholesalePriceCents: product.wholesale_price_eur_cents == null
+      ? null
+      : requirePositiveInteger(product.wholesale_price_eur_cents, 'DT One wholesale price in EUR cents'),
+  };
+}
+
+// Calculate the final customer price.
+// The price and fee are both in EUR cents.
+// Optional operator fee overrides replace, rather than stack on, the country app fee.
+async function resolveProductPricing(client, country, operator, product, pricing) {
+  const name = String(operator || product?.name || '').trim();
+  if (!name) return pricing;
+  const result = await client.query(
+    `SELECT fee_eur_cents, fee_percent, active FROM operator_pricing_settings
+     WHERE country = $1 AND LOWER(operator) = LOWER($2) LIMIT 1`,
+    [normalizeCountry(country), name]
+  );
+  if (result.rowCount !== 1 || result.rows[0].active !== true) return pricing;
+  const fixed = requireNonNegativeInteger(result.rows[0].fee_eur_cents, 'operator fixed fee');
+  const percent = Number(result.rows[0].fee_percent);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('Invalid operator fee percentage.');
+  const wholesale = requirePositiveInteger(product.wholesalePriceCents, 'DT One wholesale price in EUR cents');
+  return { ...pricing, feeCents: fixed + Math.ceil(wholesale * percent / 100), operatorFeeCents: fixed,
+    operatorFeePercent: percent, operatorPricingApplied: true };
+}
+
+function calculateFinalPrice(product, pricing) {
+  // An enabled production product must have a verified DT One wholesale
+  // cost. Never silently treat an old retail/display price as wholesale.
+  const basePriceCents = requirePositiveInteger(
+    product.wholesalePriceCents,
+    'verified DT One wholesale price in EUR cents'
+  );
+
+  const feeCents = requireNonNegativeInteger(
+    pricing.feeCents,
+    'fee'
+  );
+
+  const bonusPercent = Number(
+    pricing.bonusPercent
+  );
+
+  if (
+    !Number.isFinite(bonusPercent) ||
+    bonusPercent < 0 ||
+    bonusPercent > 100
+  ) {
+    throw new Error(
+      'Invalid bonus percentage.'
+    );
+  }
+
+  // Validate provider fee settings before gross-up. A percentage >= 100,
+  // non-finite percentage, or invalid fixed fee can otherwise produce a
+  // negative/invalid denominator or an unbounded rounding loop.
+  const stripeFeePercent = Number(pricing.stripeFeePercent);
+  if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
+    throw new Error('Invalid Stripe fee percentage.');
+  }
+  const stripeFixedFeeCents = requireNonNegativeInteger(
+    pricing.stripeFixedFeeCents,
+    'Stripe fixed fee'
+  );
+
+  // Gross up the customer charge so that the estimated Stripe percentage
+  // and fixed fee are covered while preserving the configured app fee.
+  const targetNetCents = basePriceCents + feeCents;
+  const stripeRate = stripeFeePercent / 100;
+  // Start with the algebraic gross-up, then correct for Stripe's
+  // percentage-fee rounding. The rounded Stripe fee must never reduce
+  // the amount retained below wholesale cost plus the configured app fee.
+  let finalPriceCents = Math.ceil(
+    (targetNetCents + stripeFixedFeeCents) / (1 - stripeRate)
+  );
+  let estimatedStripeFeeCents =
+    Math.ceil(finalPriceCents * stripeRate) + stripeFixedFeeCents;
+  while (finalPriceCents - estimatedStripeFeeCents < targetNetCents) {
+    finalPriceCents += 1;
+    estimatedStripeFeeCents =
+      Math.ceil(finalPriceCents * stripeRate) + stripeFixedFeeCents;
+  }
+
+  if (!Number.isSafeInteger(finalPriceCents) || finalPriceCents <= 0) {
+    throw new Error('Final price is outside the supported range.');
+  }
+
+  // Bonus is informational until its business rules
+  // and the operator's supported delivery amount
+  // have been confirmed.
+  return {
+    currency: 'EUR',
+    basePriceCents,
+    feeCents,
+    estimatedStripeFeeCents,
+    stripeFeePercent,
+    stripeFixedFeeCents,
+    finalPriceCents,
+    bonusPercent,
+    formattedBasePrice: formatEuro(
+      basePriceCents
+    ),
+    formattedFee: formatEuro(feeCents),
+    formattedFinalPrice: formatEuro(
+      finalPriceCents
+    ),
+  };
+}
+
+// Get a quote using server-side product and pricing data.
+// Never accept the final price from the mobile app.
+async function getProductQuote(productId, country) {
+  if (!pool) {
+    throw new Error(
+      'Database is not configured.'
+    );
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const product = await getProduct(
+      client,
+      productId,
+      country
+    );
+
+    if (
+      product.country !== normalizeCountry(country)
+    ) {
+      throw new Error(
+        'Product does not match selected country.'
+      );
+    }
+
+    const basePricing = await getPricingSettings(client, country);
+    const pricing = await resolveProductPricing(client, country, product.name, product, basePricing);
+    const price = calculateFinalPrice(product, pricing);
+
+    return {
+      productId: product.id,
+      productName: product.name,
+      country: product.country,
+      recipientCurrency: product.currency,
+      recipientAmount: product.localAmount,
+      paymentCurrency: 'EUR',
+      basePriceCents: price.basePriceCents,
+      wholesaleCostConfigured: product.wholesalePriceCents !== null,
+      feeCents: price.feeCents,
+      estimatedStripeFeeCents: price.estimatedStripeFeeCents,
+      stripeFeePercent: price.stripeFeePercent,
+      stripeFixedFeeCents: price.stripeFixedFeeCents,
+      finalPriceCents: price.finalPriceCents,
+      formattedBasePrice: price.formattedBasePrice,
+      formattedFee: price.formattedFee,
+      formattedFinalPrice: price.formattedFinalPrice,
+      bonusPercent: price.bonusPercent,
+      exchangeRateAfnPerEur: pricing.afnPerEur,
+      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
+      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
+    };
+  } finally {
+    client.release();
+  }
+}
+// Return a server-authoritative quote for the selected country/operator/amount.
+// Quotes may preview inactive, database-mapped products; checkout still requires an enabled product.
+// Public, read-only operator registry API.
+// This route is intentionally read-only and fails closed until the canonical
+// registry migration is installed and a country/operator has been verified.
+const REGISTRY_LANGUAGES = new Set(['en', 'ps', 'fa', 'ur', 'hi', 'bn']);
+
+app.get('/api/countries/:countryCode/operators', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country registry is not configured.' });
+  }
+
+  const countryCode = normalizeCountry(req.params.countryCode);
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = REGISTRY_LANGUAGES.has(requestedLanguage) ? requestedLanguage : 'en';
+
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return res.status(400).json({ error: 'Invalid country code.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         o.operator_key,
+         o.provider_operator_id,
+         COALESCE(localized.display_name, o.display_name) AS display_name
+       FROM country_registry c
+       JOIN country_operators o
+         ON o.country_code = c.country_code
+       LEFT JOIN country_operator_localizations localized
+         ON localized.operator_id = o.id
+        AND localized.language_code = $2
+       WHERE c.country_code = $1
+         AND c.status = 'active'
+         AND o.active = TRUE
+         AND o.provider_operator_id IS NOT NULL
+         AND BTRIM(o.provider_operator_id) <> ''
+         AND o.verified_at IS NOT NULL
+         AND EXISTS (
+           SELECT 1
+           FROM country_operator_products cop
+           JOIN product_catalog p ON p.id = cop.product_catalog_id
+           WHERE cop.country_code = o.country_code
+             AND cop.operator_key = o.operator_key
+             AND cop.active = TRUE
+             AND cop.verified_at IS NOT NULL
+             AND p.country = c.country_code
+             AND p.currency = c.destination_currency
+         )
+       ORDER BY COALESCE(localized.display_name, o.display_name), o.operator_key`,
+      [countryCode, language]
+    );
+
+    return res.json({
+      countryCode,
+      language,
+      operators: result.rows.map((row) => ({
+        operator_key: String(row.operator_key),
+        provider_operator_id: String(row.provider_operator_id),
+        display_name: String(row.display_name),
+      })),
+    });
+  } catch (error) {
+    // A missing/unmigrated registry is a service-not-ready condition, not an
+    // empty operator list. Never fall back to unverified provider mappings.
+    console.error('Country operator registry lookup failed.', {
+      countryCode,
+      errorCode: error?.code || null,
+      errorMessage: String(error?.message || 'Unknown registry error').slice(0, 180),
+    });
+    return res.status(503).json({
+      error: 'Country operator registry is temporarily unavailable.',
+    });
+  }
+});
+
+// Public, read-only list of configured payment currencies.
+// Only EUR is eligible for checkout until FX, fees, and checkout support are verified.
+app.get('/api/payment-currencies', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Payment currency service is not configured.' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT currency, rate_per_eur, active
+       FROM payment_currency_settings
+       ORDER BY CASE currency WHEN 'EUR' THEN 1 WHEN 'USD' THEN 2 WHEN 'GBP' THEN 3 ELSE 4 END`
+    );
+    const currencies = result.rows.map((row) => {
+      const currency = String(row.currency || '').trim().toUpperCase();
+      const active = row.active === true;
+      return {
+        currency,
+        ratePerEur: row.rate_per_eur == null ? null : Number(row.rate_per_eur),
+        active,
+        checkoutEnabled: currency === 'EUR' && active,
+      };
+    });
+    return res.json({
+      baseCurrency: 'EUR',
+      checkoutCurrency: 'EUR',
+      currencies,
+      note: 'USD and GBP remain unavailable for checkout until exchange rates, Stripe fees, and end-to-end checkout are verified.',
+    });
+  } catch (error) {
+    console.error('Payment currency availability lookup failed:', error.message);
+    return res.status(503).json({
+      error: 'Payment currency availability is temporarily unavailable.',
+    });
+  }
+});
+
+// Map only known product-selection outcomes to client errors.
+// Database/configuration/calculation failures are service errors, not HTTP 404.
+function classifyPricingQuoteError(error) {
+  const message = String(error?.message || '');
+  if (message === 'Product not found.') {
+    return { statusCode: 404, publicMessage: 'Product not found.' };
+  }
+  if (
+    message === 'This product is currently unavailable.' ||
+    message === 'Product selection is ambiguous; select a verified operator product.'
+  ) {
+    return { statusCode: 409, publicMessage: message };
+  }
+  return {
+    statusCode: 503,
+    publicMessage: 'Pricing service is temporarily unavailable. Please try again later.',
+  };
+}
+
+// Public discovery for ranged-value products. Only admin-activated products with
+// a verified provider capability are exposed; provider snapshots and wholesale
+// pricing evidence are deliberately never returned to the customer.
+const RANGED_COUNTRY_ISO3 = Object.freeze({
+  AF: 'AFG',
+  PK: 'PAK',
+  IN: 'IND',
+  BD: 'BGD',
+});
+
 app.get('/api/ranged-products', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Product service is not configured.' });
