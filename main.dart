@@ -121,11 +121,19 @@ class MobileOperator {
   final String name;
   final String icon;
 
+  // Stable registry identity is distinct from the localized display name.
+  // Legacy curated operators keep these nullable until a verified registry
+  // response supplies the identifiers.
+  final String? operatorKey;
+  final String? providerOperatorId;
+
   const MobileOperator(
     this.countryCode,
     this.name,
-    this.icon,
-  );
+    this.icon, {
+    this.operatorKey,
+    this.providerOperatorId,
+  });
 }
 
 // Brand-inspired compact marks keep operator cards recognizable without
@@ -1664,6 +1672,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
           'country': countryCode,
           'operator': operator.name,
           'amount': '$amount',
+          if (operator.operatorKey != null && operator.operatorKey!.isNotEmpty)
+            'operatorKey': operator.operatorKey!,
+          if (operator.providerOperatorId != null &&
+              operator.providerOperatorId!.isNotEmpty)
+            'providerOperatorId': operator.providerOperatorId!,
         },
       );
 
@@ -2411,6 +2424,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'phone': phone,
               'phoneNumber': phone,
               'operator': selectedOperator!.name,
+              if (selectedOperator!.operatorKey != null &&
+                  selectedOperator!.operatorKey!.isNotEmpty)
+                'operatorKey': selectedOperator!.operatorKey!,
+              if (selectedOperator!.providerOperatorId != null &&
+                  selectedOperator!.providerOperatorId!.isNotEmpty)
+                'providerOperatorId': selectedOperator!.providerOperatorId!,
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
