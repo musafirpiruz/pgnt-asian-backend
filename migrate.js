@@ -803,8 +803,9 @@ async function runMigration() {
                 AND min_amount IS NULL AND max_amount IS NULL AND amount_increment IS NULL)
               OR
               (product_type = 'RANGED_VALUE_RECHARGE'
-                AND min_amount > 0 AND max_amount >= min_amount
-                AND amount_increment > 0)
+                AND min_amount IS NOT NULL AND max_amount IS NOT NULL
+                AND amount_increment IS NOT NULL AND min_amount > 0
+                AND max_amount >= min_amount AND amount_increment > 0)
             ),
             CHECK (active = FALSE OR capability_verified_at IS NOT NULL)
           );
