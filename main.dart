@@ -134,6 +134,36 @@ class MobileOperator {
     this.operatorKey,
     this.providerOperatorId,
   });
+
+  // Parse the public registry contract without using a localized label as
+  // identity. Accept the current snake_case API fields and explicit camelCase
+  // aliases during the staged API migration; never derive an ID from a name.
+  factory MobileOperator.fromRegistryJson({
+    required String countryCode,
+    required Map<String, dynamic> json,
+  }) {
+    final displayName = (json['display_name'] ??
+            json['displayName'] ??
+            json['name'] ??
+            '')
+        .toString()
+        .trim();
+    final rawOperatorKey =
+        json['operator_key'] ?? json['operatorKey'] ?? json['code'];
+    final rawProviderId =
+        json['provider_operator_id'] ?? json['providerOperatorId'];
+    return MobileOperator(
+      countryCode,
+      displayName,
+      '📶',
+      operatorKey: rawOperatorKey?.toString().trim().isNotEmpty == true
+          ? rawOperatorKey.toString().trim()
+          : null,
+      providerOperatorId: rawProviderId?.toString().trim().isNotEmpty == true
+          ? rawProviderId.toString().trim()
+          : null,
+    );
+  }
 }
 
 // Brand-inspired compact marks keep operator cards recognizable without
