@@ -154,3 +154,40 @@ test('requires HTTPS origin and Basic authentication', async () => {
     ...common, ...base, authorization: 'Bearer token',
   }), /Basic authentication/);
 });
+
+
+test('treats provider 5xx as an unknown create outcome and never retries', async () => {
+  let calls = 0;
+  await assert.rejects(createRangedTransaction({
+    ...base,
+    fetchImpl: async () => {
+      calls++;
+      return new Response(JSON.stringify({ error: 'temporary provider failure' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+    productId: 98765, externalId: 'PGNT-ORDER-6',
+    destinationAmount: 150, destinationCurrency: 'AFN',
+    mobileNumber: '+93700100100', capability,
+  }), (error) => error instanceof DTOneOutcomeUnknownError &&
+    error.operation === 'ranged transaction creation' && error.statusCode === 500);
+  assert.equal(calls, 1);
+});
+
+test('treats malformed or unexpected successful create responses as unknown outcomes', async () => {
+  const common = {
+    ...base,
+    productId: 98765, externalId: 'PGNT-ORDER-7',
+    destinationAmount: 150, destinationCurrency: 'AFN',
+    mobileNumber: '+93700100100', capability,
+  };
+  await assert.rejects(createRangedTransaction({
+    ...common,
+    fetchImpl: async () => new Response('not-json', { status: 201 }),
+  }), (error) => error instanceof DTOneOutcomeUnknownError && error.statusCode === 201);
+  await assert.rejects(createRangedTransaction({
+    ...common,
+    fetchImpl: mockFetch(200, createdResponse()),
+  }), (error) => error instanceof DTOneOutcomeUnknownError && error.statusCode === 200);
+});
