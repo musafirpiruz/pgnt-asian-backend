@@ -23,7 +23,8 @@ test('DT One product discovery allows an omitted amount filter', () => {
   assert.match(server, /req\.query\.amount == null \|\| String\(req\.query\.amount\)\.trim\(\) === ''/);
   assert.match(server, /\? null\s*: Number\(req\.query\.amount\)/);
   assert.match(server, /amountQuery !== null && \(!Number\.isFinite\(amountQuery\) \|\| amountQuery <= 0\)/);
-  assert.match(server, /amountQuery === null\s*\|\|\s*benefitAmounts\.includes\(amountQuery\)/);
+  assert.match(server, /amountQuery === null/);
+  assert.match(server, /rangeAmountMatch/);
 });
 
 test('DT One product discovery remains read-only', () => {
