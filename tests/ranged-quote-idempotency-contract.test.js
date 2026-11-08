@@ -33,6 +33,8 @@ test('Flutter keeps the same ranged quote key on retry and accepts idempotent re
   assert.match(flow, /'Idempotency-Key': _rangedIdempotencyKey!/);
   assert.match(flow, /statusCode != 201 && rangedResponse\.statusCode != 200/);
   assert.match(app, /_rangedRequestFingerprint != requestFingerprint/);
+  assert.match(app, /_secureStorage\.write\(/);
+  assert.match(app, /_secureStorage\.read\(/);
 });
 
 test('database enforces uniqueness for hashed ranged quote request keys', () => {
@@ -40,4 +42,15 @@ test('database enforces uniqueness for hashed ranged quote request keys', () => 
   assert.match(migration, /CREATE UNIQUE INDEX/);
   assert.match(migration, /WHERE request_key_hash IS NOT NULL/);
   assert.doesNotMatch(migration, /request_key_hash[^\n]*raw/i);
+});
+
+test('ranged checkout retries return the same still-open Stripe session', () => {
+  const start = server.indexOf("app.post('/api/payments/checkout'");
+  const end = server.indexOf("// Create a checkout session and store its order.", start);
+  assert.ok(start >= 0);
+  const route = server.slice(start, end > start ? end : start + 12000);
+  assert.match(route, /order\.status === 'awaiting_payment' && order\.stripe_session_id/);
+  assert.match(route, /stripe\.checkout\.sessions\.retrieve\(order\.stripe_session_id\)/);
+  assert.match(route, /existingSession\.status === 'open'/);
+  assert.match(route, /Number\(existingSession\.amount_total\) === Number\(order\.charge_cents\)/);
 });
