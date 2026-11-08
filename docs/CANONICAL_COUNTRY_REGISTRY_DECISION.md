@@ -75,3 +75,55 @@ The PR #204 customer operator endpoint currently returns `code`, `name`, and `pr
 ## Safety gate
 
 This document is a design decision only. No migration has been run, no production data was changed, no country/operator/product was activated, and no payment, refund, top-up, or deployment was performed. Keep PR #225 draft until implementation and PostgreSQL tests pass from all starting states, then complete backup/restore rehearsal and sandbox acceptance tests.
+
+
+## Long-term extensibility contract — future countries
+
+The product must be country-data-driven, not country-code-driven. Afghanistan, Pakistan, India, and Bangladesh are the initial launch set, not a permanent code limit. Adding a country must be an admin onboarding/configuration operation plus provider/catalog verification; it must not require a new country-specific code branch, database table, or app release for ordinary country metadata.
+
+### Canonical data model
+
+- `country_registry` is the only country source of truth. Use ISO 3166-1 alpha-2 country codes as stable keys and ISO 4217 currency codes for destination/payment currencies.
+- Country records hold display name, destination currency, calling code, phone validation policy, status, provider mapping, configuration version, and timestamps. Do not encode country-specific behavior in a growing switch statement.
+- Country localizations are data rows keyed by `(country_code, language_code)`; missing translations use an explicit fallback chain and never change country identity.
+- Operators are keyed by a stable internal `operator_key`, scoped to country and provider. Localized names are labels only. Provider operator IDs are server-side identifiers, unique in their provider scope, and never accepted as client authority.
+- Products/denominations are provider catalog rows linked by foreign keys to country and operator. Store recipient denomination/currency separately from verified provider wholesale amount/currency and EUR customer price. Never infer one currency from another.
+- Provider mappings and provider capabilities are separate from country identity. A country may be configured for more than one provider over time; provider-specific credentials and identifiers stay server-side.
+- FX observations must state base currency, quote currency, direction, source, observed/fetched time, and whether they are reference-only or provider settlement data. Never let public reference FX silently become DT One settlement pricing.
+
+### Runtime and API rules
+
+- Customer APIs read active, reviewed configuration from the registry. They must not return draft/testing/disabled countries as purchasable.
+- The country list endpoint returns only customer-visible countries with supported configuration. Flutter builds country/operator/product choices from these APIs; local hard-coded lists are fallback/offline display only and must not decide whether checkout is permitted.
+- Country/operator/product identity remains stable across all supported UI languages. Changing language changes labels only.
+- Phone validation is country-configured (calling code, min/max digits, and, when needed, a versioned validation rule); do not assume all countries have the same phone length or numbering plan.
+- Quote and checkout resolve `countryCode + operatorKey + denomination/productKey` on the server. Checkout re-reads the verified active provider mapping and product inside its database transaction. Client-supplied provider IDs, wholesale prices, FX rates, fees, or final prices are ignored.
+- Checkout currency remains an explicit payment-currency policy (currently EUR). Destination currency and payment currency are independent. Supporting another payment currency requires a separately tested pricing/Stripe policy, not merely adding a currency code.
+- Use provider adapters behind a common contract (catalog discovery, quote/price verification, order submission, status lookup, refund/reversal capability, callbacks). Provider-specific API differences must not leak into Flutter or country identity.
+- New country onboarding follows a state machine: `draft → configuring → testing → active`, with `disabled` as a reversible operational state. Activation requires verified country/provider mapping, at least one verified operator and product, currency/wholesale verification, phone rules, sandbox quote/order/status acceptance, and an audit record. Failed checks block activation.
+- Unknown country/operator/product keys fail closed with a clear customer-safe error. Do not silently fall back from a registry selection to a different operator with a similar display name.
+
+### Adding a country acceptance checklist
+
+For every new country, tests must cover:
+1. Country metadata and ISO currency/calling-code validation.
+2. Localized country and operator labels for all app languages, with fallback behavior.
+3. Phone normalization and valid/invalid boundary cases.
+4. Provider country/operator/product mappings and duplicate-ID protection.
+5. Denomination/currency matching and verified wholesale price in its actual source currency.
+6. FX direction, source, freshness, and reference-vs-settlement separation.
+7. EUR customer price calculation including app fee and Stripe percentage/fixed fee.
+8. Quote-only API resolution by stable keys, independent of localized display names.
+9. Sandbox checkout, callback/status reconciliation, duplicate webhook/idempotency, and failure/review handling.
+10. Admin audit log, disable/re-enable behavior, and preservation of existing orders/ledger/history.
+
+### Architectural guardrails
+
+- Do not add country-specific SQL tables, migrations, Flutter branches, or API routes for each new country.
+- Do not hard-code the supported-country allowlist in server validation once the registry becomes canonical. Validate ISO shape, then authorize by registry status and verified configuration.
+- Keep schema migrations additive/forward-only where possible, tested from clean install and every supported historical schema. Reconciliation conflicts must abort transactionally.
+- Make configuration changes versioned and auditable. Cache keys must include country configuration version and language where labels are cached.
+- Keep provider credentials, provider IDs, settlement details, and fraud controls on the server.
+- New-country support is not complete merely because a country appears in a dropdown. It is complete only after the entire quote → payment → provider fulfillment → callback/status → support/review path passes sandbox acceptance.
+
+These requirements are the target architecture. They do not assert that the current main branch or current PR already implements every item.
