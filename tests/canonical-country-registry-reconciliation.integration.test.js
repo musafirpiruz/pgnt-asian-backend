@@ -105,7 +105,7 @@ test('canonical registry reconciliation upgrades the PR #196 schema and preserve
     assert.equal(operator.rows.length, 1);
     assert.equal(operator.rows[0].operator_key, 'af-test-net');
     assert.equal(operator.rows[0].provider_operator_id, 'dtone-op-001');
-    assert.equal(operator.rows[0].active, true);
+    assert.equal(operator.rows[0].active, false, 'legacy rows without verified_at must remain inactive');
     assert.equal(operator.rows[0].display_name, 'ازمایښتي شبکه');
   });
 });
