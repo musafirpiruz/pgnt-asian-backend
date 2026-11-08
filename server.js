@@ -4064,7 +4064,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><button type="button" id="refreshCatalogPrices">Refresh verified prices for existing disabled product</button><label for="catalogCountry">Destination country</label><select id="catalogCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="operatorSearch">Network (optional)</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks in selected country</option></select><button type="button" id="discoverOperators">Load network list (read-only)</button><button type="button" id="discover">Find products in selected country</button><button type="button" id="autoBuildCountryCatalog">Automatically build selected country catalog (preview first)</button><label style="display:flex;gap:8px;align-items:center"><input id="confirmCountryCatalogImport" type="checkbox" style="width:auto"> I confirm importing all valid new products for this country as DISABLED</label>
+<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><button type="button" id="activateRangedProduct">Map and activate verified ranged product</button><small>Requires the canonical country/operator registry and a second explicit confirmation. Only a provider-identity match can be activated.</small><button type="button" id="refreshCatalogPrices">Refresh verified prices for existing disabled product</button><label for="catalogCountry">Destination country</label><select id="catalogCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="operatorSearch">Network (optional)</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks in selected country</option></select><button type="button" id="discoverOperators">Load network list (read-only)</button><button type="button" id="discover">Find products in selected country</button><button type="button" id="autoBuildCountryCatalog">Automatically build selected country catalog (preview first)</button><label style="display:flex;gap:8px;align-items:center"><input id="confirmCountryCatalogImport" type="checkbox" style="width:auto"> I confirm importing all valid new products for this country as DISABLED</label>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -4371,6 +4371,18 @@ document.getElementById('importCatalogProduct').addEventListener('click',async()
  result.textContent='Verifying provider product and importing it as disabled…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/import',{method:'POST'});result.textContent=JSON.stringify(data,null,2);}
  catch(error){result.textContent='Could not import catalog product: '+error.message;}
+ finally{key.value='';}
+});
+document.getElementById('activateRangedProduct').addEventListener('click',async()=>{
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const productId=String(document.getElementById('productIdInput').value||'').trim();
+ if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!confirm('Activate ranged DT One product '+productId+' only if its provider operator ID matches exactly one active, verified operator in the canonical registry? This makes the verified product available for customer-entered amounts within its provider range. No payment or top-up will be performed.'))return;
+ result.textContent='Checking canonical country/operator identity and activating one product…';
+ try{
+  const data=await adminRequest('/api/admin/dtone/ranged-products/'+encodeURIComponent(productId)+'/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmActivation:true})});
+  result.textContent=JSON.stringify(data,null,2);
+ }catch(error){result.textContent='Could not safely activate ranged product: '+error.message;}
  finally{key.value='';}
 });
 document.getElementById('refreshCatalogPrices').addEventListener('click',async()=>{
