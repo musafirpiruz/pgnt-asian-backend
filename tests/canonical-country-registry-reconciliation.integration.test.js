@@ -220,3 +220,53 @@ test('canonical registry reconciliation rolls back on conflicting country identi
     assert.equal(preserved.rows[0].country_name, 'Wrong Name');
   });
 });
+
+
+test('country registry reconciliation preserves FK actions, deferrability, and unrelated operator FKs', async () => {
+  await inSchema('registry_fk_semantics', async (client, schema) => {
+    await client.query(fixture196);
+    await client.query(`
+      ALTER TABLE country_provider_settings
+        DROP CONSTRAINT country_provider_settings_country_code_fkey;
+      ALTER TABLE country_provider_settings
+        ADD CONSTRAINT country_provider_settings_country_code_fkey
+        FOREIGN KEY (country_code) REFERENCES countries(code)
+        ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+      CREATE TABLE operator_metadata (id BIGINT PRIMARY KEY);
+      ALTER TABLE country_operators ADD COLUMN metadata_id BIGINT;
+      ALTER TABLE country_operators
+        ADD CONSTRAINT country_operators_metadata_fk
+        FOREIGN KEY (metadata_id) REFERENCES operator_metadata(id) ON DELETE SET NULL;
+    `);
+
+    await client.query(reconcile);
+
+    const providerFk = await client.query(`
+      SELECT c.confdeltype, c.condeferrable, c.condeferred, parent.relname AS parent_table
+      FROM pg_constraint c
+      JOIN pg_class child ON child.oid=c.conrelid
+      JOIN pg_class parent ON parent.oid=c.confrelid
+      JOIN pg_namespace n ON n.oid=child.relnamespace
+      WHERE n.nspname=$1 AND child.relname='country_provider_settings'
+        AND c.conname='country_provider_settings_country_code_fkey'
+    `, [schema]);
+    assert.equal(providerFk.rows.length, 1);
+    assert.equal(providerFk.rows[0].parent_table, 'country_registry');
+    assert.equal(providerFk.rows[0].confdeltype, 'r', 'ON DELETE RESTRICT must be preserved');
+    assert.equal(providerFk.rows[0].condeferrable, true);
+    assert.equal(providerFk.rows[0].condeferred, true);
+
+    const metadataFk = await client.query(`
+      SELECT c.confdeltype, parent.relname AS parent_table
+      FROM pg_constraint c
+      JOIN pg_class child ON child.oid=c.conrelid
+      JOIN pg_class parent ON parent.oid=c.confrelid
+      JOIN pg_namespace n ON n.oid=child.relnamespace
+      WHERE n.nspname=$1 AND child.relname='country_operators'
+        AND c.conname='country_operators_metadata_fk'
+    `, [schema]);
+    assert.equal(metadataFk.rows.length, 1, 'unrelated operator metadata FK must remain');
+    assert.equal(metadataFk.rows[0].parent_table, 'operator_metadata');
+    assert.equal(metadataFk.rows[0].confdeltype, 'n', 'ON DELETE SET NULL must be preserved');
+  });
+});
