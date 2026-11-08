@@ -1395,7 +1395,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
   int _registryOperatorsRequestGeneration = 0;
-  int selectedAmount = 100;
+  int selectedAmount = 10;
   int selectedTab = 0;
   bool isLoading = false;
   bool isQuoteLoading = false;
@@ -1430,6 +1430,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void initState() {
     super.initState();
+    customAmountController.text = '10';
     _restoreFuture = _restoreLocalData();
     _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
@@ -1865,10 +1866,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() {
       selectedCountry = country;
       selectedOperator = null;
-      selectedAmount =
-          (rechargeAmounts[country.currency] ?? [100]).first;
+      selectedAmount = 10;
       phoneController.clear();
-      customAmountController.clear();
+      customAmountController.text = '10';
       priceQuote = null;
       priceQuoteError = null;
     });
@@ -1998,8 +1998,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildOperatorSelector(),
           const SizedBox(height: 18),
           _buildStepHeader(4, t('amount')),
-          buildAmountSelector(),
-          const SizedBox(height: 10),
           buildCustomAmountField(),
           const SizedBox(height: 14),
           buildPriceCard(),
@@ -2294,35 +2292,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
 
-  Widget buildAmountSelector() {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: amounts.map((amount) {
-        final selected = selectedAmount == amount;
-
-        return ChoiceChip(
-          label: Text('$amount ${selectedCountry.currency}'),
-          selected: selected,
-          selectedColor: gold,
-          backgroundColor: Colors.white,
-          side: BorderSide(
-            color: selected ? primaryRed : gold,
-          ),
-          labelStyle: TextStyle(
-            color: selected ? primaryRed : Colors.black87,
-            fontWeight: FontWeight.bold,
-          ),
-          onSelected: (_) {
-            customAmountController.clear();
-            setState(() { selectedAmount = amount; priceQuote = null; priceQuoteError = null; });
-            loadPriceQuote();
-          },
-        );
-      }).toList(),
-    );
-  }
-
   Widget _buildStepHeader(int number, String label) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -2341,8 +2310,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Widget buildCustomAmountField() {
     void applyAmount(String raw) {
       final value = int.tryParse(raw.trim());
-      if (value == null || value <= 0) {
-        showMessage(t('invalidAmount'));
+      if (value == null || value < 10 || value > 3000) {
+        showMessage('مبلغ باید له ۱۰ څخه تر ۳۰۰۰ پورې وي.');
         return;
       }
       setState(() {
@@ -2356,9 +2325,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
     return TextField(
       controller: customAmountController,
       keyboardType: TextInputType.number,
+      maxLength: 4,
       decoration: InputDecoration(
         labelText: '${t('customAmount')} (${selectedCountry.currency})',
-        hintText: t('amount'),
+        hintText: '10 - 3000',
+        helperText: 'له ۱۰ څخه تر ۳۰۰۰ پورې هر مطلوب مبلغ ولیکئ.',
+        counterText: '',
         prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
         suffixIcon: IconButton(
           tooltip: 'Check amount and price',
@@ -2508,6 +2480,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
     if (selectedOperator == null) {
       showMessage(t('chooseOperator'));
+      return;
+    }
+
+    final enteredAmount = int.tryParse(customAmountController.text.trim());
+    if (enteredAmount == null || enteredAmount < 10 || enteredAmount > 3000 || enteredAmount != selectedAmount) {
+      showMessage('لومړی د ۱۰ او ۳۰۰۰ ترمنځ مبلغ ولیکئ او د تایید نښه کېکاږئ.');
       return;
     }
 
