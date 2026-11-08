@@ -104,3 +104,8 @@ test('rejects invalid or non-integer ranged pricing inputs', () => {
     feeCents: 49, stripeFeePercent: 100, stripeFixedFeeCents: 25,
   }), /settings are invalid/);
 });
+
+
+test('rejects a zero DT One transaction ID even when all other quote evidence is valid', () => {
+  assert.throws(() => parseRangedWholesalePrice(response({ id: 0 }), expected), /identity, CREATED status/);
+});
