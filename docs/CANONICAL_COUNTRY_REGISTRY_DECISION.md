@@ -184,3 +184,33 @@ For a verified `RANGED_VALUE_RECHARGE` product, the target flow is:
 - Keep the fixed-denomination path unchanged while ranged-value support is introduced behind an explicit product capability and versioned admin approval.
 
 DT One's current public DVS documentation describes `DESTINATION_AMOUNT` for ranged products, a separate confirmation endpoint when `auto_confirm` is false, and automatic cancellation of unconfirmed CREATED transactions after 60 minutes. It recommends the two-step flow for checking ranged-product prices before confirmation. These provider rules do not establish this account's wholesale settlement currency or approve any particular country/operator mapping.
+
+
+### DT One ranged-value integration contract — verified documentation, account currency pending runtime proof
+
+The owner has stated that the DT One account settlement currency is EUR. Treat this as an operator-provided configuration assertion, not proof that every transaction response is denominated in EUR. The adapter must inspect the actual transaction response wholesale-price currency/unit and fail closed if it is absent or differs from the configured EUR settlement currency. Never reinterpret a USD amount as EUR or use the public reference FX rate to convert a provider settlement debit.
+
+Verified against current DT One Developers documentation for Mobile `RANGED_VALUE_RECHARGE`:
+- Create an asynchronous transaction at `POST /v1/async/transactions`.
+- Set `calculation_mode: "DESTINATION_AMOUNT"`.
+- Set `destination: { unit_type: "CURRENCY", unit: <verified destination ISO currency>, amount: <requested integer> }`.
+- Set `auto_confirm: false` so the provider creates (but does not submit) the transaction while returning its price.
+- Read the provider transaction ID, status, `prices.wholesale.amount`, and its currency/unit from the actual response; reject missing, malformed, non-positive, or non-EUR wholesale price.
+- Compute customer EUR cents from the verified EUR wholesale amount plus admin fee and grossed-up Stripe fees. Persist immutable quote inputs, provider transaction ID, amount/currency, final EUR cents, Stripe expiry, and provider confirmation expiry before creating Stripe Checkout.
+- After Stripe's canonical paid webhook, re-fetch and validate the exact Stripe session and order, then confirm the same provider transaction using `POST /v1/async/transactions/{id}/confirm`. Never create a second DT One transaction during fulfillment.
+- The provider confirmation window is at most 60 minutes from CREATED; enforce a conservative expiry guard before Stripe Checkout and before confirm.
+- On unpaid/expired checkout, cancel the still-CREATED provider transaction using the documented cancel endpoint where supported; if cancellation outcome is uncertain, reconcile by provider status and move the order to review. Never automatically create a replacement transaction.
+- Preserve the existing fixed-denomination flow unchanged.
+
+Documentation references:
+- https://developers.dtone.com/docs/new-mobile-template
+- https://developers.dtone.com/reference/posttransactionsync
+- https://developers.dtone.com/reference/posttransactionconfirmsync
+- https://prism-api-doc.dtone.com/
+
+Safety and acceptance:
+- Provider account currency must be proven by a read-only product/transaction response or DT One account statement before enabling this path; owner's EUR statement alone is not sufficient to override an actual API response.
+- Verify the exact required beneficiary/credit-party fields for every operator/product.
+- Sandbox-test minimum, maximum, representative interior amounts, and provider increment for each approved product/operator in AFN, PKR, INR, and BDT.
+- Verify duplicate Stripe webhooks, duplicate confirmation requests, timeout-after-create, timeout-after-confirm, abandoned checkout, expiry, callback/status reconciliation, and cancellation.
+- Do not enable any ranged product or production checkout until the above tests pass.
