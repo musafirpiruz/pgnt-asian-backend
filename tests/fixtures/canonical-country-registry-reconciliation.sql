@@ -54,6 +54,7 @@ DECLARE
   conflict_count BIGINT;
   constraint_name TEXT;
   had_verified_at BOOLEAN;
+  child_record RECORD;
 BEGIN
   SELECT to_regclass(current_schema() || '.countries') IS NOT NULL INTO has_countries;
 
@@ -174,6 +175,44 @@ BEGIN
     IF conflict_count > 0 THEN
       RAISE EXCEPTION 'Cannot reconcile: % operator rows have no canonical country', conflict_count;
     END IF;
+  END IF;
+
+  -- Repoint every simple country_code -> countries(code) child FK, not
+  -- just the two registry tables. PR #196 also has provider settings, FX
+  -- rates and operator prefixes attached to the legacy parent.
+  IF to_regclass(current_schema() || '.countries') IS NOT NULL THEN
+    FOR child_record IN
+      SELECT child.relname AS table_name, fk.conname AS constraint_name
+      FROM pg_constraint fk
+      JOIN pg_class child ON child.oid=fk.conrelid
+      JOIN pg_class parent ON parent.oid=fk.confrelid
+      JOIN pg_attribute local_col ON local_col.attrelid=child.oid
+        AND local_col.attnum=fk.conkey[1]
+      JOIN pg_attribute parent_col ON parent_col.attrelid=parent.oid
+        AND parent_col.attnum=fk.confkey[1]
+      WHERE fk.contype='f'
+        AND fk.confrelid='countries'::regclass
+        AND array_length(fk.conkey,1)=1
+        AND array_length(fk.confkey,1)=1
+        AND local_col.attname='country_code'
+        AND parent_col.attname='code'
+    LOOP
+      EXECUTE format(
+        'SELECT COUNT(*) FROM %I child LEFT JOIN country_registry parent ON parent.country_code=child.country_code WHERE parent.country_code IS NULL',
+        child_record.table_name
+      ) INTO conflict_count;
+      IF conflict_count > 0 THEN
+        RAISE EXCEPTION 'Cannot reconcile %.%: % rows have no canonical country',
+          child_record.table_name, child_record.constraint_name, conflict_count;
+      END IF;
+      EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',
+        child_record.table_name, child_record.constraint_name);
+      EXECUTE format(
+        'ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (country_code) REFERENCES country_registry(country_code) ON DELETE CASCADE',
+        child_record.table_name,
+        left(child_record.table_name || '_country_registry_fk', 63)
+      );
+    END LOOP;
   END IF;
 
   -- Replace only country-parent FKs on the two shared tables. Preserve all
