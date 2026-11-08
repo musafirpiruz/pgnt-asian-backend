@@ -213,7 +213,7 @@ test('DT One discovery filters by documented product type and exposes ranged rec
   assert.match(route, /rangeCapabilityVerified: Boolean\(rangedCapability\)/);
   assert.match(route, /amountMode: isRanged \? 'ranged' : 'fixed_or_unclassified'/);
   assert.match(route, /adminApprovalRequiredForEachAmount: false/);
-  assert.match(route, /requiresProviderCapabilityVerification: true/);
+  assert.match(route, /requiresProviderCapabilityVerification: !rangedCapability/);
 });
 
 test('DT One ranged amount discovery matches values inside provider min/max bounds', () => {
