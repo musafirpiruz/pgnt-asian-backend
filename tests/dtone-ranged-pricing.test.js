@@ -109,3 +109,15 @@ test('rejects invalid or non-integer ranged pricing inputs', () => {
 test('rejects a zero DT One transaction ID even when all other quote evidence is valid', () => {
   assert.throws(() => parseRangedWholesalePrice(response({ id: 0 }), expected), /identity, CREATED status/);
 });
+
+
+test('keeps very small ranged quotes above Stripe minimum EUR charge', () => {
+  const result = calculateRangedCustomerPrice(1, {
+    feeCents: 0,
+    stripeFeePercent: 1.5,
+    stripeFixedFeeCents: 25,
+  });
+  assert.equal(result.finalPriceCents, 50);
+  assert.ok(result.finalPriceCents >= 50);
+  assert.ok(result.netAfterStripeCents >= result.wholesaleCostCents);
+});
