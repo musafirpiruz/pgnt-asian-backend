@@ -46,3 +46,14 @@ test('fixed-product checkout path remains available alongside ranged checkout', 
   assert.match(method, /'currency': selectedCountry\.currency/);
   assert.match(method, /checkoutBody = \{/);
 });
+
+test('Flutter ranged discovery and quote requests use the stable operator key', () => {
+  const discoveryStart = dart.indexOf('Future<void> loadPriceQuote()');
+  const discoveryEnd = dart.indexOf('void selectCountry(', discoveryStart);
+  const discovery = dart.slice(discoveryStart, discoveryEnd);
+  assert.match(discovery, /item\['operatorKey'\]/);
+  const paymentStart = dart.indexOf('Future<void> startPayment()');
+  const paymentEnd = dart.indexOf('Widget buildHistory()', paymentStart);
+  const payment = dart.slice(paymentStart, paymentEnd);
+  assert.match(payment, /'operatorKey': selectedOperator!\.operatorKey/);
+});
