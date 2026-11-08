@@ -1076,6 +1076,87 @@ function classifyPricingQuoteError(error) {
   };
 }
 
+// Public discovery for ranged-value products. Only admin-activated products with
+// a verified provider capability are exposed; provider snapshots and wholesale
+// pricing evidence are deliberately never returned to the customer.
+const RANGED_COUNTRY_ISO3 = Object.freeze({
+  AF: 'AFG',
+  PK: 'PAK',
+  IN: 'IND',
+  BD: 'BGD',
+});
+
+app.get('/api/ranged-products', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Product service is not configured.' });
+  }
+  const country = normalizeCountry(req.query.country);
+  if (!isValidCountry(country)) {
+    return res.status(400).json({ error: 'Select a valid country.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT dtone_product_id, operator_name, destination_currency,
+              min_amount, max_amount, amount_increment
+       FROM dtone_ranged_products
+       WHERE country_iso_code = $1
+         AND active = TRUE
+         AND capability_verified_at IS NOT NULL
+         AND accepted_calculation_modes ? 'DESTINATION_AMOUNT'
+       ORDER BY operator_name, dtone_product_id
+       LIMIT 100`,
+      [RANGED_COUNTRY_ISO3[country]]
+    );
+
+    const products = result.rows.flatMap((row) => {
+      const providerMin = Number(row.min_amount);
+      const providerMax = Number(row.max_amount);
+      const increment = Number(row.amount_increment);
+      const currency = String(row.destination_currency || '').trim().toUpperCase();
+      if (!Number.isSafeInteger(providerMin) ||
+          !Number.isSafeInteger(providerMax) ||
+          !Number.isSafeInteger(increment) ||
+          increment <= 0 || providerMax < providerMin ||
+          currency !== COUNTRY_CURRENCIES[country]) {
+        return [];
+      }
+
+      // The customer-facing range is the intersection of PGNT's 10–3000
+      // policy and the provider's verified range/increment.
+      const minAmount = providerMin +
+        Math.ceil((Math.max(providerMin, PGNT_MIN_AMOUNT) - providerMin) / increment) * increment;
+      const maxAmount = providerMin +
+        Math.floor((Math.min(providerMax, PGNT_MAX_AMOUNT) - providerMin) / increment) * increment;
+      if (minAmount > maxAmount) return [];
+
+      return [{
+        productId: String(row.dtone_product_id),
+        operatorName: String(row.operator_name),
+        destinationCurrency: currency,
+        minAmount,
+        maxAmount,
+        increment,
+        calculationMode: 'DESTINATION_AMOUNT',
+      }];
+    });
+
+    return res.json({
+      country,
+      paymentCurrency: 'EUR',
+      amountPolicy: { min: PGNT_MIN_AMOUNT, max: PGNT_MAX_AMOUNT },
+      products,
+    });
+  } catch (error) {
+    console.error('Ranged product discovery failed.', {
+      country,
+      errorName: error?.name || 'Error',
+      errorCode: error?.code || null,
+    });
+    return res.status(503).json({ error: 'Ranged products are temporarily unavailable.' });
+  }
+});
+
 app.get('/api/pricing/quote', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Pricing service is not configured.' });
