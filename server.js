@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
+const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
 
 const app = express();
 
@@ -4926,8 +4927,9 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
           (rangeMin !== null && rangeMax !== null && rangeMax >= rangeMin);
         const localCurrency = ({ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' })[countryIsoCode];
         const exactAmountMatch = benefitAmounts.includes(amountQuery) || productAmounts.includes(amountQuery);
-        const rangeAmountMatch = isRanged && rangeMin !== null && rangeMax !== null &&
-          amountQuery >= rangeMin && amountQuery <= rangeMax;
+        const rangedCapability = isRanged ? parseRangedProductCapability(product) : null;
+        const rangeAmountMatch = amountQuery !== null &&
+          isValidRangedDestinationAmount(amountQuery, rangedCapability);
         const mentionsAmount = amountQuery === null
           || exactAmountMatch
           || rangeAmountMatch
@@ -4952,14 +4954,18 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
                 productType: productType || null,
                 amountMode: isRanged ? 'ranged' : 'fixed_or_unclassified',
                 destinationCurrency: product?.destination?.unit || product?.benefits?.[0]?.unit || null,
-                minimumAmount: rangeMin,
-                maximumAmount: rangeMax,
+                minimumAmount: rangedCapability?.minAmount ?? rangeMin,
+                maximumAmount: rangedCapability?.maxAmount ?? rangeMax,
+                amountIncrement: rangedCapability?.increment ?? null,
+                selectableMinimumAmount: rangedCapability?.selectableMinAmount ?? null,
+                selectableMaximumAmount: rangedCapability?.selectableMaxAmount ?? null,
                 acceptedCalculationModes: Array.isArray(product?.accepted_calculation_modes)
                   ? product.accepted_calculation_modes
                   : [],
                 amountQuerySupported: amountQuery === null || exactAmountMatch || rangeAmountMatch,
+                rangeCapabilityVerified: Boolean(rangedCapability),
                 adminApprovalRequiredForEachAmount: false,
-                requiresProviderCapabilityVerification: true,
+                requiresProviderCapabilityVerification: !rangedCapability,
               },
             });
           }
