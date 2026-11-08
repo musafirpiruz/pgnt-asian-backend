@@ -17,6 +17,9 @@ const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
 
+const PGNT_MIN_AMOUNT = 10;
+const PGNT_MAX_AMOUNT = 3000;
+
 const app = express();
 
 app.disable('x-powered-by');
@@ -516,7 +519,7 @@ function validateCheckoutInput(body) {
   if ((!productId || operatorKey) && (
     (!operatorKey && (!operator || operator.length > 120)) ||
     (operatorKey && (!/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) ||
-    !Number.isSafeInteger(amount) || amount <= 0
+    !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT
   )) {
     throw new Error('Select a valid operator and top-up amount.');
   }
@@ -1081,7 +1084,7 @@ app.get('/api/pricing/quote', async (req, res) => {
   const operator = String(req.query.operator || '').trim();
   const operatorKey = String(req.query.operatorKey || '').trim();
   const amount = Number(req.query.amount);
-  if (!isValidCountry(country) || ((!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) || !Number.isSafeInteger(amount) || amount <= 0) {
+  if (!isValidCountry(country) || ((!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) || !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
     return res.status(400).json({ error: 'Select a valid country, operator, and amount.' });
   }
   const client = await pool.connect();
