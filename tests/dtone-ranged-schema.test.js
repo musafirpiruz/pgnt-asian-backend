@@ -20,7 +20,9 @@ test('ranged product capabilities preserve provider range and calculation-mode c
   assert.ok(start >= 0 && end > start);
   const sql = migration.slice(start, end);
   assert.match(sql, /RANGED_VALUE_RECHARGE/);
-  assert.match(sql, /min_amount > 0 AND max_amount >= min_amount/);
+  assert.match(sql, /min_amount IS NOT NULL AND max_amount IS NOT NULL/);
+  assert.match(sql, /amount_increment IS NOT NULL AND min_amount > 0/);
+  assert.match(sql, /max_amount >= min_amount AND amount_increment > 0/);
   assert.match(sql, /amount_increment > 0/);
   assert.match(sql, /accepted_calculation_modes JSONB/);
   assert.match(sql, /capability_verified_at TIMESTAMPTZ/);
