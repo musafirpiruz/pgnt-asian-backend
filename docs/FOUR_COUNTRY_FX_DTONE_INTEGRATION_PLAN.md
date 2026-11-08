@@ -94,3 +94,13 @@ A direct comparison of the migration SQL in the current PR heads confirms that t
 5. Keep all registry migrations and dynamic endpoints inactive until the reconciliation tests pass. No production migration or deploy is authorized by this document.
 
 Evidence reviewed from the migration files at the current PR heads on 2026-11-08. This finding supersedes any earlier assumption that distinct migration version strings alone made the registry migrations safe to combine.
+
+### PostgreSQL migration-order diagnostic results — 2026-11-08
+
+The integration branch now runs both migration SQL fixtures against isolated PostgreSQL schemas. The diagnostic assertions verify that:
+
+- Applying PR #196 then PR #204 leaves both root tables (`countries` and `country_registry`) populated, while the shared localization/operator tables remain foreign-keyed to `countries`.
+- Applying PR #204 then PR #196 leaves both root tables populated, while those same shared child tables remain foreign-keyed to `country_registry`.
+- The `country_operators` column contract also depends on order: the PR #196-first schema has no required `provider` column and permits a nullable `provider_operator_id`; the PR #204-first schema has a required `provider` column and non-null `provider_operator_id`.
+
+The diagnostic suite passed in PostgreSQL CI, and the complete backend regression suite passed (259 tests, zero failures). These are **expected-finding tests**, not proof of compatibility: they deliberately confirm that migration order changes the resulting schema. The forward-only canonical reconciliation migration and tests for clean install / deployed-main upgrade remain outstanding. The two registry migration fixtures are test-only and are not applied to Render or any production database.
