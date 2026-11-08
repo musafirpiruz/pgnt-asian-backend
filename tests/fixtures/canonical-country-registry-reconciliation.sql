@@ -25,7 +25,30 @@ CREATE TABLE IF NOT EXISTS country_registry (
   )
 );
 
-DO $$
+CREATE TABLE IF NOT EXISTS country_localizations (
+  country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE CASCADE,
+  language_code VARCHAR(8) NOT NULL,
+  display_name VARCHAR(120) NOT NULL,
+  is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (country_code, language_code)
+);
+
+CREATE TABLE IF NOT EXISTS country_operators (
+  id BIGSERIAL PRIMARY KEY,
+  country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE CASCADE,
+  provider VARCHAR(32) NOT NULL DEFAULT 'dtone',
+  provider_operator_id VARCHAR(80),
+  operator_key VARCHAR(100) NOT NULL,
+  display_name VARCHAR(120) NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT FALSE,
+  verified_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (country_code, operator_key)
+);
+
+DO $
 DECLARE
   has_countries BOOLEAN;
   conflict_count BIGINT;
