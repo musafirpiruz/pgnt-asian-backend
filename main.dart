@@ -1805,8 +1805,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final rangedProduct = _rangedProductsCountry == countryCode
           ? _rangedProducts.cast<Map<String, dynamic>?>().firstWhere(
               (item) => item != null &&
-                  (item['operatorName']?.toString().trim().toLowerCase() ?? '') ==
-                      operator.name.trim().toLowerCase(),
+                  (item['operatorKey']?.toString() ?? '') == (operator.operatorKey ?? ''),
               orElse: () => null,
             )
           : null;
@@ -2568,6 +2567,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 'country': selectedCountry.code,
                 'phone': phone,
                 'productId': priceQuote!['productId'],
+                'operatorKey': selectedOperator!.operatorKey,
                 'amount': selectedAmount,
               }),
             )
