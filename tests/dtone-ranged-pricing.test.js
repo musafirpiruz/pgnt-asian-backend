@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseRangedWholesalePrice } = require('../dtone-ranged-pricing');
+const { parseRangedWholesalePrice, calculateRangedCustomerPrice } = require('../dtone-ranged-pricing');
 
 function response(overrides = {}) {
   return {
@@ -76,4 +76,31 @@ test('rejects missing wholesale fee evidence and expired confirmation windows', 
   assert.throws(() => parseRangedWholesalePrice(response({
     confirmation_expiration_date: new Date(Date.now() - 1000).toISOString(),
   }), expected), /confirmation expiry/);
+});
+
+
+test('grosses up ranged EUR wholesale quote for app fee and Stripe fees', () => {
+  const result = calculateRangedCustomerPrice(190, {
+    feeCents: 49,
+    stripeFeePercent: 1.5,
+    stripeFixedFeeCents: 25,
+  });
+  assert.equal(result.currency, 'EUR');
+  assert.equal(result.wholesaleCostCents, 190);
+  assert.equal(result.feeCents, 49);
+  assert.equal(result.estimatedStripeFeeCents, 29);
+  assert.equal(result.finalPriceCents, 268);
+  assert.equal(result.netAfterStripeCents, 239);
+});
+
+test('rejects invalid or non-integer ranged pricing inputs', () => {
+  assert.throws(() => calculateRangedCustomerPrice(0, {
+    feeCents: 49, stripeFeePercent: 1.5, stripeFixedFeeCents: 25,
+  }), /wholesale cost/);
+  assert.throws(() => calculateRangedCustomerPrice(190, {
+    feeCents: -1, stripeFeePercent: 1.5, stripeFixedFeeCents: 25,
+  }), /settings are invalid/);
+  assert.throws(() => calculateRangedCustomerPrice(190, {
+    feeCents: 49, stripeFeePercent: 100, stripeFixedFeeCents: 25,
+  }), /settings are invalid/);
 });
