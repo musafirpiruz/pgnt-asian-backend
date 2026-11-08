@@ -5019,6 +5019,130 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
   }
 });
 
+
+// Import one verified DT One ranged recharge capability as disabled metadata.
+// This endpoint never creates a provider transaction, Stripe session, or active product.
+app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ imported: false, error: 'Database is not configured.' });
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ imported: false, error: 'DT One credentials are not configured.' });
+  }
+
+  const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
+  const productId = String(req.body?.product_id || '').trim();
+  const countryCurrencyByIso = Object.freeze({
+    AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT',
+  });
+  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\\d{0,17}$/.test(productId)) {
+    return res.status(400).json({
+      imported: false,
+      error: 'A supported country_iso_code and valid DT One product_id are required.',
+    });
+  }
+
+  try {
+    const detailResponse = await fetch(
+      `${DTONE_API_BASE_URL}/v1/products/${encodeURIComponent(productId)}`,
+      {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(20000),
+      }
+    );
+    const detailText = await detailResponse.text();
+    let product = null;
+    try { product = detailText ? JSON.parse(detailText) : null; } catch (_) {}
+    if (!detailResponse.ok || !product || String(product.id) !== productId) {
+      return res.status(502).json({
+        imported: false,
+        providerStatus: detailResponse.status,
+        error: 'DT One product detail could not be verified. No database rows were changed.',
+      });
+    }
+
+    const capability = parseRangedProductCapability(product);
+    const providerCountry = String(product?.operator?.country?.iso_code || '').trim().toUpperCase();
+    const destinationCurrency = String(product?.destination?.unit || '').trim().toUpperCase();
+    const operatorName = String(product?.operator?.name || '').trim();
+    if (!capability || providerCountry !== countryIsoCode ||
+        destinationCurrency !== countryCurrencyByIso[countryIsoCode] || !operatorName) {
+      return res.status(422).json({
+        imported: false,
+        error: 'The DT One product is not a verified ranged recharge for the selected country and local currency, or it lacks DESTINATION_AMOUNT support and complete integer bounds.',
+        transactionCreated: false,
+        paymentCreated: false,
+      });
+    }
+
+    const tableCheck = await pool.query(
+      "SELECT to_regclass('dtone_ranged_products') IS NOT NULL AS ready"
+    );
+    if (!tableCheck.rows[0]?.ready) {
+      return res.status(503).json({
+        imported: false,
+        error: 'Ranged product migration 018 is not applied in this database. No database rows were changed.',
+      });
+    }
+
+    const saved = await pool.query(
+      `INSERT INTO dtone_ranged_products (
+         dtone_product_id, country_iso_code, operator_name, destination_currency,
+         min_amount, max_amount, amount_increment, accepted_calculation_modes,
+         wholesale_price_range, provider_snapshot, capability_verified_at,
+         active, created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb,
+         NOW(), FALSE, NOW(), NOW()
+       )
+       ON CONFLICT (dtone_product_id) DO UPDATE SET
+         country_iso_code = EXCLUDED.country_iso_code,
+         operator_name = EXCLUDED.operator_name,
+         destination_currency = EXCLUDED.destination_currency,
+         min_amount = EXCLUDED.min_amount,
+         max_amount = EXCLUDED.max_amount,
+         amount_increment = EXCLUDED.amount_increment,
+         accepted_calculation_modes = EXCLUDED.accepted_calculation_modes,
+         wholesale_price_range = EXCLUDED.wholesale_price_range,
+         provider_snapshot = EXCLUDED.provider_snapshot,
+         capability_verified_at = NOW(),
+         active = FALSE,
+         updated_at = NOW()
+       RETURNING dtone_product_id, country_iso_code, operator_name,
+         destination_currency, min_amount, max_amount, amount_increment,
+         accepted_calculation_modes, active, capability_verified_at`,
+      [
+        Number(productId),
+        countryIsoCode,
+        operatorName,
+        destinationCurrency,
+        capability.minAmount,
+        capability.maxAmount,
+        capability.increment,
+        JSON.stringify(capability.acceptedCalculationModes),
+        JSON.stringify(product?.prices?.wholesale || {}),
+        JSON.stringify(product),
+      ]
+    );
+
+    return res.status(200).json({
+      imported: true,
+      product: saved.rows[0],
+      productsRemainDisabled: true,
+      transactionCreated: false,
+      paymentCreated: false,
+      note: 'Provider capability metadata was saved only. Ranged customer checkout and DT One fulfillment remain disabled pending pricing and two-step confirmation tests.',
+    });
+  } catch (error) {
+    console.error('DT One ranged product import failed:', error.message);
+    return res.status(502).json({
+      imported: false,
+      error: 'Could not safely import the verified DT One ranged product metadata.',
+      transactionCreated: false,
+      paymentCreated: false,
+    });
+  }
+});
+
 // Read-only verification of a catalog product and its country pricing settings.
 // Does not change product activation, prices, orders, or payments.
 app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) => {
