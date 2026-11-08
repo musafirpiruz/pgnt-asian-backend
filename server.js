@@ -1282,7 +1282,14 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res
         destinationCurrency: capability.destinationCurrency,
         destinationUnitType: 'CURRENCY',
       });
-      const price = calculateRangedCustomerPrice(evidence.wholesaleTotalCents, pricing);
+      const effectivePricing = await resolveProductPricing(
+        client,
+        country,
+        String(row.operator_name),
+        { name: String(row.operator_name), wholesalePriceCents: evidence.wholesaleTotalCents },
+        pricing
+      );
+      const price = calculateRangedCustomerPrice(evidence.wholesaleTotalCents, effectivePricing);
       const evidenceJson = {
         provider: {
           transactionId: evidence.transactionId,
