@@ -39,3 +39,18 @@ test('checkout request forwards the same stable operator identity as the quote',
   assert.match(method, /selectedOperator!\.operatorKey != null/);
   assert.match(method, /selectedOperator!\.providerOperatorId != null/);
 });
+
+test('registry parser preserves stable IDs independently of localized display labels', () => {
+  const start = flutter.indexOf('factory MobileOperator.fromRegistryJson');
+  const end = flutter.indexOf('\n  }', start);
+  assert.ok(start >= 0 && end > start);
+  const factory = flutter.slice(start, end);
+  assert.match(factory, /json\['display_name'\]/);
+  assert.match(factory, /json\['name'\]/);
+  assert.match(factory, /json\['operator_key'\]/);
+  assert.match(factory, /json\['code'\]/);
+  assert.match(factory, /json\['provider_operator_id'\]/);
+  assert.match(factory, /operatorKey:/);
+  assert.match(factory, /providerOperatorId:/);
+  assert.doesNotMatch(factory, /operatorKey:.*displayName/s);
+});
