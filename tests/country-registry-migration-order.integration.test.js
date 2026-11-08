@@ -55,6 +55,22 @@ async function inspectOrder(schema, first, second, expectedParent) {
       { child_table: 'country_operators', parent_table: expectedParent },
     ]);
 
+    const operatorColumns = await client.query(`
+      SELECT column_name, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = $1
+        AND table_name = 'country_operators'
+        AND column_name IN ('provider', 'provider_operator_id')
+      ORDER BY column_name
+    `, [schema]);
+    const hasProviderColumn = operatorColumns.rows.some(row => row.column_name === 'provider');
+    const providerId = operatorColumns.rows.find(row => row.column_name === 'provider_operator_id');
+    assert.ok(providerId, 'provider_operator_id must exist in either schema');
+    assert.equal(hasProviderColumn, expectedParent === 'country_registry',
+      'the first migration determines whether the shared operator table has provider column');
+    assert.equal(providerId.is_nullable === 'YES', expectedParent === 'countries',
+      'the first migration determines whether provider_operator_id is nullable');
+
     // This is intentionally a diagnostic assertion, not a compatibility pass:
     // both root registries coexist while the shared child tables bind to whichever
     // migration happened to create them first. A canonical reconciliation must
