@@ -207,8 +207,10 @@ test('DT One discovery filters by documented product type and exposes ranged rec
   assert.match(route, /url\.searchParams\.set\('type', requestedType\)/);
   assert.match(route, /RANGED_VALUE_RECHARGE/);
   assert.match(route, /accepted_calculation_modes/);
-  assert.match(route, /minimumAmount: rangeMin/);
-  assert.match(route, /maximumAmount: rangeMax/);
+  assert.match(route, /minimumAmount: rangedCapability\?\.minAmount \?\? rangeMin/);
+  assert.match(route, /maximumAmount: rangedCapability\?\.maxAmount \?\? rangeMax/);
+  assert.match(route, /amountIncrement: rangedCapability\?\.increment \?\? null/);
+  assert.match(route, /rangeCapabilityVerified: Boolean\(rangedCapability\)/);
   assert.match(route, /amountMode: isRanged \? 'ranged' : 'fixed_or_unclassified'/);
   assert.match(route, /adminApprovalRequiredForEachAmount: false/);
   assert.match(route, /requiresProviderCapabilityVerification: true/);
@@ -218,9 +220,10 @@ test('DT One ranged amount discovery matches values inside provider min/max boun
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
   const end = server.indexOf('// Read-only verification of a catalog product', start);
   const route = server.slice(start, end);
-  assert.match(route, /rangeMin !== null && rangeMax !== null/);
-  assert.match(route, /amountQuery >= rangeMin && amountQuery <= rangeMax/);
-  assert.match(route, /productType\.startsWith\('RANGED_VALUE_'\)/);
+  assert.match(route, /const rangedCapability = isRanged \? parseRangedProductCapability\(product\) : null/);
+  assert.match(route, /isValidRangedDestinationAmount\(amountQuery, rangedCapability\)/);
+  assert.match(route, /const amountMatches = isRanged \? rangeAmountMatch : exactAmountMatch/);
+  assert.match(route, /const rangeAmountMatch = amountQuery !== null/);
 });
 
 test('DT One product discovery remains a read-only candidate search, not an approval or activation', () => {
