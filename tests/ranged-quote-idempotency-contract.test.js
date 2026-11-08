@@ -54,3 +54,18 @@ test('ranged checkout retries return the same still-open Stripe session', () => 
   assert.match(route, /existingSession\.status === 'open'/);
   assert.match(route, /Number\(existingSession\.amount_total\) === Number\(order\.charge_cents\)/);
 });
+
+
+test('ranged quote endpoint is rate limited and uses a dedicated access-token secret', () => {
+  assert.match(server, /app\.set\('trust proxy', 1\)/);
+  assert.match(server, /enforceRangedQuoteRateLimit/);
+  assert.match(server, /request_count > 10/);
+  assert.match(server, /ORDER_ACCESS_TOKEN_SECRET\.length < 32/);
+  assert.doesNotMatch(server, /ORDER_ACCESS_TOKEN_SECRET \|\| STRIPE_SECRET_KEY/);
+});
+
+test('database migration creates the distributed ranged quote rate-limit table', () => {
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS ranged_quote_rate_limits/);
+  assert.match(migration, /bucket_hash CHAR\(64\) PRIMARY KEY/);
+  assert.match(migration, /request_count INTEGER NOT NULL/);
+});
