@@ -46,6 +46,14 @@ test('rejects non-EUR wholesale currency instead of guessing an FX conversion', 
   assert.throws(() => parseRangedWholesalePrice(value, expected), /explicitly quoted in EUR/);
 });
 
+test('uses verified product unit metadata when DT One omits unit_type in requested_values', () => {
+  const value = response({
+    requested_values: { destination: { amount: 150, unit: 'AFN' } },
+  });
+  const result = parseRangedWholesalePrice(value, expected);
+  assert.equal(result.destinationCurrency, 'AFN');
+});
+
 test('rejects a mismatched destination amount or currency', () => {
   assert.throws(() => parseRangedWholesalePrice(response(), {
     ...expected, destinationAmount: 200,
