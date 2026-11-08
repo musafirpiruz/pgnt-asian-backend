@@ -16,7 +16,7 @@ test('public country operator registry route uses canonical country and operator
     'country_registry', 'country_operators', 'country_operator_localizations',
     'operator_key', 'provider_operator_id', 'display_name',
     "c.status = 'active'", 'o.active = TRUE', 'o.verified_at IS NOT NULL',
-    'REGISTRY_LANGUAGES', 'status(503)',
+    'REGISTRY_LANGUAGES', 'res.status(503)',
   ]) assert.ok(route.includes(token), 'missing safe registry contract: ' + token);
 });
 
