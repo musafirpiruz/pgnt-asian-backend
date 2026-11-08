@@ -1171,7 +1171,7 @@ app.post('/api/ranged-quotes', async (req, res) => {
   const country = normalizeCountry(req.body?.country);
   const productId = String(req.body?.productId || '').trim();
   const amount = Number(req.body?.amount);
-  if (!isValidCountry(country) || !/^[1-9]\\d*$/.test(productId) ||
+  if (!isValidCountry(country) || !/^[1-9]\d*$/.test(productId) ||
       !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
     return res.status(400).json({ error: 'Select a valid country, ranged product, and amount.' });
   }
@@ -1268,7 +1268,7 @@ app.post('/api/ranged-quotes', async (req, res) => {
         `UPDATE dtone_ranged_transactions
          SET dtone_transaction_id = $1, provider_status = 'REVIEW', updated_at = NOW()
          WHERE order_id = $2`,
-        [rangedTransactionId && /^\\d+$/.test(rangedTransactionId) ? rangedTransactionId : null, orderId]
+        [rangedTransactionId && /^\d+$/.test(rangedTransactionId) ? rangedTransactionId : null, orderId]
       );
 
       const evidence = parseRangedWholesalePrice(providerCreatedResponse, {
@@ -1340,7 +1340,7 @@ app.post('/api/ranged-quotes', async (req, res) => {
         await client.query('ROLLBACK');
       } catch (_) {}
       const unknown = providerError instanceof DTOneOutcomeUnknownError;
-      const providerId = rangedTransactionId && /^\\d+$/.test(rangedTransactionId)
+      const providerId = rangedTransactionId && /^\d+$/.test(rangedTransactionId)
         ? rangedTransactionId : null;
       await pool.query(
         `UPDATE dtone_ranged_transactions
@@ -4197,7 +4197,7 @@ loadSupportTickets.addEventListener('click',refreshSupportTickets);
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Checking DT One pre-production for product '+productId+'…';
  try{
   const data=await adminRequest('/api/admin/dtone/products/'+encodeURIComponent(productId));
@@ -4279,7 +4279,7 @@ operatorPricingCountry.addEventListener('change',()=>operatorPricingRows.replace
 document.getElementById('importCatalogProduct').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  if(!confirm('Import this verified provider product into the local catalog as DISABLED? No payment or top-up will be performed.')) return;
  result.textContent='Verifying provider product and importing it as disabled…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/import',{method:'POST'});result.textContent=JSON.stringify(data,null,2);}
@@ -4289,7 +4289,7 @@ document.getElementById('importCatalogProduct').addEventListener('click',async()
 document.getElementById('refreshCatalogPrices').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  if(!confirm('Refresh provider retail and wholesale prices for this existing product only if it is DISABLED and its identity matches DT One? Pricing settings will not change; no payment/top-up will be performed.')) return;
  result.textContent='Verifying DT One and refreshing prices for disabled product '+productId+'…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/refresh-prices',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmPriceRefresh:true})});result.textContent=JSON.stringify(data,null,2);}
@@ -4299,7 +4299,7 @@ document.getElementById('refreshCatalogPrices').addEventListener('click',async()
 checkDatabase.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Reading saved product '+productId+' and pricing settings…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/pricing');result.textContent=JSON.stringify(data,null,2);}
  catch(error){result.textContent='Could not verify database pricing: '+error.message;}
@@ -4449,7 +4449,7 @@ discover.addEventListener('click',async()=>{
   renderRows();
   document.getElementById('bulkImportDisabled').addEventListener('click',async()=>{
    if(!key.value){result.textContent='Enter the admin API key first.';return;}
-   const ids=[...document.querySelectorAll('.bulkProductSelect:checked')].map(el=>String(el.dataset.productId||'')).filter(id=>/^[1-9]\\d*$/.test(id));
+   const ids=[...document.querySelectorAll('.bulkProductSelect:checked')].map(el=>String(el.dataset.productId||'')).filter(id=>/^[1-9]\d*$/.test(id));
    if(!ids.length){result.textContent='Select at least one product to import.';return;}
    if(ids.length>100){result.textContent='Select no more than 100 products at a time.';return;}
    if(!confirm('Import '+ids.length+' selected DT One products into the local catalog as DISABLED? Products will be re-verified one by one. No payment or top-up will be performed.'))return;
@@ -5589,7 +5589,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
   const countryCurrencyByIso = Object.freeze({
     AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT',
   });
-  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\\d{0,17}$/.test(productId)) {
+  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\d{0,17}$/.test(productId)) {
     return res.status(400).json({
       imported: false,
       error: 'A supported country_iso_code and valid DT One product_id are required.',
