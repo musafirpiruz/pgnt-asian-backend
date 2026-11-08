@@ -122,3 +122,11 @@ Latest integration head `e74aa691c9fe9d2009abc55b2650d348434dba44` has:
 - The reconciliation SQL currently exists only as a test fixture. It is not a production migration and must not be wired into Render startup until reviewed against the actual deployed schema, migration ledger, all child constraints, duplicate identities, and a verified backup/restore rehearsal.
 - Quote-only tests must prove stable operator-key resolution to a unique verified product for AF/PK/IN/BD. Checkout tests must prove the same mapping is re-resolved server-side inside the order transaction; client provider IDs must be ignored/rejected.
 - No live country/operator/product activation, Stripe charge, DT One top-up, refund, production migration, or deploy is authorized by these CI results.
+
+## Registry API implementation update
+- Added a read-only `GET /api/countries/:countryCode/operators?language=en|ps|fa|ur|hi|bn` route on the integration branch.
+- The route returns the canonical `operator_key`, `provider_operator_id`, and localized `display_name` contract expected by the Flutter registry parser.
+- It exposes only active countries and active operators with a non-empty provider ID and a non-null verification timestamp. Provider IDs are returned as server-origin metadata; quote/checkout must still resolve them server-side.
+- If the canonical registry tables are absent or incompatible, the route returns HTTP 503 rather than pretending the country has no operators or falling back to unverified mappings.
+- Added source-contract tests for the response shape and fail-closed filters. CI for the latest integration commit is running.
+- This is not yet a complete end-to-end integration: current main has no canonical registry migration, and quote/checkout still need server-side `operatorKey` resolution against verified operator-product mappings. Do not deploy this route or enable registry-driven customer selection until that migration and those paths are reviewed and tested together.
