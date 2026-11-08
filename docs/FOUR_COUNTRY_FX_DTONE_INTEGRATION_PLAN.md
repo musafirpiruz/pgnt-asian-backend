@@ -73,3 +73,23 @@ No production setting was changed as part of this reconciliation note.
 - Follow-up inspection confirms the PR #225 Flutter file still contains no `/api/countries` request and no dynamic country/operator loader. The factory is therefore not called by the app yet; the current curated operator list remains the active path.
 - The current main backend also has no country registry operator route or registry-aware quote contract. The dynamic-country branch's public operator route returns `code`, `name`, and `providerName` from the registry query but does not explicitly expose `operator_key` / `provider_operator_id` under the agreed names.
 - Do not turn on the client path until the registry migrations and backend route are brought into a reviewed integration branch, the public JSON contract is explicit, and quote/checkout resolve identity and product mappings server-side. Client-supplied provider IDs remain untrusted hints only.
+
+
+## Newly verified blocking schema incompatibility — PR #196 vs PR #204
+
+A direct comparison of the migration SQL in the current PR heads confirms that the registry models are not additive-compatible merely because their migration version strings differ:
+
+- PR #196 creates `countries(code)`, then creates `country_localizations.country_code -> countries(code)` and `country_operators.country_code -> countries(code)`. Its operator identity is unique on `(country_code, operator_key)` and stores nullable `provider_operator_id`.
+- PR #204 instead creates `country_registry(country_code)`, then creates `country_localizations.country_code -> country_registry(country_code)` and `country_operators.country_code -> country_registry(country_code)`. Its operator rows require `provider` and `provider_operator_id`, with uniqueness on `(country_code, provider, provider_operator_id)` and `(country_code, operator_key)`.
+- Both migrations use `CREATE TABLE IF NOT EXISTS` for the same table names `country_localizations` and `country_operators`. If either migration runs first, the other migration silently skips creating the second table definition; it does not add the missing columns, change the foreign-key parent, or reconcile constraints. Later queries from the other implementation can therefore fail or operate against the wrong registry parent.
+- This is a real schema incompatibility, distinct from migration-key collisions. The migration version strings `017_database_country_registry` and `017_dynamic_country_registry` are different, but that does not make the shared table definitions compatible.
+
+### Required resolution before either registry migration is combined
+
+1. Choose one canonical country parent and registry schema for the application. Do not keep two competing country registries as parallel authorities.
+2. Write an explicit forward-only reconciliation migration that inspects existing tables, columns, constraints, foreign keys, and data before altering anything. It must support both possible installation orders and preserve existing country/operator/localization rows.
+3. Map PR #196's `countries` records and PR #204's `country_registry` records into the chosen canonical model with conflict detection; abort rather than guess when country codes, provider mappings, or operator identities disagree.
+4. Add PostgreSQL integration tests for both migration orders (196 then 204, and 204 then 196), clean installation, and upgrade from the deployed main schema. Assert FK targets, required columns, uniqueness constraints, and row preservation—not just that migration scripts exit successfully.
+5. Keep all registry migrations and dynamic endpoints inactive until the reconciliation tests pass. No production migration or deploy is authorized by this document.
+
+Evidence reviewed from the migration files at the current PR heads on 2026-11-08. This finding supersedes any earlier assumption that distinct migration version strings alone made the registry migrations safe to combine.
