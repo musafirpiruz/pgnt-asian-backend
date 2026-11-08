@@ -4930,10 +4930,10 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
         const rangedCapability = isRanged ? parseRangedProductCapability(product) : null;
         const rangeAmountMatch = amountQuery !== null &&
           isValidRangedDestinationAmount(amountQuery, rangedCapability);
+        const amountMatches = isRanged ? rangeAmountMatch : exactAmountMatch;
         const mentionsAmount = amountQuery === null
-          || exactAmountMatch
-          || rangeAmountMatch
-          || (localCurrency && new RegExp(`\\b${amountQuery}\\s*${localCurrency}\\b|\\b${localCurrency}\\s*${amountQuery}\\b`, 'i').test(name));
+          || amountMatches
+          || (!isRanged && localCurrency && new RegExp(`\\b${amountQuery}\\s*${localCurrency}\\b|\\b${localCurrency}\\s*${amountQuery}\\b`, 'i').test(name));
         const operatorAliases = {
           ROSHAN: ['ROSHAN'],
           ETISALAT: ['ETISALAT'],
@@ -4962,7 +4962,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
                 acceptedCalculationModes: Array.isArray(product?.accepted_calculation_modes)
                   ? product.accepted_calculation_modes
                   : [],
-                amountQuerySupported: amountQuery === null || exactAmountMatch || rangeAmountMatch,
+                amountQuerySupported: amountQuery === null || amountMatches,
                 rangeCapabilityVerified: Boolean(rangedCapability),
                 adminApprovalRequiredForEachAmount: false,
                 requiresProviderCapabilityVerification: !rangedCapability,
