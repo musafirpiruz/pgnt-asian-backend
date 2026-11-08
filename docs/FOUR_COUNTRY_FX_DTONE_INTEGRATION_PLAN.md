@@ -141,3 +141,29 @@ Latest integration head `e74aa691c9fe9d2009abc55b2650d348434dba44` has:
 - Remaining before end-to-end use: canonical registry reconciliation must be implemented and tested on every supported historical schema; an admin-only workflow must create and verify explicit mapping rows; migration 017 must be tested against both registry schema variants; quote and checkout integration tests must exercise PostgreSQL data and ensure no ambiguity; all CI workflows must pass. No deployment or product activation is authorized by this PR.
 - Follow-up schema alignment: the canonical reconciliation normalizes operator translations to `country_operator_localizations(operator_id, language_code)`; the API now joins translations by the stable database operator row ID, so it works with the clean canonical schema as well as migrated legacy rows.
 - Keyed checkout validation now requires a valid denomination whenever `operatorKey` is supplied, even if a legacy product ID is also present. The stable-key resolver remains the authoritative path in that case.
+## Ranged-value Airtime: mandatory two-step pricing and fulfillment design — 2026-11-08
+
+Official DT One DVS documentation confirms that Mobile Airtime supports both FIXED_VALUE_RECHARGE and RANGED_VALUE_RECHARGE. Ranged products expose provider-defined destination.amount.min, max, and increment, plus accepted calculation modes. Their product-level wholesale price is itself a range, not one fixed EUR price. DT One explicitly recommends auto_confirm: false for ranged products so the integrator can inspect the transaction's actual wholesale price before confirmation.
+
+### Consequences for the current PGNT flow
+
+- The existing local catalog and order model assume one fixed denomination and one saved wholesale EUR-cent price per product.
+- The current Stripe-paid fulfillment path submits a single-step transaction with auto_confirm: true and does not send a requested destination amount. That is valid only for fixed-value products.
+- The current read-only discovery route can identify ranged product type and range bounds, but the current catalog import/sync path still expects a single numeric denomination and fixed EUR retail/wholesale amounts. It must not import a ranged product as if its minimum amount were a fixed product.
+- Therefore, merely widening the Flutter input to 10–3000 or adding a server range check would be unsafe: the exact provider wholesale cost for a chosen amount has not yet been established.
+
+### Required implementation before enabling customer ranged top-ups
+
+1. Add explicit catalog capability fields for product type, amount mode, destination minimum, maximum, increment, accepted calculation modes, and required beneficiary fields. Preserve fixed-product behavior unchanged.
+2. Import/sync ranged products as disabled capability records only. Validate RANGED_VALUE_RECHARGE, currency, country/operator identity, positive min/max/increment, and DESTINATION_AMOUNT support. Never convert the provider amount range into a fake fixed denomination.
+3. For a customer amount, validate 10–3000 and the provider's exact min/max/increment. Then create a DT One transaction with auto_confirm: false, calculation_mode: DESTINATION_AMOUNT, and the requested destination currency and amount. Verify the returned transaction ID, external ID, product ID, requested destination amount, and wholesale price.
+4. Calculate the EUR customer charge from the actual ranged transaction wholesale cost plus the configured PGNT fee and estimated Stripe fee. The provider wholesale amount may be denominated in a non-EUR source currency; use only a verified conversion/settlement policy, never the public reference FX rate as a substitute for DT One's actual charge.
+5. Save the DT One CREATED transaction ID and immutable price evidence before presenting Stripe Checkout. If Stripe checkout creation fails or payment is cancelled, cancel the unconfirmed DT One transaction and reconcile its final state. Respect DT One's 60-minute confirmation expiry.
+6. After Stripe's signed webhook independently confirms the exact saved EUR payment, confirm the already-created DT One transaction by provider transaction ID. Do not create a second transaction. On timeout or uncertain provider outcome, move the order to review and never blindly retry.
+7. Persist requested amount, adjusted destination amount, actual wholesale amount/currency, applied conversion source/rate/timestamp, product type, provider transaction ID, and confirmation state for support/audit.
+8. Add PostgreSQL integration tests and mocked provider contract tests for fixed products, ranged min/max/increment, amount out of range, unsupported calculation mode, mismatched provider IDs/amounts, wholesale price changes, Stripe cancel/failure, provider create/confirm timeout, duplicate webhook, expired confirmation, and idempotent reconciliation.
+9. Keep the ranged capability hidden/inactive until all tests pass and the isolated DT One pre-production + Stripe test-mode lifecycle is verified. Production migration, activation, deployment, real payment, and live top-up require separate approval and backup/restore evidence.
+
+### Customer-facing amount rule
+
+The desired app input remains 10–3000 in the recipient's local currency, but that is a PGNT product policy ceiling/floor, not proof that every operator accepts every value. The selectable interval must be the intersection of PGNT's 10–3000 rule and the exact DT One product's verified min/max/increment. For fixed-value products, show only provider-confirmed denominations.
