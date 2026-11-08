@@ -16,6 +16,8 @@ const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
+const { createRangedTransaction, confirmRangedTransaction, cancelRangedTransaction, DTOneOutcomeUnknownError } = require('./dtone-ranged-lifecycle');
+const { parseRangedWholesalePrice, calculateRangedCustomerPrice } = require('./dtone-ranged-pricing');
 
 const PGNT_MIN_AMOUNT = 10;
 const PGNT_MAX_AMOUNT = 3000;
@@ -1157,6 +1159,228 @@ app.get('/api/ranged-products', async (req, res) => {
   }
 });
 
+// Create a provider-priced ranged quote. A DT One transaction is created
+// with auto_confirm=false, and its exact provider ID/wholesale evidence are
+// persisted before a customer is offered a Stripe checkout.
+app.post('/api/ranged-quotes', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Quote service is not configured.' });
+  if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
+    return res.status(503).json({ error: 'Payment and fulfillment environments are not safely matched.' });
+  }
+
+  const country = normalizeCountry(req.body?.country);
+  const productId = String(req.body?.productId || '').trim();
+  const amount = Number(req.body?.amount);
+  if (!isValidCountry(country) || !/^[1-9]\\d*$/.test(productId) ||
+      !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
+    return res.status(400).json({ error: 'Select a valid country, ranged product, and amount.' });
+  }
+
+  let phoneResult;
+  try {
+    phoneResult = validatePhone(req.body?.phone || req.body?.phoneNumber, country);
+    if (!phoneResult.valid) return res.status(400).json({ error: phoneResult.error });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  const countryIso3 = RANGED_COUNTRY_ISO3[country];
+  let orderId = null;
+  let orderAccessToken = null;
+  let providerCreatedResponse = null;
+  let rangedTransactionId = null;
+  const client = await pool.connect();
+
+  try {
+    const productResult = await client.query(
+      `SELECT dtone_product_id, operator_name, destination_currency,
+              min_amount, max_amount, amount_increment, accepted_calculation_modes
+       FROM dtone_ranged_products
+       WHERE dtone_product_id = $1 AND country_iso_code = $2
+         AND active = TRUE AND capability_verified_at IS NOT NULL
+         AND accepted_calculation_modes ? 'DESTINATION_AMOUNT'
+       LIMIT 1`,
+      [productId, countryIso3]
+    );
+    if (productResult.rowCount !== 1) {
+      return res.status(404).json({ error: 'Verified ranged product is not available.' });
+    }
+
+    const row = productResult.rows[0];
+    const capability = {
+      productId: String(row.dtone_product_id),
+      productType: 'RANGED_VALUE_RECHARGE',
+      amountMode: 'DESTINATION_AMOUNT',
+      destinationCurrency: String(row.destination_currency).trim().toUpperCase(),
+      minAmount: Number(row.min_amount),
+      maxAmount: Number(row.max_amount),
+      increment: Number(row.amount_increment),
+    };
+    if (capability.destinationCurrency !== countryCurrency(country) ||
+        !isValidRangedDestinationAmount(amount, capability)) {
+      return res.status(400).json({ error: 'Amount is outside this provider product range or increment.' });
+    }
+
+    const pricing = await getPricingSettings(client, country);
+    orderId = createOrderId();
+    orderAccessToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(orderAccessToken, 'utf8').digest('hex');
+    const internationalPhone = `${SUPPORTED_COUNTRIES[country].callingCode}${phoneResult.phone}`;
+
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO orders (
+         order_id, country, operator, phone, product_id, amount, currency,
+         product_price_cents, fee_cents, charge_cents, status,
+         order_access_token_hash, created_at, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,1,0,1,'ranged_quote_pending',$8,NOW(),NOW())`,
+      [orderId, country, String(row.operator_name), internationalPhone,
+       Number(row.dtone_product_id), amount, capability.destinationCurrency, tokenHash]
+    );
+    await client.query(
+      `INSERT INTO dtone_ranged_transactions
+         (order_id, dtone_product_id, external_id, requested_amount,
+          destination_currency, calculation_mode, provider_status)
+       VALUES ($1,$2,$3,$4,$5,'DESTINATION_AMOUNT','REVIEW')`,
+      [orderId, Number(row.dtone_product_id), orderId, amount, capability.destinationCurrency]
+    );
+    await client.query('COMMIT');
+
+    try {
+      const created = await createRangedTransaction({
+        baseUrl: DTONE_API_BASE_URL,
+        authorization: getDtOneAuthHeader(),
+        fetchImpl: fetch,
+        productId: Number(row.dtone_product_id),
+        externalId: orderId,
+        destinationAmount: amount,
+        destinationCurrency: capability.destinationCurrency,
+        mobileNumber: internationalPhone,
+        capability,
+        callbackUrl: DTONE_CALLBACK_URL,
+      });
+      providerCreatedResponse = created.providerResponse;
+      rangedTransactionId = providerCreatedResponse?.id == null ? null : String(providerCreatedResponse.id);
+
+      // Persist the provider reference immediately. If later price validation
+      // fails, the order remains visible for reconciliation and is never retried.
+      await client.query(
+        `UPDATE dtone_ranged_transactions
+         SET dtone_transaction_id = $1, provider_status = 'REVIEW', updated_at = NOW()
+         WHERE order_id = $2`,
+        [rangedTransactionId && /^\\d+$/.test(rangedTransactionId) ? rangedTransactionId : null, orderId]
+      );
+
+      const evidence = parseRangedWholesalePrice(providerCreatedResponse, {
+        externalId: orderId,
+        productId: String(row.dtone_product_id),
+        destinationAmount: amount,
+        destinationCurrency: capability.destinationCurrency,
+        destinationUnitType: 'CURRENCY',
+      });
+      const price = calculateRangedCustomerPrice(evidence.wholesaleTotalCents, pricing);
+      const evidenceJson = {
+        provider: {
+          transactionId: evidence.transactionId,
+          externalId: evidence.externalId,
+          productId: evidence.productId,
+          providerStatus: evidence.providerStatus,
+          confirmationExpiresAt: evidence.confirmationExpiresAt,
+          destinationAmount: evidence.destinationAmount,
+          destinationCurrency: evidence.destinationCurrency,
+          wholesaleAmount: evidence.wholesaleAmount,
+          wholesaleFee: evidence.wholesaleFee,
+          wholesaleCurrency: evidence.wholesaleCurrency,
+          wholesaleTotalCents: evidence.wholesaleTotalCents,
+        },
+        customerPrice: price,
+      };
+
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE dtone_ranged_transactions
+         SET dtone_transaction_id = $1, wholesale_amount = $2,
+             wholesale_currency = $3, provider_status = 'CREATED',
+             confirm_by = $4, price_evidence = $5::jsonb, updated_at = NOW()
+         WHERE order_id = $6 AND external_id = $7`,
+        [evidence.transactionId, evidence.wholesaleAmount + evidence.wholesaleFee,
+         evidence.wholesaleCurrency, evidence.confirmationExpiresAt,
+         JSON.stringify(evidenceJson), orderId, orderId]
+      );
+      await client.query(
+        `UPDATE orders
+         SET product_price_cents = $1, fee_cents = $2, charge_cents = $3,
+             status = 'ranged_quote_ready', dtone_transaction_id = $4,
+             dtone_status = 'CREATED', updated_at = NOW()
+         WHERE order_id = $5 AND status = 'ranged_quote_pending'`,
+        [price.wholesaleCostCents, price.feeCents, price.finalPriceCents,
+         evidence.transactionId, orderId]
+      );
+      await client.query('COMMIT');
+
+      return res.status(201).json({
+        orderId,
+        orderAccessToken,
+        productId: String(row.dtone_product_id),
+        operator: String(row.operator_name),
+        country,
+        recipientAmount: amount,
+        recipientCurrency: capability.destinationCurrency,
+        paymentCurrency: 'EUR',
+        wholesaleCostCents: price.wholesaleCostCents,
+        appFeeCents: price.feeCents,
+        estimatedStripeFeeCents: price.estimatedStripeFeeCents,
+        amountCents: price.finalPriceCents,
+        amountFormatted: formatEuro(price.finalPriceCents),
+        quoteExpiresAt: evidence.confirmationExpiresAt,
+        providerTransactionCreated: true,
+        autoConfirmed: false,
+      });
+    } catch (providerError) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {}
+      const unknown = providerError instanceof DTOneOutcomeUnknownError;
+      const providerId = rangedTransactionId && /^\\d+$/.test(rangedTransactionId)
+        ? rangedTransactionId : null;
+      await pool.query(
+        `UPDATE dtone_ranged_transactions
+         SET dtone_transaction_id = COALESCE($1, dtone_transaction_id),
+             provider_status = $2, updated_at = NOW()
+         WHERE order_id = $3`,
+        [providerId, unknown || providerCreatedResponse ? 'REVIEW' : 'FAILED', orderId]
+      );
+      await pool.query(
+        `UPDATE orders SET status = $1, dtone_transaction_id = COALESCE($2, dtone_transaction_id),
+             dtone_status = $3, updated_at = NOW() WHERE order_id = $4`,
+        [unknown || providerCreatedResponse ? 'topup_review' : 'payment_failed',
+         providerId, unknown || providerCreatedResponse ? 'REVIEW' : 'FAILED', orderId]
+      );
+      console.error('Ranged DT One quote creation requires reconciliation.', {
+        errorName: providerError?.name || 'Error',
+        statusCode: providerError?.statusCode || null,
+        hasProviderTransactionId: Boolean(providerId),
+      });
+      return res.status(502).json({
+        error: unknown || providerCreatedResponse
+          ? 'Provider quote outcome requires review. Do not retry this request.'
+          : 'Could not create provider quote.',
+        orderId,
+        reviewRequired: Boolean(unknown || providerCreatedResponse),
+      });
+    }
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Ranged quote setup failed.', {
+      errorName: error?.name || 'Error',
+      errorCode: error?.code || null,
+    });
+    return res.status(503).json({ error: 'Ranged quote service is temporarily unavailable.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/api/pricing/quote', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Pricing service is not configured.' });
@@ -1247,6 +1471,131 @@ app.post('/api/payments/checkout', async (req, res) => {
     return res.status(503).json({
       error: 'Payment service is not configured.',
     });
+  }
+
+  if (req.body?.rangedQuote && typeof req.body.rangedQuote === 'object') {
+    const quote = req.body.rangedQuote;
+    const orderId = String(quote.orderId || '').trim();
+    const quoteToken = String(quote.orderAccessToken || '').trim();
+    if (!/^[0-9a-f-]{36}$/i.test(orderId) || !/^[a-f0-9]{64}$/i.test(quoteToken)) {
+      return res.status(400).json({ error: 'A valid ranged quote reference is required.' });
+    }
+    const tokenHash = crypto.createHash('sha256').update(quoteToken, 'utf8').digest('hex');
+    const client = await pool.connect();
+    let order;
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `SELECT o.*, r.dtone_transaction_id, r.confirm_by, r.provider_status,
+                r.price_evidence
+         FROM orders o
+         JOIN dtone_ranged_transactions r ON r.order_id = o.order_id
+         WHERE o.order_id = $1 AND o.order_access_token_hash = $2
+         FOR UPDATE OF o, r`,
+        [orderId, tokenHash]
+      );
+      if (result.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Ranged quote was not found.' });
+      }
+      order = result.rows[0];
+      const confirmByMs = new Date(order.confirm_by).getTime();
+      const nowMs = Date.now();
+      if (order.status !== 'ranged_quote_ready' || order.provider_status !== 'CREATED' ||
+          !order.dtone_transaction_id || !Number.isFinite(confirmByMs) ||
+          confirmByMs <= nowMs + 30 * 60 * 1000) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Ranged quote is expired or not eligible for checkout. Request a new quote after reconciliation.' });
+      }
+      const expiresAt = Math.floor(Math.min(confirmByMs, nowMs + 24 * 60 * 60 * 1000) / 1000);
+      await client.query(
+        `UPDATE orders SET status = 'awaiting_payment', updated_at = NOW()
+         WHERE order_id = $1 AND status = 'ranged_quote_ready'`,
+        [orderId]
+      );
+      await client.query('COMMIT');
+
+      const urls = getCheckoutUrls();
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        payment_method_types: ['card'],
+        client_reference_id: orderId,
+        expires_at: expiresAt,
+        line_items: [{
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: `PGNT ASIAN TOPUP - ${order.operator}`,
+              description: `${order.amount} ${order.currency} mobile top-up for ${order.country}`,
+            },
+            unit_amount: Number(order.charge_cents),
+          },
+          quantity: 1,
+        }],
+        metadata: {
+          orderId,
+          country: order.country,
+          productId: String(order.product_id),
+          rangedValue: 'true',
+        },
+        payment_intent_data: { metadata: { orderId, rangedValue: 'true' } },
+        success_url: urls.successUrl,
+        cancel_url: urls.cancelUrl,
+      }, { idempotencyKey: `ranged-checkout-${orderId}` });
+
+      await persistStripeCheckoutSession(orderId, session.id);
+      return res.status(201).json({
+        orderId,
+        checkoutUrl: session.url,
+        paymentCurrency: 'EUR',
+        amountCents: Number(order.charge_cents),
+        amountFormatted: formatEuro(Number(order.charge_cents)),
+        quoteExpiresAt: new Date(order.confirm_by).toISOString(),
+      });
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      if (orderId) {
+        // If checkout creation fails, the provider transaction remains unconfirmed.
+        // Cancel only the saved ID; an uncertain cancel is left for reconciliation.
+        if (order?.dtone_transaction_id) {
+          try {
+            await cancelRangedTransaction({
+              baseUrl: DTONE_API_BASE_URL,
+              authorization: getDtOneAuthHeader(),
+              fetchImpl: fetch,
+              transactionId: order.dtone_transaction_id,
+            });
+            await pool.query(
+              `UPDATE dtone_ranged_transactions SET provider_status = 'CANCELLED', updated_at = NOW()
+               WHERE order_id = $1 AND provider_status = 'CREATED'`,
+              [orderId]
+            );
+            await pool.query(
+              `UPDATE orders SET status = 'payment_failed', updated_at = NOW()
+               WHERE order_id = $1 AND status IN ('ranged_quote_ready','awaiting_payment')`,
+              [orderId]
+            );
+          } catch (_) {
+            await pool.query(
+              `UPDATE dtone_ranged_transactions SET provider_status = 'REVIEW', updated_at = NOW()
+               WHERE order_id = $1`,
+              [orderId]
+            );
+            await pool.query(
+              `UPDATE orders SET status = 'topup_review', updated_at = NOW() WHERE order_id = $1`,
+              [orderId]
+            );
+          }
+        }
+      }
+      console.error('Ranged Stripe checkout creation failed.', {
+        errorName: error?.name || 'Error',
+        errorCode: error?.code || null,
+      });
+      return res.status(502).json({ error: 'Could not create ranged checkout; provider transaction was cancelled or sent for review.' });
+    } finally {
+      client.release();
+    }
   }
 
   let input;
