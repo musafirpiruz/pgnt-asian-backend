@@ -21,8 +21,8 @@ test('production registry migration is transaction-neutral and conflict-sensitiv
   assert.match(migration, /conflicting country rows/);
   assert.match(migration, /operator localization rows have no matching stable operator/);
   assert.match(migration, /country_registry_reconciliation/);
-    assert.match(migration, /replace\\(child_record\\.definition/);
-  assert.match(migration, /REFERENCES country_registry\\(country_code\\)/);
+  assert.ok(migration.includes('replace(child_record.definition,'));
+  assert.ok(migration.includes('REFERENCES country_registry(country_code)'));
 });
 
 test('ranged activation route validates positive numeric product IDs with digit matching', () => {
