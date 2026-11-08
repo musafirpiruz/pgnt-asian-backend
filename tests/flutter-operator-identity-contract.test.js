@@ -48,3 +48,16 @@ test('registry parser preserves stable IDs independently of localized display la
   }
   assert.ok(!factory.includes('operatorKey: displayName'));
 });
+
+test('registry loader ignores stale responses after country or language changes', () => {
+  const start = flutter.indexOf('Future<void> _loadRegistryOperators(String countryCode)');
+  const end = flutter.indexOf('List<int> get amounts', start);
+  assert.ok(start >= 0 && end > start);
+  const loader = flutter.slice(start, end);
+  assert.match(loader, /_registryOperatorsRequestGeneration/);
+  assert.match(loader, /final requestGeneration = \+\+_registryOperatorsRequestGeneration/);
+  assert.match(loader, /final requestedLanguage = languageCode/);
+  assert.match(loader, /language: requestedLanguage/);
+  assert.match(loader, /requestGeneration != _registryOperatorsRequestGeneration/);
+  assert.match(loader, /requestedLanguage != languageCode/);
+});
