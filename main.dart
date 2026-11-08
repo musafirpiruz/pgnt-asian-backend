@@ -1,6 +1,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -1394,6 +1395,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
   String? priceQuoteError;
   List<Map<String, dynamic>> _rangedProducts = [];
   String? _rangedProductsCountry;
+  String? _rangedIdempotencyKey;
+  String? _rangedRequestFingerprint;
+
+  String _newRangedIdempotencyKey() {
+    final random = Random.secure();
+    return List.generate(
+      4,
+      (_) => random.nextInt(1 << 32).toRadixString(16).padLeft(8, '0'),
+    ).join();
+  }
 
   final TextEditingController phoneController =
       TextEditingController();
@@ -2544,12 +2555,25 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
       // Create the DT One quote only after the customer explicitly continues.
       if (priceQuote?['isRangedAvailable'] == true) {
+        final requestFingerprint = jsonEncode([
+          selectedCountry.code,
+          phone,
+          priceQuote!['productId'],
+          selectedOperator!.operatorKey,
+          selectedAmount,
+        ]);
+        if (_rangedIdempotencyKey == null ||
+            _rangedRequestFingerprint != requestFingerprint) {
+          _rangedIdempotencyKey = _newRangedIdempotencyKey();
+          _rangedRequestFingerprint = requestFingerprint;
+        }
         final rangedResponse = await http
             .post(
               Uri.parse('$backendBaseUrl/api/ranged-quotes'),
-              headers: const {
+              headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
+                'Idempotency-Key': _rangedIdempotencyKey!,
               },
               body: jsonEncode({
                 'country': selectedCountry.code,
@@ -2567,7 +2591,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
         } on FormatException {
           throw Exception('د DT One سرور ناسم ځواب راکړ.');
         }
-        if (rangedResponse.statusCode != 201 ||
+        if ((rangedResponse.statusCode != 201 && rangedResponse.statusCode != 200) ||
             rangedDecoded is! Map<String, dynamic>) {
           final detail = rangedDecoded is Map
               ? rangedDecoded['error']?.toString()
@@ -2654,6 +2678,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
               .hasMatch(accessToken)) {
         throw Exception('Secure order tracking information is missing');
       }
+
+      // The quote/checkout succeeded. A later, distinct customer action must
+      // receive a fresh idempotency key even if its inputs are identical.
+      _rangedIdempotencyKey = null;
+      _rangedRequestFingerprint = null;
 
       final paymentUri = Uri.tryParse(rawUrl);
       if (paymentUri == null || paymentUri.scheme != 'https') {
