@@ -136,6 +136,20 @@ test('canonical registry reconciliation upgrades the PR #196 schema and preserve
   });
 });
 
+test('canonical registry reconciliation upgrades PR #196 when provider settings table is absent', async () => {
+  await inSchema('registry_196_no_provider_settings', async (client, schema) => {
+    await client.query(fixture196);
+    await client.query('DROP TABLE country_provider_settings');
+    await client.query(reconcile);
+    await assertCanonical(client, schema);
+    const countries = await client.query(
+      'SELECT country_code,status FROM country_registry ORDER BY country_code'
+    );
+    assert.deepEqual(countries.rows.map(row => row.country_code.trim()), ['AF','BD','IN','PK']);
+    assert.ok(countries.rows.every(row => row.status === 'legacy'));
+  });
+});
+
 test('canonical registry reconciliation accepts the PR #204 schema without creating a second country parent', async () => {
   await inSchema('registry_204', async (client, schema) => {
     await client.query(fixture204);
