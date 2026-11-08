@@ -20,12 +20,52 @@ const { createRangedTransaction, confirmRangedTransaction, cancelRangedTransacti
 const { parseRangedWholesalePrice, calculateRangedCustomerPrice } = require('./dtone-ranged-pricing');
 const { hashRangedIdempotencyKey, fingerprintRangedQuote, createRangedOrderAccessToken } = require('./ranged-request-idempotency');
 
+let rangedRateLimitCleanupCounter = 0;
+async function enforceRangedQuoteRateLimit(req, res, next) {
+  if (!pool) return res.status(503).json({ error: 'Quote service is not configured.' });
+  const address = String(req.ip || req.socket?.remoteAddress || 'unknown');
+  const bucketHash = crypto.createHash('sha256')
+    .update(`pgnt-ranged-quote-ip-v1:${address}`, 'utf8').digest('hex');
+  try {
+    const result = await pool.query(
+      `INSERT INTO ranged_quote_rate_limits (bucket_hash, window_started_at, request_count, updated_at)
+       VALUES ($1, NOW(), 1, NOW())
+       ON CONFLICT (bucket_hash) DO UPDATE SET
+         request_count = CASE
+           WHEN ranged_quote_rate_limits.window_started_at <= NOW() - INTERVAL '1 minute' THEN 1
+           ELSE ranged_quote_rate_limits.request_count + 1
+         END,
+         window_started_at = CASE
+           WHEN ranged_quote_rate_limits.window_started_at <= NOW() - INTERVAL '1 minute' THEN NOW()
+           ELSE ranged_quote_rate_limits.window_started_at
+         END,
+         updated_at = NOW()
+       RETURNING request_count`,
+      [bucketHash]
+    );
+    rangedRateLimitCleanupCounter += 1;
+    if (rangedRateLimitCleanupCounter % 100 === 0) {
+      await pool.query("DELETE FROM ranged_quote_rate_limits WHERE updated_at < NOW() - INTERVAL '1 day'");
+    }
+    if (Number(result.rows[0]?.request_count || 0) > 10) {
+      res.set('Retry-After', '60');
+      return res.status(429).json({ error: 'Too many quote requests. Please wait one minute before trying again.' });
+    }
+    return next();
+  } catch (error) {
+    console.error('Ranged quote rate limit check failed.', { errorCode: error?.code || null });
+    return res.status(503).json({ error: 'Quote service is temporarily unavailable.' });
+  }
+}
+
 const PGNT_MIN_AMOUNT = 10;
 const PGNT_MAX_AMOUNT = 3000;
 
 const app = express();
 
 app.disable('x-powered-by');
+// Render terminates TLS and forwards the original client address through one proxy.
+app.set('trust proxy', 1);
 
 const PORT = Number(process.env.PORT) || 10000;
 
@@ -85,6 +125,10 @@ try {
 // Admin API configuration
 const ADMIN_API_KEY =
   process.env.ADMIN_API_KEY || '';
+
+// Stable server-only key used to recreate the same order-access token on safe retries.
+// Configure this independently from Stripe keys and keep it stable across deployments.
+const ORDER_ACCESS_TOKEN_SECRET = process.env.ORDER_ACCESS_TOKEN_SECRET || '';
 
 // Fail closed when Stripe mode and DT One environment do not match.
 // Test Stripe keys may only be paired with the exact DT One pre-production host;
@@ -1165,10 +1209,13 @@ app.get('/api/ranged-products', async (req, res) => {
 // Create a provider-priced ranged quote. A DT One transaction is created
 // with auto_confirm=false, and its exact provider ID/wholesale evidence are
 // persisted before a customer is offered a Stripe checkout.
-app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res) => {
+app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), enforceRangedQuoteRateLimit, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Quote service is not configured.' });
   if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
     return res.status(503).json({ error: 'Payment and fulfillment environments are not safely matched.' });
+  }
+  if (ORDER_ACCESS_TOKEN_SECRET.length < 32) {
+    return res.status(503).json({ error: 'Ranged quote access-token secret is not configured.' });
   }
 
   if (String(req.body?.referralCode || '').trim() || String(req.body?.referralInstallId || '').trim()) {
@@ -1265,8 +1312,7 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res
           reviewRequired: existing.status === 'topup_review' || existing.provider_status === 'REVIEW',
         });
       }
-      const accessSecret = process.env.ORDER_ACCESS_TOKEN_SECRET || STRIPE_SECRET_KEY;
-      orderAccessToken = createRangedOrderAccessToken(existing.order_id, accessSecret);
+      orderAccessToken = createRangedOrderAccessToken(existing.order_id, ORDER_ACCESS_TOKEN_SECRET);
       return res.status(200).json({
         orderId: existing.order_id,
         orderAccessToken,
@@ -1289,8 +1335,7 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res
 
     const pricing = await getPricingSettings(client, country);
     orderId = createOrderId();
-    const accessSecret = process.env.ORDER_ACCESS_TOKEN_SECRET || STRIPE_SECRET_KEY;
-    orderAccessToken = createRangedOrderAccessToken(orderId, accessSecret);
+    orderAccessToken = createRangedOrderAccessToken(orderId, ORDER_ACCESS_TOKEN_SECRET);
     const tokenHash = crypto.createHash('sha256').update(orderAccessToken, 'utf8').digest('hex');
 
     await client.query('BEGIN');
