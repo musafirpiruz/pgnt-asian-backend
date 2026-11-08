@@ -20,7 +20,7 @@ test('production registry migration is transaction-neutral and conflict-sensitiv
   assert.doesNotMatch(migration, /^COMMIT;\s*$/m);
   assert.match(migration, /conflicting country rows/);
   assert.match(migration, /operator localization rows have no matching stable operator/);
-  assert.match(migration, /country_registry is canonical/);
+  assert.match(migration, /country_registry_reconciliation/);
   assert.match(migration, /FOREIGN KEY \(country_code\) REFERENCES country_registry/);
 });
 
