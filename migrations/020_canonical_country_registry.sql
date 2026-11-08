@@ -201,15 +201,20 @@ BEGIN
   -- rates and operator prefixes attached to the legacy parent.
   IF to_regclass(current_schema() || '.countries') IS NOT NULL THEN
     FOR child_record IN
-      SELECT child.relname AS table_name, fk.conname AS constraint_name
+      SELECT child.relname AS table_name,
+             fk.conname AS constraint_name,
+             pg_get_constraintdef(fk.oid) AS definition,
+             fk.convalidated AS is_valid
       FROM pg_constraint fk
       JOIN pg_class child ON child.oid=fk.conrelid
+      JOIN pg_namespace child_ns ON child_ns.oid=child.relnamespace
       JOIN pg_class parent ON parent.oid=fk.confrelid
       JOIN pg_attribute local_col ON local_col.attrelid=child.oid
         AND local_col.attnum=fk.conkey[1]
       JOIN pg_attribute parent_col ON parent_col.attrelid=parent.oid
         AND parent_col.attnum=fk.confkey[1]
       WHERE fk.contype='f'
+        AND child_ns.nspname=current_schema()
         AND fk.confrelid='countries'::regclass
         AND array_length(fk.conkey,1)=1
         AND array_length(fk.confkey,1)=1
@@ -224,55 +229,26 @@ BEGIN
         RAISE EXCEPTION 'Cannot reconcile %.%: % rows have no canonical country',
           child_record.table_name, child_record.constraint_name, conflict_count;
       END IF;
+      -- Preserve the original FK actions, match mode and deferrability.
+      -- Only the referenced parent/column changes; never silently turn a
+      -- RESTRICT/NO ACTION relationship into ON DELETE CASCADE.
       EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I',
         child_record.table_name, child_record.constraint_name);
       EXECUTE format(
-        'ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (country_code) REFERENCES country_registry(country_code) ON DELETE CASCADE',
+        'ALTER TABLE %I ADD CONSTRAINT %I %s%s',
         child_record.table_name,
-        left(child_record.table_name || '_country_registry_fk', 63)
+        child_record.constraint_name,
+        replace(child_record.definition,
+                'REFERENCES countries(code)',
+                'REFERENCES country_registry(country_code)'),
+        CASE WHEN child_record.is_valid THEN '' ELSE ' NOT VALID' END
       );
     END LOOP;
   END IF;
 
-  -- Replace only country-parent FKs on the two shared tables. Preserve all
-  -- other constraints and data. Names are generated deterministically.
-  IF to_regclass(current_schema() || '.country_localizations') IS NOT NULL THEN
-    FOR constraint_name IN
-      SELECT c.conname FROM pg_constraint c
-      WHERE c.conrelid='country_localizations'::regclass AND c.contype='f'
-        AND c.confrelid <> 'country_registry'::regclass
-    LOOP
-      EXECUTE format('ALTER TABLE country_localizations DROP CONSTRAINT %I', constraint_name);
-    END LOOP;
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_constraint c
-      WHERE c.conrelid='country_localizations'::regclass AND c.contype='f'
-        AND c.confrelid='country_registry'::regclass
-    ) THEN
-      ALTER TABLE country_localizations
-        ADD CONSTRAINT country_localizations_country_registry_fk
-        FOREIGN KEY (country_code) REFERENCES country_registry(country_code) ON DELETE CASCADE;
-    END IF;
-  END IF;
-
-  IF to_regclass(current_schema() || '.country_operators') IS NOT NULL THEN
-    FOR constraint_name IN
-      SELECT c.conname FROM pg_constraint c
-      WHERE c.conrelid='country_operators'::regclass AND c.contype='f'
-        AND c.confrelid <> 'country_registry'::regclass
-    LOOP
-      EXECUTE format('ALTER TABLE country_operators DROP CONSTRAINT %I', constraint_name);
-    END LOOP;
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_constraint c
-      WHERE c.conrelid='country_operators'::regclass AND c.contype='f'
-        AND c.confrelid='country_registry'::regclass
-    ) THEN
-      ALTER TABLE country_operators
-        ADD CONSTRAINT country_operators_country_registry_fk
-        FOREIGN KEY (country_code) REFERENCES country_registry(country_code) ON DELETE CASCADE;
-    END IF;
-  END IF;
+  -- The generic country_code FK loop above also migrates the two shared
+  -- tables. Do not drop their other foreign keys: operator metadata and
+  -- future relationships must remain intact.
 END $$;
 
 CREATE TABLE IF NOT EXISTS country_registry_reconciliation (
