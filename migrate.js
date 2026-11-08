@@ -889,7 +889,37 @@ async function runMigration() {
       console.log("Migration 018_dtone_ranged_value_foundation is already applied.");
     }
 
-  } catch (error) {
+    // Version 019 adds stable operator identity to ranged products.
+    // Existing rows remain unmapped and inactive until an admin verifies the mapping.
+    const rangedOperatorKeyVersion = "019_dtone_ranged_operator_key";
+    const rangedOperatorKeyCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedOperatorKeyVersion]
+    );
+    if (rangedOperatorKeyCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(
+          "ALTER TABLE dtone_ranged_products ADD COLUMN IF NOT EXISTS operator_key VARCHAR(100)"
+        );
+        await client.query(
+          "CREATE INDEX IF NOT EXISTS idx_dtone_ranged_products_operator_key ON dtone_ranged_products(country_iso_code, operator_key, active) WHERE operator_key IS NOT NULL"
+        );
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [rangedOperatorKeyVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 019 completed; ranged products remain unmapped and inactive.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 019_dtone_ranged_operator_key is already applied.");
+    }
+
+    } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
     );
