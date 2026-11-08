@@ -25,7 +25,8 @@ function parseRangedProductCapability(product) {
     ? [...new Set(product.accepted_calculation_modes.map((mode) => String(mode).trim().toUpperCase()).filter(Boolean))]
     : [];
 
-  if (!minAmount || !maxAmount || !increment || maxAmount < minAmount ||
+  if (!Number.isSafeInteger(minAmount) || !Number.isSafeInteger(maxAmount) ||
+      !Number.isSafeInteger(increment) || maxAmount < minAmount ||
       !/^[A-Z]{3}$/.test(destinationCurrency) ||
       !acceptedCalculationModes.includes('DESTINATION_AMOUNT')) {
     return null;
@@ -42,8 +43,8 @@ function parseRangedProductCapability(product) {
     acceptedCalculationModes,
     pgntMinAmount: PGNT_MIN_AMOUNT,
     pgntMaxAmount: PGNT_MAX_AMOUNT,
-    selectableMinAmount: Math.ceil(Math.max(minAmount, PGNT_MIN_AMOUNT) / increment) * increment,
-    selectableMaxAmount: Math.floor(Math.min(maxAmount, PGNT_MAX_AMOUNT) / increment) * increment,
+    selectableMinAmount: minAmount + Math.ceil((Math.max(minAmount, PGNT_MIN_AMOUNT) - minAmount) / increment) * increment,
+    selectableMaxAmount: minAmount + Math.floor((Math.min(maxAmount, PGNT_MAX_AMOUNT) - minAmount) / increment) * increment,
     active: false,
   });
 }
