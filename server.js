@@ -893,6 +893,70 @@ async function getProductQuote(productId, country) {
 }
 // Return a server-authoritative quote for the selected country/operator/amount.
 // Quotes may preview inactive, database-mapped products; checkout still requires an enabled product.
+// Public, read-only operator registry API.
+// This route is intentionally read-only and fails closed until the canonical
+// registry migration is installed and a country/operator has been verified.
+const REGISTRY_LANGUAGES = new Set(['en', 'ps', 'fa', 'ur', 'hi', 'bn']);
+
+app.get('/api/countries/:countryCode/operators', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country registry is not configured.' });
+  }
+
+  const countryCode = normalizeCountry(req.params.countryCode);
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = REGISTRY_LANGUAGES.has(requestedLanguage) ? requestedLanguage : 'en';
+
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return res.status(400).json({ error: 'Invalid country code.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         o.operator_key,
+         o.provider_operator_id,
+         COALESCE(localized.display_name, o.display_name) AS display_name
+       FROM country_registry c
+       JOIN country_operators o
+         ON o.country_code = c.country_code
+       LEFT JOIN country_operator_localizations localized
+         ON localized.country_code = o.country_code
+        AND localized.operator_key = o.operator_key
+        AND localized.language_code = $2
+       WHERE c.country_code = $1
+         AND c.status = 'active'
+         AND o.active = TRUE
+         AND o.provider_operator_id IS NOT NULL
+         AND BTRIM(o.provider_operator_id) <> ''
+         AND o.verified_at IS NOT NULL
+       ORDER BY COALESCE(localized.display_name, o.display_name), o.operator_key`,
+      [countryCode, language]
+    );
+
+    return res.json({
+      countryCode,
+      language,
+      operators: result.rows.map((row) => ({
+        operator_key: String(row.operator_key),
+        provider_operator_id: String(row.provider_operator_id),
+        display_name: String(row.display_name),
+      })),
+    });
+  } catch (error) {
+    // A missing/unmigrated registry is a service-not-ready condition, not an
+    // empty operator list. Never fall back to unverified provider mappings.
+    console.error('Country operator registry lookup failed.', {
+      countryCode,
+      errorCode: error?.code || null,
+      errorMessage: String(error?.message || 'Unknown registry error').slice(0, 180),
+    });
+    return res.status(503).json({
+      error: 'Country operator registry is temporarily unavailable.',
+    });
+  }
+});
+
 // Public, read-only list of configured payment currencies.
 // Only EUR is eligible for checkout until FX, fees, and checkout support are verified.
 app.get('/api/payment-currencies', async (req, res) => {
