@@ -512,7 +512,7 @@ function validateCheckoutInput(body) {
   }
 
   // Current Flutter clients send operator + local amount, not a catalog ID.
-  if (!productId && (
+  if ((!productId || operatorKey) && (
     (!operatorKey && (!operator || operator.length > 120)) ||
     (operatorKey && (!/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) ||
     !Number.isSafeInteger(amount) || amount <= 0
@@ -971,8 +971,7 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
        JOIN country_operators o
          ON o.country_code = c.country_code
        LEFT JOIN country_operator_localizations localized
-         ON localized.country_code = o.country_code
-        AND localized.operator_key = o.operator_key
+         ON localized.operator_id = o.id
         AND localized.language_code = $2
        WHERE c.country_code = $1
          AND c.status = 'active'
