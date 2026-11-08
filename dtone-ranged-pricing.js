@@ -112,7 +112,13 @@ function calculateRangedCustomerPrice(wholesaleTotalCents, pricing) {
   }
   const targetNetCents = wholesale + feeCents;
   const rate = stripeFeePercent / 100;
-  let finalPriceCents = Math.ceil((targetNetCents + stripeFixedFeeCents) / (1 - rate));
+  // Stripe Checkout does not accept sub-minimum EUR charges. Keep the
+  // calculated amount at or above the current EUR minimum before fee gross-up.
+  const stripeMinimumChargeCents = 50;
+  let finalPriceCents = Math.max(
+    stripeMinimumChargeCents,
+    Math.ceil((targetNetCents + stripeFixedFeeCents) / (1 - rate))
+  );
   let estimatedStripeFeeCents = Math.ceil(finalPriceCents * rate) + stripeFixedFeeCents;
   while (finalPriceCents - estimatedStripeFeeCents < targetNetCents) {
     finalPriceCents += 1;
