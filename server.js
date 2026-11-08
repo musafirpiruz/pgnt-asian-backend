@@ -1162,7 +1162,7 @@ app.get('/api/ranged-products', async (req, res) => {
 // Create a provider-priced ranged quote. A DT One transaction is created
 // with auto_confirm=false, and its exact provider ID/wholesale evidence are
 // persisted before a customer is offered a Stripe checkout.
-app.post('/api/ranged-quotes', async (req, res) => {
+app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Quote service is not configured.' });
   if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
     return res.status(503).json({ error: 'Payment and fulfillment environments are not safely matched.' });
@@ -1462,7 +1462,7 @@ function getCheckoutUrls() {
 
 // Create a checkout session and store its order.
 // IMPORTANT: register this route AFTER express.json().
-app.post('/api/payments/checkout', async (req, res) => {
+app.post('/api/payments/checkout', express.json({ limit: '100kb' }), async (req, res) => {
   if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
     console.error('Checkout blocked: Stripe mode and DT One environment do not match.');
     return res.status(503).json({
