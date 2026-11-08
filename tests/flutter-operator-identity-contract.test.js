@@ -40,7 +40,7 @@ test('checkout request forwards operatorKey but never trusts or forwards provide
 
 test('registry parser preserves stable IDs independently of localized display labels', () => {
   const start = flutter.indexOf('factory MobileOperator.fromRegistryJson');
-  const end = flutter.indexOf('\n  }', start);
+  const end = flutter.indexOf('// Brand-inspired', start);
   assert.ok(start >= 0 && end > start);
   const factory = flutter.slice(start, end);
   for (const field of ["json['display_name']", "json['name']", "json['operator_key']", "json['code']", "json['provider_operator_id']", 'operatorKey:', 'providerOperatorId:']) {
