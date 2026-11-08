@@ -65,6 +65,10 @@ The application must use the backend to retrieve products and create payment req
 5. Wait for the build to finish.
 6. Download the APK artifact if the build succeeds.
 
+## Required ranged-quote secret
+
+Set `ORDER_ACCESS_TOKEN_SECRET` in the backend environment to a cryptographically random value of at least 32 characters. Keep it stable across deployments and do not reuse the Stripe, DT One, or admin credentials. Ranged-value quote creation fails closed until this secret is configured. Do not commit the secret to GitHub.
+
 ## Security Requirements
 
 - Keep Stripe and DT One secrets on the backend.
