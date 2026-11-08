@@ -9,7 +9,7 @@ const { Client } = require('pg');
 const databaseUrl = process.env.DATABASE_URL;
 const fixture196 = fs.readFileSync(path.join(__dirname, 'fixtures', 'country-registry-196.sql'), 'utf8');
 const fixture204 = fs.readFileSync(path.join(__dirname, 'fixtures', 'country-registry-204.sql'), 'utf8');
-const reconcile = fs.readFileSync(path.join(__dirname, 'fixtures', 'canonical-country-registry-reconciliation.sql'), 'utf8');
+const reconcile = fs.readFileSync(path.join(__dirname, '..', 'migrations', '020_canonical_country_registry.sql'), 'utf8');
 
 let schemaCounter = 0;
 async function inSchema(prefix, callback) {
