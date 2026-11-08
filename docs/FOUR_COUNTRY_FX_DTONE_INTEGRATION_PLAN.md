@@ -52,3 +52,16 @@ Preserve the existing Flutter and Node.js application. Complete Afghanistan (AFN
 
 ### Current quote/checkout regression risk
 The currently deployed main branch Flutter code uses the legacy display-name lookup and does not send stable operator identity. Keep the new registry mapping path inactive until the aligned Flutter client and backend are built and tested together. Do not infer that a successful legacy quote proves registry identity validation is working.
+
+## Pricing configuration discrepancy requiring read-only reconciliation
+
+A recent Android quote screenshot showed an AFN/EUR reference rate of 72.9927 and an app fee of EUR 0.59. Earlier reviewed configuration notes recorded AFN/EUR 60.1000 and an app fee of EUR 0.49. The screenshot's quote displayed a EUR 1.89 DT One wholesale/base cost and a EUR 2.78 customer total.
+
+These observations are not sufficient to conclude which values are currently authoritative: the screenshot may reflect a different settings version, fallback, cache, or pricing path. Before any pricing change or product activation:
+- Read the effective persisted pricing settings and the quote calculation source in the same environment.
+- Trace the exact fee components (PGNT fee, Stripe percentage/fixed fee, and any other configured charge) and confirm they are applied once.
+- Confirm whether the AFN/EUR value is informational denomination conversion only; it must not replace verified DT One wholesale EUR cost.
+- Compare the server quote response with the Android display for the same product and timestamp.
+- Record the verified result and obtain explicit approval before changing production pricing.
+
+No production setting was changed as part of this reconciliation note.
