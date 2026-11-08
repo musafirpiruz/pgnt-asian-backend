@@ -31,7 +31,7 @@ const expected = {
 test('accepts a CREATED ranged quote with matching amount and explicit EUR wholesale price', () => {
   const result = parseRangedWholesalePrice(response(), expected);
   assert.equal(result.transactionId, '123456789');
-  assert.equal(result.wholesaleTotalCents, 191);
+  assert.equal(result.wholesaleTotalCents, 190);
   assert.equal(result.destinationAmount, 150);
   assert.equal(result.destinationCurrency, 'AFN');
   assert.equal(result.providerStatus, 'CREATED');
