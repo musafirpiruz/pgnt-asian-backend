@@ -197,3 +197,37 @@ test('DT One operator discovery remains GET-only and does not mutate catalog or 
   assert.match(route, /transactionCreated: false/);
   assert.doesNotMatch(route, /INSERT INTO product_catalog|UPDATE product_catalog|POST.*\/v1\/transactions/i);
 });
+
+test('DT One discovery filters by documented product type and exposes ranged recharge capabilities', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
+  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const route = server.slice(start, end);
+  assert.match(route, /allowedProductTypes/);
+  assert.match(route, /url\.searchParams\.set\('type', requestedType\)/);
+  assert.match(route, /RANGED_VALUE_RECHARGE/);
+  assert.match(route, /accepted_calculation_modes/);
+  assert.match(route, /minimumAmount: rangeMin/);
+  assert.match(route, /maximumAmount: rangeMax/);
+  assert.match(route, /amountMode: isRanged \? 'ranged' : 'fixed_or_unclassified'/);
+  assert.match(route, /adminApprovalRequiredForEachAmount: false/);
+  assert.match(route, /requiresProviderCapabilityVerification: true/);
+});
+
+test('DT One ranged amount discovery matches values inside provider min/max bounds', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
+  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const route = server.slice(start, end);
+  assert.match(route, /rangeMin !== null && rangeMax !== null/);
+  assert.match(route, /amountQuery >= rangeMin && amountQuery <= rangeMax/);
+  assert.match(route, /productType\.startsWith\('RANGED_VALUE_'\)/);
+});
+
+test('DT One product discovery remains a read-only candidate search, not an approval or activation', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
+  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const route = server.slice(start, end);
+  assert.match(route, /adminApprovalRequiredForEachAmount: false/);
+  assert.match(route, /catalogActivation: 'unchanged'/);
+  assert.match(route, /transactionCreated: false/);
+  assert.doesNotMatch(route, /UPDATE product_catalog SET active\s*=\s*TRUE/);
+});
