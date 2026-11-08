@@ -47,7 +47,7 @@ function parseRangedWholesalePrice(response, expected = {}) {
   const destinationAmount = positiveAmount(requestedDestination?.amount);
   const expectedAmount = Number(expected.destinationAmount);
   const destinationCurrency = String(requestedDestination?.unit || '').trim().toUpperCase();
-  const destinationUnitType = String(requestedDestination?.unit_type || '').trim().toUpperCase();
+  const destinationUnitType = String(requestedDestination?.unit_type || response.adjusted_values?.destination?.unit_type || expected.destinationUnitType || '').trim().toUpperCase();
 
   if (!Number.isSafeInteger(expectedAmount) ||
       destinationAmount !== expectedAmount ||
