@@ -79,6 +79,51 @@ BEGIN
     ALTER TABLE country_operators ALTER COLUMN provider SET NOT NULL;
   END IF;
 
+  -- Normalize operator translations to the operator_id contract used by
+  -- the dynamic API. Keep legacy country_code/operator_key columns intact.
+  CREATE TABLE IF NOT EXISTS country_operator_localizations (
+    operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
+    language_code VARCHAR(8) NOT NULL,
+    display_name VARCHAR(120) NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (operator_id, language_code)
+  );
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema()
+      AND table_name='country_operator_localizations'
+      AND column_name='country_code'
+  ) THEN
+    ALTER TABLE country_operator_localizations ADD COLUMN IF NOT EXISTS operator_id BIGINT;
+    UPDATE country_operator_localizations l
+       SET operator_id=o.id
+      FROM country_operators o
+     WHERE o.country_code=l.country_code
+       AND o.operator_key=l.operator_key
+       AND l.operator_id IS NULL;
+    SELECT COUNT(*) INTO conflict_count
+      FROM country_operator_localizations WHERE operator_id IS NULL;
+    IF conflict_count > 0 THEN
+      RAISE EXCEPTION 'Cannot reconcile: % operator localization rows have no matching stable operator', conflict_count;
+    END IF;
+    ALTER TABLE country_operator_localizations ALTER COLUMN operator_id SET NOT NULL;
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid='country_operator_localizations'::regclass
+        AND contype='f' AND conkey=ARRAY[
+          (SELECT attnum FROM pg_attribute
+           WHERE attrelid='country_operator_localizations'::regclass AND attname='operator_id')
+        ]::smallint[]
+    ) THEN
+      ALTER TABLE country_operator_localizations
+        ADD CONSTRAINT country_operator_localizations_operator_id_fk
+        FOREIGN KEY (operator_id) REFERENCES country_operators(id) ON DELETE CASCADE;
+    END IF;
+    CREATE UNIQUE INDEX IF NOT EXISTS country_operator_localizations_operator_language_uidx
+      ON country_operator_localizations(operator_id,language_code);
+  END IF;
+
   -- Verify every child key has a canonical parent before changing its FK.
   IF to_regclass(current_schema() || '.country_localizations') IS NOT NULL THEN
     EXECUTE 'SELECT COUNT(*) FROM country_localizations l
