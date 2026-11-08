@@ -10,6 +10,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const fixture196 = fs.readFileSync(path.join(__dirname, 'fixtures', 'country-registry-196.sql'), 'utf8');
 const fixture204 = fs.readFileSync(path.join(__dirname, 'fixtures', 'country-registry-204.sql'), 'utf8');
 const reconcile = fs.readFileSync(path.join(__dirname, '..', 'migrations', '020_canonical_country_registry.sql'), 'utf8');
+const rangedIdempotencyMigration = fs.readFileSync(path.join(__dirname, '..', 'migrations', '021_ranged_quote_idempotency.sql'), 'utf8');
 
 let schemaCounter = 0;
 async function inSchema(prefix, callback) {
@@ -268,5 +269,59 @@ test('country registry reconciliation preserves FK actions, deferrability, and u
     assert.equal(metadataFk.rows.length, 1, 'unrelated operator metadata FK must remain');
     assert.equal(metadataFk.rows[0].parent_table, 'operator_metadata');
     assert.equal(metadataFk.rows[0].confdeltype, 'n', 'ON DELETE SET NULL must be preserved');
+  });
+});
+
+
+test('ranged quote migration creates hashed idempotency and rate-limit constraints', async () => {
+  await inSchema('ranged_idempotency', async (client) => {
+    await client.query(`
+      CREATE TABLE dtone_ranged_transactions (
+        order_id UUID PRIMARY KEY
+      )
+    `);
+    await client.query(rangedIdempotencyMigration);
+    const columns = await client.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema=current_schema()
+        AND table_name='dtone_ranged_transactions'
+      ORDER BY column_name
+    `);
+    assert.ok(columns.rows.some(row => row.column_name === 'request_key_hash'));
+    assert.ok(columns.rows.some(row => row.column_name === 'request_fingerprint'));
+
+    const index = await client.query(`
+      SELECT indexdef FROM pg_indexes
+      WHERE schemaname=current_schema()
+        AND tablename='dtone_ranged_transactions'
+        AND indexname='dtone_ranged_transactions_request_key_uidx'
+    `);
+    assert.equal(index.rowCount, 1);
+    assert.match(index.rows[0].indexdef, /UNIQUE/);
+    assert.match(index.rows[0].indexdef, /WHERE \(request_key_hash IS NOT NULL\)/);
+
+    const limiter = await client.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema=current_schema()
+        AND table_name='ranged_quote_rate_limits'
+    `);
+    assert.deepEqual(
+      limiter.rows.map(row => row.column_name).sort(),
+      ['bucket_hash','request_count','updated_at','window_started_at']
+    );
+
+    await client.query(
+      `INSERT INTO dtone_ranged_transactions (order_id, request_key_hash)
+       VALUES ($1, $2)`,
+      ['11111111-1111-4111-8111-111111111111', 'a'.repeat(64)]
+    );
+    await assert.rejects(
+      client.query(
+        `INSERT INTO dtone_ranged_transactions (order_id, request_key_hash)
+         VALUES ($1, $2)`,
+        ['22222222-2222-4222-8222-222222222222', 'a'.repeat(64)]
+      ),
+      error => error.code === '23505'
+    );
   });
 });
