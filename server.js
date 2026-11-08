@@ -1668,7 +1668,7 @@ app.post('/api/payments/checkout', express.json({ limit: '100kb' }), async (req,
 
       const confirmByMs = new Date(order.confirm_by).getTime();
       const nowMs = Date.now();
-      if (order.status !== 'ranged_quote_ready' || order.provider_status !== 'CREATED' ||
+      if (!['ranged_quote_ready', 'awaiting_payment'].includes(order.status) || order.provider_status !== 'CREATED' ||
           !order.dtone_transaction_id || !Number.isFinite(confirmByMs) ||
           confirmByMs <= nowMs + 31 * 60 * 1000) {
         await client.query('ROLLBACK');
