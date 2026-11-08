@@ -2062,7 +2062,8 @@ app.post(
           break;
         }
 
-        case 'checkout.session.async_payment_failed': {
+        case 'checkout.session.async_payment_failed':
+        case 'checkout.session.expired': {
           const session = event.data.object;
 
           await markCheckoutPaymentFailed(session);
