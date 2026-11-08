@@ -81,18 +81,56 @@ test('canonical registry reconciliation upgrades the PR #196 schema and preserve
     await client.query(fixture196);
     const before = await client.query('SELECT COUNT(*)::int AS count FROM country_localizations');
     assert.equal(before.rows[0].count, 24);
+    const inserted = await client.query(`
+      INSERT INTO country_operators(country_code,operator_key,display_name,provider_operator_id,active)
+      VALUES ('AF','af-test-net','Test Network','dtone-op-001',TRUE)
+      RETURNING id
+    `);
+    await client.query(`
+      INSERT INTO country_operator_localizations(country_code,operator_key,language_code,display_name)
+      VALUES ('AF','af-test-net','ps','ازمایښتي شبکه')
+    `);
     await client.query(reconcile);
     await assertCanonical(client, schema);
     const after = await client.query('SELECT COUNT(*)::int AS count FROM country_localizations');
     assert.equal(after.rows[0].count, 24);
     const legacy = await client.query(`SELECT status FROM country_registry WHERE country_code='AF'`);
     assert.equal(legacy.rows[0].status, 'legacy');
+    const operator = await client.query(`
+      SELECT o.operator_key,o.provider_operator_id,o.active,l.operator_id,l.display_name
+      FROM country_operators o
+      JOIN country_operator_localizations l ON l.operator_id=o.id
+      WHERE o.country_code='AF'
+    `);
+    assert.equal(operator.rows.length, 1);
+    assert.equal(operator.rows[0].operator_key, 'af-test-net');
+    assert.equal(operator.rows[0].provider_operator_id, 'dtone-op-001');
+    assert.equal(operator.rows[0].active, true);
+    assert.equal(operator.rows[0].display_name, 'ازمایښتي شبکه');
   });
 });
 
 test('canonical registry reconciliation accepts the PR #204 schema without creating a second country parent', async () => {
   await inSchema('registry_204', async (client, schema) => {
     await client.query(fixture204);
+    const inserted = await client.query(`
+      INSERT INTO country_operators(country_code,provider,provider_operator_id,operator_key,display_name,active,verified_at)
+      VALUES ('AF','dtone','dtone-op-204','af-dtone-204','DT One Network',TRUE,NOW())
+      RETURNING id
+    `);
+    await client.query(`
+      CREATE TABLE country_operator_localizations (
+        operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
+        language_code VARCHAR(8) NOT NULL,
+        display_name VARCHAR(120) NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY(operator_id,language_code)
+      )
+    `);
+    await client.query(`
+      INSERT INTO country_operator_localizations(operator_id,language_code,display_name)
+      VALUES ($1,'ps','ډي ټي ون شبکه')
+    `, [inserted.rows[0].id]);
     await assertCanonical(client, schema);
     await client.query(reconcile);
     await assertCanonical(client, schema);
@@ -101,6 +139,17 @@ test('canonical registry reconciliation accepts the PR #204 schema without creat
       WHERE table_schema=$1 AND table_name IN ('countries','country_registry')
     `, [schema]);
     assert.equal(roots.rows[0].count, 1);
+    const operator = await client.query(`
+      SELECT o.operator_key,o.provider_operator_id,o.active,l.display_name
+      FROM country_operators o
+      JOIN country_operator_localizations l ON l.operator_id=o.id
+      WHERE o.country_code='AF'
+    `);
+    assert.equal(operator.rows.length, 1);
+    assert.equal(operator.rows[0].operator_key, 'af-dtone-204');
+    assert.equal(operator.rows[0].provider_operator_id, 'dtone-op-204');
+    assert.equal(operator.rows[0].active, true);
+    assert.equal(operator.rows[0].display_name, 'ډي ټي ون شبکه');
   });
 });
 
