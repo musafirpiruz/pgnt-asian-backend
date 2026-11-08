@@ -83,3 +83,21 @@ test('provider lifecycle adapter does not automatically retry uncertain requests
   assert.match(lifecycle, /response\.status === 429/);
   assert.doesNotMatch(lifecycle, /for\s*\(\s*let attempt|retry\s*\(/i);
 });
+
+test('ranged products and quotes require a stable verified operator key', () => {
+  const discovery = section("app.get('/api/ranged-products'", "app.post('/api/ranged-quotes'");
+  const quote = section("app.post('/api/ranged-quotes'", "app.get('/api/pricing/quote'");
+  assert.match(discovery, /operator_key IS NOT NULL/);
+  assert.match(discovery, /operatorKey: String\(row\.operator_key\)/);
+  assert.match(quote, /req\.body\?\.operatorKey/);
+  assert.match(quote, /operator_key = \$3/);
+  assert.match(quote, /\[productId, countryIso3, operatorKey\]/);
+});
+
+test('migration 019 adds nullable operator identity without activating existing products', () => {
+  const migrate = fs.readFileSync(path.join(__dirname, '..', 'migrate.js'), 'utf8');
+  assert.match(migrate, /019_dtone_ranged_operator_key/);
+  assert.match(migrate, /ADD COLUMN IF NOT EXISTS operator_key VARCHAR\(100\)/);
+  assert.match(migrate, /WHERE operator_key IS NOT NULL/);
+  assert.doesNotMatch(migrate.slice(migrate.indexOf('019_dtone_ranged_operator_key')), /UPDATE dtone_ranged_products SET active = TRUE/i);
+});
