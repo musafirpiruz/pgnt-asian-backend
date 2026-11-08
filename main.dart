@@ -1392,6 +1392,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   AppCountry selectedCountry = countries.first;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
+  List<MobileOperator> _registryOperators = const [];
+  String? _registryOperatorsCountry;
   int selectedAmount = 100;
   int selectedTab = 0;
   bool isLoading = false;
@@ -1428,6 +1430,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   void initState() {
     super.initState();
     _restoreFuture = _restoreLocalData();
+    _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
     _referralLinkSubscription = _appLinks.uriLinkStream.listen(
       _applyReferralUri,
@@ -1662,9 +1665,75 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
   }
 
-  List<MobileOperator> get countryOperators => operators
-      .where((item) => item.countryCode == selectedCountry.code)
-      .toList();
+  // Prefer the server registry when it is available; retain the bundled
+  // curated list as an offline/backward-compatible fallback.
+  List<MobileOperator> get countryOperators {
+    if (_registryOperatorsCountry == selectedCountry.code &&
+        _registryOperators.isNotEmpty) {
+      return _registryOperators;
+    }
+    return operators
+        .where((item) => item.countryCode == selectedCountry.code)
+        .toList();
+  }
+
+  Future<void> _loadRegistryOperators(String countryCode) async {
+    try {
+      final uri = Uri.parse(
+        '$backendBaseUrl/api/countries/$countryCode/operators',
+      ).replace(queryParameters: {'language': languageCode});
+      final response = await http.get(
+        uri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) return;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map || decoded['operators'] is! List) return;
+
+      final parsed = <MobileOperator>[];
+      for (final raw in decoded['operators'] as List) {
+        if (raw is! Map) continue;
+        final operatorJson = Map<String, dynamic>.from(raw);
+        final item = MobileOperator.fromRegistryJson(
+          countryCode: countryCode,
+          json: operatorJson,
+        );
+        if (item.name.isEmpty ||
+            item.operatorKey == null ||
+            item.operatorKey!.isEmpty) {
+          continue;
+        }
+        parsed.add(item);
+      }
+      if (!mounted || countryCode != selectedCountry.code || parsed.isEmpty) {
+        return;
+      }
+
+      setState(() {
+        _registryOperators = parsed;
+        _registryOperatorsCountry = countryCode;
+        final selectedKey = selectedOperator?.operatorKey;
+        if (selectedKey != null) {
+          selectedOperator = parsed.cast<MobileOperator?>().firstWhere(
+                (item) => item?.operatorKey == selectedKey,
+                orElse: () => null,
+              );
+        } else if (selectedOperator != null) {
+          final oldName = selectedOperator!.name.toLowerCase();
+          selectedOperator = parsed.cast<MobileOperator?>().firstWhere(
+                (item) => item?.name.toLowerCase() == oldName,
+                orElse: () => null,
+              );
+        }
+        if (selectedOperator == null) {
+          priceQuote = null;
+          priceQuoteError = null;
+        }
+      });
+    } catch (_) {
+      // Keep the bundled operator list if the registry is unavailable.
+    }
+  }
 
   List<int> get amounts =>
       rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
@@ -1794,6 +1863,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       priceQuote = null;
       priceQuoteError = null;
     });
+    _loadRegistryOperators(country.code);
   }
 
   void handlePhoneChanged(String value) {
