@@ -57,7 +57,7 @@ test('registry loader ignores stale responses after country or language changes'
   assert.match(loader, /_registryOperatorsRequestGeneration/);
   assert.match(loader, /final requestGeneration = \+\+_registryOperatorsRequestGeneration/);
   assert.match(loader, /final requestedLanguage = languageCode/);
-  assert.match(loader, /language: requestedLanguage/);
+  assert.match(loader, /queryParameters: \{\s*'language': requestedLanguage\s*\}/);
   assert.match(loader, /requestGeneration != _registryOperatorsRequestGeneration/);
   assert.match(loader, /requestedLanguage != languageCode/);
 });
