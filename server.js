@@ -1257,7 +1257,7 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), async (req, res
       if (String(existing.request_fingerprint || '').trim() !== requestFingerprint) {
         return res.status(409).json({ error: 'This Idempotency-Key was already used for a different top-up request.' });
       }
-      if (existing.status !== 'ranged_quote_ready' || existing.provider_status !== 'CREATED' ||
+      if (!['ranged_quote_ready', 'awaiting_payment'].includes(existing.status) || existing.provider_status !== 'CREATED' ||
           !existing.confirm_by || new Date(existing.confirm_by).getTime() <= Date.now()) {
         return res.status(409).json({
           error: 'This top-up request is already being processed or requires review. Do not submit a new request until it is reconciled.',
@@ -1593,6 +1593,32 @@ app.post('/api/payments/checkout', express.json({ limit: '100kb' }), async (req,
         return res.status(404).json({ error: 'Ranged quote was not found.' });
       }
       order = result.rows[0];
+
+      // If the app retries after Stripe created the Checkout Session but the
+      // response was lost, return the same still-open session. Never create a
+      // second session or DT One reservation for the same ranged order.
+      if (order.status === 'awaiting_payment' && order.stripe_session_id) {
+        await client.query('COMMIT');
+        const existingSession = await stripe.checkout.sessions.retrieve(order.stripe_session_id);
+        if (existingSession.status === 'open' && existingSession.url &&
+            existingSession.currency === 'eur' &&
+            Number(existingSession.amount_total) === Number(order.charge_cents)) {
+          return res.status(200).json({
+            orderId,
+            checkoutUrl: existingSession.url,
+            paymentCurrency: 'EUR',
+            amountCents: Number(order.charge_cents),
+            amountFormatted: formatEuro(Number(order.charge_cents)),
+            quoteExpiresAt: new Date(order.confirm_by).toISOString(),
+            replayed: true,
+          });
+        }
+        return res.status(409).json({
+          error: 'The existing Stripe checkout is no longer open. Check the order status before starting another top-up.',
+          orderId,
+        });
+      }
+
       const confirmByMs = new Date(order.confirm_by).getTime();
       const nowMs = Date.now();
       if (order.status !== 'ranged_quote_ready' || order.provider_status !== 'CREATED' ||
