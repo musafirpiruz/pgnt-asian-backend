@@ -1704,9 +1704,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
           'amount': '$amount',
           if (operator.operatorKey != null && operator.operatorKey!.isNotEmpty)
             'operatorKey': operator.operatorKey!,
-          if (operator.providerOperatorId != null &&
-              operator.providerOperatorId!.isNotEmpty)
-            'providerOperatorId': operator.providerOperatorId!,
         },
       );
 
@@ -2457,9 +2454,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
               if (selectedOperator!.operatorKey != null &&
                   selectedOperator!.operatorKey!.isNotEmpty)
                 'operatorKey': selectedOperator!.operatorKey!,
-              if (selectedOperator!.providerOperatorId != null &&
-                  selectedOperator!.providerOperatorId!.isNotEmpty)
-                'providerOperatorId': selectedOperator!.providerOperatorId!,
               'amount': selectedAmount,
               'currency': selectedCountry.currency,
               'productId': priceQuote?['productId'],
