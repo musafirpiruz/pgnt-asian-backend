@@ -130,3 +130,12 @@ Latest integration head `e74aa691c9fe9d2009abc55b2650d348434dba44` has:
 - If the canonical registry tables are absent or incompatible, the route returns HTTP 503 rather than pretending the country has no operators or falling back to unverified mappings.
 - Added source-contract tests for the response shape and fail-closed filters. CI for the latest integration commit is running.
 - This is not yet a complete end-to-end integration: current main has no canonical registry migration, and quote/checkout still need server-side `operatorKey` resolution against verified operator-product mappings. Do not deploy this route or enable registry-driven customer selection until that migration and those paths are reviewed and tested together.
+
+## Stable operator-key resolution implementation update
+- The read-only operator list now filters out operators without at least one active, verified product mapping.
+- Quote and checkout accept `operatorKey` as the preferred identity. When supplied, the backend resolves the operator through `country_registry` and `country_operators`, then resolves the exact denomination through `country_operator_products` joined to the existing `product_catalog`.
+- The resolver requires an active country, active operator, non-empty server-side provider operator ID, operator verification timestamp, active product mapping, mapping verification timestamp, matching destination currency, and exact denomination. Client-supplied provider IDs are not read.
+- Legacy display-name/product-ID requests remain available for deployed clients during the staged transition; they are not used when an `operatorKey` is supplied.
+- Added migration 017 for an explicit operator-to-catalog mapping table. It is deferred until canonical registry tables exist, starts every mapping inactive/unverified, and intentionally does not guess or seed mappings from display names. Existing products remain unchanged.
+- Added contract tests covering validation, quote/checkout resolution, verified mapping filters, and deferred migration behavior.
+- Remaining before end-to-end use: canonical registry reconciliation must be implemented and tested on every supported historical schema; an admin-only workflow must create and verify explicit mapping rows; migration 017 must be tested against both registry schema variants; quote and checkout integration tests must exercise PostgreSQL data and ensure no ambiguity; all CI workflows must pass. No deployment or product activation is authorized by this PR.
