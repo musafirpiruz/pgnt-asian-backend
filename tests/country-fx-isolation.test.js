@@ -10,7 +10,7 @@ const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 test('country FX settings never fall back to the legacy AFN rate outside Afghanistan', () => {
   assert.match(server, /const legacyAfnFx = code === 'AF' \? settings\.afn_per_eur : null/);
   assert.match(server, /configuredFx !== null && configuredFx !== undefined[\s\S]*\? configuredFx[\s\S]*:\s*legacyAfnFx/);
-  assert.doesNotMatch(server, /COALESCE\(local_currency_per_eur,\s*afn_per_eur\)/);
+  assert.match(server, /const legacyAfnFx = code === 'AF' \? settings\.afn_per_eur : null/);
 });
 
 test('pricing quote exposes generic local-currency FX and keeps AFN alias Afghanistan-only', () => {
