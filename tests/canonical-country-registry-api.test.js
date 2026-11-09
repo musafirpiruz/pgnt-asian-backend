@@ -94,3 +94,19 @@ test('legacy country rows remain admin-discoverable but never customer-active by
   assert.match(publicRoute, /c\.status = 'active'/);
   assert.doesNotMatch(publicRoute, /'legacy'/);
 });
+
+test('confirmed DT One catalog import prepares verified operator mappings without activation', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country'");
+  const end = server.indexOf("app.get('/api/admin/dtone/countries'", start);
+  assert.ok(start >= 0 && end > start);
+  const route = server.slice(start, end);
+  assert.match(route, /providerOperatorId/);
+  assert.match(route, /operatorKey/);
+  assert.match(route, /INSERT INTO country_operators/);
+  assert.match(route, /provider_operator_id/);
+  assert.match(route, /verified_at/);
+  assert.match(route, /INSERT INTO country_operator_products/);
+  assert.match(route, /productsRemainDisabled: true/);
+  assert.match(route, /operatorsRemainDisabled: true/);
+  assert.match(route, /productMappingsRemainDisabled: true/);
+});
