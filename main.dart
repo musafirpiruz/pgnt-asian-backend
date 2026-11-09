@@ -1774,8 +1774,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
 
     final countryCode = selectedCountry.code;
-    final amount = selectedAmount;
-    setState(() { isQuoteLoading = true; priceQuoteError = null; });
+    var amount = selectedAmount;
+    setState(() {
+      isQuoteLoading = true;
+      priceQuoteError = null;
+      priceQuote = null;
+      _rangedProducts = [];
+      _rangedProductsCountry = null;
+    });
 
     try {
       // Read-only discovery is mandatory for the four launch countries.
@@ -1810,9 +1816,21 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final minAmount = int.tryParse('${rangedProduct['minAmount']}') ?? 0;
       final maxAmount = int.tryParse('${rangedProduct['maxAmount']}') ?? 0;
       final increment = int.tryParse('${rangedProduct['increment']}') ?? 0;
-      if (increment <= 0 || amount < minAmount || amount > maxAmount ||
+      if (increment <= 0 || minAmount <= 0 || maxAmount < minAmount) {
+        throw Exception('د DT One تایید شوی مقدار حد ناسم دی.');
+      }
+      // If the previous country/operator amount is not valid for this provider,
+      // start at the first provider-confirmed amount instead of inventing one.
+      if (amount < minAmount || amount > maxAmount ||
           (amount - minAmount) % increment != 0) {
-        throw Exception('دا آپرېټر د ${minAmount}–${maxAmount} ترمنځ د ${increment} په واټن مقدارونه مني.');
+        amount = minAmount;
+        if (mounted && countryCode == selectedCountry.code &&
+            operator.operatorKey == selectedOperator?.operatorKey) {
+          setState(() {
+            selectedAmount = minAmount;
+            customAmountController.text = '$minAmount';
+          });
+        }
       }
       if (!mounted || countryCode != selectedCountry.code ||
           amount != selectedAmount || operator.operatorKey != selectedOperator?.operatorKey) return;
@@ -1874,9 +1892,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
       selectedOperator = null;
       _registryOperators = const [];
       _registryOperatorsCountry = country.code;
-      selectedAmount = 75;
+      selectedAmount = 0;
+      _rangedProducts = [];
+      _rangedProductsCountry = null;
       phoneController.clear();
-      customAmountController.text = '75';
+      customAmountController.clear();
       priceQuote = null;
       priceQuoteError = null;
     });
@@ -2341,8 +2361,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
     void applyAmount(String raw) {
       final value = int.tryParse(raw.trim());
-      if (value == null || value < 75 || value > 3000) {
-        showMessage('مبلغ باید له ۷۵ څخه تر ۳۰۰۰ پورې وي.');
+      if (!hasVerifiedRange) {
+        showMessage('لومړی باید د DT One تایید شوي مقدارونه ترلاسه شي.');
+        return;
+      }
+      if (value == null || value < providerMin || value > providerMax ||
+          (value - providerMin) % increment != 0) {
+        showMessage('یوازې د DT One تایید شوي مقدارونه منل کېږي: $providerMin–$providerMax، واټن $increment.');
         return;
       }
       if (hasVerifiedRange &&
@@ -2359,6 +2384,19 @@ class _PgntHomePageState extends State<PgntHomePage> {
       loadPriceQuote();
     }
 
+    if (!hasVerifiedRange) {
+      final message = operator == null
+          ? 'لومړی هېواد او شبکه وټاکئ.'
+          : isQuoteLoading
+              ? 'د DT One تایید شوي مقدارونه ترلاسه کېږي...'
+              : (priceQuoteError ?? 'د دې شبکې لپاره د DT One تایید شوي مقدارونه نشته.');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Text(message, textAlign: TextAlign.center,
+            style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed)),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2368,12 +2406,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           maxLength: 4,
           decoration: InputDecoration(
             labelText: 'د مقدار لټون (${selectedCountry.currency})',
-            hintText: hasVerifiedRange
-                ? '$providerMin – $providerMax'
-                : '۷۵ – ۳۰۰۰',
-            helperText: hasVerifiedRange
-                ? 'د ${operator?.name ?? ''} تایید شوی حد؛ واټن: $increment'
-                : 'مقدار ولیکئ؛ د شبکې تایید او وروستی قیمت به له DT One څخه وکتل شي.',
+            hintText: '$providerMin – $providerMax',
+            helperText: 'د ${operator?.name ?? ''} د DT One تایید شوی حد؛ واټن: $increment',
             counterText: '',
             prefixIcon: const Icon(Icons.search, color: primaryRed),
             suffixIcon: IconButton(
@@ -2599,7 +2633,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 'country': selectedCountry.code,
                 'phone': phone,
                 'productId': priceQuote!['productId'],
-                'operatorKey': selectedOperator!.operatorKey,
+                'operatorKey': selectedOperator!.operatorKey!,
                 'amount': selectedAmount,
               }),
             )
