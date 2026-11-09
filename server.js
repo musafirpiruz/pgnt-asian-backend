@@ -855,19 +855,15 @@ async function getProduct(client, productId, requestedCountry = null, operator =
     );
   }
 
-  const country = normalizeCountry(
-    product.country
-  );
-
-  if (!isValidCountry(country)) {
-    throw new Error(
-      'Product country is not supported.'
-    );
+  const country = normalizeCountry(product.country);
+  const countryConfig = await getActiveCountryConfig(country, client);
+  if (!countryConfig) {
+    throw new Error('Product country is not active and verified with DT One.');
   }
 
-  // Recipient currency must match the selected country.
+  // Recipient currency must match the canonical registry, not a static map.
   if (
-    product.currency !== countryCurrency(country)
+    product.currency !== countryConfig.destination_currency
   ) {
     throw new Error(
       'Product currency does not match its country.'
@@ -1269,8 +1265,9 @@ app.get('/api/ranged-products', async (req, res) => {
     return res.status(503).json({ error: 'DT One verification is not configured.' });
   }
   const country = normalizeCountry(req.query.country);
-  if (!isValidCountry(country)) {
-    return res.status(400).json({ error: 'Select a valid country.' });
+  const countryConfig = await getActiveCountryConfig(country);
+  if (!countryConfig) {
+    return res.status(400).json({ error: 'Select an active DT One destination.' });
   }
 
   try {
@@ -1763,9 +1760,11 @@ app.get('/api/pricing/quote', async (req, res) => {
   const operator = String(req.query.operator || '').trim();
   const operatorKey = String(req.query.operatorKey || '').trim();
   const amount = Number(req.query.amount);
-  if (!isValidCountry(country) || ((!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) || !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
-    return res.status(400).json({ error: 'Select a valid country, operator, and amount.' });
+  if ((!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) || !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
+    return res.status(400).json({ error: 'Select a valid operator and amount.' });
   }
+  const countryConfig = await getActiveCountryConfig(country);
+  if (!countryConfig) return res.status(400).json({ error: 'Select an active DT One destination.' });
   const client = await pool.connect();
   try {
     const product = await getProduct(client, null, country, operator, amount, { allowInactive: true, operatorKey: operatorKey || null });
