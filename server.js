@@ -60,7 +60,7 @@ async function enforceRangedQuoteRateLimit(req, res, next) {
   }
 }
 
-const PGNT_MIN_AMOUNT = 75;
+const PGNT_MIN_AMOUNT = 10;
 const PGNT_MAX_AMOUNT = 3000;
 
 const app = express();
