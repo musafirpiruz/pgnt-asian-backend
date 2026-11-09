@@ -1192,6 +1192,10 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              AND cop.operator_key = o.operator_key
              AND cop.active = TRUE
              AND cop.verified_at IS NOT NULL
+             AND cop.provider_operator_id = o.provider_operator_id
+             AND cop.provider_product_id = p.product_id::text
+             AND p.active = TRUE
+             AND p.wholesale_price_eur_cents > 0
              AND p.country = c.country_code
              AND p.currency = c.destination_currency
          )
