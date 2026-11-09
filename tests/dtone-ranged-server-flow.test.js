@@ -25,6 +25,22 @@ test('ranged discovery exposes only active products with verified destination-am
   assert.match(route, /paymentCurrency: 'EUR'/);
 });
 
+test('customer ranged discovery refreshes each active product from live DT One and fails closed', () => {
+  const route = section("app.get('/api/ranged-products'", "app.post('/api/ranged-quotes'");
+  assert.match(route, /DTONE_API_KEY/);
+  assert.match(route, /\/v1\/products\//);
+  assert.match(route, /getDtOneAuthHeader/);
+  assert.match(route, /String\(product\.id\) !== productId/);
+  assert.match(route, /providerOperatorId !== String\(row\.provider_operator_id\)/);
+  assert.match(route, /providerCountry !== String\(row\.country_iso_code\)/);
+  assert.match(route, /parseRangedProductCapability/);
+  assert.match(route, /No cached amount range was returned/);
+  assert.match(route, /source: 'live_dt_one_verified'/);
+  assert.match(route, /capability_verified_at = NOW\(\)/);
+  assert.match(route, /c\.status = 'active'/);
+  assert.match(route, /o\.verified_at IS NOT NULL/);
+});
+
 test('ranged quote persists a pending order before creating a non-auto-confirmed provider transaction', () => {
   const route = section("app.post('/api/ranged-quotes'", "app.get('/api/pricing/quote'");
   assert.ok(route.indexOf("await client.query('COMMIT')") < route.indexOf('createRangedTransaction'));
