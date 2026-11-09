@@ -81,13 +81,14 @@ test('product discovery explicitly flags a partial result when the page safety l
 });
 
 
-test('automatic country catalog discovery supports only the four configured countries', () => {
+test('automatic country catalog discovery resolves configured countries through the canonical registry', () => {
   const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
   const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
   assert.ok(start >= 0 && end > start, 'automatic country catalog sync route should exist');
   const route = server.slice(start, end);
-  for (const code of ['AFG', 'PAK', 'IND', 'BGD']) assert.ok(route.includes(code));
-  assert.match(route, /countryCurrency\(country\)/);
+  assert.match(route, /getConfiguredDtOneCountryByIso\(countryIsoCode\)/);
+  assert.match(route, /countryConfig\.currency/);
+  assert.doesNotMatch(route, /countryCurrency\(country\)/);
 });
 
 test('automatic country catalog sync previews before import and requires explicit confirmation', () => {
@@ -159,13 +160,13 @@ test('automatic country catalog preview calculates customer EUR pricing for ever
   assert.match(route, /productPricePreviews,/);
 });
 
-test('DT One operator discovery accepts only the four supported provider country codes', () => {
+test('DT One operator discovery resolves provider country codes through the canonical registry', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
   const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
   const route = server.slice(start, end);
-  assert.match(route, /new Set\(\['AFG', 'PAK', 'IND', 'BGD'\]\)/);
-  assert.match(route, /supportedOperatorCountries\.has\(countryIsoCode\)/);
-  assert.match(route, /one of AFG, PAK, IND, or BGD/);
+  assert.match(route, /getConfiguredDtOneCountryByIso\(countryIsoCode\)/);
+  assert.match(route, /countryConfig\.countryCode/);
+  assert.doesNotMatch(route, /supportedOperatorCountries/);
 });
 
 test('DT One operator discovery marks a page-limit result as partial', () => {
