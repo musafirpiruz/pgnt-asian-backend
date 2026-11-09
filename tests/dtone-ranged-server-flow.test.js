@@ -41,6 +41,13 @@ test('customer ranged discovery refreshes each active product from live DT One a
   assert.match(route, /o\.verified_at IS NOT NULL/);
 });
 
+test('ranged quote builds the recipient international number from the canonical active country registry', () => {
+  const route = section("app.post('/api/ranged-quotes'", "app.get('/api/pricing/quote'");
+  assert.match(route, /const countryConfig = await getActiveCountryConfig\(country\)/);
+  assert.match(route, /const internationalPhone = `\$\{countryConfig\.calling_code\}\$\{phoneResult\.phone\}`/);
+  assert.doesNotMatch(route, /SUPPORTED_COUNTRIES\[country\]\.callingCode/);
+});
+
 test('ranged quote persists a pending order before creating a non-auto-confirmed provider transaction', () => {
   const route = section("app.post('/api/ranged-quotes'", "app.get('/api/pricing/quote'");
   assert.ok(route.indexOf("await client.query('COMMIT')") < route.indexOf('createRangedTransaction'));
