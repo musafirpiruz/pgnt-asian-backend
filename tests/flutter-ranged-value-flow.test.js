@@ -65,7 +65,11 @@ test('customer amount entry replaces fixed denomination presets and enforces 75â
   const end = dart.indexOf('Widget buildReviewSummary()', start);
   assert.ok(start >= 0 && end > start);
   const field = dart.slice(start, end);
-  assert.match(field, /value < 10 \|\| value > 3000/);
+  assert.match(field, /value < 75 \|\| value > 3000/);
+  assert.match(field, /hasVerifiedRange/);
+  assert.match(field, /providerMin/);
+  assert.match(field, /providerMax/);
+  assert.match(field, /increment/);
   assert.match(field, /maxLength: 4/);
   assert.match(field, /TextInputType\.number/);
 });
