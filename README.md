@@ -21,7 +21,7 @@ The four countries listed above are the initial launch scope, not a permanent co
 - Treat the canonical country registry and country/operator records in PostgreSQL as the source of truth; do not rely on a fixed four-country list in business logic.
 - Store each country's ISO country identity, ISO 4217 destination currency, dialing rules, supported operators, and provider mappings as country data/configuration.
 - Discover available DT One products and supported destination-amount capabilities from verified provider metadata; never assume every country or operator supports the same amounts or increments.
-- Apply PGNT's 75–3000 customer amount policy in each destination currency, intersected with each verified DT One operator's minimum, maximum, and increment. Stricter provider constraints always take precedence.
+- Apply PGNT's 10–3000 customer amount policy in each destination currency, intersected with each verified DT One operator's minimum, maximum, and increment. Stricter provider constraints always take precedence.
 - Keep pricing, FX, fees, tax/rounding rules, and availability configurable per country/operator, while retaining EUR as the current Stripe checkout currency until a separately reviewed multi-payment-currency feature is approved.
 - Keep Flutter country selection, validation, localization, product display, and checkout flows data-driven from backend capabilities rather than hardcoded country branches.
 - A new country must pass its own catalog identity, currency/FX, pricing, amount-range, Stripe sandbox, DT One pre-production, callback, refund/reconciliation, and localization tests before activation.
