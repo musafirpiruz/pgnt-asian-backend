@@ -2081,7 +2081,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     _loadRegistryOperators(country.code);
   }
 
-  void handlePhoneChanged(String _) {
+  void handlePhoneChanged(String value) {
     if (mounted) setState(() {});
     _applyDetectedAfghanOperator();
   }
