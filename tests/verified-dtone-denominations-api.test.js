@@ -16,6 +16,7 @@ test('fixed denomination discovery is backed only by active verified DT One mapp
     'country_registry', 'country_operators', 'country_operator_products',
     'product_catalog', "c.status = 'active'", 'o.active = TRUE',
     'o.verified_at IS NOT NULL', 'cop.active = TRUE',
+    'cop.verified_at IS NOT NULL',
     'cop.provider_operator_id = o.provider_operator_id',
     'cop.provider_product_id = p.product_id::text',
     'p.active = TRUE', 'p.amount IS NOT NULL',
