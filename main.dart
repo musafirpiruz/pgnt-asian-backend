@@ -1387,7 +1387,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
   int _registryOperatorsRequestGeneration = 0;
-  int selectedAmount = 75;
+  int selectedAmount = 10;
   int selectedTab = 0;
   bool isLoading = false;
   bool isQuoteLoading = false;
@@ -2581,7 +2581,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
     final enteredAmount = int.tryParse(customAmountController.text.trim());
     if (enteredAmount == null ||
-        enteredAmount < 75 ||
+        enteredAmount < 10 ||
         enteredAmount > 3000 ||
         enteredAmount != selectedAmount) {
       showMessage('لومړی د ۱۰ او ۳۰۰۰ ترمنځ مبلغ ولیکئ او د تایید نښه کېکاږئ.');
