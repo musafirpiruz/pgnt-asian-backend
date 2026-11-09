@@ -97,5 +97,5 @@ test('customer phone validation uses registry digit bounds when country metadata
   assert.ok(validator.includes('country.phoneMinDigits'));
   assert.ok(validator.includes('country.phoneMaxDigits'));
   assert.ok(validator.includes('country.callingCode'));
-  assert.ok(validator.includes('country: selectedCountry'));
+  assert.match(flutter, /isValidPhone\(selectedCountry\.code,\s*phone,\s*country:\s*selectedCountry\)/);
 });
