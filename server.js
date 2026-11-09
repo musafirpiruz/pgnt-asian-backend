@@ -1219,6 +1219,55 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
   }
 });
 
+// Public, read-only fixed-denomination discovery. Only explicitly mapped,
+// verified and enabled DT One products are exposed to customers.
+app.get('/api/countries/:countryCode/operators/:operatorKey/products', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Product catalog is not configured.' });
+  const countryCode = normalizeCountry(req.params.countryCode);
+  const operatorKey = String(req.params.operatorKey || '').trim();
+  if (!/^[A-Z]{2}$/.test(countryCode) || !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) {
+    return res.status(400).json({ error: 'Invalid country or operator.' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT p.id AS product_id, p.product_id AS dtone_product_id,
+              p.amount AS destination_amount, p.currency AS destination_currency
+         FROM country_registry c
+         JOIN country_operators o ON o.country_code = c.country_code
+         JOIN country_operator_products cop
+           ON cop.country_code = o.country_code AND cop.operator_key = o.operator_key
+         JOIN product_catalog p ON p.id = cop.product_catalog_id
+        WHERE c.country_code = $1 AND c.status = 'active'
+          AND o.operator_key = $2 AND o.active = TRUE
+          AND o.provider_operator_id IS NOT NULL
+          AND BTRIM(o.provider_operator_id) <> ''
+          AND o.verified_at IS NOT NULL
+          AND cop.active = TRUE
+          AND cop.provider_operator_id = o.provider_operator_id
+          AND cop.provider_product_id = p.product_id::text
+          AND p.country = c.country_code
+          AND p.currency = c.destination_currency
+          AND p.active = TRUE AND p.amount IS NOT NULL
+        ORDER BY p.amount ASC, p.product_id ASC`,
+      [countryCode, operatorKey]
+    );
+    return res.json({
+      countryCode, operatorKey,
+      products: result.rows.map(row => ({
+        productId: Number(row.product_id),
+        dtoneProductId: String(row.dtone_product_id),
+        amount: Number(row.destination_amount),
+        currency: String(row.destination_currency),
+      })),
+    });
+  } catch (error) {
+    console.error('Verified DT One denomination lookup failed.', {
+      countryCode, operatorKey, errorCode: error?.code || null,
+    });
+    return res.status(503).json({ error: 'Verified product catalog is temporarily unavailable.' });
+  }
+});
+
 // Public, read-only list of configured payment currencies.
 // Only EUR is eligible for checkout until FX, fees, and checkout support are verified.
 app.get('/api/payment-currencies', async (req, res) => {
