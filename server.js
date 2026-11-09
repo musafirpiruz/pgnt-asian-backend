@@ -5643,9 +5643,24 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         rejected.push({ productId: String(item.id), reason: 'EUR price cannot be safely represented in cents.' });
         continue;
       }
+      const providerOperatorId = String(item?.operator?.id ?? '').trim();
+      if (!providerOperatorId) {
+        rejected.push({ productId: String(item.id), reason: 'DT One operator ID is missing; the product cannot be mapped to a canonical network.' });
+        continue;
+      }
+      const operatorKey = operator.trim().toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\\u0300-\\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 100);
+      if (!operatorKey) {
+        rejected.push({ productId: String(item.id), reason: 'DT One operator name cannot produce a stable registry key.' });
+        continue;
+      }
       candidates.push({
-        productId: String(item.id), operator, amount, currency,
-        retailPriceEur: retailEur, wholesalePriceEur: wholesaleEur,
+        productId: String(item.id), operator, operatorKey, providerOperatorId,
+        amount, currency, retailPriceEur: retailEur, wholesalePriceEur: wholesaleEur,
         retailCents, wholesaleCents,
       });
     }
@@ -5736,6 +5751,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         detailProductsVerified: detailedProducts.length,
         validProducts: candidates.length,
         newProducts: toInsert.length,
+        operatorMappingsPrepared: confirmImport ? candidates.length : 0,
         alreadyPresentCount: alreadyPresent.length,
         conflictCount: conflicts.length,
         rejectedCount: rejected.length,
@@ -5768,13 +5784,75 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         );
         if (result.rowCount === 1) imported.push(result.rows[0]);
       }
+
+      // Prepare verified canonical operator and product links while keeping
+      // every operator, mapping, and catalog product inactive. This makes the
+      // customer operator endpoint ready for a later, separately confirmed
+      // activation without trusting provider display names as identity.
+      let mappingsPrepared = 0;
+      for (const product of candidates) {
+        const catalogRow = await client.query(
+          `SELECT id, country, operator, amount, currency, wholesale_price_eur_cents
+             FROM product_catalog
+            WHERE product_id = $1
+            FOR UPDATE`,
+          [product.productId]
+        );
+        if (catalogRow.rowCount !== 1) {
+          throw new Error(`Imported DT One product ${product.productId} is missing from the local catalog.`);
+        }
+        const local = catalogRow.rows[0];
+        if (local.country !== country ||
+            String(local.operator).trim().toLowerCase() !== product.operator.trim().toLowerCase() ||
+            Number(local.amount) !== product.amount ||
+            String(local.currency).trim().toUpperCase() !== product.currency ||
+            Number(local.wholesale_price_eur_cents) !== product.wholesaleCents) {
+          throw new Error(`Existing local product ${product.productId} conflicts with the freshly verified DT One product; no mappings were changed.`);
+        }
+
+        const operatorRow = await client.query(
+          `INSERT INTO country_operators
+             (country_code, provider, provider_operator_id, operator_key,
+              display_name, active, verified_at, created_at, updated_at)
+           VALUES ($1, 'dtone', $2, $3, $4, FALSE, NOW(), NOW(), NOW())
+           ON CONFLICT (country_code, operator_key) DO UPDATE
+             SET display_name = EXCLUDED.display_name,
+                 verified_at = NOW(),
+                 updated_at = NOW()
+             WHERE country_operators.provider = 'dtone'
+               AND country_operators.provider_operator_id = EXCLUDED.provider_operator_id
+           RETURNING id, operator_key, provider_operator_id`,
+          [country, product.providerOperatorId, product.operatorKey, product.operator]
+        );
+        if (operatorRow.rowCount !== 1) {
+          throw new Error(`DT One operator identity conflict for ${product.operator}; manual review is required.`);
+        }
+
+        const mapping = await client.query(
+          `INSERT INTO country_operator_products
+             (country_code, operator_key, product_catalog_id, active, verified_at, created_at, updated_at)
+           VALUES ($1, $2, $3, FALSE, NOW(), NOW(), NOW())
+           ON CONFLICT (country_code, operator_key, product_catalog_id) DO UPDATE
+             SET verified_at = NOW(), updated_at = NOW()
+           RETURNING id`,
+          [country, product.operatorKey, local.id]
+        );
+        if (mapping.rowCount !== 1) {
+          throw new Error(`Could not prepare the verified product mapping for ${product.productId}.`);
+        }
+        mappingsPrepared += 1;
+      }
       await client.query('COMMIT');
       return res.status(200).json({
         ...summary,
         importedCount: imported.length,
         imported,
+        mappingsPrepared,
+        operatorsRemainDisabled: true,
+        productMappingsRemainDisabled: true,
+        productsRemainDisabled: true,
         importConfirmed: true,
-        note: 'Verified country products were added to the local catalog as disabled. Existing products and conflicts were preserved. Review country pricing and product readiness before any manual activation.',
+        note: 'Verified DT One products and canonical operator mappings were prepared as inactive. Customer discovery remains disabled until a separate activation review confirms country, operator, mapping, and pricing readiness.',
       });
     } catch (dbError) {
       try { await client.query('ROLLBACK'); } catch (_) {}
