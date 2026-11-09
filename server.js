@@ -807,7 +807,7 @@ async function getProduct(client, productId, requestedCountry = null, operator =
          p.currency,
          p.product_id AS dtone_product_id,
          p.operator AS name,
-         NULL::text AS description,
+         COALESCE(p.product_name, p.description, '') AS description,
          p.amount AS local_amount,
          p.price_eur_cents,
          p.wholesale_price_eur_cents,
@@ -829,11 +829,14 @@ async function getProduct(client, productId, requestedCountry = null, operator =
          AND o.verified_at IS NOT NULL
          AND cop.active = TRUE
          AND cop.verified_at IS NOT NULL
+         AND cop.provider_operator_id = o.provider_operator_id
+         AND cop.provider_product_id = p.product_id::text
          AND p.country = c.country_code
-         AND p.amount = $3
+         AND p.amount = $4
          AND p.currency = c.destination_currency
+         AND ($3::bigint IS NULL OR p.id = $3::bigint)
        LIMIT 2`,
-      [normalizeCountry(requestedCountry), String(options.operatorKey), amount]
+      [normalizeCountry(requestedCountry), String(options.operatorKey), options.catalogProductId || null, amount]
     );
     if (result.rowCount > 1) {
       throw new Error('Product selection is ambiguous; select a verified operator product.');
@@ -1189,6 +1192,10 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              AND cop.operator_key = o.operator_key
              AND cop.active = TRUE
              AND cop.verified_at IS NOT NULL
+             AND cop.provider_operator_id = o.provider_operator_id
+             AND cop.provider_product_id = p.product_id::text
+             AND p.active = TRUE
+             AND p.wholesale_price_eur_cents > 0
              AND p.country = c.country_code
              AND p.currency = c.destination_currency
          )
@@ -1216,6 +1223,58 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
     return res.status(503).json({
       error: 'Country operator registry is temporarily unavailable.',
     });
+  }
+});
+
+// Public, read-only fixed-denomination discovery. Only explicitly mapped,
+// verified and enabled DT One products are exposed to customers.
+app.get('/api/countries/:countryCode/operators/:operatorKey/products', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Product catalog is not configured.' });
+  const countryCode = normalizeCountry(req.params.countryCode);
+  const operatorKey = String(req.params.operatorKey || '').trim();
+  if (!/^[A-Z]{2}$/.test(countryCode) || !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) {
+    return res.status(400).json({ error: 'Invalid country or operator.' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT p.id AS product_id, p.product_id AS dtone_product_id,
+              p.amount AS destination_amount, p.currency AS destination_currency,
+              COALESCE(p.product_name, p.description, '') AS product_name
+         FROM country_registry c
+         JOIN country_operators o ON o.country_code = c.country_code
+         JOIN country_operator_products cop
+           ON cop.country_code = o.country_code AND cop.operator_key = o.operator_key
+         JOIN product_catalog p ON p.id = cop.product_catalog_id
+        WHERE c.country_code = $1 AND c.status = 'active'
+          AND o.operator_key = $2 AND o.active = TRUE
+          AND o.provider_operator_id IS NOT NULL
+          AND BTRIM(o.provider_operator_id) <> ''
+          AND o.verified_at IS NOT NULL
+          AND cop.active = TRUE
+          AND cop.verified_at IS NOT NULL
+          AND cop.provider_operator_id = o.provider_operator_id
+          AND cop.provider_product_id = p.product_id::text
+          AND p.country = c.country_code
+          AND p.currency = c.destination_currency
+          AND p.active = TRUE AND p.amount IS NOT NULL
+        ORDER BY p.amount ASC, p.product_id ASC`,
+      [countryCode, operatorKey]
+    );
+    return res.json({
+      countryCode, operatorKey,
+      products: result.rows.map(row => ({
+        productId: Number(row.product_id),
+        dtoneProductId: String(row.dtone_product_id),
+        amount: Number(row.destination_amount),
+        currency: String(row.destination_currency),
+        productName: String(row.product_name || ''),
+      })),
+    });
+  } catch (error) {
+    console.error('Verified DT One denomination lookup failed.', {
+      countryCode, operatorKey, errorCode: error?.code || null,
+    });
+    return res.status(503).json({ error: 'Verified product catalog is temporarily unavailable.' });
   }
 });
 
@@ -1783,14 +1842,15 @@ app.get('/api/pricing/quote', async (req, res) => {
   const operator = String(req.query.operator || '').trim();
   const operatorKey = String(req.query.operatorKey || '').trim();
   const amount = Number(req.query.amount);
-  if ((!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) || !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
+  const catalogProductId = req.query.productCatalogId == null ? null : Number(req.query.productCatalogId);
+  if ((catalogProductId !== null && (!Number.isSafeInteger(catalogProductId) || catalogProductId <= 0)) || (!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) || !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
     return res.status(400).json({ error: 'Select a valid operator and amount.' });
   }
   const countryConfig = await getActiveCountryConfig(country);
   if (!countryConfig) return res.status(400).json({ error: 'Select an active DT One destination.' });
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true, operatorKey: operatorKey || null });
+    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true, operatorKey: operatorKey || null, catalogProductId });
     const basePricing = await getPricingSettings(client, country);
     const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
@@ -2075,10 +2135,11 @@ app.post('/api/payments/checkout', express.json({ limit: '100kb' }), async (req,
 
     const product = await getProduct(
       client,
-      input.productId,      input.country,
+      input.productId,
+      input.country,
       input.operator,
       input.amount,
-      { operatorKey: input.operatorKey || null }
+      { operatorKey: input.operatorKey || null, catalogProductId: input.productId || null }
     );
 
     if (product.country !== input.country) {

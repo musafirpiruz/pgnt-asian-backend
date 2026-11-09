@@ -222,3 +222,27 @@ test('Afghan prefix auto-detection matches stable operator keys, not localized d
   assert.match(detector, /case 'SALAAM'/);
   assert.doesNotMatch(detector, /operator\.name\.toLowerCase\(\) == detectedName/);
 });
+
+
+test('Flutter fixed denominations come only from the verified DT One product endpoint', () => {
+  assert.match(flutter, /api\/countries\/\$\{Uri\.encodeComponent\(countryCode\)\}\/operators\/\$\{Uri\.encodeComponent\(operatorKey\)\}\/products/);
+  assert.match(flutter, /_verifiedFixedProductsOperatorKey/);
+  assert.match(flutter, /dtoneProductId/);
+  assert.match(flutter, /fixedProducts\.isNotEmpty/);
+  assert.match(flutter, /api\/pricing\/quote/);
+  assert.match(flutter, /د دې هېواد لپاره لا د DT One له خوا تایید شوې او فعاله شبکه\/محصول نشته/);
+  assert.doesNotMatch(flutter, /rechargeAmounts/);
+});
+
+test('Flutter clears verified fixed denominations when country or operator changes', () => {
+  assert.match(flutter, /_verifiedFixedProducts = \[\]/);
+  assert.match(flutter, /_verifiedFixedProductsOperatorKey = null/);
+});
+
+
+test('Flutter keeps separate DT One bundles even when destination amounts match', () => {
+  assert.match(flutter, /_selectedFixedProductCatalogId/);
+  assert.match(flutter, /item\['productName'\]/);
+  assert.match(flutter, /'productCatalogId': '\$_selectedFixedProductCatalogId'/);
+  assert.match(flutter, /selected: _selectedFixedProductCatalogId == catalogId/);
+});

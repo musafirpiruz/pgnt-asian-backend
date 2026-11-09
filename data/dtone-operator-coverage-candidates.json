@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Candidate network coverage inventory for DT One read-only discovery; candidate names are not proof of provider availability.",
+  "paymentCurrency": "EUR",
+  "applicationFeeEurCents": 49,
+  "countries": [
+    {
+      "countryCode": "AF",
+      "dtoneCountryIsoCode": "AFG",
+      "destinationCurrency": "AFN",
+      "candidates": [
+        "Roshan",
+        "Etisalat",
+        "ATOMA",
+        "AWCC",
+        "Salaam"
+      ]
+    },
+    {
+      "countryCode": "PK",
+      "dtoneCountryIsoCode": "PAK",
+      "destinationCurrency": "PKR",
+      "candidates": [
+        "Jazz",
+        "Zong",
+        "Ufone",
+        "Telenor"
+      ]
+    },
+    {
+      "countryCode": "IN",
+      "dtoneCountryIsoCode": "IND",
+      "destinationCurrency": "INR",
+      "candidates": [
+        "Airtel",
+        "Jio",
+        "Vi"
+      ]
+    },
+    {
+      "countryCode": "BD",
+      "dtoneCountryIsoCode": "BGD",
+      "destinationCurrency": "BDT",
+      "candidates": [
+        "Airtel",
+        "Grameenphone",
+        "Robi",
+        "Banglalink"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "countryCode": "AF",
+      "candidateOperatorDisplayName": "ATOMA",
+      "csvOperatorName": "ATOMA Afghanistan",
+      "csvProductCount": 119,
+      "status": "csv_products_unverified"
+    },
+    {
+      "countryCode": "PK",
+      "candidateOperatorDisplayName": "Jazz",
+      "csvOperatorName": "Jazz Pakistan",
+      "csvProductCount": 197,
+      "status": "csv_products_unverified"
+    },
+    {
+      "countryCode": "IN",
+      "candidateOperatorDisplayName": "Airtel",
+      "csvOperatorName": "Airtel India",
+      "csvProductCount": 39,
+      "status": "csv_products_unverified"
+    },
+    {
+      "countryCode": "BD",
+      "candidateOperatorDisplayName": "Airtel",
+      "csvOperatorName": "Airtel Bangladesh",
+      "csvProductCount": 103,
+      "status": "csv_products_unverified"
+    }
+  ],
+  "rules": {
+    "candidatesAreNotProviderVerified": true,
+    "providerOperatorIdMustComeFromDtOne": true,
+    "productIdsMustComeFromDtOne": true,
+    "wholesalePricesMustBeVerifiedInEur": true,
+    "fixedAndRangedProductsMustRemainDistinct": true,
+    "productsAndMappingsDefaultActive": false,
+    "customerDiscoveryRequiresVerifiedActiveMappings": true,
+    "noInventedProviderIdsOrProductIds": true
+  },
+  "totals": {
+    "candidateOperators": 16,
+    "operatorsWithCsvEvidence": 4,
+    "operatorsAwaitingProviderDiscovery": 12
+  },
+  "nextStep": "Use the authenticated admin read-only DT One operator and product discovery endpoints for each country, reconcile exact provider IDs and product IDs, then generate an inactive import preview. Do not activate products automatically."
+}

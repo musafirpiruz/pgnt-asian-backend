@@ -28,7 +28,7 @@ test('registry product resolution uses server-side verified mapping and paramete
   for (const token of [
     'country_operator_products', 'product_catalog', 'country_registry',
     'o.operator_key = $2', 'cop.verified_at IS NOT NULL',
-    'o.verified_at IS NOT NULL', 'p.amount = $3',
+    'o.verified_at IS NOT NULL', 'p.amount = $4', '($3::bigint IS NULL OR p.id = $3::bigint)',
     'p.currency = c.destination_currency',
   ]) assert.ok(resolver.includes(token), 'missing secure resolver rule: ' + token);
   assert.doesNotMatch(resolver, /providerOperatorId|req\.body/);
@@ -44,6 +44,10 @@ test('quote and checkout both pass operatorKey to the same server resolver', () 
 test('operator listing excludes operators without active verified product mappings', () => {
   const route = section("app.get('/api/countries/:countryCode/operators'", '// Public, read-only list of configured payment currencies.');
   assert.match(route, /EXISTS\s*\([\s\S]*country_operator_products[\s\S]*cop\.active = TRUE[\s\S]*cop\.verified_at IS NOT NULL/);
+  assert.match(route, /cop\.provider_operator_id = o\.provider_operator_id/);
+  assert.match(route, /cop\.provider_product_id = p\.product_id::text/);
+  assert.match(route, /p\.active = TRUE/);
+  assert.match(route, /p\.wholesale_price_eur_cents > 0/);
   assert.match(route, /localized\.operator_id = o\.id/);
   assert.doesNotMatch(route, /localized\.country_code|localized\.operator_key/);
 });
