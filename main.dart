@@ -2366,10 +2366,39 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildCustomAmountField() {
+    final operator = selectedOperator;
+    final rangedProduct = operator == null || _rangedProductsCountry != selectedCountry.code
+        ? null
+        : _rangedProducts.cast<Map<String, dynamic>?>().firstWhere(
+            (item) => item != null &&
+                (item['operatorKey']?.toString() ?? '') == (operator.operatorKey ?? ''),
+            orElse: () => null,
+          );
+    final providerMin = int.tryParse('${rangedProduct?['minAmount']}') ?? 0;
+    final providerMax = int.tryParse('${rangedProduct?['maxAmount']}') ?? 0;
+    final increment = int.tryParse('${rangedProduct?['increment']}') ?? 0;
+    final hasVerifiedRange = rangedProduct != null &&
+        providerMin > 0 && providerMax >= providerMin && increment > 0;
+
+    final suggestions = <int>[];
+    if (hasVerifiedRange) {
+      var candidate = providerMin;
+      for (var i = 0; i < 6 && candidate <= providerMax; i++) {
+        suggestions.add(candidate);
+        candidate += increment;
+      }
+    }
+
     void applyAmount(String raw) {
       final value = int.tryParse(raw.trim());
-      if (value == null || value < 10 || value > 3000) {
-        showMessage('مبلغ باید له ۱۰ څخه تر ۳۰۰۰ پورې وي.');
+      if (value == null || value < 75 || value > 3000) {
+        showMessage('مبلغ باید له ۷۵ څخه تر ۳۰۰۰ پورې وي.');
+        return;
+      }
+      if (hasVerifiedRange &&
+          (value < providerMin || value > providerMax ||
+              (value - providerMin) % increment != 0)) {
+        showMessage('دا شبکه یوازې د تایید شوي مقدارونو او واټن ملاتړ کوي: $providerMin–$providerMax، واټن $increment.');
         return;
       }
       setState(() {
@@ -2380,31 +2409,56 @@ class _PgntHomePageState extends State<PgntHomePage> {
       loadPriceQuote();
     }
 
-    return TextField(
-      controller: customAmountController,
-      keyboardType: TextInputType.number,
-      maxLength: 4,
-      decoration: InputDecoration(
-        labelText: '${t('customAmount')} (${selectedCountry.currency})',
-        hintText: '75 - 3000',
-        helperText: 'له ۱۰ څخه تر ۳۰۰۰ پورې هر مطلوب مبلغ ولیکئ.',
-        counterText: '',
-        prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
-        suffixIcon: IconButton(
-          tooltip: 'Check amount and price',
-          icon: const Icon(Icons.check_circle_outline, color: primaryRed),
-          onPressed: () => applyAmount(customAmountController.text),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: customAmountController,
+          keyboardType: TextInputType.number,
+          maxLength: 4,
+          decoration: InputDecoration(
+            labelText: 'د مقدار لټون (${selectedCountry.currency})',
+            hintText: hasVerifiedRange
+                ? '$providerMin – $providerMax'
+                : '۷۵ – ۳۰۰۰',
+            helperText: hasVerifiedRange
+                ? 'د ${operator?.name ?? ''} تایید شوی حد؛ واټن: $increment'
+                : 'مقدار ولیکئ؛ د شبکې تایید او وروستی قیمت به له DT One څخه وکتل شي.',
+            counterText: '',
+            prefixIcon: const Icon(Icons.search, color: primaryRed),
+            suffixIcon: IconButton(
+              tooltip: 'Check amount and price',
+              icon: const Icon(Icons.check_circle_outline, color: primaryRed),
+              onPressed: () => applyAmount(customAmountController.text),
+            ),
+          ),
+          onChanged: (_) {
+            if (priceQuote != null || priceQuoteError != null) {
+              setState(() {
+                priceQuote = null;
+                priceQuoteError = null;
+              });
+            }
+          },
+          onSubmitted: applyAmount,
         ),
-      ),
-      onChanged: (_) {
-        if (priceQuote != null) {
-          setState(() {
-            priceQuote = null;
-            priceQuoteError = null;
-          });
-        }
-      },
-      onSubmitted: applyAmount,
+        if (suggestions.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('د دې شبکې تایید شوي مقدارونه:', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: suggestions.map((value) => ActionChip(
+              label: Text('$value ${selectedCountry.currency}'),
+              onPressed: () {
+                customAmountController.text = '$value';
+                applyAmount('$value');
+              },
+            )).toList(),
+          ),
+        ],
+      ],
     );
   }
 
