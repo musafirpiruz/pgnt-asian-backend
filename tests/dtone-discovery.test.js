@@ -210,7 +210,7 @@ test('DT One operator discovery remains GET-only and does not mutate catalog or 
 
 test('DT One discovery filters by documented product type and exposes ranged recharge capabilities', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   const route = server.slice(start, end);
   assert.match(route, /allowedProductTypes/);
   assert.match(route, /url\.searchParams\.set\('type', requestedType\)/);
@@ -227,7 +227,7 @@ test('DT One discovery filters by documented product type and exposes ranged rec
 
 test('DT One ranged amount discovery matches values inside provider min/max bounds', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   const route = server.slice(start, end);
   assert.match(route, /const rangedCapability = isRanged \? parseRangedProductCapability\(product\) : null/);
   assert.match(route, /isValidRangedDestinationAmount\(amountQuery, rangedCapability\)/);
@@ -237,7 +237,7 @@ test('DT One ranged amount discovery matches values inside provider min/max boun
 
 test('DT One product discovery remains a read-only candidate search, not an approval or activation', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   const route = server.slice(start, end);
   assert.match(route, /adminApprovalRequiredForEachAmount: false/);
   assert.match(route, /catalogActivation: 'unchanged'/);
