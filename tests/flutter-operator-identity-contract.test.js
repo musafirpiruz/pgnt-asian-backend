@@ -30,7 +30,7 @@ test('quote request forwards operatorKey but never trusts or forwards providerOp
 
 test('checkout request forwards operatorKey but never trusts or forwards providerOperatorId', () => {
   const start = flutter.indexOf('Future<void> startPayment()');
-  const end = flutter.indexOf('Future<void>', start + 20);
+  const end = flutter.indexOf('Widget buildHistory()', start);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
   assert.ok(method.includes("'operatorKey': selectedOperator!.operatorKey!"));
