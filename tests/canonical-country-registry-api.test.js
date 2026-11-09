@@ -110,3 +110,39 @@ test('confirmed DT One catalog import prepares verified operator mappings withou
   assert.match(route, /operatorsRemainDisabled: true/);
   assert.match(route, /productMappingsRemainDisabled: true/);
 });
+
+test('fixed-value DT One activation is explicit, provider-verified, and price-safe', () => {
+  const start = server.indexOf("app.post('/api/admin/catalog/:productId/activate'");
+  const end = server.indexOf("// Read-only verification of a catalog product", start);
+  assert.ok(start >= 0 && end > start);
+  const route = server.slice(start, end);
+  assert.match(route, /confirmActivation !== true/);
+  assert.match(route, /FOR UPDATE OF p, o, cop/);
+  assert.match(route, /country_operator_products/);
+  assert.match(route, /provider_operator_id/);
+  assert.match(route, /verified_at/);
+  assert.match(route, /parseRangedProductCapability\(providerProduct\)/);
+  assert.match(route, /getActiveCountryConfig\(local\.country, client\)/);
+  assert.match(route, /resolveProductPricing\(/);
+  assert.match(route, /calculateFinalPrice\(/);
+  assert.match(route, /pricePreview\.finalPriceCents !== Number\(local\.price_eur_cents\)/);
+  assert.match(route, /UPDATE country_operators[\s\S]*active = TRUE/);
+  assert.match(route, /UPDATE country_operator_products[\s\S]*active = TRUE/);
+  assert.match(route, /UPDATE product_catalog SET active = TRUE/);
+  assert.match(route, /await client\.query\('COMMIT'\)/);
+  assert.match(route, /await client\.query\('ROLLBACK'\)/);
+  assert.match(route, /transactionCreated: false/);
+  assert.match(route, /paymentCreated: false/);
+});
+
+test('fixed-value activation cannot activate ranged products or mismatched provider prices', () => {
+  const start = server.indexOf("app.post('/api/admin/catalog/:productId/activate'");
+  const end = server.indexOf("// Read-only verification of a catalog product", start);
+  const route = server.slice(start, end);
+  assert.match(route, /if \(rangedCapability \|\|/);
+  assert.match(route, /providerCountryIso !==/);
+  assert.match(route, /providerOperatorId !==/);
+  assert.match(route, /providerAmount !== Number\(local\.amount\)/);
+  assert.match(route, /providerRetailCents !== Number\(local\.price_eur_cents\)/);
+  assert.match(route, /providerWholesaleCents !== Number\(local\.wholesale_price_eur_cents\)/);
+});
