@@ -60,7 +60,7 @@ async function enforceRangedQuoteRateLimit(req, res, next) {
   }
 }
 
-const PGNT_MIN_AMOUNT = 10;
+const PGNT_MIN_AMOUNT = 75;
 const PGNT_MAX_AMOUNT = 3000;
 
 const app = express();
@@ -1184,7 +1184,7 @@ app.get('/api/ranged-products', async (req, res) => {
         return [];
       }
 
-      // The customer-facing range is the intersection of PGNT's 10–3000
+      // The customer-facing range is the intersection of PGNT's 75–3000
       // policy and the provider's verified range/increment.
       const minAmount = providerMin +
         Math.ceil((Math.max(providerMin, PGNT_MIN_AMOUNT) - providerMin) / increment) * increment;
