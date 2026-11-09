@@ -75,8 +75,34 @@ class AppCountry {
     final callingCode = (json['callingCode'] ?? '').toString().trim();
     final minDigits = int.tryParse((json['phoneMinDigits'] ?? '').toString());
     final maxDigits = int.tryParse((json['phoneMaxDigits'] ?? '').toString());
-    if (!RegExp(r'^[A-Z]{2}
-
+    final validCallingCode = callingCode.startsWith('+') &&
+        callingCode.length >= 2 &&
+        callingCode.length <= 4 &&
+        RegExp('^[0-9]+$').hasMatch(callingCode.substring(1));
+    if (code.length != 2 || !RegExp('^[A-Z][A-Z]$').hasMatch(code) ||
+        currency.length != 3 || !RegExp('^[A-Z][A-Z][A-Z]$').hasMatch(currency) ||
+        name.isEmpty || !validCallingCode ||
+        minDigits == null || maxDigits == null ||
+        minDigits < 1 || maxDigits < minDigits || maxDigits > 15) {
+      throw const FormatException('Invalid country registry entry.');
+    }
+    const symbols = {
+      'AFN': '؋', 'PKR': 'Rs', 'INR': '₹', 'BDT': '৳',
+      'EUR': '€', 'USD': r'$', 'GBP': '£', 'NPR': 'रू',
+      'LKR': 'Rs', 'KES': 'KSh', 'NGN': '₦', 'GHS': '₵',
+    };
+    return AppCountry(
+      code: code,
+      name: name,
+      flag: '',
+      currency: currency,
+      symbol: symbols[currency] ?? currency,
+      callingCode: callingCode,
+      phoneMinDigits: minDigits,
+      phoneMaxDigits: maxDigits,
+    );
+  }
+}
 const List<AppCountry> countries = [
   AppCountry(
     code: 'AF',
@@ -523,7 +549,7 @@ bool isValidPhone(
 }) {
   final phone = normalizePhone(value);
   final digits = phone.startsWith('+') ? phone.substring(1) : phone;
-  if (!RegExp(r'^\\d+$').hasMatch(digits)) return false;
+  if (!RegExp('^[0-9]+').hasMatch(digits)) return false;
 
   // Registry metadata is authoritative. Legacy bundled countries remain
   // supported only as an offline UI fallback; server checkout still fails closed.
