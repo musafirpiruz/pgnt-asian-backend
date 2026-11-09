@@ -79,3 +79,25 @@ test('rounding invariant holds across representative costs, fees, and Stripe rat
     }
   }
 });
+
+
+test('ATOMA 75 AFN DT One product 7186 keeps the PGNT app fee separate from Stripe fees', () => {
+  // DT One Shop screenshot: product 7186, 75 AFN, wholesale EUR 1.26,
+  // account currency EUR, FX 59.52 AFN/EUR. Proposed PGNT settings:
+  // app fee EUR 0.49; Stripe estimate 1.5% + EUR 0.25 fixed.
+  const amountAfn = 75;
+  const afnPerEur = 59.52;
+  const convertedWholesaleCents = Math.round((amountAfn / afnPerEur) * 100);
+  assert.equal(convertedWholesaleCents, 126, '75 AFN at 59.52 AFN/EUR is about EUR 1.26');
+
+  const quote = quoteCents({
+    wholesaleCents: 126,
+    appFeeCents: 49,
+    stripePercent: 1.5,
+    stripeFixedCents: 25,
+  });
+
+  assert.equal(quote.finalCents, 204, 'estimated customer price must be EUR 2.04');
+  assert.equal(quote.stripeFeeCents, 29, 'estimated Stripe fee must be EUR 0.29 and separate');
+  assert.equal(quote.retainedCents, 175, 'net retained must be EUR 1.26 wholesale + EUR 0.49 PGNT fee');
+});
