@@ -629,7 +629,7 @@ async function getPricingSettings(client, country) {
     `SELECT
        country,
        fee_eur_cents,
-       COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
+       local_currency_per_eur,
        afn_per_eur,
        bonus_percent,
        stripe_fee_percent,
@@ -662,9 +662,17 @@ async function getPricingSettings(client, country) {
     'fee in EUR cents'
   );
 
-  const localCurrencyPerEur = Number(settings.local_currency_per_eur);
+  // Never reuse the legacy AFN rate for another destination currency.
+  // Only Afghanistan may fall back to the historical afn_per_eur column.
+  const configuredFx = settings.local_currency_per_eur;
+  const legacyAfnFx = code === 'AF' ? settings.afn_per_eur : null;
+  const localCurrencyPerEur = Number(
+    configuredFx !== null && configuredFx !== undefined
+      ? configuredFx
+      : legacyAfnFx
+  );
   if (!Number.isFinite(localCurrencyPerEur) || localCurrencyPerEur <= 0) {
-    throw new Error('Invalid local-currency-per-EUR exchange rate.');
+    throw new Error(`A valid ${countryCurrency(code) || 'local'}-per-EUR exchange rate is not configured for ${code}.`);
   }
 
   const bonusPercent = Number(settings.bonus_percent);
@@ -986,9 +994,13 @@ async function getProductQuote(productId, country) {
       formattedFee: price.formattedFee,
       formattedFinalPrice: price.formattedFinalPrice,
       bonusPercent: price.bonusPercent,
-      exchangeRateAfnPerEur: pricing.afnPerEur,
-      marketEquivalentEur: product.currency === 'AFN' ? Number((product.localAmount / pricing.afnPerEur).toFixed(2)) : null,
-      marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
+      // Generic destination-currency FX fields for all configured markets.
+      exchangeRateLocalCurrencyPerEur: pricing.localCurrencyPerEur,
+      localCurrency: product.currency,
+      marketEquivalentEur: Number((product.localAmount / pricing.localCurrencyPerEur).toFixed(2)),
+      marketEquivalentEurFormatted: formatEuro(Math.round((product.localAmount / pricing.localCurrencyPerEur) * 100)),
+      // Deprecated compatibility field: populated only for Afghanistan.
+      exchangeRateAfnPerEur: product.currency === 'AFN' ? pricing.localCurrencyPerEur : null,
     };
   } finally {
     client.release();
