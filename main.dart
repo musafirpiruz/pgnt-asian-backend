@@ -1797,7 +1797,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
         _registryOperatorsError = null;
         _registryOperators = const [];
         _registryOperatorsCountry = countryCode;
-        selectedOperator = null;
         priceQuote = null;
         priceQuoteError = null;
       });
