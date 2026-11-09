@@ -1462,15 +1462,16 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), enforceRangedQu
   const productId = String(req.body?.productId || '').trim();
   const operatorKey = String(req.body?.operatorKey || '').trim();
   const amount = Number(req.body?.amount);
-  if (!isValidCountry(country) || !/^[1-9]\d*$/.test(productId) ||
+  const countryConfig = await getActiveCountryConfig(country);
+  if (!countryConfig || !/^[1-9]\d*$/.test(productId) ||
       !/^[a-zA-Z0-9._:-]{1,100}$/.test(operatorKey) ||
       !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
-    return res.status(400).json({ error: 'Select a valid country, ranged product, and amount.' });
+    return res.status(400).json({ error: 'Select an active DT One country, ranged product, and amount.' });
   }
 
   let phoneResult;
   try {
-    phoneResult = validatePhone(req.body?.phone || req.body?.phoneNumber, country);
+    phoneResult = await validateRegistryPhone(req.body?.phone || req.body?.phoneNumber, country);
     if (!phoneResult.valid) return res.status(400).json({ error: phoneResult.error });
   } catch (error) {
     return res.status(400).json({ error: error.message });
