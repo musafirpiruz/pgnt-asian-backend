@@ -1541,7 +1541,7 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), enforceRangedQu
       return res.status(400).json({ error: 'Amount is outside this provider product range or increment.' });
     }
 
-    const internationalPhone = `${SUPPORTED_COUNTRIES[country].callingCode}${phoneResult.phone}`;
+    const internationalPhone = `${countryConfig.calling_code}${phoneResult.phone}`;
     const requestFingerprint = fingerprintRangedQuote({
       country, productId, operatorKey, amount, phone: internationalPhone,
     });
