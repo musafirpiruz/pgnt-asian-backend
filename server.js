@@ -1140,12 +1140,8 @@ function classifyPricingQuoteError(error) {
 // Public discovery for ranged-value products. Only admin-activated products with
 // a verified provider capability are exposed; provider snapshots and wholesale
 // pricing evidence are deliberately never returned to the customer.
-const RANGED_COUNTRY_ISO3 = Object.freeze({
-  AF: 'AFG',
-  PK: 'PAK',
-  IN: 'IND',
-  BD: 'BGD',
-});
+// DT One country identity is resolved from country_registry.provider_country_code.
+// No country-specific ISO-3 mapping is maintained in application code.
 
 app.get('/api/ranged-products', async (req, res) => {
   if (!pool) {
@@ -1169,9 +1165,8 @@ app.get('/api/ranged-products', async (req, res) => {
               r.max_amount, r.amount_increment, o.provider_operator_id
        FROM dtone_ranged_products r
        JOIN country_registry c
-         ON c.country_code = CASE r.country_iso_code
-           WHEN 'AFG' THEN 'AF' WHEN 'PAK' THEN 'PK'
-           WHEN 'IND' THEN 'IN' WHEN 'BGD' THEN 'BD' ELSE NULL END
+         ON c.provider = 'dtone'
+        AND UPPER(BTRIM(c.provider_country_code)) = UPPER(BTRIM(r.country_iso_code))
         AND c.status = 'active'
         AND c.destination_currency = r.destination_currency
        JOIN country_operators o
@@ -1182,14 +1177,14 @@ app.get('/api/ranged-products', async (req, res) => {
         AND o.verified_at IS NOT NULL
         AND o.provider_operator_id IS NOT NULL
         AND BTRIM(o.provider_operator_id) <> ''
-       WHERE r.country_iso_code = $1
+       WHERE c.country_code = $1
          AND r.operator_key IS NOT NULL
          AND r.active = TRUE
          AND r.capability_verified_at IS NOT NULL
          AND r.accepted_calculation_modes ? 'DESTINATION_AMOUNT'
        ORDER BY r.operator_key, r.dtone_product_id
        LIMIT 100`,
-      [RANGED_COUNTRY_ISO3[country]]
+      [country]
     );
 
     const verified = [];
@@ -1362,7 +1357,6 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), enforceRangedQu
     return res.status(400).json({ error: error.message });
   }
 
-  const countryIso3 = RANGED_COUNTRY_ISO3[country];
   let orderId = null;
   let orderAccessToken = null;
   let providerCreatedResponse = null;
@@ -1371,14 +1365,22 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), enforceRangedQu
 
   try {
     const productResult = await client.query(
-      `SELECT dtone_product_id, operator_name, operator_key, destination_currency,
-              min_amount, max_amount, amount_increment, accepted_calculation_modes
-       FROM dtone_ranged_products
-       WHERE dtone_product_id = $1 AND country_iso_code = $2 AND operator_key = $3
-         AND active = TRUE AND capability_verified_at IS NOT NULL
-         AND accepted_calculation_modes ? 'DESTINATION_AMOUNT'
+      `SELECT r.dtone_product_id, r.operator_name, r.operator_key,
+              r.destination_currency, r.min_amount, r.max_amount,
+              r.amount_increment, r.accepted_calculation_modes,
+              c.destination_currency AS registry_currency
+       FROM dtone_ranged_products r
+       JOIN country_registry c
+         ON c.country_code = $3
+        AND c.provider = 'dtone'
+        AND UPPER(BTRIM(c.provider_country_code)) = UPPER(BTRIM(r.country_iso_code))
+        AND c.status = 'active'
+        AND c.destination_currency = r.destination_currency
+       WHERE r.dtone_product_id = $1 AND r.operator_key = $2
+         AND r.active = TRUE AND r.capability_verified_at IS NOT NULL
+         AND r.accepted_calculation_modes ? 'DESTINATION_AMOUNT'
        LIMIT 1`,
-      [productId, countryIso3, operatorKey]
+      [productId, operatorKey, country]
     );
     if (productResult.rowCount !== 1) {
       return res.status(404).json({ error: 'Verified ranged product is not available.' });
@@ -1394,7 +1396,7 @@ app.post('/api/ranged-quotes', express.json({ limit: '100kb' }), enforceRangedQu
       maxAmount: Number(row.max_amount),
       increment: Number(row.amount_increment),
     };
-    if (capability.destinationCurrency !== countryCurrency(country) ||
+    if (capability.destinationCurrency !== String(row.registry_currency).trim().toUpperCase() ||
         !isValidRangedDestinationAmount(amount, capability)) {
       return res.status(400).json({ error: 'Amount is outside this provider product range or increment.' });
     }
