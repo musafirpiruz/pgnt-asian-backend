@@ -5631,7 +5631,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
       const retailEur = Number(item?.prices?.retail?.amount);
       const wholesaleEur = Number(item?.prices?.wholesale?.amount);
-      if (!operator || currency !== countryCurrency(country) || !Number.isFinite(amount) || amount <= 0 ||
+      if (!operator || currency !== countryConfig.currency || !Number.isFinite(amount) || amount <= 0 ||
           !Number.isFinite(retailEur) || retailEur <= 0 ||
           !Number.isFinite(wholesaleEur) || wholesaleEur <= 0 || retailEur < wholesaleEur) {
         rejected.push({ productId: String(item.id), reason: 'Missing or invalid operator, denomination, country currency, retail EUR price, or wholesale EUR price.' });
@@ -5729,7 +5729,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
         countryIsoCode,
         country,
-        recipientCurrency: countryCurrency(country),
+        recipientCurrency: countryConfig.currency,
         pagesChecked,
         providerProductsSeen,
         uniqueProviderProducts: providerById.size,
