@@ -36,7 +36,7 @@ test('DT One product discovery allows an omitted amount filter', () => {
 
 test('DT One product discovery remains read-only', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf("// Read-only verification of a catalog product", start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   assert.ok(start >= 0 && end > start, 'product discovery route should be present');
   const route = server.slice(start, end);
   assert.match(route, /method: 'GET'/);
@@ -79,7 +79,7 @@ test('product-name denomination matching uses the selected country local currenc
 
 test('product discovery explicitly flags a partial result when the page safety limit is reached', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   const route = server.slice(start, end);
   assert.match(route, /let truncated = false/);
   assert.match(route, /if \(page === 20\) truncated = true/);
