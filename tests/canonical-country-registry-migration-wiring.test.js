@@ -54,3 +54,18 @@ test('country registry migration preserves existing FK definitions rather than f
   assert.match(migration, /child_record\.is_valid/);
   assert.doesNotMatch(migration, /REFERENCES country_registry\(country_code\) ON DELETE CASCADE',/);
 });
+
+test('fresh installs reconcile operator-product mappings after canonical registry migration 020', () => {
+  const registry = migrate.indexOf('const canonicalCountryRegistryVersion = "020_canonical_country_registry"');
+  const postRegistryMapping = migrate.indexOf('Post-registry mapping reconciliation completed');
+  const idempotency = migrate.indexOf('const rangedQuoteIdempotencyVersion = "021_ranged_quote_idempotency"');
+  assert.ok(registry >= 0 && postRegistryMapping > registry && idempotency > postRegistryMapping);
+  const block = migrate.slice(postRegistryMapping - 2600, idempotency);
+  assert.match(block, /CREATE TABLE IF NOT EXISTS country_operator_products/);
+  assert.match(block, /REFERENCES country_operators\(country_code, operator_key\)/);
+  assert.match(block, /REFERENCES product_catalog\(id\)/);
+  assert.match(block, /active BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(block, /verified_at TIMESTAMPTZ/);
+  assert.match(block, /INSERT INTO schema_migrations/);
+  assert.match(block, /missing columns/);
+});
