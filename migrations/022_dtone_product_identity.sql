@@ -1,6 +1,5 @@
 -- Migration 022: support complete DT One fixed-product identity and safe mapping.
 -- This is schema-only. It imports no CSV rows and activates no products or mappings.
-BEGIN;
 
 ALTER TABLE product_catalog
   ADD COLUMN IF NOT EXISTS product_name VARCHAR(240),
@@ -46,4 +45,3 @@ CREATE UNIQUE INDEX IF NOT EXISTS country_operator_products_provider_identity_ui
 CREATE INDEX IF NOT EXISTS idx_product_catalog_provider_product
   ON product_catalog(product_id);
 
-COMMIT;
