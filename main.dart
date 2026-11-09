@@ -1909,9 +1909,31 @@ class _PgntHomePageState extends State<PgntHomePage> {
     if (selectedCountry.code != 'AF') return;
     final detectedName = detectAfghanOperator(phoneController.text);
     if (detectedName == null) return;
+    // Registry display_name is localized (Pashto/Dari/etc.), so never
+    // compare it with an English prefix-detection label. Match the stable
+    // operator_key, which is independent of the selected app language.
+    bool matchesDetectedOperator(MobileOperator operator) {
+      final key = (operator.operatorKey ?? '').toLowerCase();
+      if (key.isEmpty) return false;
+      switch (detectedName.toUpperCase()) {
+        case 'AWCC':
+          return key.contains('awcc') || key.contains('afghan-wireless');
+        case 'ROSHAN':
+          return key.contains('roshan');
+        case 'ETISALAT':
+          return key.contains('etisalat');
+        case 'ATOMA':
+          return key.contains('atoma') || key.contains('mtn');
+        case 'SALAAM':
+          return key.contains('salaam') || key.contains('salam');
+        default:
+          return false;
+      }
+    }
+
     MobileOperator? detected;
     for (final operator in countryOperators) {
-      if (operator.name.toLowerCase() == detectedName.toLowerCase()) {
+      if (matchesDetectedOperator(operator)) {
         detected = operator;
         break;
       }
