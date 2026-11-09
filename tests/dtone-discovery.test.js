@@ -86,8 +86,8 @@ test('automatic country catalog discovery resolves configured countries through 
   const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
   assert.ok(start >= 0 && end > start, 'automatic country catalog sync route should exist');
   const route = server.slice(start, end);
-  assert.match(route, /getConfiguredDtOneCountryByIso\(countryIsoCode\)/);
-  assert.match(route, /countryConfig\.currency/);
+  assert.match(route, /getConfiguredDtOneCountryByIso\(countryIsoCode, pool\)/);
+  assert.match(route, /const country = countryConfig\?\.countryCode/);
   assert.doesNotMatch(route, /countryCurrency\(country\)/);
 });
 
@@ -164,8 +164,8 @@ test('DT One operator discovery resolves provider country codes through the cano
   const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
   const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
   const route = server.slice(start, end);
-  assert.match(route, /getConfiguredDtOneCountryByIso\(countryIsoCode\)/);
-  assert.match(route, /countryConfig\.countryCode/);
+  assert.match(route, /getConfiguredDtOneCountryByIso\(countryIsoCode, pool\)/);
+  assert.match(route, /if \(!countryConfig\)/);
   assert.doesNotMatch(route, /supportedOperatorCountries/);
 });
 
