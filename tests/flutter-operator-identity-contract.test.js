@@ -208,3 +208,17 @@ test('Afghan phone prefix detection is re-applied after verified operators finis
   assert.match(detector, /countryOperators/);
   assert.match(detector, /loadPriceQuote\(\)/);
 });
+
+test('Afghan prefix auto-detection matches stable operator keys, not localized display labels', () => {
+  const start = flutter.indexOf('void _applyDetectedAfghanOperator()');
+  const end = flutter.indexOf('  @override\n  void dispose()', start);
+  assert.ok(start >= 0 && end > start);
+  const detector = flutter.slice(start, end);
+  assert.match(detector, /operator\.operatorKey/);
+  assert.match(detector, /case 'AWCC'/);
+  assert.match(detector, /case 'ROSHAN'/);
+  assert.match(detector, /case 'ETISALAT'/);
+  assert.match(detector, /case 'ATOMA'/);
+  assert.match(detector, /case 'SALAAM'/);
+  assert.doesNotMatch(detector, /operator\.name\.toLowerCase\(\) == detectedName/);
+});
