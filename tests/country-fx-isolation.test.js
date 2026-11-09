@@ -22,6 +22,6 @@ test('pricing quote exposes generic local-currency FX and keeps AFN alias Afghan
 
 test('supported launch currencies remain distinct destination currencies', () => {
   for (const [country, currency] of [['AF', 'AFN'], ['PK', 'PKR'], ['IN', 'INR'], ['BD', 'BDT']]) {
-    assert.match(server, new RegExp(`${country}:\\s*'${currency}'`));
+    assert.ok(server.includes(`${country}: '${currency}'`));
   }
 });
