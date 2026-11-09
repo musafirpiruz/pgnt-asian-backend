@@ -829,6 +829,8 @@ async function getProduct(client, productId, requestedCountry = null, operator =
          AND o.verified_at IS NOT NULL
          AND cop.active = TRUE
          AND cop.verified_at IS NOT NULL
+         AND cop.provider_operator_id = o.provider_operator_id
+         AND cop.provider_product_id = p.product_id::text
          AND p.country = c.country_code
          AND p.amount = $4
          AND p.currency = c.destination_currency
@@ -2132,7 +2134,7 @@ app.post('/api/payments/checkout', express.json({ limit: '100kb' }), async (req,
       input.country,
       input.operator,
       input.amount,
-      { operatorKey: input.operatorKey || null }
+      { operatorKey: input.operatorKey || null, catalogProductId: input.productId || null }
     );
 
     if (product.country !== input.country) {
