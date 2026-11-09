@@ -23,7 +23,7 @@ test('DT One product discovery loads supported countries from the canonical regi
   assert.ok(routeStart >= 0 && routeEnd > routeStart);
   const route = server.slice(routeStart, routeEnd);
   assert.match(route, /countryIsoCode/);
-  assert.match(route, /operator\\?\\.country\\?\\.iso_code/);
+  assert.ok(route.includes('operator?.country?.iso_code'));
 });
 
 test('DT One product discovery allows an omitted amount filter', () => {
