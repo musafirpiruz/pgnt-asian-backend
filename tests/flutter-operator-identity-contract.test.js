@@ -156,3 +156,19 @@ test('catalog product lookup and customer discovery require active canonical reg
   const quote = backend.slice(quoteStart, quoteEnd);
   assert.match(quote, /await getActiveCountryConfig\(country\)/);
 });
+
+test('admin DT One country selector is populated only from the canonical registry', () => {
+  assert.match(backend, /app\.get\('\/api\/admin\/dtone\/countries', requireAdmin/);
+  const endpointStart = backend.indexOf("app.get('/api/admin/dtone/countries'");
+  const endpointEnd = backend.indexOf("app.get('/api/admin/dtone/operators'", endpointStart);
+  assert.ok(endpointStart >= 0 && endpointEnd > endpointStart);
+  const endpoint = backend.slice(endpointStart, endpointEnd);
+  assert.match(endpoint, /FROM country_registry/);
+  assert.match(endpoint, /provider = 'dtone'/);
+  assert.match(endpoint, /provider_country_code/);
+  assert.match(endpoint, /status IN \('draft', 'configuring', 'testing', 'active', 'disabled'\)/);
+  assert.match(backend, /adminRequest\('\/api\/admin\/dtone\/countries'\)/);
+  assert.match(backend, /countryNames\[country\.countryIsoCode\]=country\.name/);
+  assert.doesNotMatch(backend, /const operatorOptions=/);
+  assert.doesNotMatch(backend, /countryMap\s*=\s*\{\s*AFG:/);
+});
