@@ -1008,6 +1008,58 @@ async function getProductQuote(productId, country) {
 }
 // Return a server-authoritative quote for the selected country/operator/amount.
 // Quotes may preview inactive, database-mapped products; checkout still requires an enabled product.
+// Public, read-only country catalog. Future destinations are added as registry data,
+// never by editing a country switch/case in the application.
+app.get('/api/countries', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country registry is not configured.' });
+  }
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = REGISTRY_LANGUAGES.has(requestedLanguage) ? requestedLanguage : 'en';
+  try {
+    const result = await pool.query(
+      `SELECT c.country_code,
+              COALESCE(localized.display_name, c.country_name) AS display_name,
+              c.destination_currency, c.calling_code,
+              c.phone_min_digits, c.phone_max_digits,
+              c.provider, c.provider_country_code, c.configuration_version
+       FROM country_registry c
+       LEFT JOIN country_localizations localized
+         ON localized.country_code = c.country_code
+        AND localized.language_code = $1
+       WHERE c.status = 'active'
+         AND c.provider = 'dtone'
+         AND c.provider_country_code IS NOT NULL
+         AND BTRIM(c.provider_country_code) <> ''
+         AND c.calling_code IS NOT NULL
+         AND c.phone_min_digits IS NOT NULL
+         AND c.phone_max_digits IS NOT NULL
+       ORDER BY COALESCE(localized.display_name, c.country_name), c.country_code`,
+      [language]
+    );
+    return res.json({
+      language,
+      countries: result.rows.map((row) => ({
+        countryCode: String(row.country_code).trim().toUpperCase(),
+        name: String(row.display_name),
+        currency: String(row.destination_currency).trim().toUpperCase(),
+        callingCode: String(row.calling_code),
+        phoneMinDigits: Number(row.phone_min_digits),
+        phoneMaxDigits: Number(row.phone_max_digits),
+        provider: String(row.provider),
+        providerCountryCode: String(row.provider_country_code).trim().toUpperCase(),
+        configurationVersion: Number(row.configuration_version),
+      })),
+    });
+  } catch (error) {
+    console.error('Country registry list failed.', {
+      errorCode: error?.code || null,
+      errorMessage: String(error?.message || 'Unknown registry error').slice(0, 180),
+    });
+    return res.status(503).json({ error: 'Country registry is temporarily unavailable.' });
+  }
+});
+
 // Public, read-only operator registry API.
 // This route is intentionally read-only and fails closed until the canonical
 // registry migration is installed and a country/operator has been verified.
