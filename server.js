@@ -449,8 +449,8 @@ async function getActiveCountryConfig(country, db = pool) {
 
 function normalizeRegistryPhone(value, config) {
   if (!config) throw new Error('Destination country is not active with DT One.');
-  let phone = String(value || '').trim().replace(/[\\s().-]/g, '');
-  if (!/^\\+?\\d+$/.test(phone)) {
+  let phone = String(value || '').trim().replace(/[\s().-]/g, '');
+  if (!/^\+?\d+$/.test(phone)) {
     throw new Error('Phone number contains invalid characters.');
   }
   const callingCode = String(config.calling_code);
@@ -460,7 +460,7 @@ function normalizeRegistryPhone(value, config) {
     phone = phone.slice(callingCode.length);
   }
   if (phone.startsWith('0')) phone = phone.slice(1);
-  if (!/^\\d+$/.test(phone) ||
+  if (!/^\d+$/.test(phone) ||
       phone.length < Number(config.phone_min_digits) ||
       phone.length > Number(config.phone_max_digits)) {
     throw new Error('Phone number length does not match the active destination configuration.');
@@ -7618,8 +7618,8 @@ startServer();
 
 function normalizeRegistryPhone(value, config) {
   if (!config) throw new Error('Destination country is not active with DT One.');
-  let phone = String(value || '').trim().replace(/[\\s().-]/g, '');
-  if (!/^\\+?\\d+$/.test(phone)) {
+  let phone = String(value || '').trim().replace(/[\s().-]/g, '');
+  if (!/^\+?\d+$/.test(phone)) {
     throw new Error('Phone number contains invalid characters.');
   }
   const callingCode = String(config.calling_code);
@@ -7629,7 +7629,7 @@ function normalizeRegistryPhone(value, config) {
     phone = phone.slice(callingCode.length);
   }
   if (phone.startsWith('0')) phone = phone.slice(1);
-  if (!/^\\d+$/.test(phone) ||
+  if (!/^\d+$/.test(phone) ||
       phone.length < Number(config.phone_min_digits) ||
       phone.length > Number(config.phone_max_digits)) {
     throw new Error('Phone number length does not match the active destination configuration.');
