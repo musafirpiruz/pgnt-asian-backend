@@ -1779,108 +1779,57 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() { isQuoteLoading = true; priceQuoteError = null; });
 
     try {
-      // Read-only discovery: no provider transaction is created until the
-      // customer explicitly continues to payment.
-      try {
-        final discoveryUri = Uri.parse('$backendBaseUrl/api/ranged-products')
-            .replace(queryParameters: {'country': countryCode});
-        final discoveryResponse = await http.get(
-          discoveryUri,
-          headers: const {'Accept': 'application/json'},
-        ).timeout(const Duration(seconds: 12));
-        if (discoveryResponse.statusCode == 200) {
-          final discovery = jsonDecode(discoveryResponse.body);
-          if (discovery is Map && discovery['products'] is List) {
-            _rangedProducts = (discovery['products'] as List)
-                .whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList();
-            _rangedProductsCountry = countryCode;
-          }
-        }
-      } catch (_) {
-        // During staged rollout, keep the fixed-product quote path available.
+      // Read-only discovery is mandatory for the four launch countries.
+      // Never fall back to an unverified fixed denomination or stale catalog.
+      final discoveryUri = Uri.parse('$backendBaseUrl/api/ranged-products')
+          .replace(queryParameters: {'country': countryCode});
+      final discoveryResponse = await http.get(
+        discoveryUri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 12));
+      if (discoveryResponse.statusCode != 200) {
+        throw Exception('د دې هېواد د DT One تایید شوي مقدارونه اوس نه شي ترلاسه کېدای.');
       }
-
-      final rangedProduct = _rangedProductsCountry == countryCode
-          ? _rangedProducts.cast<Map<String, dynamic>?>().firstWhere(
-              (item) => item != null &&
-                  (item['operatorKey']?.toString() ?? '') ==
-                      (operator.operatorKey ?? ''),
-              orElse: () => null,
-            )
-          : null;
-      if (rangedProduct != null) {
-        final minAmount = int.tryParse('${rangedProduct['minAmount']}') ?? 0;
-        final maxAmount = int.tryParse('${rangedProduct['maxAmount']}') ?? 0;
-        final increment = int.tryParse('${rangedProduct['increment']}') ?? 0;
-        if (increment <= 0 || amount < minAmount || amount > maxAmount ||
-            (amount - minAmount) % increment != 0) {
-          throw Exception('دا آپرېټر د ${minAmount}–${maxAmount} ترمنځ د ${increment} په واټن مقدارونه مني.');
-        }
-        if (!mounted || countryCode != selectedCountry.code ||
-            amount != selectedAmount || operator.name != selectedOperator?.name) return;
-        setState(() {
-          priceQuote = {
-            'isRangedAvailable': true,
-            'productId': rangedProduct['productId'],
-            'minAmount': minAmount,
-            'maxAmount': maxAmount,
-            'increment': increment,
-            'formattedFinalPrice': 'د تادیې مخکې تاییدېږي',
-          };
-          priceQuoteError = null;
-        });
-        return;
+      final discovery = jsonDecode(discoveryResponse.body);
+      if (discovery is! Map || discovery['products'] is! List) {
+        throw Exception('د DT One د مقدارونو ځواب ناسم دی.');
       }
+      _rangedProducts = (discovery['products'] as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      _rangedProductsCountry = countryCode;
 
-      final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(
-        queryParameters: {
-          'country': countryCode,
-          'operator': operator.name,
-          'amount': '$amount',
-          if (operator.operatorKey != null && operator.operatorKey!.isNotEmpty)
-            'operatorKey': operator.operatorKey!,
-        },
+      final rangedProduct = _rangedProducts.cast<Map<String, dynamic>?>().firstWhere(
+        (item) => item != null &&
+            (item['operatorKey']?.toString() ?? '') == (operator.operatorKey ?? ''),
+        orElse: () => null,
       );
-
-      final response = await http
-          .get(uri, headers: const {'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 60));
-
-      dynamic decoded;
-      try {
-        decoded = jsonDecode(response.body);
-      } on FormatException {
-        throw Exception(
-          'HTTP ${response.statusCode}: سرور JSON نه دی را لېږلی.',
-        );
+      if (rangedProduct == null) {
+        throw Exception('د ${operator.name} شبکې لپاره لا تایید شوی DT One مقدار نشته. مهرباني وکړئ بله شبکه وټاکئ.');
       }
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message = decoded is Map<String, dynamic>
-            ? decoded['error']?.toString()
-            : null;
-        throw Exception(
-          'HTTP ${response.statusCode}: ${(message == null || message.isEmpty) ? 'قیمت ترلاسه نه شو' : message}',
-        );
+      final minAmount = int.tryParse('${rangedProduct['minAmount']}') ?? 0;
+      final maxAmount = int.tryParse('${rangedProduct['maxAmount']}') ?? 0;
+      final increment = int.tryParse('${rangedProduct['increment']}') ?? 0;
+      if (increment <= 0 || amount < minAmount || amount > maxAmount ||
+          (amount - minAmount) % increment != 0) {
+        throw Exception('دا آپرېټر د ${minAmount}–${maxAmount} ترمنځ د ${increment} په واټن مقدارونه مني.');
       }
-
-      if (decoded is! Map<String, dynamic>) {
-        throw Exception('HTTP ${response.statusCode}: د سرور ځواب ناسم جوړښت لري.');
-      }
-
-      if (!mounted ||
-          countryCode != selectedCountry.code ||
-          amount != selectedAmount ||
-          operator.operatorKey != selectedOperator?.operatorKey || operator.name != selectedOperator?.name) {
-        return;
-      }
-
+      if (!mounted || countryCode != selectedCountry.code ||
+          amount != selectedAmount || operator.operatorKey != selectedOperator?.operatorKey) return;
       setState(() {
-        priceQuote = decoded;
+        priceQuote = {
+          'isRangedAvailable': true,
+          'productId': rangedProduct['productId'],
+          'minAmount': minAmount,
+          'maxAmount': maxAmount,
+          'increment': increment,
+          'destinationCurrency': rangedProduct['destinationCurrency'],
+          'formattedFinalPrice': 'د تادیې مخکې تاییدېږي',
+        };
         priceQuoteError = null;
       });
+      return;
     } catch (error) {
       if (!mounted ||
           countryCode != selectedCountry.code ||
