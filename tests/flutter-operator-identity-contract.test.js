@@ -99,3 +99,38 @@ test('customer phone validation uses registry digit bounds when country metadata
   assert.ok(validator.includes('country.callingCode'));
   assert.match(flutter, /isValidPhone\(selectedCountry\.code,\s*phone,\s*country:\s*selectedCountry\)/);
 });
+
+
+const backend = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+test('customer checkout validates destination against active DT One country registry', () => {
+  const start = backend.indexOf('async function getActiveCountryConfig(');
+  const end = backend.indexOf('// Get the recipient\'s local currency.', start);
+  assert.ok(start >= 0 && end > start);
+  const helper = backend.slice(start, end);
+  assert.match(helper, /FROM country_registry/);
+  assert.match(helper, /status = 'active'/);
+  assert.match(helper, /provider = 'dtone'/);
+  assert.match(helper, /provider_country_code IS NOT NULL/);
+  assert.match(helper, /phone_min_digits/);
+  assert.match(helper, /phone_max_digits/);
+  assert.match(helper, /async function validateRegistryPhone/);
+});
+
+test('checkout and ranged quotes use registry phone metadata instead of the legacy country allow-list', () => {
+  const checkoutStart = backend.indexOf('async function validateCheckoutInput(body)');
+  const checkoutEnd = backend.indexOf('// =====================================================\n// PART 3/8', checkoutStart);
+  assert.ok(checkoutStart >= 0 && checkoutEnd > checkoutStart);
+  const checkout = backend.slice(checkoutStart, checkoutEnd);
+  assert.match(checkout, /await getActiveCountryConfig\(country\)/);
+  assert.match(checkout, /await validateRegistryPhone\(/);
+  assert.doesNotMatch(checkout, /isValidCountry\(country\)/);
+
+  const rangedStart = backend.indexOf("app.post('/api/ranged-quotes'");
+  const rangedEnd = backend.indexOf("app.get('/api/pricing/quote'", rangedStart);
+  assert.ok(rangedStart >= 0 && rangedEnd > rangedStart);
+  const ranged = backend.slice(rangedStart, rangedEnd);
+  assert.match(ranged, /await getActiveCountryConfig\(country\)/);
+  assert.match(ranged, /await validateRegistryPhone\(/);
+  assert.doesNotMatch(ranged, /validatePhone\(/);
+});
