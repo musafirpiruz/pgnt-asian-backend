@@ -107,7 +107,7 @@ test('ranged products and quotes require a stable verified operator key', () => 
   assert.match(discovery, /operatorKey: String\(item\.row\.operator_key\)/);
   assert.match(quote, /req\.body\?\.operatorKey/);
   assert.match(quote, /operator_key = \$3/);
-  assert.match(quote, /\[productId, countryIso3, operatorKey\]/);
+  assert.match(quote, /\[productId, operatorKey, country\]/);
 });
 
 test('migration 019 adds nullable operator identity without activating existing products', () => {
@@ -141,4 +141,22 @@ test('admin ranged-product page exposes a separately confirmed activation action
   assert.match(server, /id="activateRangedProduct"/);
   assert.match(server, /confirmActivation:true/);
   assert.match(server, /canonical country\/operator identity/);
+});
+
+test('ranged discovery, quote, and activation resolve provider country codes only from the canonical registry', () => {
+  assert.doesNotMatch(server, /RANGED_COUNTRY_ISO3/);
+  assert.doesNotMatch(server, /CASE r\.country_iso_code/);
+  const discovery = section("app.get('/api/ranged-products'", "app.post('/api/ranged-quotes'");
+  const quote = section("app.post('/api/ranged-quotes'", "app.get('/api/pricing/quote'");
+  const activation = section("app.post('/api/admin/dtone/ranged-products/:productId/activate'", '// Read-only verification of a catalog product');
+  for (const route of [discovery, quote, activation]) {
+    assert.match(route, /provider_country_code/);
+    assert.match(route, /c\.provider = 'dtone'/);
+  }
+  assert.match(discovery, /WHERE c\.country_code = \$1/);
+  assert.match(quote, /c\.country_code = \$3/);
+  // A future country (e.g. Nepal) needs only a registry row carrying its
+  // verified DT One provider code; no ISO-3 switch/case is allowed here.
+  assert.match(discovery, /UPPER\(BTRIM\(c\.provider_country_code\)\)/);
+  assert.match(quote, /UPPER\(BTRIM\(c\.provider_country_code\)\)/);
 });
