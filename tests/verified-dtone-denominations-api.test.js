@@ -33,3 +33,28 @@ test('fixed denomination discovery is read-only and validates path identifiers',
   assert.match(route, /\[countryCode, operatorKey\]/);
   assert.match(route, /res\.status\(503\)/);
 });
+
+
+test('fixed bundle discovery returns stable catalog and provider product identities', () => {
+  const start = server.indexOf("app.get('/api/countries/:countryCode/operators/:operatorKey/products'");
+  const end = server.indexOf('// Public, read-only list of configured payment currencies.', start);
+  const route = server.slice(start, end);
+  assert.match(route, /productName: String\(row\.product_name \|\| ''\)/);
+  assert.match(route, /productId: Number\(row\.product_id\)/);
+  assert.match(route, /dtoneProductId: String\(row\.dtone_product_id\)/);
+});
+
+test('fixed quote and checkout preserve the selected catalog product identity', () => {
+  const quoteStart = server.indexOf("app.get('/api/pricing/quote'");
+  const quoteEnd = server.indexOf('// =====================================================\n// PART 4/8', quoteStart);
+  const quote = server.slice(quoteStart, quoteEnd);
+  assert.match(quote, /productCatalogId/);
+  assert.match(quote, /catalogProductId/);
+  const helperStart = server.indexOf('async function getProduct(');
+  const helperEnd = server.indexOf('// Calculate the final customer price.', helperStart);
+  const helper = server.slice(helperStart, helperEnd);
+  assert.match(helper, /p\.id = \$3::bigint/);
+  assert.match(helper, /cop\.provider_product_id = p\.product_id::text/);
+  const checkoutCall = server.indexOf('catalogProductId: input.productId');
+  assert.ok(checkoutCall >= 0, 'checkout must use the exact selected catalog product');
+});
