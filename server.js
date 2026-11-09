@@ -1151,41 +1151,139 @@ app.get('/api/ranged-products', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Product service is not configured.' });
   }
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'DT One verification is not configured.' });
+  }
   const country = normalizeCountry(req.query.country);
   if (!isValidCountry(country)) {
     return res.status(400).json({ error: 'Select a valid country.' });
   }
 
   try {
-    const result = await pool.query(
-      `SELECT dtone_product_id, operator_name, operator_key, destination_currency,
-              min_amount, max_amount, amount_increment
-       FROM dtone_ranged_products
-       WHERE country_iso_code = $1
-         AND operator_key IS NOT NULL
-         AND active = TRUE
-         AND capability_verified_at IS NOT NULL
-         AND accepted_calculation_modes ? 'DESTINATION_AMOUNT'
-       ORDER BY operator_name, dtone_product_id
+    // Never serve cached ranges as if they were current provider truth.
+    // Every customer discovery re-verifies each explicitly activated product
+    // against its DT One detail endpoint and canonical operator identity.
+    const configured = await pool.query(
+      `SELECT r.dtone_product_id, r.country_iso_code, r.operator_name,
+              r.operator_key, r.destination_currency, r.min_amount,
+              r.max_amount, r.amount_increment, o.provider_operator_id
+       FROM dtone_ranged_products r
+       JOIN country_registry c
+         ON c.country_code = CASE r.country_iso_code
+           WHEN 'AFG' THEN 'AF' WHEN 'PAK' THEN 'PK'
+           WHEN 'IND' THEN 'IN' WHEN 'BGD' THEN 'BD' ELSE NULL END
+        AND c.status = 'active'
+        AND c.destination_currency = r.destination_currency
+       JOIN country_operators o
+         ON o.country_code = c.country_code
+        AND o.operator_key = r.operator_key
+        AND o.provider = 'dtone'
+        AND o.active = TRUE
+        AND o.verified_at IS NOT NULL
+        AND o.provider_operator_id IS NOT NULL
+        AND BTRIM(o.provider_operator_id) <> ''
+       WHERE r.country_iso_code = $1
+         AND r.operator_key IS NOT NULL
+         AND r.active = TRUE
+         AND r.capability_verified_at IS NOT NULL
+         AND r.accepted_calculation_modes ? 'DESTINATION_AMOUNT'
+       ORDER BY r.operator_key, r.dtone_product_id
        LIMIT 100`,
       [RANGED_COUNTRY_ISO3[country]]
     );
 
-    const products = result.rows.flatMap((row) => {
-      const providerMin = Number(row.min_amount);
-      const providerMax = Number(row.max_amount);
-      const increment = Number(row.amount_increment);
-      const currency = String(row.destination_currency || '').trim().toUpperCase();
+    const verified = [];
+    for (const row of configured.rows) {
+      const productId = String(row.dtone_product_id);
+      const response = await fetch(
+        `${DTONE_API_BASE_URL}/v1/products/${encodeURIComponent(productId)}`,
+        {
+          method: 'GET',
+          headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+          signal: AbortSignal.timeout(15000),
+        }
+      );
+      const body = await response.text();
+      let product = null;
+      try { product = body ? JSON.parse(body) : null; } catch (_) {}
+      if (!response.ok || !product || String(product.id) !== productId) {
+        return res.status(503).json({
+          error: 'DT One could not freshly verify the selected country products. No cached amount range was returned.',
+          verified: false,
+        });
+      }
+
+      const capability = parseRangedProductCapability(product);
+      const providerCountry = String(product?.operator?.country?.iso_code || '').trim().toUpperCase();
+      const providerOperatorId = String(product?.operator?.id ?? '').trim();
+      const destinationCurrency = String(product?.destination?.unit || '').trim().toUpperCase();
+      if (!capability ||
+          providerCountry !== String(row.country_iso_code).trim().toUpperCase() ||
+          providerOperatorId !== String(row.provider_operator_id).trim() ||
+          destinationCurrency !== String(row.destination_currency).trim().toUpperCase() ||
+          capability.destinationCurrency !== destinationCurrency ||
+          !capability.acceptedCalculationModes.includes('DESTINATION_AMOUNT')) {
+        return res.status(503).json({
+          error: 'A DT One product no longer matches its verified country, operator, currency, or ranged capability. Amount discovery is blocked.',
+          verified: false,
+        });
+      }
+
+      verified.push({
+        row,
+        capability,
+        snapshot: product,
+        wholesalePriceRange: product?.prices?.wholesale || {},
+      });
+    }
+
+    // Persist fresh provider bounds only after every selected product passed
+    // identity and capability checks; active status and operator mappings stay unchanged.
+    if (verified.length) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const item of verified) {
+          await client.query(
+            `UPDATE dtone_ranged_products
+             SET min_amount = $2, max_amount = $3, amount_increment = $4,
+                 accepted_calculation_modes = $5::jsonb,
+                 wholesale_price_range = $6::jsonb,
+                 provider_snapshot = $7::jsonb,
+                 capability_verified_at = NOW(), updated_at = NOW()
+             WHERE dtone_product_id = $1 AND active = TRUE AND operator_key = $8`,
+            [
+              item.row.dtone_product_id,
+              item.capability.minAmount,
+              item.capability.maxAmount,
+              item.capability.increment,
+              JSON.stringify(item.capability.acceptedCalculationModes),
+              JSON.stringify(item.wholesalePriceRange),
+              JSON.stringify(item.snapshot),
+              item.row.operator_key,
+            ]
+          );
+        }
+        await client.query('COMMIT');
+      } catch (writeError) {
+        try { await client.query('ROLLBACK'); } catch (_) {}
+        throw writeError;
+      } finally {
+        client.release();
+      }
+    }
+
+    const products = verified.flatMap((item) => {
+      const providerMin = Number(item.capability.minAmount);
+      const providerMax = Number(item.capability.maxAmount);
+      const increment = Number(item.capability.increment);
+      const currency = String(item.capability.destinationCurrency || '').trim().toUpperCase();
       if (!Number.isSafeInteger(providerMin) ||
           !Number.isSafeInteger(providerMax) ||
           !Number.isSafeInteger(increment) ||
           increment <= 0 || providerMax < providerMin ||
-          currency !== COUNTRY_CURRENCIES[country]) {
-        return [];
-      }
+          currency !== COUNTRY_CURRENCIES[country]) return [];
 
-      // The customer-facing range is the intersection of PGNT's 75–3000
-      // policy and the provider's verified range/increment.
       const minAmount = providerMin +
         Math.ceil((Math.max(providerMin, PGNT_MIN_AMOUNT) - providerMin) / increment) * increment;
       const maxAmount = providerMin +
@@ -1193,9 +1291,9 @@ app.get('/api/ranged-products', async (req, res) => {
       if (minAmount > maxAmount) return [];
 
       return [{
-        productId: String(row.dtone_product_id),
-        operatorName: String(row.operator_name),
-        operatorKey: String(row.operator_key),
+        productId: String(item.row.dtone_product_id),
+        operatorName: String(item.row.operator_name),
+        operatorKey: String(item.row.operator_key),
         destinationCurrency: currency,
         minAmount,
         maxAmount,
@@ -1208,15 +1306,17 @@ app.get('/api/ranged-products', async (req, res) => {
       country,
       paymentCurrency: 'EUR',
       amountPolicy: { min: PGNT_MIN_AMOUNT, max: PGNT_MAX_AMOUNT },
+      source: 'live_dt_one_verified',
+      verifiedAt: new Date().toISOString(),
       products,
     });
   } catch (error) {
-    console.error('Ranged product discovery failed.', {
+    console.error('Live DT One ranged product verification failed.', {
       country,
       errorName: error?.name || 'Error',
       errorCode: error?.code || null,
     });
-    return res.status(503).json({ error: 'Ranged products are temporarily unavailable.' });
+    return res.status(503).json({ error: 'Live DT One amount verification is temporarily unavailable.' });
   }
 });
 
