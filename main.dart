@@ -1434,6 +1434,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   MobileOperator? selectedOperator;
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
+  bool _registryOperatorsLoading = false;
+  String? _registryOperatorsError;
   int _registryOperatorsRequestGeneration = 0;
   int selectedAmount = 10;
   int selectedTab = 0;
@@ -1767,6 +1769,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           selectedOperator = null;
           _registryOperators = const [];
           _registryOperatorsCountry = null;
+          _registryOperatorsLoading = false;
+          _registryOperatorsError = null;
           _rangedProducts = [];
           _rangedProductsCountry = null;
           selectedAmount = 0;
@@ -1787,6 +1791,17 @@ class _PgntHomePageState extends State<PgntHomePage> {
     // an earlier registry request is still in flight.
     final requestGeneration = ++_registryOperatorsRequestGeneration;
     final requestedLanguage = languageCode;
+    if (mounted) {
+      setState(() {
+        _registryOperatorsLoading = true;
+        _registryOperatorsError = null;
+        _registryOperators = const [];
+        _registryOperatorsCountry = countryCode;
+        selectedOperator = null;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+    }
     try {
       final uri = Uri.parse(
         '$backendBaseUrl/api/countries/$countryCode/operators',
@@ -1795,9 +1810,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
         uri,
         headers: const {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return;
+      if (!mounted ||
+          requestGeneration != _registryOperatorsRequestGeneration ||
+          countryCode != selectedCountry.code ||
+          requestedLanguage != languageCode) {
+        return;
+      }
+      if (response.statusCode != 200) {
+        setState(() {
+          _registryOperatorsLoading = false;
+          _registryOperatorsError =
+              'د شبکې معلومات له سرور څخه ترلاسه نه شول (HTTP ${response.statusCode}). د Backend فعال حالت وګورئ.';
+        });
+        return;
+      }
       final decoded = jsonDecode(response.body);
-      if (decoded is! Map || decoded['operators'] is! List) return;
+      if (decoded is! Map || decoded['operators'] is! List) {
+        setState(() {
+          _registryOperatorsLoading = false;
+          _registryOperatorsError = 'د شبکو د معلوماتو ځواب ناسم دی. بیا هڅه وکړئ.';
+        });
+        return;
+      }
 
       final parsed = <MobileOperator>[];
       for (final raw in decoded['operators'] as List) {
@@ -1809,22 +1843,30 @@ class _PgntHomePageState extends State<PgntHomePage> {
         );
         if (item.name.isEmpty ||
             item.operatorKey == null ||
-            item.operatorKey!.isEmpty) {
+            item.operatorKey!.isEmpty ||
+            item.providerOperatorId == null ||
+            item.providerOperatorId!.isEmpty) {
           continue;
         }
         parsed.add(item);
       }
-      if (!mounted ||
-          requestGeneration != _registryOperatorsRequestGeneration ||
-          countryCode != selectedCountry.code ||
-          requestedLanguage != languageCode ||
-          parsed.isEmpty) {
+
+      if (parsed.isEmpty) {
+        setState(() {
+          _registryOperators = const [];
+          _registryOperatorsCountry = countryCode;
+          _registryOperatorsLoading = false;
+          _registryOperatorsError =
+              'د دې هېواد لپاره لا د DT One له خوا تایید شوې او فعاله شبکه/محصول نشته.';
+        });
         return;
       }
 
       setState(() {
         _registryOperators = parsed;
         _registryOperatorsCountry = countryCode;
+        _registryOperatorsLoading = false;
+        _registryOperatorsError = null;
         final selectedKey = selectedOperator?.operatorKey;
         if (selectedKey != null) {
           selectedOperator = parsed.cast<MobileOperator?>().firstWhere(
@@ -1838,14 +1880,47 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 orElse: () => null,
               );
         }
-        if (selectedOperator == null) {
-          priceQuote = null;
-          priceQuoteError = null;
-        }
       });
-    } catch (_) {
-      // Keep the bundled operator list if the registry is unavailable.
+
+      // The customer may have entered the phone number before the registry
+      // request completed. Re-run prefix detection only against verified
+      // registry operators, so the network is selected automatically when
+      // its DT One mapping is available.
+      _applyDetectedAfghanOperator();
+    } catch (error) {
+      if (!mounted ||
+          requestGeneration != _registryOperatorsRequestGeneration ||
+          countryCode != selectedCountry.code ||
+          requestedLanguage != languageCode) {
+        return;
+      }
+      setState(() {
+        _registryOperatorsLoading = false;
+        _registryOperatorsError =
+            'د شبکو د معلوماتو ترلاسه کول ناکام شول. انټرنېټ او Backend وګورئ او بیا هڅه وکړئ.';
+      });
     }
+  }
+
+  void _applyDetectedAfghanOperator() {
+    if (selectedCountry.code != 'AF') return;
+    final detectedName = detectAfghanOperator(phoneController.text);
+    if (detectedName == null) return;
+    MobileOperator? detected;
+    for (final operator in countryOperators) {
+      if (operator.name.toLowerCase() == detectedName.toLowerCase()) {
+        detected = operator;
+        break;
+      }
+    }
+    if (detected == null) return;
+    if (selectedOperator?.operatorKey == detected.operatorKey) return;
+    setState(() {
+      selectedOperator = detected;
+      priceQuote = null;
+      priceQuoteError = null;
+    });
+    loadPriceQuote();
   }
 
   @override
@@ -1990,6 +2065,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
       selectedOperator = null;
       _registryOperators = const [];
       _registryOperatorsCountry = country.code;
+      _registryOperatorsLoading = true;
+      _registryOperatorsError = null;
       selectedAmount = 0;
       _rangedProducts = [];
       _rangedProductsCountry = null;
@@ -2003,29 +2080,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   void handlePhoneChanged(String value) {
     if (mounted) setState(() {});
-    if (selectedCountry.code != 'AF') return;
-    final detectedName = detectAfghanOperator(value);
-    if (detectedName == null) return;
-
-    MobileOperator? detected;
-    for (final operator in countryOperators) {
-      if (operator.name.toLowerCase() == detectedName.toLowerCase()) {
-        detected = operator;
-        break;
-      }
-    }
-    if (detected == null ||
-        (selectedOperator?.name == detected.name &&
-            selectedOperator?.countryCode == detected.countryCode)) {
-      return;
-    }
-
-    setState(() {
-      selectedOperator = detected;
-      priceQuote = null;
-      priceQuoteError = null;
-    });
-    loadPriceQuote();
+    _applyDetectedAfghanOperator();
   }
 
   void showMessage(String message) {
@@ -2341,8 +2396,30 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildOperatorSelector() {
+    if (_registryOperatorsLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 18),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (countryOperators.isEmpty) {
-      return Text(t('selectOperator'));
+      final message = _registryOperatorsError ?? t('selectOperator');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(message, textAlign: TextAlign.center,
+                style: const TextStyle(color: errorRed)),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _loadRegistryOperators(selectedCountry.code),
+              icon: const Icon(Icons.refresh),
+              label: Text(t('retry')),
+            ),
+          ],
+        ),
+      );
     }
     return LayoutBuilder(
       builder: (context, constraints) {
