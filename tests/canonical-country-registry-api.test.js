@@ -42,3 +42,36 @@ test('canonical registry contains the configuration fields needed for future des
   assert.match(schema, /'active'/);
   assert.match(schema, /'disabled'/);
 });
+
+test('ranged product discovery resolves any destination through canonical provider country data', () => {
+  const start = server.indexOf("app.get('/api/ranged-products'");
+  const end = server.indexOf("\napp.", start + 10);
+  assert.ok(start >= 0 && end > start);
+  const route = server.slice(start, end);
+
+  // Country selection is an ISO-2 registry key. Provider ISO-3 identity
+  // must be looked up from registry data, never a four-country code map.
+  assert.match(route, /getActiveCountryConfig\(country\)/);
+  assert.match(route, /JOIN country_registry c/);
+  assert.match(route, /c\.provider = 'dtone'/);
+  assert.match(route, /c\.provider_country_code/);
+  assert.match(route, /c\.country_code = \$1/);
+  assert.match(route, /providerCountry\s*!==\s*String\(row\.country_iso_code\)/);
+  assert.doesNotMatch(route, /RANGED_COUNTRY_ISO3|WHEN\s+'AFG'|WHEN\s+'PAK'|WHEN\s+'IND'|WHEN\s+'BGD'/);
+});
+
+test('customer operator discovery exposes only verified canonical provider mappings', () => {
+  const start = server.indexOf("app.get('/api/countries/:countryCode/operators'");
+  const end = server.indexOf("\napp.", start + 10);
+  assert.ok(start >= 0 && end > start);
+  const route = server.slice(start, end);
+  assert.match(route, /FROM country_registry c/);
+  assert.match(route, /JOIN country_operators o/);
+  assert.match(route, /o\.provider_operator_id IS NOT NULL/);
+  assert.match(route, /o\.verified_at IS NOT NULL/);
+  assert.match(route, /country_operator_products/);
+  assert.match(route, /cop\.verified_at IS NOT NULL/);
+  assert.match(route, /operator_key:/);
+  assert.match(route, /provider_operator_id:/);
+  assert.match(route, /display_name:/);
+});
