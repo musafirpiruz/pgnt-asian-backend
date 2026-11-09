@@ -166,7 +166,7 @@ test('admin DT One country selector is populated only from the canonical registr
   assert.match(endpoint, /FROM country_registry/);
   assert.match(endpoint, /provider = 'dtone'/);
   assert.match(endpoint, /provider_country_code/);
-  assert.match(endpoint, /status IN \('draft', 'configuring', 'testing', 'active', 'disabled'\)/);
+  assert.match(endpoint, /status IN \('draft', 'configuring', 'testing', 'active', 'disabled', 'legacy'\)/);
   assert.match(backend, /adminRequest\('\/api\/admin\/dtone\/countries'\)/);
   assert.match(backend, /countryNames\[country\.countryIsoCode\]=country\.name/);
   assert.doesNotMatch(backend, /const operatorOptions=/);
