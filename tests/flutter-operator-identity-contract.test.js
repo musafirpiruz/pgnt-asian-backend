@@ -238,3 +238,11 @@ test('Flutter clears verified fixed denominations when country or operator chang
   assert.match(flutter, /_verifiedFixedProducts = \[\]/);
   assert.match(flutter, /_verifiedFixedProductsOperatorKey = null/);
 });
+
+
+test('Flutter keeps separate DT One bundles even when destination amounts match', () => {
+  assert.match(flutter, /_selectedFixedProductCatalogId/);
+  assert.match(flutter, /item\['productName'\]/);
+  assert.match(flutter, /'productCatalogId': '\$_selectedFixedProductCatalogId'/);
+  assert.match(flutter, /selected: _selectedFixedProductCatalogId == catalogId/);
+});
