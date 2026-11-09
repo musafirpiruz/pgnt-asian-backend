@@ -53,9 +53,10 @@ test('DT One operator discovery returns compact read-only network results', () =
 
 test('product-name denomination matching uses the selected country local currency', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import', requireAdmin", start);
   const route = server.slice(start, end);
-  assert.match(route, /AFG:\s*'AFN'.*PAK:\s*'PKR'.*IND:\s*'INR'.*BGD:\s*'BDT'/s);
+  assert.match(route, /const localCurrency = countryConfig\.currency/);
+  assert.doesNotMatch(route, /countryCurrency\s*\(/);
   assert.match(route, /new RegExp\(`\\\\b\$\{amountQuery\}\\\\s\*\$\{localCurrency\}\\\\b/);
   const cases = [
     ['ATOMA 115 AFN', 115, 'AFN'],
