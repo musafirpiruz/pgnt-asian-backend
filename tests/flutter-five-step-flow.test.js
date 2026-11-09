@@ -39,7 +39,7 @@ test('custom amount validation is translated in all six app languages', () => {
 
 test('review summary refreshes on recipient input and custom amount resets on country change', () => {
   assert.match(dart, /void handlePhoneChanged\(String value\)\s*\{\s*if \(mounted\) setState\(\(\) \{\}\);/);
-  assert.match(dart, /phoneController\.clear\(\);\s*customAmountController\.clear\(\);/);
+  assert.match(dart, /phoneController\.clear\(\);\s*customAmountController\.text = '10';/);
 });
 
 test('editing custom amount invalidates the previous server quote immediately', () => {
