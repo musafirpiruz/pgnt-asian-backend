@@ -230,7 +230,7 @@ test('Flutter fixed denominations come only from the verified DT One product end
   assert.match(flutter, /dtoneProductId/);
   assert.match(flutter, /fixedProducts\.isNotEmpty/);
   assert.match(flutter, /api\/pricing\/quote/);
-  assert.match(flutter, /د DT One له خوا تایید شوي مقدارونه/);
+  assert.match(flutter, /د دې هېواد لپاره لا د DT One له خوا تایید شوې او فعاله شبکه\/محصول نشته/);
   assert.doesNotMatch(flutter, /rechargeAmounts/);
 });
 
