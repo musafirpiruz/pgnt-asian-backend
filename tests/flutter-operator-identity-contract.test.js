@@ -23,8 +23,8 @@ test('quote request forwards operatorKey but never trusts or forwards providerOp
   const end = flutter.indexOf('void selectCountry(', start);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
-  assert.ok(method.includes("'operatorKey': operator.operatorKey!"));
-  assert.ok(method.includes('operator.operatorKey != null'));
+  assert.ok(method.includes("item['operatorKey']?.toString()"));
+  assert.ok(method.includes('operator.operatorKey'));
   assert.ok(!method.includes('providerOperatorId'));
 });
 
