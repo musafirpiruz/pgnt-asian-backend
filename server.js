@@ -6437,6 +6437,206 @@ app.post('/api/admin/dtone/ranged-products/:productId/activate', requireAdmin, a
     client.release();
   }
 });
+// Activate exactly one fixed-value DT One catalog product after an explicit
+// admin confirmation. Provider identity, canonical operator/product mapping,
+// country status, EUR pricing, Stripe readiness, and environment compatibility
+// are re-verified in one transaction. Ranged products use their separate flow.
+app.post('/api/admin/catalog/:productId/activate', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ activated: false, error: 'Database is not configured.' });
+  const productId = Number(req.params.productId);
+  if (!Number.isSafeInteger(productId) || productId < 1) {
+    return res.status(400).json({ activated: false, error: 'A valid DT One product ID is required.' });
+  }
+  if (req.body?.confirmActivation !== true) {
+    return res.status(400).json({
+      activated: false, confirmationRequired: true,
+      error: 'Explicit confirmActivation=true is required. No product was changed.',
+    });
+  }
+  if (!DTONE_API_KEY || !DTONE_API_SECRET || !stripe || !STRIPE_WEBHOOK_SECRET ||
+      !arePaymentAndFulfillmentEnvironmentsCompatible()) {
+    return res.status(503).json({
+      activated: false,
+      error: 'DT One, Stripe webhook, or payment/fulfillment environment readiness checks failed. No product was changed.',
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const selected = await client.query(
+      `SELECT p.id AS catalog_id, p.product_id, p.country, p.operator,
+              p.amount, p.currency, p.price_eur_cents,
+              p.wholesale_price_eur_cents, p.active AS product_active,
+              c.provider_country_code, c.destination_currency,
+              c.status AS country_status,
+              o.operator_key, o.provider_operator_id,
+              o.active AS operator_active, o.verified_at AS operator_verified_at,
+              cop.active AS mapping_active, cop.verified_at AS mapping_verified_at
+         FROM product_catalog p
+         JOIN country_registry c
+           ON c.country_code = p.country AND c.provider = 'dtone'
+         JOIN country_operators o
+           ON o.country_code = c.country_code AND o.provider = 'dtone'
+         JOIN country_operator_products cop
+           ON cop.country_code = o.country_code
+          AND cop.operator_key = o.operator_key
+          AND cop.product_catalog_id = p.id
+        WHERE p.product_id = $1
+        FOR UPDATE OF p, o, cop`,
+      [productId]
+    );
+    if (selected.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        activated: false,
+        error: 'Product must have exactly one prepared canonical DT One operator/product mapping. No product was changed.',
+      });
+    }
+    const local = selected.rows[0];
+    if (local.product_active === true) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ activated: false, alreadyActive: true, error: 'Product is already active. No changes were made.' });
+    }
+    if (local.country_status !== 'active' ||
+        !local.provider_country_code ||
+        !local.operator_key ||
+        !local.provider_operator_id ||
+        !local.operator_verified_at ||
+        !local.mapping_verified_at ||
+        String(local.currency).trim().toUpperCase() !== String(local.destination_currency).trim().toUpperCase()) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        activated: false,
+        error: 'Country, provider operator identity, product mapping, or destination currency is not fully verified and active. No product was changed.',
+      });
+    }
+
+    const response = await fetch(`${DTONE_API_BASE_URL}/v1/products/${productId}`, {
+      method: 'GET',
+      headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    });
+    const responseText = await response.text();
+    let providerProduct = null;
+    try { providerProduct = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+    if (!response.ok || !providerProduct || Number(providerProduct.id) !== productId) {
+      await client.query('ROLLBACK');
+      return res.status(response.status === 404 ? 404 : 502).json({
+        activated: false, providerStatus: response.status,
+        error: 'DT One could not re-verify this product. No product was changed.',
+      });
+    }
+
+    const rangedCapability = parseRangedProductCapability(providerProduct);
+    const providerCountryIso = String(providerProduct?.operator?.country?.iso_code || '').trim().toUpperCase();
+    const providerOperatorId = String(providerProduct?.operator?.id ?? '').trim();
+    const providerCurrency = String(providerProduct?.destination?.unit ||
+      providerProduct?.benefits?.[0]?.amount?.unit || '').trim().toUpperCase();
+    const providerAmount = Number(providerProduct?.destination?.amount ??
+      providerProduct?.benefits?.[0]?.amount?.base);
+    const providerRetailCents = Math.round(Number(providerProduct?.prices?.retail?.amount) * 100);
+    const providerWholesaleCents = Math.round(Number(providerProduct?.prices?.wholesale?.amount) * 100);
+
+    if (rangedCapability ||
+        providerCountryIso !== String(local.provider_country_code).trim().toUpperCase() ||
+        providerOperatorId !== String(local.provider_operator_id).trim() ||
+        providerCurrency !== String(local.destination_currency).trim().toUpperCase() ||
+        providerAmount !== Number(local.amount) ||
+        !Number.isSafeInteger(providerRetailCents) || providerRetailCents <= 0 ||
+        !Number.isSafeInteger(providerWholesaleCents) || providerWholesaleCents <= 0 ||
+        providerRetailCents < providerWholesaleCents ||
+        providerRetailCents !== Number(local.price_eur_cents) ||
+        providerWholesaleCents !== Number(local.wholesale_price_eur_cents)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        activated: false,
+        providerIdentityMismatch: true,
+        error: 'DT One fixed-value product identity or current EUR prices do not exactly match the disabled catalog record. Refresh/review it first; no product was changed.',
+      });
+    }
+
+    const activeCountry = await getActiveCountryConfig(local.country, client);
+    if (!activeCountry ||
+        String(activeCountry.provider_country_code || '').trim().toUpperCase() !== providerCountryIso ||
+        String(activeCountry.destination_currency || '').trim().toUpperCase() !== providerCurrency) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        activated: false,
+        error: 'Destination country is not active with the exact verified DT One country and currency. No product was changed.',
+      });
+    }
+
+    const basePricing = await getPricingSettings(client, local.country);
+    const priceProduct = { wholesalePriceCents: Number(local.wholesale_price_eur_cents) };
+    const effectivePricing = await resolveProductPricing(
+      client, local.country, local.operator, priceProduct, basePricing
+    );
+    const pricePreview = calculateFinalPrice(priceProduct, effectivePricing);
+    if (pricePreview.finalPriceCents !== Number(local.price_eur_cents)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        activated: false,
+        pricingMismatch: true,
+        catalogRetailPriceEur: Number(local.price_eur_cents) / 100,
+        calculatedCustomerPriceEur: pricePreview.finalPriceCents / 100,
+        error: 'Catalog retail price differs from the server-calculated EUR checkout price. Correct pricing before activation; no product was changed.',
+      });
+    }
+
+    const operatorUpdate = await client.query(
+      `UPDATE country_operators
+          SET active = TRUE, updated_at = NOW()
+        WHERE country_code = $1 AND operator_key = $2
+          AND provider = 'dtone' AND provider_operator_id = $3
+          AND verified_at IS NOT NULL
+        RETURNING operator_key`,
+      [local.country, local.operator_key, providerOperatorId]
+    );
+    if (operatorUpdate.rowCount !== 1) throw new Error('Canonical operator activation did not update exactly one verified operator.');
+
+    const mappingUpdate = await client.query(
+      `UPDATE country_operator_products
+          SET active = TRUE, updated_at = NOW()
+        WHERE country_code = $1 AND operator_key = $2
+          AND product_catalog_id = $3 AND verified_at IS NOT NULL
+        RETURNING id`,
+      [local.country, local.operator_key, local.catalog_id]
+    );
+    if (mappingUpdate.rowCount !== 1) throw new Error('Canonical product mapping activation did not update exactly one verified mapping.');
+
+    const productUpdate = await client.query(
+      `UPDATE product_catalog SET active = TRUE, updated_at = NOW()
+        WHERE id = $1 AND product_id = $2 AND active = FALSE
+        RETURNING id, product_id, country, operator, amount, currency, price_eur_cents, wholesale_price_eur_cents, active`,
+      [local.catalog_id, productId]
+    );
+    if (productUpdate.rowCount !== 1) throw new Error('Catalog product activation did not update exactly one disabled product.');
+
+    await client.query('COMMIT');
+    return res.json({
+      activated: true,
+      product: productUpdate.rows[0],
+      operatorKey: local.operator_key,
+      providerOperatorId,
+      customerPriceEur: pricePreview.finalPriceCents / 100,
+      providerVerified: true,
+      transactionCreated: false,
+      paymentCreated: false,
+      note: 'Exactly one fixed-value product and its verified canonical operator mapping were activated after explicit admin confirmation. No payment or top-up was performed.',
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Fixed-value DT One product activation failed:', error.message);
+    return res.status(503).json({
+      activated: false,
+      error: 'Could not safely activate the verified fixed-value DT One product. No product was changed.',
+    });
+  } finally {
+    client.release();
+  }
+});
+
 // Read-only verification of a catalog product and its country pricing settings.
 // Does not change product activation, prices, orders, or payments.
 app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) => {
