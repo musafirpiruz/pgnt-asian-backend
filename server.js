@@ -6095,9 +6095,8 @@ app.post('/api/admin/dtone/ranged-products/:productId/activate', requireAdmin, a
               c.country_code, o.operator_key, o.provider_operator_id
        FROM dtone_ranged_products r
        JOIN country_registry c
-         ON c.country_code = CASE r.country_iso_code
-           WHEN 'AFG' THEN 'AF' WHEN 'PAK' THEN 'PK'
-           WHEN 'IND' THEN 'IN' WHEN 'BGD' THEN 'BD' ELSE NULL END
+         ON c.provider = 'dtone'
+        AND UPPER(BTRIM(c.provider_country_code)) = UPPER(BTRIM(r.country_iso_code))
         AND c.status = 'active'
         AND c.destination_currency = r.destination_currency
        JOIN country_operators o
