@@ -1387,7 +1387,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
   int _registryOperatorsRequestGeneration = 0;
-  int selectedAmount = 10;
+  int selectedAmount = 75;
   int selectedTab = 0;
   bool isLoading = false;
   bool isQuoteLoading = false;
@@ -1436,7 +1436,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void initState() {
     super.initState();
-    customAmountController.text = '10';
+    customAmountController.text = '75';
     _restoreFuture = _restoreLocalData();
     _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
@@ -2386,7 +2386,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       maxLength: 4,
       decoration: InputDecoration(
         labelText: '${t('customAmount')} (${selectedCountry.currency})',
-        hintText: '10 - 3000',
+        hintText: '75 - 3000',
         helperText: 'له ۱۰ څخه تر ۳۰۰۰ پورې هر مطلوب مبلغ ولیکئ.',
         counterText: '',
         prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
@@ -2543,7 +2543,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
     final enteredAmount = int.tryParse(customAmountController.text.trim());
     if (enteredAmount == null ||
-        enteredAmount < 10 ||
+        enteredAmount < 75 ||
         enteredAmount > 3000 ||
         enteredAmount != selectedAmount) {
       showMessage('لومړی د ۱۰ او ۳۰۰۰ ترمنځ مبلغ ولیکئ او د تایید نښه کېکاږئ.');
