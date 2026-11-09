@@ -138,7 +138,7 @@ test('checkout and ranged quotes use registry phone metadata instead of the lega
 
 test('catalog product lookup and customer discovery require active canonical registry currency', () => {
   const productStart = backend.indexOf('async function getProduct(');
-  const productEnd = backend.indexOf('// ', productStart + 20);
+  const productEnd = backend.indexOf('\napp.', productStart + 20);
   assert.ok(productStart >= 0 && productEnd > productStart);
   const productLookup = backend.slice(productStart, productEnd);
   assert.match(productLookup, /await getActiveCountryConfig\(country, client\)/);
