@@ -2666,6 +2666,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final fee = quote == null ? null : quote['formattedFee'];
     final total = quote == null ? null : quote['formattedFinalPrice'];
     final bonusPercent = quote == null ? null : quote['bonusPercent'];
+    final destinationAmountLabel = selectedOperator == null || selectedAmount <= 0
+        ? '—'
+        : '$selectedAmount ${selectedCountry.currency}';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2675,7 +2678,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             const SizedBox(width: 10), Expanded(child: Text(t('price'))),
             Text(basePrice is String ? basePrice : '—', style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
-            Text('$selectedAmount ${selectedCountry.currency}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(destinationAmountLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
           ]),
           if (quote != null && selectedCountry.code == 'AF') ...[
             const SizedBox(height: 10),
