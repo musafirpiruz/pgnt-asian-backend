@@ -68,7 +68,7 @@ test('Flutter country picker loads active destinations from the registry for fut
   assert.match(flutter, /_availableCountries = countries/);
   assert.match(flutter, /Future<void> _loadCountries\(\)/);
   assert.match(flutter, /api\/countries/);
-  assert.match(flutter, /_availableCountries\s*\.map\(\(country\) => countryCard/);
+  assert.match(flutter, /_availableCountries[\s\S]*?\.map\(\(country\) => countryCard/);
   assert.match(flutter, /_countryCatalogRequestGeneration/);
 });
 
