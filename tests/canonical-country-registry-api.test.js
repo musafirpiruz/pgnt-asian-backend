@@ -75,3 +75,22 @@ test('customer operator discovery exposes only verified canonical provider mappi
   assert.match(route, /provider_operator_id:/);
   assert.match(route, /display_name:/);
 });
+
+test('legacy country rows remain admin-discoverable but never customer-active by default', () => {
+  const configuredStart = server.indexOf('async function getConfiguredDtOneCountryByIso');
+  const configuredEnd = server.indexOf('function normalizeRegistryPhone', configuredStart);
+  assert.ok(configuredStart >= 0 && configuredEnd > configuredStart);
+  const configuredLookup = server.slice(configuredStart, configuredEnd);
+  assert.match(configuredLookup, /'legacy'/);
+
+  const adminStart = server.indexOf("app.get('/api/admin/dtone/countries'");
+  const adminEnd = server.indexOf("\napp.", adminStart + 10);
+  assert.ok(adminStart >= 0 && adminEnd > adminStart);
+  assert.match(server.slice(adminStart, adminEnd), /'legacy'/);
+
+  const publicStart = server.indexOf("app.get('/api/countries',");
+  const publicEnd = server.indexOf("app.get('/api/countries/:countryCode/operators'", publicStart);
+  const publicRoute = server.slice(publicStart, publicEnd);
+  assert.match(publicRoute, /c\.status = 'active'/);
+  assert.doesNotMatch(publicRoute, /'legacy'/);
+});
