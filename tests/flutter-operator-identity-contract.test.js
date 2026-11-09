@@ -172,3 +172,39 @@ test('admin DT One country selector is populated only from the canonical registr
   assert.doesNotMatch(backend, /const operatorOptions=/);
   assert.doesNotMatch(backend, /countryMap\s*=\s*\{\s*AFG:/);
 });
+
+test('registry loading exposes retryable loading and empty/error states instead of silently hiding networks', () => {
+  assert.match(flutter, /bool _registryOperatorsLoading = false/);
+  assert.match(flutter, /String\? _registryOperatorsError/);
+  const start = flutter.indexOf('Future<void> _loadRegistryOperators(String countryCode)');
+  const end = flutter.indexOf('  @override\n  void dispose()', start);
+  assert.ok(start >= 0 && end > start);
+  const loader = flutter.slice(start, end);
+  assert.match(loader, /_registryOperatorsLoading = true/);
+  assert.match(loader, /_registryOperatorsLoading = false/);
+  assert.match(loader, /HTTP \$\{response\.statusCode\}/);
+  assert.match(loader, /parsed\.isEmpty/);
+  assert.match(loader, /_applyDetectedAfghanOperator\(\)/);
+
+  const selectorStart = flutter.indexOf('Widget buildOperatorSelector()');
+  const selectorEnd = flutter.indexOf('Widget _buildStepHeader', selectorStart);
+  assert.ok(selectorStart >= 0 && selectorEnd > selectorStart);
+  const selector = flutter.slice(selectorStart, selectorEnd);
+  assert.match(selector, /CircularProgressIndicator/);
+  assert.match(selector, /_registryOperatorsError/);
+  assert.match(selector, /_loadRegistryOperators\(selectedCountry\.code\)/);
+});
+
+test('Afghan phone prefix detection is re-applied after verified operators finish loading', () => {
+  const loaderStart = flutter.indexOf('Future<void> _loadRegistryOperators(String countryCode)');
+  const loaderEnd = flutter.indexOf('  @override\n  void dispose()', loaderStart);
+  const loader = flutter.slice(loaderStart, loaderEnd);
+  assert.match(loader, /_applyDetectedAfghanOperator\(\);/);
+  const detectorStart = flutter.indexOf('void _applyDetectedAfghanOperator()');
+  const detectorEnd = flutter.indexOf('  @override\n  void dispose()', detectorStart);
+  assert.ok(detectorStart >= 0 && detectorEnd > detectorStart);
+  const detector = flutter.slice(detectorStart, detectorEnd);
+  assert.match(detector, /detectAfghanOperator\(phoneController\.text\)/);
+  assert.match(detector, /countryOperators/);
+  assert.match(detector, /loadPriceQuote\(\)/);
+});
