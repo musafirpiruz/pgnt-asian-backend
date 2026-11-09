@@ -438,7 +438,53 @@ async function getActiveCountryConfig(country, db = pool) {
         AND provider = 'dtone'
         AND provider_country_code IS NOT NULL
         AND BTRIM(provider_country_code) <> ''
-        AND calling_code ~ '^\\+[1-9][0-9]{0,3}
+        AND calling_code ~ '^\\+[1-9][0-9]{0,3}$'
+        AND phone_min_digits BETWEEN 1 AND 15
+        AND phone_max_digits BETWEEN phone_min_digits AND 15
+      LIMIT 1`,
+    [code]
+  );
+  return result.rowCount === 1 ? result.rows[0] : null;
+}
+
+function normalizeRegistryPhone(value, config) {
+  if (!config) throw new Error('Destination country is not active with DT One.');
+  let phone = String(value || '').trim().replace(/[\\s().-]/g, '');
+  if (!/^\\+?\\d+$/.test(phone)) {
+    throw new Error('Phone number contains invalid characters.');
+  }
+  const callingCode = String(config.calling_code);
+  if (phone.startsWith('00' + callingCode.slice(1))) {
+    phone = phone.slice(callingCode.length + 1);
+  } else if (phone.startsWith(callingCode)) {
+    phone = phone.slice(callingCode.length);
+  }
+  if (phone.startsWith('0')) phone = phone.slice(1);
+  if (!/^\\d+$/.test(phone) ||
+      phone.length < Number(config.phone_min_digits) ||
+      phone.length > Number(config.phone_max_digits)) {
+    throw new Error('Phone number length does not match the active destination configuration.');
+  }
+  return phone;
+}
+
+async function validateRegistryPhone(phone, country, db = pool) {
+  const config = await getActiveCountryConfig(country, db);
+  if (!config) {
+    return { valid: false, error: 'This destination is not active and verified with DT One.' };
+  }
+  try {
+    return {
+      valid: true,
+      country: config.country_code,
+      phone: normalizeRegistryPhone(phone, config),
+      currency: config.destination_currency,
+      countryConfig: config,
+    };
+  } catch (error) {
+    return { valid: false, error: error.message };
+  }
+}
 // Get the recipient's local currency.
 function countryCurrency(country) {
   return getCountryCurrency(
