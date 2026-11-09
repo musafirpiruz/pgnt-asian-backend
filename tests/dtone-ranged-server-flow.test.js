@@ -104,7 +104,7 @@ test('ranged products and quotes require a stable verified operator key', () => 
   const discovery = section("app.get('/api/ranged-products'", "app.post('/api/ranged-quotes'");
   const quote = section("app.post('/api/ranged-quotes'", "app.get('/api/pricing/quote'");
   assert.match(discovery, /operator_key IS NOT NULL/);
-  assert.match(discovery, /operatorKey: String\(row\.operator_key\)/);
+  assert.match(discovery, /operatorKey: String\(item\.row\.operator_key\)/);
   assert.match(quote, /req\.body\?\.operatorKey/);
   assert.match(quote, /operator_key = \$3/);
   assert.match(quote, /\[productId, countryIso3, operatorKey\]/);
