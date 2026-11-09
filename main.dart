@@ -1676,13 +1676,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
   // Prefer the server registry when it is available; retain the bundled
   // curated list as an offline/backward-compatible fallback.
   List<MobileOperator> get countryOperators {
-    if (_registryOperatorsCountry == selectedCountry.code &&
-        _registryOperators.isNotEmpty) {
-      return _registryOperators;
+    // The backend country registry is the source of truth. Do not show
+    // bundled/legacy network names when the current country registry is absent.
+    if (_registryOperatorsCountry != selectedCountry.code) {
+      return const [];
     }
-    return operators
-        .where((item) => item.countryCode == selectedCountry.code)
-        .toList();
+    return _registryOperators;
   }
 
   Future<void> _loadRegistryOperators(String countryCode) async {
@@ -1873,6 +1872,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() {
       selectedCountry = country;
       selectedOperator = null;
+      _registryOperators = const [];
+      _registryOperatorsCountry = country.code;
       selectedAmount = 75;
       phoneController.clear();
       customAmountController.text = '75';
