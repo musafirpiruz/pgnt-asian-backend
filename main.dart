@@ -1924,9 +1924,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() {
       selectedCountry = country;
       selectedOperator = null;
-      selectedAmount = 10;
+      selectedAmount = 75;
       phoneController.clear();
-      customAmountController.text = '10';
+      customAmountController.text = '75';
       priceQuote = null;
       priceQuoteError = null;
     });
