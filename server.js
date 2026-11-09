@@ -4472,7 +4472,7 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <label for="key">Admin API key</label>
 <input id="key" type="password" autocomplete="off" required>
 <small>The key is sent only to this PGNT backend for this request and is not saved by this page. Do not share it in chat or screenshots.</small>
-<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><button type="button" id="activateRangedProduct">Map and activate verified ranged product</button><small>Requires the canonical country/operator registry and a second explicit confirmation. Only a provider-identity match can be activated.</small><button type="button" id="refreshCatalogPrices">Refresh verified prices for existing disabled product</button><label for="catalogCountry">Destination country</label><select id="catalogCountry" style="width:100%;padding:12px;font:inherit"><option value="AFG">Afghanistan (AFN)</option><option value="PAK">Pakistan (PKR)</option><option value="IND">India (INR)</option><option value="BGD">Bangladesh (BDT)</option></select><label for="operatorSearch">Network (optional)</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks in selected country</option></select><button type="button" id="discoverOperators">Load network list (read-only)</button><button type="button" id="discover">Find products in selected country</button><button type="button" id="autoBuildCountryCatalog">Automatically build selected country catalog (preview first)</button><label style="display:flex;gap:8px;align-items:center"><input id="confirmCountryCatalogImport" type="checkbox" style="width:auto"> I confirm importing all valid new products for this country as DISABLED</label>
+<button type="submit">Verify selected product (read-only)</button><button type="button" id="checkDatabase">Verify database price and fees (read-only)</button><button type="button" id="importCatalogProduct">Import verified product into catalog (keep disabled)</button><button type="button" id="activateRangedProduct">Map and activate verified ranged product</button><small>Requires the canonical country/operator registry and a second explicit confirmation. Only a provider-identity match can be activated.</small><button type="button" id="refreshCatalogPrices">Refresh verified prices for existing disabled product</button><label for="catalogCountry">Destination country (canonical registry)</label><select id="catalogCountry" style="width:100%;padding:12px;font:inherit"><option value="">Load countries from registry</option></select><button type="button" id="loadRegistryCountries">Load configured DT One countries</button><label for="operatorSearch">Network (optional)</label><select id="operatorSearch" style="width:100%;padding:12px;font:inherit"><option value="ALL">All networks in selected country</option></select><button type="button" id="discoverOperators">Load network list (read-only)</button><button type="button" id="discover">Find products in selected country</button><button type="button" id="autoBuildCountryCatalog">Automatically build selected country catalog (preview first)</button><label style="display:flex;gap:8px;align-items:center"><input id="confirmCountryCatalogImport" type="checkbox" style="width:auto"> I confirm importing all valid new products for this country as DISABLED</label>
 <hr>
 <h2>Sandbox transaction test</h2>
 <p>This uses DT One pre-production only. It does not charge a customer or activate a product. Run only after confirming this is your sandbox account.</p>
@@ -4814,10 +4814,35 @@ checkDatabase.addEventListener('click',async()=>{
 });
 const catalogCountry=document.getElementById('catalogCountry');
 const operatorSearch=document.getElementById('operatorSearch');
-const countryNames={AFG:'Afghanistan',PAK:'Pakistan',IND:'India',BGD:'Bangladesh'};
-const operatorOptions={AFG:['ROSHAN','ETISALAT','AWCC','SALAAM','ATOMA'],PAK:['JAZZ','ZONG','TELENOR','UFONE'],IND:['AIRTEL','JIO','VI','BSNL'],BGD:['GRAMEENPHONE','ROBI','BANGLALINK','TELETALK']};
-function refreshCatalogOperators(){const country=catalogCountry.value;operatorSearch.replaceChildren(new Option('All networks in selected country','ALL'));for(const name of (operatorOptions[country]||[]))operatorSearch.add(new Option(name,name));}
-catalogCountry.addEventListener('change',refreshCatalogOperators);
+const countryNames={};
+let configuredDtOneCountries=[];
+function refreshCatalogOperators(){operatorSearch.replaceChildren(new Option('All networks in selected country','ALL'));}
+async function loadRegistryCountries(){
+ if(!key.value){result.textContent='Enter the admin API key first.';return;}
+ const button=document.getElementById('loadRegistryCountries');
+ button.disabled=true;
+ try{
+  const data=await adminRequest('/api/admin/dtone/countries');
+  if(!data.verified||!Array.isArray(data.countries))throw new Error(data.error||'Invalid country registry response.');
+  configuredDtOneCountries=data.countries;
+  catalogCountry.replaceChildren();
+  for(const country of configuredDtOneCountries){
+   countryNames[country.countryIsoCode]=country.name;
+   catalogCountry.add(new Option(country.name+' ('+country.currency+') — '+country.status,country.countryIsoCode));
+  }
+  if(!configuredDtOneCountries.length)catalogCountry.add(new Option('No configured DT One countries',''));
+  refreshCatalogOperators();
+  result.textContent=JSON.stringify({loaded:true,source:data.source,countries:configuredDtOneCountries},null,2);
+ }catch(error){result.textContent='Could not load configured countries: '+error.message;}
+ finally{key.value='';button.disabled=false;}
+}
+document.getElementById('loadRegistryCountries').addEventListener('click',loadRegistryCountries);
+catalogCountry.addEventListener('change',()=>{
+ refreshCatalogOperators();
+ countryCatalogPreviewReady=false;
+ confirmCountryCatalogImport.checked=false;
+ autoBuildCountryCatalog.textContent='Automatically build selected country catalog (preview first)';
+});
 refreshCatalogOperators();
 document.getElementById('discoverOperators').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
@@ -5765,6 +5790,39 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
 
 // Read-only product discovery in the configured DT One environment.
 // Used to find the correct pre-production product ID; never creates transactions.
+// Admin-only list of DT One countries configured in the canonical registry.
+app.get('/api/admin/dtone/countries', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ verified: false, error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(
+      `SELECT country_code, country_name, destination_currency,
+              provider_country_code, status, configuration_version
+         FROM country_registry
+        WHERE provider = 'dtone'
+          AND provider_country_code IS NOT NULL
+          AND BTRIM(provider_country_code) <> ''
+          AND status IN ('draft', 'configuring', 'testing', 'active', 'disabled')
+        ORDER BY country_name, country_code`
+    );
+    const countries = result.rows.filter(row =>
+      /^[A-Z]{2}$/.test(String(row.country_code || '').toUpperCase()) &&
+      /^[A-Z]{3}$/.test(String(row.provider_country_code || '').trim().toUpperCase()) &&
+      /^[A-Z]{3}$/.test(String(row.destination_currency || '').toUpperCase())
+    ).map(row => ({
+      countryCode: String(row.country_code).toUpperCase(),
+      name: String(row.country_name || row.country_code),
+      currency: String(row.destination_currency).toUpperCase(),
+      countryIsoCode: String(row.provider_country_code).trim().toUpperCase(),
+      status: row.status,
+      configurationVersion: row.configuration_version,
+    }));
+    return res.json({ verified: true, source: 'country_registry', countries });
+  } catch (error) {
+    console.error('Admin DT One country registry read failed:', error.message);
+    return res.status(503).json({ verified: false, error: 'Could not read configured DT One countries.' });
+  }
+});
+
 app.get('/api/admin/dtone/operators', requireAdmin, async (req, res) => {
   if (!DTONE_API_KEY || !DTONE_API_SECRET) {
     return res.status(503).json({ verified: false, error: 'DT One credentials are not configured.' });
