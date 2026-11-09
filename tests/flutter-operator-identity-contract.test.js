@@ -61,3 +61,19 @@ test('registry loader ignores stale responses after country or language changes'
   assert.match(loader, /requestGeneration != _registryOperatorsRequestGeneration/);
   assert.match(loader, /requestedLanguage != languageCode/);
 });
+
+
+test('Flutter country picker loads active destinations from the registry for future country expansion', () => {
+  assert.match(flutter, /factory AppCountry\.fromRegistryJson/);
+  assert.match(flutter, /_availableCountries = countries/);
+  assert.match(flutter, /Future<void> _loadCountries\(\)/);
+  assert.match(flutter, /api\/countries/);
+  assert.match(flutter, /_availableCountries\s*\.map\(\(country\) => countryCard/);
+  assert.match(flutter, /_countryCatalogRequestGeneration/);
+  assert.match(flutter, /configurationVersion/);
+});
+
+test('Flutter keeps a safe bundled launch-country fallback if registry discovery is unavailable', () => {
+  assert.match(flutter, /List<AppCountry> _availableCountries = countries/);
+  assert.match(flutter, /Keep the bundled launch-country list when registry discovery is offline/);
+});
