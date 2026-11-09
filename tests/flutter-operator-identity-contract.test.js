@@ -134,3 +134,25 @@ test('checkout and ranged quotes use registry phone metadata instead of the lega
   assert.match(ranged, /await validateRegistryPhone\(/);
   assert.doesNotMatch(ranged, /validatePhone\(/);
 });
+
+
+test('catalog product lookup and customer discovery require active canonical registry currency', () => {
+  const productStart = backend.indexOf('async function getProduct(');
+  const productEnd = backend.indexOf('// ', productStart + 20);
+  assert.ok(productStart >= 0 && productEnd > productStart);
+  const productLookup = backend.slice(productStart, productEnd);
+  assert.match(productLookup, /await getActiveCountryConfig\(country, client\)/);
+  assert.match(productLookup, /countryConfig\.destination_currency/);
+
+  const discoveryStart = backend.indexOf("app.get('/api/ranged-products'");
+  const discoveryEnd = backend.indexOf("app.post('/api/ranged-quotes'", discoveryStart);
+  assert.ok(discoveryStart >= 0 && discoveryEnd > discoveryStart);
+  const discovery = backend.slice(discoveryStart, discoveryEnd);
+  assert.match(discovery, /await getActiveCountryConfig\(country\)/);
+
+  const quoteStart = backend.indexOf("app.get('/api/pricing/quote'");
+  const quoteEnd = backend.indexOf("app.post('/api/", quoteStart + 10);
+  assert.ok(quoteStart >= 0 && quoteEnd > quoteStart);
+  const quote = backend.slice(quoteStart, quoteEnd);
+  assert.match(quote, /await getActiveCountryConfig\(country\)/);
+});
