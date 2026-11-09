@@ -121,3 +121,37 @@ test('keeps very small ranged quotes above Stripe minimum EUR charge', () => {
   assert.ok(result.finalPriceCents >= 50);
   assert.ok(result.netAfterStripeCents >= result.wholesaleCostCents);
 });
+
+
+test('accepts exact DT One destination currencies for all four supported countries', () => {
+  const countryCurrencies = [
+    ['AF', 'AFN'],
+    ['PK', 'PKR'],
+    ['IN', 'INR'],
+    ['BD', 'BDT'],
+  ];
+  for (const [country, currency] of countryCurrencies) {
+    const value = response({
+      requested_values: { destination: { amount: 150, unit: currency, unit_type: 'CURRENCY' } },
+    });
+    const result = parseRangedWholesalePrice(value, {
+      ...expected,
+      destinationCurrency: currency,
+    });
+    assert.equal(result.destinationCurrency, currency, country);
+    assert.equal(result.wholesaleCurrency, 'EUR', country);
+    assert.equal(result.wholesaleTotalCents, 190, country);
+  }
+});
+
+test('four-country customer charge always remains EUR and covers wholesale plus app fee after Stripe estimate', () => {
+  for (const currency of ['AFN', 'PKR', 'INR', 'BDT']) {
+    const result = calculateRangedCustomerPrice(190, {
+      feeCents: 49,
+      stripeFeePercent: 1.5,
+      stripeFixedFeeCents: 25,
+    });
+    assert.equal(result.currency, 'EUR', currency);
+    assert.ok(result.netAfterStripeCents >= result.wholesaleCostCents + result.feeCents, currency);
+  }
+});
