@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - integration/four-country-fx-dtone-reconciliation
+      - feature/dtone-ranged-transaction-lifecycle
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -35,6 +36,7 @@ on:
       - fix/flutter-disable-unverified-referral-ui
       - feature/firebase-id-token-verification-core
       - feature/dtone-ranged-transaction-lifecycle
+      - feature/verified-dtone-denominations-api
       - feat/first-launch-language-welcome
     paths:
       - 'main.dart'
