@@ -2011,7 +2011,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
               item['productId'] is num &&
               item['dtoneProductId'] != null &&
               int.tryParse('${item['amount']}') != null &&
-              int.parse('${item['amount']}') > 0 &&
+              int.parse('${item['amount']}') >= 10 &&
+              int.parse('${item['amount']}') <= 3000 &&
               item['currency']?.toString().toUpperCase() == selectedCountry.currency)
           .toList();
       if (!mounted || countryCode != selectedCountry.code ||
