@@ -14,6 +14,20 @@ PGNT ASIAN TOPUP is a multilingual mobile recharge project designed for customer
 | India | IN | INR |
 | Bangladesh | BD | BDT |
 
+## Future Country Expansion (Permanent Architecture Requirement)
+
+The four countries listed above are the initial launch scope, not a permanent country limit. All new features must be designed so additional countries can be added without rebuilding the application or duplicating country-specific business logic.
+
+- Treat the canonical country registry and country/operator records in PostgreSQL as the source of truth; do not rely on a fixed four-country list in business logic.
+- Store each country's ISO country identity, ISO 4217 destination currency, dialing rules, supported operators, and provider mappings as country data/configuration.
+- Discover available DT One products and supported destination-amount capabilities from verified provider metadata; never assume every country or operator supports the same amounts or increments.
+- Keep pricing, FX, fees, tax/rounding rules, and availability configurable per country/operator, while retaining EUR as the current Stripe checkout currency until a separately reviewed multi-payment-currency feature is approved.
+- Keep Flutter country selection, validation, localization, product display, and checkout flows data-driven from backend capabilities rather than hardcoded country branches.
+- A new country must pass its own catalog identity, currency/FX, pricing, amount-range, Stripe sandbox, DT One pre-production, callback, refund/reconciliation, and localization tests before activation.
+- Adding a country must not change existing countries' prices, catalog identifiers, activation state, or customer orders.
+
+Any new backend, Flutter, admin, wallet, referral, support, or reporting feature must preserve this country-extensible design.
+
 ## Supported Languages
 
 - Pashto
