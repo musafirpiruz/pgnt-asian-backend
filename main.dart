@@ -1444,6 +1444,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Map<String, dynamic>? priceQuote;
   String? priceQuoteError;
   List<Map<String, dynamic>> _rangedProducts = [];
+  List<Map<String, dynamic>> _verifiedFixedProducts = [];
+  String? _verifiedFixedProductsOperatorKey;
   String? _rangedProductsCountry;
   String? _rangedIdempotencyKey;
   String? _rangedRequestFingerprint;
@@ -1982,6 +1984,84 @@ class _PgntHomePageState extends State<PgntHomePage> {
     });
 
     try {
+      // Fixed denominations are sourced only from the verified DT One mapping API.
+      final operatorKey = operator.operatorKey;
+      if (operatorKey == null || operatorKey.isEmpty) {
+        throw Exception('د شبکې ثابت او تایید شوی پېژند نشته.');
+      }
+      final fixedUri = Uri.parse(
+        '$backendBaseUrl/api/countries/${Uri.encodeComponent(countryCode)}/operators/${Uri.encodeComponent(operatorKey)}/products',
+      );
+      final fixedResponse = await http.get(
+        fixedUri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 12));
+      if (fixedResponse.statusCode != 200) {
+        throw Exception('د DT One ثابت تایید شوي مقدارونه ترلاسه نه شول.');
+      }
+      final fixedDecoded = jsonDecode(fixedResponse.body);
+      if (fixedDecoded is! Map || fixedDecoded['products'] is! List) {
+        throw Exception('د ثابتو مقدارونو ځواب ناسم دی.');
+      }
+      final fixedProducts = (fixedDecoded['products'] as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .where((item) =>
+              item['productId'] is num &&
+              item['dtoneProductId'] != null &&
+              int.tryParse('${item['amount']}') != null &&
+              int.parse('${item['amount']}') > 0 &&
+              item['currency']?.toString().toUpperCase() == selectedCountry.currency)
+          .toList();
+      if (!mounted || countryCode != selectedCountry.code ||
+          operatorKey != selectedOperator?.operatorKey) return;
+      setState(() {
+        _verifiedFixedProducts = fixedProducts;
+        _verifiedFixedProductsOperatorKey = operatorKey;
+      });
+      if (fixedProducts.isNotEmpty) {
+        final amounts = fixedProducts
+            .map((item) => int.parse('${item['amount']}'))
+            .toSet();
+        if (!amounts.contains(amount)) {
+          amount = int.parse('${fixedProducts.first['amount']}');
+          setState(() {
+            selectedAmount = amount;
+            customAmountController.text = '$amount';
+          });
+        }
+        if (!mounted || countryCode != selectedCountry.code ||
+            operatorKey != selectedOperator?.operatorKey) return;
+        final quoteUri = Uri.parse('$backendBaseUrl/api/pricing/quote')
+            .replace(queryParameters: {
+              'country': countryCode,
+              'operator': operator.name,
+              'operatorKey': operatorKey,
+              'amount': '$amount',
+            });
+        final quoteResponse = await http.get(
+          quoteUri,
+          headers: const {'Accept': 'application/json'},
+        ).timeout(const Duration(seconds: 12));
+        if (quoteResponse.statusCode != 200) {
+          throw Exception('د ټاکل شوي DT One محصول قیمت تایید نه شو.');
+        }
+        final quoteDecoded = jsonDecode(quoteResponse.body);
+        if (quoteDecoded is! Map || quoteDecoded['productId'] == null) {
+          throw Exception('د قیمت تایید ځواب ناسم دی.');
+        }
+        if (!mounted || countryCode != selectedCountry.code ||
+            amount != selectedAmount || operatorKey != selectedOperator?.operatorKey) return;
+        setState(() {
+          priceQuote = Map<String, dynamic>.from(quoteDecoded);
+          priceQuoteError = null;
+          _rangedProducts = [];
+          _rangedProductsCountry = null;
+        });
+        return;
+      }
+      // If there are no verified fixed products, continue to the separate
+      // provider-verified ranged-product flow below. Never invent a fallback.
       // Read-only discovery is mandatory for the four launch countries.
       // Never fall back to an unverified fixed denomination or stale catalog.
       final discoveryUri = Uri.parse('$backendBaseUrl/api/ranged-products')
@@ -2095,6 +2175,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
       selectedAmount = 0;
       _rangedProducts = [];
       _rangedProductsCountry = null;
+      _verifiedFixedProducts = [];
+      _verifiedFixedProductsOperatorKey = null;
       phoneController.clear();
       customAmountController.clear();
       priceQuote = null;
@@ -2463,6 +2545,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
               onTap: () {
                 setState(() {
                   selectedOperator = item;
+                  _verifiedFixedProducts = [];
+                  _verifiedFixedProductsOperatorKey = null;
+                  _rangedProducts = [];
+                  _rangedProductsCountry = null;
+                  selectedAmount = 0;
+                  customAmountController.clear();
                   priceQuote = null;
                   priceQuoteError = null;
                 });
@@ -2549,6 +2637,45 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final increment = int.tryParse('${rangedProduct?['increment']}') ?? 0;
     final hasVerifiedRange = rangedProduct != null &&
         providerMin > 0 && providerMax >= providerMin && increment > 0;
+
+    final hasVerifiedFixedProducts = operator != null &&
+        _verifiedFixedProductsOperatorKey == operator.operatorKey &&
+        _verifiedFixedProducts.isNotEmpty;
+    if (hasVerifiedFixedProducts) {
+      final fixedAmounts = _verifiedFixedProducts
+          .map((item) => int.tryParse('${item['amount']}'))
+          .whereType<int>()
+          .toSet()
+          .toList()
+        ..sort();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('د DT One له خوا تایید شوي مقدارونه:',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: fixedAmounts.map((value) => ChoiceChip(
+              label: Text('$value ${selectedCountry.currency}'),
+              selected: selectedAmount == value,
+              onSelected: (_) {
+                setState(() {
+                  selectedAmount = value;
+                  customAmountController.text = '$value';
+                  priceQuote = null;
+                  priceQuoteError = null;
+                });
+                loadPriceQuote();
+              },
+            )).toList(),
+          ),
+        ],
+      );
+    }
 
     final suggestions = <int>[];
     if (hasVerifiedRange) {
