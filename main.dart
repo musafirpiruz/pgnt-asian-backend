@@ -1885,8 +1885,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
       // request completed. Re-run prefix detection only against verified
       // registry operators, so the network is selected automatically when
       // its DT One mapping is available.
-      _applyDetectedAfghanOperator();
-    } catch (error) {
+      if (selectedOperator == null) {
+        _applyDetectedAfghanOperator();
+      } else {
+        loadPriceQuote();
+      }
+    } catch (_) {
       if (!mounted ||
           requestGeneration != _registryOperatorsRequestGeneration ||
           countryCode != selectedCountry.code ||
@@ -2077,7 +2081,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     _loadRegistryOperators(country.code);
   }
 
-  void handlePhoneChanged(String value) {
+  void handlePhoneChanged(String _) {
     if (mounted) setState(() {});
     _applyDetectedAfghanOperator();
   }
