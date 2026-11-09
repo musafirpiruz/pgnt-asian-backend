@@ -5879,7 +5879,7 @@ app.get('/api/admin/dtone/countries', requireAdmin, async (req, res) => {
         WHERE provider = 'dtone'
           AND provider_country_code IS NOT NULL
           AND BTRIM(provider_country_code) <> ''
-          AND status IN ('draft', 'configuring', 'testing', 'active', 'disabled')
+          AND status IN ('draft', 'configuring', 'testing', 'active', 'disabled', 'legacy')
         ORDER BY country_name, country_code`
     );
     const countries = result.rows.filter(row =>
