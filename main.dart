@@ -1436,7 +1436,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void initState() {
     super.initState();
-    customAmountController.text = '75';
+    customAmountController.text = '10';
     _restoreFuture = _restoreLocalData();
     _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
