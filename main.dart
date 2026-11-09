@@ -53,6 +53,9 @@ class AppCountry {
   final String flag;
   final String currency;
   final String symbol;
+  final String? callingCode;
+  final int? phoneMinDigits;
+  final int? phoneMaxDigits;
 
   const AppCountry({
     required this.code,
@@ -60,14 +63,21 @@ class AppCountry {
     required this.flag,
     required this.currency,
     required this.symbol,
+    this.callingCode,
+    this.phoneMinDigits,
+    this.phoneMaxDigits,
   });
   factory AppCountry.fromRegistryJson(Map<String, dynamic> json) {
     final code = (json['countryCode'] ?? '').toString().trim().toUpperCase();
     final currency = (json['currency'] ?? '').toString().trim().toUpperCase();
     final name = (json['name'] ?? '').toString().trim();
-    if (!RegExp(r'^[A-Z]{2}$').hasMatch(code) ||
-        !RegExp(r'^[A-Z]{3}$').hasMatch(currency) ||
-        name.isEmpty) {
+    final callingCode = (json['callingCode'] ?? '').toString().trim();
+    final minDigits = int.tryParse((json['phoneMinDigits'] ?? '').toString());
+    final maxDigits = int.tryParse((json['phoneMaxDigits'] ?? '').toString());
+    if (code.length != 2 || currency.length != 3 || name.isEmpty ||
+        !callingCode.startsWith('+') || callingCode.length < 2 ||
+        minDigits == null || maxDigits == null ||
+        minDigits < 1 || maxDigits < minDigits || maxDigits > 15) {
       throw const FormatException('Invalid country registry entry.');
     }
     const symbols = {
@@ -81,6 +91,9 @@ class AppCountry {
       flag: '',
       currency: currency,
       symbol: symbols[currency] ?? currency,
+      callingCode: callingCode,
+      phoneMinDigits: minDigits,
+      phoneMaxDigits: maxDigits,
     );
   }
 
