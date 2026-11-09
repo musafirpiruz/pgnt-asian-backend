@@ -28,7 +28,7 @@ test('registry product resolution uses server-side verified mapping and paramete
   for (const token of [
     'country_operator_products', 'product_catalog', 'country_registry',
     'o.operator_key = $2', 'cop.verified_at IS NOT NULL',
-    'o.verified_at IS NOT NULL', 'p.amount = $3',
+    'o.verified_at IS NOT NULL', 'p.amount = $4', '($3::bigint IS NULL OR p.id = $3::bigint)',
     'p.currency = c.destination_currency',
   ]) assert.ok(resolver.includes(token), 'missing secure resolver rule: ' + token);
   assert.doesNotMatch(resolver, /providerOperatorId|req\.body/);
