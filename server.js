@@ -447,6 +447,29 @@ async function getActiveCountryConfig(country, db = pool) {
   return result.rowCount === 1 ? result.rows[0] : null;
 }
 
+async function getConfiguredDtOneCountryByIso(providerIsoCode, db = pool) {
+  const iso = String(providerIsoCode || '').trim().toUpperCase();
+  if (!db || !/^[A-Z]{3}$/.test(iso)) return null;
+  const result = await db.query(
+    `SELECT country_code, destination_currency, status
+       FROM country_registry
+      WHERE provider = 'dtone'
+        AND UPPER(BTRIM(provider_country_code)) = $1
+        AND status IN ('draft', 'configuring', 'testing', 'active', 'disabled')
+      ORDER BY CASE status
+        WHEN 'active' THEN 0 WHEN 'testing' THEN 1 WHEN 'configuring' THEN 2
+        WHEN 'draft' THEN 3 WHEN 'disabled' THEN 4 ELSE 5 END
+      LIMIT 2`,
+    [iso]
+  );
+  if (result.rowCount !== 1) return null;
+  const row = result.rows[0];
+  const countryCode = String(row.country_code || '').trim().toUpperCase();
+  const currency = String(row.destination_currency || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode) || !/^[A-Z]{3}$/.test(currency)) return null;
+  return { countryCode, currency, providerIsoCode: iso, status: row.status };
+}
+
 function normalizeRegistryPhone(value, config) {
   if (!config) throw new Error('Destination country is not active with DT One.');
   let phone = String(value || '').trim().replace(/[\s().-]/g, '');
@@ -5297,8 +5320,8 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
     }
 
     const iso = String(providerProduct.operator?.country?.iso_code || '').toUpperCase();
-    const countryMap = { AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' };
-    const providerCountry = countryMap[iso];
+    const providerCountryConfig = await getConfiguredDtOneCountryByIso(iso, client);
+    const providerCountry = providerCountryConfig?.countryCode;
     const providerOperator = String(providerProduct.operator?.name || '').trim();
     const providerCurrency = String(providerProduct.destination?.unit || providerProduct.benefits?.[0]?.amount?.unit || '').toUpperCase();
     const providerAmount = Number(providerProduct.destination?.amount ?? providerProduct.benefits?.[0]?.amount?.base);
@@ -5313,7 +5336,7 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
         productId,
       });
     }
-    if (providerCurrency !== countryCurrency(providerCountry)) {
+    if (providerCurrency !== providerCountryConfig?.currency) {
       await client.query('ROLLBACK');
       return res.status(422).json({ refreshed: false, error: 'DT One product currency does not match the supported country currency. No values were changed.', productId });
     }
@@ -5410,8 +5433,8 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
       });
     }
     const iso = String(providerProduct.operator?.country?.iso_code || '').toUpperCase();
-    const countryMap = { AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' };
-    const country = countryMap[iso];
+    const providerCountryConfig = await getConfiguredDtOneCountryByIso(iso, pool);
+    const country = providerCountryConfig?.countryCode;
     const operator = String(providerProduct.operator?.name || '').trim();
     const currency = String(providerProduct.destination?.unit || providerProduct.benefits?.[0]?.amount?.unit || '').toUpperCase();
     const amountValue = Number(providerProduct.destination?.amount ?? providerProduct.benefits?.[0]?.amount?.base);
@@ -5422,7 +5445,7 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
         !Number.isFinite(wholesaleEur) || wholesaleEur <= 0) {
       return res.status(422).json({ imported: false, error: 'Provider product is missing a supported country, denomination, currency, retail price, or wholesale price.', productId });
     }
-    if (currency !== countryCurrency(country)) {
+    if (currency !== providerCountryConfig?.currency) {
       return res.status(422).json({ imported: false, error: 'Product currency does not match the configured currency for this country.', productId, country, currency });
     }
     const retailCents = Math.round(retailEur * 100);
@@ -5485,10 +5508,18 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
   }
 
   const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
-  const countryMap = Object.freeze({ AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' });
-  const country = countryMap[countryIsoCode];
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
+    return res.status(400).json({ verified: false, error: 'A valid configured DT One country ISO code is required.' });
+  }
+  let countryConfig;
+  try { countryConfig = await getConfiguredDtOneCountryByIso(countryIsoCode, pool); }
+  catch (error) {
+    console.error('DT One country registry lookup failed:', error.message);
+    return res.status(503).json({ verified: false, error: 'Country registry is unavailable. No catalog rows were changed.' });
+  }
+  const country = countryConfig?.countryCode;
   if (!country) {
-    return res.status(400).json({ verified: false, error: 'Choose AFG, PAK, IND, or BGD.' });
+    return res.status(422).json({ verified: false, error: 'This DT One country is not configured in the canonical country registry.' });
   }
   const confirmImport = req.body?.confirmImport === true;
 
@@ -5740,12 +5771,17 @@ app.get('/api/admin/dtone/operators', requireAdmin, async (req, res) => {
   }
 
   const countryIsoCode = String(req.query.country_iso_code || 'AFG').trim().toUpperCase();
-  const supportedOperatorCountries = new Set(['AFG', 'PAK', 'IND', 'BGD']);
-  if (!supportedOperatorCountries.has(countryIsoCode)) {
-    return res.status(400).json({
-      verified: false,
-      error: 'country_iso_code must be one of AFG, PAK, IND, or BGD.',
-    });
+  if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
+    return res.status(400).json({ verified: false, error: 'A valid DT One country ISO code is required.' });
+  }
+  let countryConfig;
+  try { countryConfig = await getConfiguredDtOneCountryByIso(countryIsoCode, pool); }
+  catch (error) {
+    console.error('DT One operator country registry lookup failed:', error.message);
+    return res.status(503).json({ verified: false, error: 'Country registry is unavailable.' });
+  }
+  if (!countryConfig) {
+    return res.status(422).json({ verified: false, error: 'This DT One country is not configured in the canonical country registry.' });
   }
 
   try {
@@ -5848,7 +5884,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
     return res.status(503).json({ error: 'DT One credentials are not configured.' });
   }
 
-  const countryIsoCode = String(req.query.country_iso_code || 'AFG').toUpperCase();
+  const countryIsoCode = String(req.query.country_iso_code || 'AFG').trim().toUpperCase();
   const operatorQuery = String(req.query.operator || '').trim().toUpperCase();
   const amountQuery = req.query.amount == null || String(req.query.amount).trim() === ''
     ? null
@@ -5863,6 +5899,15 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
   ]);
   if (!/^[A-Z]{3}$/.test(countryIsoCode)) {
     return res.status(400).json({ error: 'country_iso_code must be a three-letter ISO code.' });
+  }
+  let countryConfig;
+  try { countryConfig = await getConfiguredDtOneCountryByIso(countryIsoCode, pool); }
+  catch (error) {
+    console.error('DT One product country registry lookup failed:', error.message);
+    return res.status(503).json({ error: 'Country registry is unavailable.' });
+  }
+  if (!countryConfig) {
+    return res.status(422).json({ error: 'This DT One country is not configured in the canonical country registry.' });
   }
   if (amountQuery !== null && (!Number.isFinite(amountQuery) || amountQuery <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number.' });
@@ -5965,7 +6010,7 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
         const rangeMax = providerMaximum.length ? Math.min(...providerMaximum) : null;
         const isRanged = productType.startsWith('RANGED_VALUE_') ||
           (rangeMin !== null && rangeMax !== null && rangeMax >= rangeMin);
-        const localCurrency = ({ AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT' })[countryIsoCode];
+        const localCurrency = countryConfig.currency;
         const exactAmountMatch = benefitAmounts.includes(amountQuery) || productAmounts.includes(amountQuery);
         const rangedCapability = isRanged ? parseRangedProductCapability(product) : null;
         const rangeAmountMatch = amountQuery !== null &&
@@ -6070,10 +6115,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
 
   const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
   const productId = String(req.body?.product_id || '').trim();
-  const countryCurrencyByIso = Object.freeze({
-    AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT',
-  });
-  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\d{0,17}$/.test(productId)) {
+  if (!/^[A-Z]{3}$/.test(countryIsoCode) || !/^[1-9]\d{0,17}$/.test(productId)) {
     return res.status(400).json({
       imported: false,
       error: 'A supported country_iso_code and valid DT One product_id are required.',
@@ -6104,8 +6146,12 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
     const providerCountry = String(product?.operator?.country?.iso_code || '').trim().toUpperCase();
     const destinationCurrency = String(product?.destination?.unit || '').trim().toUpperCase();
     const operatorName = String(product?.operator?.name || '').trim();
+    const countryConfig = await getConfiguredDtOneCountryByIso(countryIsoCode, pool);
+    if (!countryConfig) {
+      return res.status(422).json({ imported: false, error: 'Selected DT One country is not configured in the canonical country registry. No database rows were changed.' });
+    }
     if (!capability || providerCountry !== countryIsoCode ||
-        destinationCurrency !== countryCurrencyByIso[countryIsoCode] || !operatorName) {
+        destinationCurrency !== countryConfig.currency || !operatorName) {
       return res.status(422).json({
         imported: false,
         error: 'The DT One product is not a verified ranged recharge for the selected country and local currency, or it lacks DESTINATION_AMOUNT support and complete integer bounds.',
