@@ -45,7 +45,7 @@ function validateManifest(manifest) {
     if (product.productKind === 'fixed') {
       fixed++;
       if (typeof product.destinationAmount !== 'string' ||
-          !/^\\d+(?:\\.\\d+)?$/.test(product.destinationAmount)) {
+          !/^\d+(?:\.\d+)?$/.test(product.destinationAmount)) {
         errors.push(label + ': fixed destination amount must be a numeric string.');
       }
       if (product.destinationAmountInteger === true &&
