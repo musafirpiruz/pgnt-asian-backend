@@ -106,7 +106,7 @@ test('ranged products and quotes require a stable verified operator key', () => 
   assert.match(discovery, /operator_key IS NOT NULL/);
   assert.match(discovery, /operatorKey: String\(item\.row\.operator_key\)/);
   assert.match(quote, /req\.body\?\.operatorKey/);
-  assert.match(quote, /o\.operator_key = r\.operator_key/);
+  assert.match(quote, /r\.operator_key = \$2/);
   assert.match(quote, /c\.country_code = \$3/);
   assert.match(quote, /\[productId, operatorKey, country\]/);
 });
