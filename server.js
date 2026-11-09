@@ -1162,7 +1162,8 @@ app.get('/api/ranged-products', async (req, res) => {
     const configured = await pool.query(
       `SELECT r.dtone_product_id, r.country_iso_code, r.operator_name,
               r.operator_key, r.destination_currency, r.min_amount,
-              r.max_amount, r.amount_increment, o.provider_operator_id
+              r.max_amount, r.amount_increment, o.provider_operator_id,
+              c.destination_currency AS registry_currency
        FROM dtone_ranged_products r
        JOIN country_registry c
          ON c.provider = 'dtone'
@@ -1277,7 +1278,7 @@ app.get('/api/ranged-products', async (req, res) => {
           !Number.isSafeInteger(providerMax) ||
           !Number.isSafeInteger(increment) ||
           increment <= 0 || providerMax < providerMin ||
-          currency !== COUNTRY_CURRENCIES[country]) return [];
+          currency !== String(item.row.registry_currency).trim().toUpperCase()) return [];
 
       const minAmount = providerMin +
         Math.ceil((Math.max(providerMin, PGNT_MIN_AMOUNT) - providerMin) / increment) * increment;
