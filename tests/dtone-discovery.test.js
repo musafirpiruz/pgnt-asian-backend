@@ -7,16 +7,23 @@ const path = require('node:path');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
-test('DT One product discovery supports all four requested country ISO codes', () => {
-  for (const code of ['AFG', 'PAK', 'IND', 'BGD']) {
-    assert.match(server, new RegExp('<option value="' + code + '"'));
-  }
+test('DT One product discovery loads supported countries from the canonical registry', () => {
+  const countryRouteStart = server.indexOf("app.get('/api/admin/dtone/countries', requireAdmin");
+  const countryRouteEnd = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin", countryRouteStart);
+  assert.ok(countryRouteStart >= 0 && countryRouteEnd > countryRouteStart);
+  const countryRoute = server.slice(countryRouteStart, countryRouteEnd);
+  assert.match(countryRoute, /FROM country_registry/);
+  assert.match(countryRoute, /provider_country_code/);
+  assert.match(countryRoute, /source: 'country_registry'/);
+  assert.match(server, /id="loadRegistryCountries"/);
+  assert.match(server, /id="catalogCountry"/);
+
   const routeStart = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
   const routeEnd = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", routeStart);
   assert.ok(routeStart >= 0 && routeEnd > routeStart);
   const route = server.slice(routeStart, routeEnd);
   assert.match(route, /countryIsoCode/);
-  assert.match(route, /operator\?\.country\?\.iso_code/);
+  assert.match(route, /operator\\?\\.country\\?\\.iso_code/);
 });
 
 test('DT One product discovery allows an omitted amount filter', () => {
