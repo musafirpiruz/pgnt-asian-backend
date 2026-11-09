@@ -76,3 +76,26 @@ test('Flutter keeps a safe bundled launch-country fallback if registry discovery
   assert.match(flutter, /List<AppCountry> _availableCountries = countries/);
   assert.match(flutter, /Keep the bundled launch-country list when registry discovery is offline/);
 });
+
+
+test('registry country model carries calling code and authoritative phone digit bounds', () => {
+  const start = flutter.indexOf('class AppCountry {');
+  const end = flutter.indexOf('const List<AppCountry> countries', start);
+  assert.ok(start >= 0 && end > start);
+  const model = flutter.slice(start, end);
+  for (const field of ['callingCode', 'phoneMinDigits', 'phoneMaxDigits', "json['callingCode']", "json['phoneMinDigits']", "json['phoneMaxDigits']"]) {
+    assert.ok(model.includes(field), 'missing country metadata: ' + field);
+  }
+});
+
+test('customer phone validation uses registry digit bounds when country metadata is available', () => {
+  const start = flutter.indexOf('bool isValidPhone(');
+  const end = flutter.indexOf('// Euro display helper', start);
+  assert.ok(start >= 0 && end > start);
+  const validator = flutter.slice(start, end);
+  assert.ok(validator.includes('AppCountry? country'));
+  assert.ok(validator.includes('country.phoneMinDigits'));
+  assert.ok(validator.includes('country.phoneMaxDigits'));
+  assert.ok(validator.includes('country.callingCode'));
+  assert.ok(validator.includes('country: selectedCountry'));
+});
