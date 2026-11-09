@@ -66,6 +66,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f6f
 @media(min-width:760px){main{padding:26px 18px 42px;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);align-items:start}.card:first-child,.card:nth-child(2),.card:nth-child(4){grid-column:1/-1}.card:nth-child(3){grid-column:1/-1}}
 @media(min-width:980px){main{grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr)}.card:first-child{grid-column:1/-1}.card:nth-child(2){grid-column:1}.card:nth-child(3){grid-column:2}.card:nth-child(4){grid-column:1/-1}}
 @media(max-width:600px){header{padding:21px 15px}main{padding:14px 11px 28px;gap:13px}.card{padding:15px;border-radius:15px}.detail dl{grid-template-columns:1fr;gap:3px}.detail dd{margin-bottom:8px}.actions button{flex-basis:100%}.header-row{align-items:flex-start}.language-toggle{font-size:.88rem;padding:7px 11px}.quick-nav{padding:9px 11px}.quick-nav a{font-size:.82rem;padding:7px 11px}.order-actions button{flex-basis:100%}}
+@media(max-width:760px){header{padding:16px 13px}h1{font-size:1.25rem}header p{font-size:.88rem;max-width:75%}main{display:grid;grid-template-columns:minmax(0,1fr);padding:12px 10px 26px;gap:11px}main>.card{grid-column:1/-1!important;width:100%;min-width:0;padding:15px 13px;border-radius:14px}.card h2{font-size:1rem}.card p,.muted{font-size:.92rem;line-height:1.5}input,select,button{min-height:52px;font-size:16px}.input,select{padding:12px}.actions{display:grid;grid-template-columns:1fr;gap:9px}.actions button,.order-actions button{width:100%;min-height:52px;flex:1 1 auto}.detail dl{grid-template-columns:1fr;gap:3px}.detail dd{margin:0 0 8px}.header-row{align-items:center;gap:8px}.language-toggle{min-height:44px;padding:7px 10px;font-size:.86rem}.quick-nav{padding:8px 10px;gap:7px;scroll-snap-type:x proximity}.quick-nav a{font-size:.8rem;padding:9px 12px;min-height:40px;scroll-snap-align:start}.card{scroll-margin-top:65px}.grid{grid-template-columns:1fr}.safe{font-size:.9rem;padding:12px}}@media(max-width:360px){main{padding-inline:8px}.card{padding:12px 10px}.quick-nav a{font-size:.76rem;padding:8px 10px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important}}
 </style>
 </head>
@@ -376,7 +377,7 @@ document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value
  if(!toggle||!nav)return;
  const sections=[...document.querySelectorAll('main>section.card')];
  const navPs=['لنډیز او ننوتل','د کتنې فرمایشونه','بیې او فیسونه','د محصول تشخیص','Wallet خوندیتوب','Referral کوډ جوړول','Referral راپور','امنیت'];
- const navFr=['Connexion & aperçu','Commandes à vérifier','Prix & frais','Diagnostic produit','Sécurité Wallet','Créer un code parrain','Rapport parrainage','Sécurité'];
+ const navFr=['Connexion & aperçu','Commandes à vérifier','Prix & frais','Diagnostic produit','Sécurité Wallet','Créer un code parrain','Rapport parrainage','Sécurité']; const navEn=['Sign in & overview','Orders to review','Prices & fees','Product diagnostic','Wallet safety','Create referral code','Referral report','Security'];
  const translations={
   'ساده اډمین — د فرمایشونو او تادیاتو کتنه':'Administration simplifiée — commandes et paiements',
   '۱. خوندي ننوتل':'1. Connexion sécurisée',
@@ -429,6 +430,23 @@ document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value
   'بشپړ تشخیصي معلومات':'Détails complets du diagnostic','بشپړ تخنیکي راپور':'Rapport technique complet',
   'محلي ':'Local ','یادونه':'Remarque','راتلونکی ګام':'Prochaine étape','خطا':'Erreur'
  };
+ const english={
+'ساده اډمین — د فرمایشونو او تادیاتو کتنه':'Simple admin — orders and payments',
+'۱. خوندي ننوتل':'1. Secure sign in','د اډمین API کیلي دلته ولیکئ. کیلي په دې پاڼه کې د کار تر پای پورې پاتې کېږي؛ په موبایل یا براوزر کې نه ساتل کېږي.':'Enter your admin API key. It stays in this page memory only and is not saved.',
+'خپله اډمین کیلي ولیکئ':'Enter your admin API key','د کتنې فرمایشونه ښکاره کړه':'Show orders to review','د بیو او فیسونو کتنه':'View prices and fees','کیلي پاکه کړه':'Clear key',
+'د پیل لپاره کیلي ولیکئ او «د کتنې فرمایشونه ښکاره کړه» کېکاږئ.':'Enter your key, then select “Show orders to review”.',
+'۲. هغه فرمایشونه چې کتنې ته اړتیا لري':'2. Orders requiring review','یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.':'Read-only. Resending orders, refunds and product activation are not available here.','تر اوسه فرمایشونه نه دي لوستل شوي.':'No orders loaded yet.',
+'۳. د بیو او فیسونو لنډ راپور':'3. Prices and fees overview','دا برخه یوازې اوسني ثبت شوي تنظیمات ښيي؛ هېڅ ارزښت نه بدلوي.':'This section shows current settings only. No values are changed.','د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.':'Select “View prices and fees” above to load the report.',
+'۴. د محصول د قیمت تشخیص (یوازې لوستل)':'4. Product price diagnostic (read-only)','د DT One د محصول ID ولیکئ. دا برخه د محصول، بیې، اسعارو او تادیې د چمتووالي ستونزې ښيي؛ هېڅ محصول نه فعالوي او هېڅ قیمت نه بدلوي.':'Enter a DT One product ID to check product, price, currency and payment readiness. No product is activated and no price is changed.','د محصول ID، لکه 7194':'Product ID, e.g. 7194','د محصول تشخیص پیل کړه':'Run product diagnostic','د تشخیص لپاره د محصول ID ولیکئ.':'Enter a product ID to run the diagnostic.',
+'۵. د Wallet او Ledger د Migration خوندیتوب (یوازې لوستل)':'5. Wallet and Ledger migration safety (read-only)','دا کتنه د اصلي Database د تکراري Wallet حسابونو، تکراري Ledger حوالو او د مالي تاریخ د حذف کېدو احتمالي خطرونه شمېري. هېڅ Migration، مالي لیکنه یا د Wallet فعالول نه ترسره کوي.':'Checks for duplicate wallets, duplicate Ledger references and financial-history risks. No migration or financial write is performed.','د Wallet خوندیتوب راپور ولوله':'Read Wallet safety report',
+'د راپور لپاره پورته تڼۍ کېکاږئ. د اډمین کیلي یوازې د دې پاڼې په حافظه کې کارول کېږي.':'Select above to read the report. The admin key stays only in this page memory.',
+'د نوي Referral کوډ جوړول (غیرفعال)':'Create referral code (inactive)','کوډ به یوازې د اډمین تر غوښتنې وروسته جوړ شي، خو په اتومات ډول به غیرفعال پاتې شي. ثابت انعام €0.07 دی. د کوډ فعالول، د انعام منظورول او تادیه په دې برخه کې نشته.':'The code is created only on request and remains inactive. Fixed reward: €0.07. Activation and reward payment are not available here.',
+'مثلاً FRIEND2026':'e.g. FRIEND2026','د مالک نوم':'Owner name','د کوډ مالک':'Code owner','Email یا د اړیکې معلومات':'Email or contact details','غیرفعال کوډ جوړ کړه':'Create inactive code','کوډ یوازې د اډمین په کلیک جوړېږي او غیرفعال پاتې کېږي.':'The code is created on request and remains inactive.',
+'د Referral کوډونو راپور (یوازې لوستل)':'Referral codes report (read-only)','دا راپور د ځانګړو بلنو کوډونو حالت، ثبت شوي دعوتونه او د انعامونو شمېرې ښيي. دلته کوډ نه فعالېږي، انعام نه منظورېږي او هېڅ پیسې نه لېږل کېږي.':'Shows invitation codes, attributed sign-ups and reward totals. No code is activated and no payment is made.','د Referral راپور ولوله':'Read referral report','د راپور د لوستلو لپاره پورته تڼۍ کېکاږئ.':'Select above to read the report.','د خوندیتوب یادونه':'Security reminder',
+'که د Stripe یا DT One حالت روښانه نه وي، بیا تادیه یا بیا Top-up مه کوئ. لومړی د دواړو حالتونه وګورئ. دا پاڼه یوازې د کتنې لپاره ده؛ Refund او نور مالي بدلونونه پکې نشته.':'If Stripe or DT One status is unclear, do not pay again or retry the top-up. Check both statuses first. This page is read-only.',
+'بشپړ تخنیکي معلومات (اختیاري)':'Full technical details (optional)','Order ID کاپي کړه':'Copy order ID','Stripe تادیه وګوره':'Check Stripe payment','DT One حالت وګوره':'Check DT One status','د بیو تنظیمات ونه موندل شول.':'No pricing settings found.','اوس مهال د کتنې فرمایش نشته.':'No orders currently need review.',
+'افغانستان':'Afghanistan','پاکستان':'Pakistan','هند':'India','بنګله دېش':'Bangladesh','فعال':'Active','غیرفعال':'Inactive','ثابت انعام':'Fixed reward','ثبت شوي دعوتونه':'Attributed sign-ups','د انعام وړ ثبتونه':'Reward-eligible sign-ups','ټول ثبت شوي انعامونه':'Total recorded rewards','تادیه شوي انعامونه':'Paid rewards','بشپړ تشخیصي معلومات':'Full diagnostic details','بشپړ تخنیکي راپور':'Full technical report','محلي ':'Local ','یادونه':'Note','راتلونکی ګام':'Next step','خطا':'Error'
+};
  const reverse=Object.fromEntries(Object.entries(translations).map(([a,b])=>[b,a]));
  let language='ps';
  const originalNodes=new WeakMap();
@@ -437,14 +455,14 @@ document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value
    const raw=node.nodeValue;
    if(!originalNodes.has(node))originalNodes.set(node,raw);
    const source=originalNodes.get(node).trim();
-   const translated=language==='fr'?(translations[source]||source):(reverse[source]||source);
+   const translated=language==='fr'?(translations[source]||source):language==='en'?(english[source]||source):(reverse[source]||source);
    if(source&&translated!==source){
     const leading=originalNodes.get(node).match(/^\s*/)?.[0]||'';
     const trailing=originalNodes.get(node).match(/\s*$/)?.[0]||'';
     node.nodeValue=leading+translated+trailing;
    }else if(source)node.nodeValue=originalNodes.get(node);
   }else if(node.nodeType===Node.ELEMENT_NODE){
-   if(node.matches('input,textarea')){if(node.placeholder){if(!node.dataset.psPlaceholder)node.dataset.psPlaceholder=node.placeholder;node.placeholder=language==='fr'?(translations[node.dataset.psPlaceholder]||node.dataset.psPlaceholder):(reverse[node.placeholder]||node.dataset.psPlaceholder);}}
+   if(node.matches('input,textarea')){if(node.placeholder){if(!node.dataset.psPlaceholder)node.dataset.psPlaceholder=node.placeholder;node.placeholder=language==='fr'?(translations[node.dataset.psPlaceholder]||node.dataset.psPlaceholder):language==='en'?(english[node.dataset.psPlaceholder]||node.dataset.psPlaceholder):(reverse[node.placeholder]||node.dataset.psPlaceholder);}}
    [...node.childNodes].forEach(translateNode);
   }
  }
@@ -452,23 +470,23 @@ document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value
   nav.replaceChildren();
   sections.forEach((section,index)=>{
    const link=document.createElement('a');link.href='#admin-section-'+(index+1);
-   link.textContent=(language==='fr'?navFr:navPs)[index]||('Section '+(index+1));
+   link.textContent=(language==='fr'?navFr:language==='en'?navEn:navPs)[index]||('Section '+(index+1));
    section.id='admin-section-'+(index+1);nav.append(link);
   });
-  nav.setAttribute('aria-label',language==='fr'?'Sections administrateur':'د اډمین برخې');
+  nav.setAttribute('aria-label',language==='fr'?'Sections administrateur':language==='en'?'Admin sections':'د اډمین برخې');
  }
  function applyLanguage(next){
   language=next;
-  document.documentElement.lang=language==='fr'?'fr':'ps';
+  document.documentElement.lang=language==='fr'?'fr':language==='en'?'en':'ps';
   document.documentElement.dir='ltr';
-  document.body.dir=language==='fr'?'ltr':'rtl';
-  document.querySelectorAll('main .card').forEach(card=>card.style.textAlign=language==='fr'?'left':'right');
+  document.body.dir=language==='ps'?'rtl':'ltr';
+  document.querySelectorAll('main .card').forEach(card=>card.style.textAlign=language==='ps'?'right':'left');
   translateNode(document.body);
   renderNav();
-  toggle.textContent=language==='fr'?'پښتو':'Français';
-  toggle.setAttribute('aria-label',language==='fr'?'Passer en pachto':'په فرانسوي ژبه بدلول');
+  toggle.textContent=language==='ps'?'Français':language==='fr'?'English':'پښتو';
+  toggle.setAttribute('aria-label',language==='ps'?'Switch to French':language==='fr'?'Switch to English':'پښتو ته بدلون');
  }
- toggle.addEventListener('click',()=>applyLanguage(language==='ps'?'fr':'ps'));
+ toggle.addEventListener('click',()=>applyLanguage(language==='ps'?'fr':language==='fr'?'en':'ps'));
  const observer=new MutationObserver(records=>{for(const record of records){record.addedNodes.forEach(translateNode);}});
  observer.observe(document.querySelector('main'),{childList:true,subtree:true});
  renderNav();
