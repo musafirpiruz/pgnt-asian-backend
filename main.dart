@@ -540,24 +540,34 @@ String? detectAfghanOperator(String value) {
 // Final validation must also happen on the server.
 bool isValidPhone(
   String countryCode,
-  String value,
-) {
+  String value, {
+  AppCountry? country,
+}) {
   final phone = normalizePhone(value);
-  final digits = phone.startsWith('+')
-      ? phone.substring(1)
-      : phone;
+  final digits = phone.startsWith('+') ? phone.substring(1) : phone;
+  final digitsOnly = digits.isNotEmpty &&
+      digits.codeUnits.every((unit) => unit >= 48 && unit <= 57);
+  if (!digitsOnly) return false;
 
-  if (!RegExp(r'^\d+$').hasMatch(digits)) {
-    return false;
+  if (country != null && country.code == countryCode) {
+    final minDigits = country.phoneMinDigits;
+    final maxDigits = country.phoneMaxDigits;
+    final callingCode = country.callingCode;
+    if (minDigits == null || maxDigits == null || callingCode == null) {
+      return false;
+    }
+    final prefix = callingCode.substring(1);
+    final localDigits = digits.startsWith(prefix)
+        ? digits.substring(prefix.length)
+        : digits;
+    return localDigits.length >= minDigits && localDigits.length <= maxDigits;
   }
 
   switch (countryCode) {
     case 'AF':
       return digits.length >= 9 && digits.length <= 12;
     case 'PK':
-      return digits.length >= 10 && digits.length <= 13;
     case 'IN':
-      return digits.length >= 10 && digits.length <= 13;
     case 'BD':
       return digits.length >= 10 && digits.length <= 13;
     default:
@@ -2658,7 +2668,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
-    if (!isValidPhone(selectedCountry.code, phone)) {
+    if (!isValidPhone(selectedCountry.code, phone, country: selectedCountry)) {
       showMessage(t('invalidPhone'));
       return;
     }
