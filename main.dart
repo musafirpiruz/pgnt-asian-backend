@@ -1446,6 +1446,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   List<Map<String, dynamic>> _rangedProducts = [];
   List<Map<String, dynamic>> _verifiedFixedProducts = [];
   String? _verifiedFixedProductsOperatorKey;
+  int? _selectedFixedProductCatalogId;
   String? _rangedProductsCountry;
   String? _rangedIdempotencyKey;
   String? _rangedRequestFingerprint;
@@ -2020,16 +2021,19 @@ class _PgntHomePageState extends State<PgntHomePage> {
         _verifiedFixedProductsOperatorKey = operatorKey;
       });
       if (fixedProducts.isNotEmpty) {
-        final amounts = fixedProducts
-            .map((item) => int.parse('${item['amount']}'))
-            .toSet();
-        if (!amounts.contains(amount)) {
-          amount = int.parse('${fixedProducts.first['amount']}');
-          setState(() {
-            selectedAmount = amount;
-            customAmountController.text = '$amount';
-          });
-        }
+        final selectedFixed = fixedProducts.cast<Map<String, dynamic>?>().firstWhere(
+          (item) => item != null &&
+              item['productId'] == _selectedFixedProductCatalogId &&
+              int.tryParse('${item['amount']}') == amount,
+          orElse: () => null,
+        );
+        final chosenFixed = selectedFixed ?? fixedProducts.first;
+        amount = int.parse('${chosenFixed['amount']}');
+        setState(() {
+          _selectedFixedProductCatalogId = int.parse('${chosenFixed['productId']}');
+          selectedAmount = amount;
+          customAmountController.text = '$amount';
+        });
         if (!mounted || countryCode != selectedCountry.code ||
             operatorKey != selectedOperator?.operatorKey) return;
         final quoteUri = Uri.parse('$backendBaseUrl/api/pricing/quote')
@@ -2038,6 +2042,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'operator': operator.name,
               'operatorKey': operatorKey,
               'amount': '$amount',
+              'productCatalogId': '$_selectedFixedProductCatalogId',
             });
         final quoteResponse = await http.get(
           quoteUri,
@@ -2177,6 +2182,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       _rangedProductsCountry = null;
       _verifiedFixedProducts = [];
       _verifiedFixedProductsOperatorKey = null;
+      _selectedFixedProductCatalogId = null;
       phoneController.clear();
       customAmountController.clear();
       priceQuote = null;
@@ -2547,6 +2553,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   selectedOperator = item;
                   _verifiedFixedProducts = [];
                   _verifiedFixedProductsOperatorKey = null;
+                  _selectedFixedProductCatalogId = null;
                   _rangedProducts = [];
                   _rangedProductsCountry = null;
                   selectedAmount = 0;
@@ -2642,16 +2649,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
         _verifiedFixedProductsOperatorKey == operator.operatorKey &&
         _verifiedFixedProducts.isNotEmpty;
     if (hasVerifiedFixedProducts) {
-      final fixedAmounts = _verifiedFixedProducts
-          .map((item) => int.tryParse('${item['amount']}'))
-          .whereType<int>()
-          .toSet()
-          .toList()
-        ..sort();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('د DT One له خوا تایید شوي مقدارونه:',
+          const Text('د DT One له خوا تایید شوي محصولات:',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
@@ -2659,19 +2660,27 @@ class _PgntHomePageState extends State<PgntHomePage> {
             alignment: WrapAlignment.center,
             spacing: 8,
             runSpacing: 8,
-            children: fixedAmounts.map((value) => ChoiceChip(
-              label: Text('$value ${selectedCountry.currency}'),
-              selected: selectedAmount == value,
-              onSelected: (_) {
-                setState(() {
-                  selectedAmount = value;
-                  customAmountController.text = '$value';
-                  priceQuote = null;
-                  priceQuoteError = null;
-                });
-                loadPriceQuote();
-              },
-            )).toList(),
+            children: _verifiedFixedProducts.map((item) {
+              final value = int.tryParse('${item['amount']}') ?? 0;
+              final catalogId = int.tryParse('${item['productId']}') ?? 0;
+              final productName = item['productName']?.toString().trim() ?? '';
+              return ChoiceChip(
+                label: Text(productName.isEmpty
+                    ? '$value ${selectedCountry.currency}'
+                    : '$productName · $value ${selectedCountry.currency}'),
+                selected: _selectedFixedProductCatalogId == catalogId,
+                onSelected: (_) {
+                  setState(() {
+                    selectedAmount = value;
+                    _selectedFixedProductCatalogId = catalogId;
+                    customAmountController.text = '$value';
+                    priceQuote = null;
+                    priceQuoteError = null;
+                  });
+                  loadPriceQuote();
+                },
+              );
+            }).toList(),
           ),
         ],
       );
