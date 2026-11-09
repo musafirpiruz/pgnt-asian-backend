@@ -68,10 +68,60 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f6f
 @media(max-width:600px){header{padding:21px 15px}main{padding:14px 11px 28px;gap:13px}.card{padding:15px;border-radius:15px}.detail dl{grid-template-columns:1fr;gap:3px}.detail dd{margin-bottom:8px}.actions button{flex-basis:100%}.header-row{align-items:flex-start}.language-toggle{font-size:.88rem;padding:7px 11px}.quick-nav{padding:9px 11px}.quick-nav a{font-size:.82rem;padding:7px 11px}.order-actions button{flex-basis:100%}}
 @media(max-width:760px){header{padding:16px 13px}h1{font-size:1.25rem}header p{font-size:.88rem;max-width:75%}main{display:grid;grid-template-columns:minmax(0,1fr);padding:12px 10px 26px;gap:11px}main>.card{grid-column:1/-1!important;width:100%;min-width:0;padding:15px 13px;border-radius:14px}.card h2{font-size:1rem}.card p,.muted{font-size:.92rem;line-height:1.5}input,select,button{min-height:52px;font-size:16px}.input,select{padding:12px}.actions{display:grid;grid-template-columns:1fr;gap:9px}.actions button,.order-actions button{width:100%;min-height:52px;flex:1 1 auto}.detail dl{grid-template-columns:1fr;gap:3px}.detail dd{margin:0 0 8px}.header-row{align-items:center;gap:8px}.language-toggle{min-height:44px;padding:7px 10px;font-size:.86rem}.quick-nav{padding:8px 10px;gap:7px;scroll-snap-type:x proximity}.quick-nav a{font-size:.8rem;padding:9px 12px;min-height:40px;scroll-snap-align:start}.card{scroll-margin-top:65px}.grid{grid-template-columns:1fr}.safe{font-size:.9rem;padding:12px}}@media(max-width:360px){main{padding-inline:8px}.card{padding:12px 10px}.quick-nav a{font-size:.76rem;padding:8px 10px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important}}
+
+/* PGNT VIP black & gold admin theme — presentation only; existing API logic is retained */
+:root{color-scheme:dark;--red:#c9a227;--red-dark:#080808;--gold:#d7b65c;--gold-light:#f5e4a8;--ink:#f4f0e6;--muted:#b4ad9d;--line:rgba(215,182,92,.25);--bg:#090909;--green:#8bd4a0;--amber:#f2cc72;--surface:#151515;--shadow:0 12px 34px #0009}
+html,body{background:#090909;color:var(--ink)}
+body{background:radial-gradient(ellipse at 85% 0%,#30260e 0,transparent 32%),linear-gradient(180deg,#090909,#101010 70%);color:var(--ink)}
+header{background:linear-gradient(115deg,#050505 0%,#17130a 48%,#090909 100%);border-bottom:1px solid #c9a227;padding:25px 18px 23px;box-shadow:0 12px 35px #0009}
+header:after{border-color:#d7b65c33;box-shadow:0 0 0 30px #d7b65c0d,0 0 0 62px #d7b65c08}
+header p{color:#d7cba8}
+h1{letter-spacing:.06em;color:#f4e4ad}
+.header-row>div:before{content:"PGNT • VIP ADMIN";display:block;color:#d7b65c;font-size:10px;font-weight:900;letter-spacing:.22em;margin-bottom:7px}
+main{max-width:1180px;padding:22px 16px 42px;gap:15px}
+.card{background:linear-gradient(155deg,#1a1a1a 0%,#111 100%);border:1px solid rgba(215,182,92,.23);border-left:3px solid #c9a227;border-radius:17px;padding:20px;box-shadow:0 12px 30px #0007;color:#f4f0e6}
+.card:hover{border-color:#c9a227;box-shadow:0 15px 38px #0009}
+h2{color:#e7c96f;font-size:1.08rem}
+h2:before{background:linear-gradient(180deg,#f5e4a8,#a77e19);width:4px}
+p{color:inherit}
+.muted,small{color:#b4ad9d}
+label{color:#e7d59e}
+input,select{background:#090909;color:#fff;border:1px solid #6e5a27}
+input:hover,select:hover{border-color:#d7b65c}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:3px solid #d7b65c66;border-color:#f0d47c}
+button{background:linear-gradient(135deg,#f0d47c,#c49a2c 60%,#8d6818);color:#100e08;border:1px solid #f2d98c;font-weight:850;box-shadow:0 6px 18px #c9a22724}
+button:hover:not(:disabled){filter:brightness(1.1);box-shadow:0 9px 22px #c9a22735}
+button.secondary{background:#171717;color:#e7c96f;border:1px solid #8c702b;box-shadow:none}
+button.secondary:hover:not(:disabled){background:#292211;border-color:#d7b65c}
+.status{background:#171717;border-color:#5e4d25;color:#eee3c3}
+.status.ok{background:#102016;color:#a8e6b8;border-color:#2d7140}
+.status.warn{background:#251d0c;color:#f3d58b;border-color:#7d6022}
+.status.error{background:#2a1111;color:#ffb5b5;border-color:#8d3434}
+.order{background:linear-gradient(180deg,#1b1b1b,#111);border-color:#574821;box-shadow:0 5px 18px #0006}
+.pill{background:#292211;color:#f0d98e;border-color:#6b5521}
+.order-id{background:#0b0b0b;border-color:#4d401f;color:#e7d9ad}
+.detail{border-color:#4b4024}
+.detail dt{color:#b4ad9d}.detail dd{color:#f4f0e6}
+.empty{background:#111;border-color:#665326;color:#b4ad9d}
+summary{color:#e7c96f}
+pre{background:#080808;color:#e7d9ad;border:1px solid #443819}
+.price{background:linear-gradient(180deg,#1b1b1b,#111);border-color:#574821}
+.price strong{color:#f1d889}
+.safe{border-left:4px solid #d7b65c;background:#251f10;color:#f0dfad}
+.language-toggle{background:#171717;color:#e7c96f;border:1px solid #8c702b;box-shadow:none}
+.language-toggle:hover:not(:disabled){background:#292211}
+.quick-nav{background:#0d0d0df2;border-bottom:1px solid #55451e;box-shadow:0 7px 20px #0008}
+.quick-nav a{background:#171717;color:#e7c96f;border-color:#51421e}
+.quick-nav a:hover{background:#2a230f;border-color:#c9a227}
+.card{scroll-margin-top:78px}
+@media(min-width:760px){main{grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr)}.card:first-child,.card:nth-child(2),.card:nth-child(4){grid-column:1/-1}.card:nth-child(3){grid-column:1/-1}}
+@media(min-width:980px){main{grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr)}.card:first-child{grid-column:1/-1}.card:nth-child(2){grid-column:1}.card:nth-child(3){grid-column:2}.card:nth-child(4){grid-column:1/-1}}
+@media(max-width:760px){header{padding:17px 13px}main{padding:12px 10px 28px;gap:11px}.card{padding:15px 13px;border-radius:14px}.quick-nav{position:sticky;top:0}.quick-nav a{min-height:42px;padding:9px 12px}.actions button,.order-actions button{min-height:52px}.card{scroll-margin-top:65px}}
+
 </style>
 </head>
 <body>
-<header><div class="wrap"><div class="header-row"><div><h1>PGNT ASIAN TOPUP</h1><p>ساده اډمین — د فرمایشونو او تادیاتو کتنه</p></div><button type="button" id="languageToggle" class="language-toggle" aria-label="Change language">Français</button></div></div></header>
+<header><div class="wrap"><div class="header-row"><div><h1>PGNT ASIAN TOPUP</h1><p>VIP Admin Console · د فرمایشونو، تادیاتو او مالي راپورونو خوندي مدیریت</p></div><button type="button" id="languageToggle" class="language-toggle" aria-label="Change language">Français</button></div></div></header>
 <nav class="quick-nav" id="quickNav" aria-label="د اډمین برخې"></nav>
 <main>
 <section class="card">
