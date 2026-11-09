@@ -2192,7 +2192,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ),
           child: Row(
             children: [
-              Text(country.flag, style: const TextStyle(fontSize: 27)),
+              Text(country.flag.isEmpty ? '🌐' : country.flag, style: const TextStyle(fontSize: 27)),
               const SizedBox(width: 9),
               Expanded(
                 child: Column(
@@ -2253,7 +2253,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: countries
+              children: _availableCountries
                   .map((country) => countryCard(country, cardWidth))
                   .toList(),
             ),
