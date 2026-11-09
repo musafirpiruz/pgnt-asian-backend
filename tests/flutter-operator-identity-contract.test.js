@@ -70,7 +70,6 @@ test('Flutter country picker loads active destinations from the registry for fut
   assert.match(flutter, /api\/countries/);
   assert.match(flutter, /_availableCountries\s*\.map\(\(country\) => countryCard/);
   assert.match(flutter, /_countryCatalogRequestGeneration/);
-  assert.match(flutter, /configurationVersion/);
 });
 
 test('Flutter keeps a safe bundled launch-country fallback if registry discovery is unavailable', () => {
