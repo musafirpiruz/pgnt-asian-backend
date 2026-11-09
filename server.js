@@ -1247,6 +1247,7 @@ app.get('/api/countries/:countryCode/operators/:operatorKey/products', async (re
           AND BTRIM(o.provider_operator_id) <> ''
           AND o.verified_at IS NOT NULL
           AND cop.active = TRUE
+          AND cop.verified_at IS NOT NULL
           AND cop.provider_operator_id = o.provider_operator_id
           AND cop.provider_product_id = p.product_id::text
           AND p.country = c.country_code
