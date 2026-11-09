@@ -455,7 +455,7 @@ async function getConfiguredDtOneCountryByIso(providerIsoCode, db = pool) {
        FROM country_registry
       WHERE provider = 'dtone'
         AND UPPER(BTRIM(provider_country_code)) = $1
-        AND status IN ('draft', 'configuring', 'testing', 'active', 'disabled')
+        AND status IN ('draft', 'configuring', 'testing', 'active', 'disabled', 'legacy')
       ORDER BY CASE status
         WHEN 'active' THEN 0 WHEN 'testing' THEN 1 WHEN 'configuring' THEN 2
         WHEN 'draft' THEN 3 WHEN 'disabled' THEN 4 ELSE 5 END
