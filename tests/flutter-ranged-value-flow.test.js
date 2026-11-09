@@ -58,7 +58,7 @@ test('Flutter ranged discovery and quote requests use the stable operator key', 
   assert.match(payment, /'operatorKey': selectedOperator!\.operatorKey/);
 });
 
-test('customer amount entry replaces fixed denomination presets and enforces 10–3000', () => {
+test('customer amount entry replaces fixed denomination presets and enforces 75–3000', () => {
   assert.doesNotMatch(dart, /rechargeAmounts/);
   assert.doesNotMatch(dart, /Suggested recharge amounts/);
   const start = dart.indexOf('Widget buildCustomAmountField()');
