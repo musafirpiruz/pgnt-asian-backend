@@ -58,18 +58,20 @@ test('Flutter ranged discovery and quote requests use the stable operator key', 
   assert.match(payment, /'operatorKey': selectedOperator!\.operatorKey/);
 });
 
-test('customer amount entry replaces fixed denomination presets and enforces 75–3000', () => {
+test('customer amount entry is hidden until DT One confirms the selected operator range', () => {
   assert.doesNotMatch(dart, /rechargeAmounts/);
   assert.doesNotMatch(dart, /Suggested recharge amounts/);
   const start = dart.indexOf('Widget buildCustomAmountField()');
   const end = dart.indexOf('Widget buildReviewSummary()', start);
   assert.ok(start >= 0 && end > start);
   const field = dart.slice(start, end);
-  assert.match(field, /value < 75 \|\| value > 3000/);
-  assert.match(field, /hasVerifiedRange/);
+  assert.match(field, /if \(!hasVerifiedRange\)/);
+  assert.match(field, /DT One تایید شوي مقدارونه ترلاسه کېږي/);
+  assert.match(field, /!hasVerifiedRange/);
   assert.match(field, /providerMin/);
   assert.match(field, /providerMax/);
   assert.match(field, /increment/);
   assert.match(field, /maxLength: 4/);
+  assert.match(field, /value < providerMin \|\| value > providerMax/);
   assert.match(field, /TextInputType\.number/);
 });
