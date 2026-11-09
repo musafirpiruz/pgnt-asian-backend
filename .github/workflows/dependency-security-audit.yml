@@ -2,9 +2,9 @@ name: Dependency Security Audit (diagnostic)
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/verified-dtone-denominations-api]
   pull_request:
-    branches: [main]
+    branches: [main, feature/dtone-ranged-transaction-lifecycle]
   workflow_dispatch:
 
 permissions:
@@ -35,7 +35,7 @@ jobs:
           echo "Production-only npm audit exit code: $prod_audit_exit"
           npm audit
           full_audit_exit=$?
-          echo "Full dependency-tree npm audit exit code: $full_audit_exit"
+          echo "Full dependency-tree audit exit code: $full_audit_exit"
       - name: Print installed direct dependency versions
         run: npm ls --depth=0
       - name: Report dependency vulnerabilities
@@ -60,5 +60,5 @@ jobs:
               }
               console.log("DEPENDENCY PATHS:", JSON.stringify(item.nodes ?? []));
             }
-          '
+            '
           echo "npm audit exit code: $audit_exit (diagnostic only; no dependency upgrades applied)"
