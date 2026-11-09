@@ -61,6 +61,29 @@ class AppCountry {
     required this.currency,
     required this.symbol,
   });
+  factory AppCountry.fromRegistryJson(Map<String, dynamic> json) {
+    final code = (json['countryCode'] ?? '').toString().trim().toUpperCase();
+    final currency = (json['currency'] ?? '').toString().trim().toUpperCase();
+    final name = (json['name'] ?? '').toString().trim();
+    if (!RegExp(r'^[A-Z]{2}$').hasMatch(code) ||
+        !RegExp(r'^[A-Z]{3}$').hasMatch(currency) ||
+        name.isEmpty) {
+      throw const FormatException('Invalid country registry entry.');
+    }
+    const symbols = {
+      'AFN': '؋', 'PKR': 'Rs', 'INR': '₹', 'BDT': '৳',
+      'EUR': '€', 'USD': r'$', 'GBP': '£', 'NPR': 'रू',
+      'LKR': 'Rs', 'KES': 'KSh', 'NGN': '₦', 'GHS': '₵',
+    };
+    return AppCountry(
+      code: code,
+      name: name,
+      flag: '',
+      currency: currency,
+      symbol: symbols[currency] ?? currency,
+    );
+  }
+
 }
 
 const List<AppCountry> countries = [
@@ -1382,6 +1405,8 @@ class PgntHomePage extends StatefulWidget {
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
   AppCountry selectedCountry = countries.first;
+  List<AppCountry> _availableCountries = countries;
+  int _countryCatalogRequestGeneration = 0;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   List<MobileOperator> _registryOperators = const [];
@@ -1438,6 +1463,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     super.initState();
     customAmountController.text = '10';
     _restoreFuture = _restoreLocalData();
+    _loadCountries();
     _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
     _referralLinkSubscription = _appLinks.uriLinkStream.listen(
@@ -1682,6 +1708,55 @@ class _PgntHomePageState extends State<PgntHomePage> {
       return const [];
     }
     return _registryOperators;
+  }
+
+  Future<void> _loadCountries() async {
+    final requestGeneration = ++_countryCatalogRequestGeneration;
+    final requestedLanguage = languageCode;
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries')
+          .replace(queryParameters: {'language': requestedLanguage});
+      final response = await http.get(
+        uri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) return;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map || decoded['countries'] is! List) return;
+      final parsed = <AppCountry>[];
+      for (final raw in decoded['countries'] as List) {
+        if (raw is! Map) continue;
+        try {
+          parsed.add(AppCountry.fromRegistryJson(Map<String, dynamic>.from(raw)));
+        } on FormatException {
+          continue;
+        }
+      }
+      if (!mounted || requestGeneration != _countryCatalogRequestGeneration ||
+          requestedLanguage != languageCode || parsed.isEmpty) return;
+      setState(() {
+        _availableCountries = parsed;
+        final current = parsed.where((item) => item.code == selectedCountry.code);
+        if (current.isNotEmpty) {
+          selectedCountry = current.first;
+        } else {
+          selectedCountry = parsed.first;
+          selectedOperator = null;
+          _registryOperators = const [];
+          _registryOperatorsCountry = null;
+          _rangedProducts = [];
+          _rangedProductsCountry = null;
+          selectedAmount = 0;
+          priceQuote = null;
+          priceQuoteError = null;
+        }
+      });
+      if (_registryOperatorsCountry != selectedCountry.code) {
+        _loadRegistryOperators(selectedCountry.code);
+      }
+    } catch (_) {
+      // Keep the bundled launch-country list when registry discovery is offline.
+    }
   }
 
   Future<void> _loadRegistryOperators(String countryCode) async {
