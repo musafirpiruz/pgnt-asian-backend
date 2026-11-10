@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feat/device-region-and-country-bootstrap-2026-11-10
 
 jobs:
   test:
