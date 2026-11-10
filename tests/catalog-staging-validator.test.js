@@ -37,7 +37,10 @@ test('rejects missing prices, malformed ranges and retail below wholesale',()=>{
   assert.throws(()=>validateCatalogRows([row({destinationAmount:'30 - x'})]),/destinationAmount must be positive or a valid min-max range/);
   assert.throws(()=>validateCatalogRows([row({wholesalePriceEur:'2',retailPriceEur:'1.99'})]),/retail EUR price range cannot be below/);
 });
-test('rejects duplicate provider IDs and duplicate destination keys',()=>{
+test('rejects duplicate provider IDs but reports legacy natural-key conflicts',()=>{
   assert.throws(()=>validateCatalogRows([row(),row({operator:'Different operator'})]),/duplicate productId/);
-  assert.throws(()=>validateCatalogRows([row(),row({productId:1002})]),/duplicate country\/operator\/amount\/currency\/type key/);
+  const result=validateCatalogRows([row(),row({productId:1002,service:'Bundle',productName:'100 AFN bundle'})]);
+  assert.equal(result.counts.legacyNaturalKeyConflictGroups,1);
+  assert.equal(result.counts.legacyNaturalKeyConflictRows,2);
+  assert.equal(result.status,'STRUCTURE_VALID_WITH_LEGACY_DB_KEY_CONFLICTS');
 });
