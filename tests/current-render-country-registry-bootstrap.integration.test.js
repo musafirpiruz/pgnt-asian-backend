@@ -70,3 +70,40 @@ test('current schema bootstrap aborts when a country has no configured FX rate',
     await assert.rejects(client.query(migration), /Missing pricing settings or valid local FX/);
   });
 });
+
+
+test('current schema bootstrap aborts on a conflicting pre-existing country registry row', async () => {
+  await withSchema('current_registry_conflict', async (client) => {
+    await client.query(`
+      CREATE TABLE country_registry (
+        country_code CHAR(2) PRIMARY KEY,
+        country_name VARCHAR(120) NOT NULL,
+        destination_currency CHAR(3) NOT NULL,
+        calling_code VARCHAR(8) NOT NULL,
+        phone_min_digits SMALLINT NOT NULL,
+        phone_max_digits SMALLINT NOT NULL,
+        provider VARCHAR(32) NOT NULL DEFAULT 'dtone',
+        provider_country_code VARCHAR(8),
+        status VARCHAR(20) NOT NULL DEFAULT 'legacy',
+        configuration_version INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      INSERT INTO country_registry
+        (country_code,country_name,destination_currency,calling_code,phone_min_digits,phone_max_digits)
+      VALUES ('AF','Afghanistan','USD','+93',9,9);
+    `);
+    await assert.rejects(client.query(migration), /Conflicting existing country registry row for AF/);
+  });
+});
+
+test('current schema bootstrap aborts when catalog labels collide on a stable operator key', async () => {
+  await withSchema('current_registry_operator_collision', async (client) => {
+    await client.query(`
+      INSERT INTO product_catalog
+        (country,operator,amount,currency,product_id,price_eur_cents,active)
+      VALUES ('AF','ATOMA! ',200,'AFN',990002,300,FALSE);
+    `);
+    await assert.rejects(client.query(migration), /Operator key collision for country AF and key atoma/);
+  });
+});
