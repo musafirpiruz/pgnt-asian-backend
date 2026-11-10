@@ -111,9 +111,7 @@ test('current schema bootstrap aborts when catalog labels collide on a stable op
 
 test('current schema bootstrap refuses to proceed if any legacy catalog product is active', async () => {
   await withSchema('current_registry_active_product', async (client) => {
-    await client.query("UPDATE product_catalog SET active=TRUE WHERE country='AF' AND operator='ATOMA' LIMIT 1").catch(async () => {
-      await client.query("UPDATE product_catalog SET active=TRUE WHERE id=(SELECT id FROM product_catalog WHERE country='AF' AND operator='ATOMA' ORDER BY id LIMIT 1)");
-    });
+    await client.query("UPDATE product_catalog SET active=TRUE WHERE id=(SELECT id FROM product_catalog WHERE country='AF' AND operator='ATOMA' ORDER BY id LIMIT 1)");
     await assert.rejects(client.query(migration), /existing product catalog contains active products/);
   });
 });
