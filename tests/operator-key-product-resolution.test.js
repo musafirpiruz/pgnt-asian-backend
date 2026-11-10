@@ -81,3 +81,12 @@ test('checkout accepts productId alone and rejects mixed identity inputs', () =>
   assert.match(validator, /if \(productId && operatorKey\)/);
   assert.match(validator, /if \(!productId && \(/);
 });
+
+test('Flutter checkout sends exact productId without conflicting operator/amount identity', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
+  const checkout = app.slice(app.indexOf("'/api/payments/checkout'") - 300,
+    app.indexOf("'/api/payments/checkout'") + 5000);
+  assert.match(checkout, /if \(priceQuote\?\['productId'\] != null\)/);
+  assert.match(checkout, /'productId': priceQuote!\['productId'\]\.toString\(\)/);
+  assert.match(checkout, /else \.\.\./);
+});
