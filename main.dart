@@ -1526,6 +1526,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final savedLanguage = preferences.getString(_languagePreferenceKey);
       if (savedLanguage != null && languages.any((item) => item.code == savedLanguage)) {
         languageCode = savedLanguage;
+        _loadRegistryCountries();
+        _loadRegistryOperators(selectedCountry.code);
       }
       final rawHistory = preferences.getString(_historyStorageKey);
       if (rawHistory != null) {
