@@ -24,5 +24,5 @@ test('admin pricing display restricts legacy AFN fallback to Afghanistan', () =>
     source,
     /const savedLocalCurrencyPerEur = selectedCountry === 'AF'[\s\S]*?\? \(saved\.local_currency_per_eur \?\? saved\.afn_per_eur\)[\s\S]*?: saved\.local_currency_per_eur;/
   );
-  assert.doesNotMatch(source, /saved\.local_currency_per_eur \?\? saved\.afn_per_eur/);
+  assert.doesNotMatch(source, /Number\(saved\.local_currency_per_eur \?\? saved\.afn_per_eur\)/);
 });
