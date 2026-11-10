@@ -26,11 +26,13 @@ Source: `PGNT_ASIAN_TOPUP_MASTER_CATALOG_ALL_COUNTRIES.xlsx`, sheet `All_Product
 | Pakistan | 783 | 8 |
 | **Total** | **1,960** | **28** |
 
-- 1,943 rows have both wholesale EUR and retail EUR values.
-- 17 rows are ranged/open-range products with no fixed wholesale or retail EUR amount. These must use the separate ranged-pricing path and must not be imported as fixed prices.
+- All 1,960 rows contain wholesale EUR and retail EUR source fields; for ranged products these fields are min–max price ranges, not single fixed prices.
+- 1,929 rows are fixed-value recharge products in the four local destination currencies.
+- 14 fixed-value PIN/eSIM purchases use USD as the destination/product currency (4 Pakistan, 7 India, 3 Bangladesh); these are not AFN/PKR/INR/BDT recharge denominations and must be kept in a separate eSIM/USD product class.
+- 17 products are ranged/open-range products (14 ranged-value recharge and 3 ranged-value payment); their destination amounts and EUR prices are expressed as ranges and must use ranged-pricing logic.
 - The master catalog contains no duplicate Product IDs.
-- Product types in the source: 1,929 fixed-value recharge, 14 fixed-value PIN/eSIM purchases, 14 ranged-value recharge, and 3 ranged-value payment products.
-- The 17 ranged products are not a reason to block fixed-value products; they are a separate validation group.
+- Country totals remain Afghanistan 542, Bangladesh 488, India 147, Pakistan 783; the 28 operator/service groups include the eSIM entries.
+- Therefore the workbook does **not** have 17 missing wholesale/retail prices. It has 17 ranged prices. Earlier wording that described them as missing fixed prices was inaccurate and is superseded by this audit.
 
 ## EUR pricing rules
 
@@ -45,8 +47,9 @@ The customer checkout quote is a separate calculation. It must add the configure
 ## Country readiness checklist
 
 For each of AF, BD, IN, and PK:
-- [ ] Import the 1,943 fixed-value product rows into a staging catalog with all products disabled.
-- [ ] Keep the 17 ranged products outside the fixed-value import and validate them through ranged-pricing logic.
+- [ ] Import the 1,929 fixed-value local-currency recharge rows into a staging catalog with all products disabled.
+- [ ] Keep the 14 USD eSIM/PIN products in a separate product class; do not treat USD as the country's local recharge currency.
+- [ ] Keep the 17 ranged products in a separate ranged-pricing group, preserving their minimum/maximum destination and EUR price ranges.
 - [ ] Confirm every product ID and product detail against current authenticated DT One read-only product details.
 - [ ] Confirm provider source currency is EUR and destination currency matches the country/product.
 - [ ] Validate wholesale EUR, retail EUR, provider fee, destination amount, and phone requirements.
@@ -80,20 +83,22 @@ The branch now includes `catalog-staging-validator.js` and
 `tests/catalog-staging-validator.test.js`.
 
 The validator accepts normalized JSON rows with the DT One product ID,
-country, operator, destination amount/currency, product type, and EUR
-wholesale/retail prices. It checks the four supported country/currency pairs,
-positive amounts and prices, duplicate provider IDs, duplicate destination
-keys, supported fixed/ranged product types, and retail-versus-wholesale order.
+country, operator, service, destination amount/currency, product type, and EUR
+wholesale/retail prices. It preserves min–max ranges and permits USD only for
+fixed eSIM PIN purchases. It checks the four local country/currency pairs,
+positive values, duplicate provider IDs, duplicate destination keys, supported
+fixed/ranged product types, and retail-versus-wholesale range ordering.
 
 It deliberately returns every row with `providerVerified: false` and
 `active: false`. A structurally valid row is **not** a provider-verified
 product and is not eligible for production activation. The validator is
 offline-only and does not connect to DT One, PostgreSQL, Stripe, or Render.
 
-The uploaded master workbook audit found 1,960 rows: 1,943 fixed-price rows
-and 17 ranged/open-range rows. The 17 ranged rows must be handled by the
-separate ranged-value flow and must not be assigned invented fixed prices.
-The workbook is a staging source, not current DT One price evidence.
+The uploaded master workbook audit found 1,960 rows: 1,929 fixed local-currency
+recharge rows, 14 fixed USD eSIM/PIN rows, and 17 ranged rows (14 ranged
+recharge plus 3 ranged payment). All rows contain EUR wholesale and retail
+values, but ranged rows contain min–max ranges. The workbook is a staging
+source, not current DT One price evidence.
 
 ## Current implementation boundary
 
