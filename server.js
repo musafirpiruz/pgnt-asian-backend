@@ -3086,7 +3086,7 @@ app.post('/api/admin/countries', requireAdmin, express.json(), async (req, res) 
     ? body.localizations : {};
 
   if (!/^[A-Z]{2}$/.test(countryCode) ||
-      !/^[\\p{L}][\\p{L} .’'\\-]{1,118}$/u.test(countryName) ||
+      !/^[\p{L}][\p{L} .’'\-]{1,118}$/u.test(countryName) ||
       !/^[A-Z]{3}$/.test(currency) ||
       !/^\+[1-9][0-9]{0,6}$/.test(callingCode) ||
       !Number.isInteger(phoneMinDigits) || !Number.isInteger(phoneMaxDigits) ||
