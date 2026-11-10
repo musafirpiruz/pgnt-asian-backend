@@ -17,3 +17,12 @@ test('pricing reads do not apply the legacy AFN fallback to every country', () =
   const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   assert.doesNotMatch(source, /COALESCE\(local_currency_per_eur, afn_per_eur\) AS local_currency_per_eur/);
 });
+
+test('admin pricing display restricts legacy AFN fallback to Afghanistan', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(
+    source,
+    /const savedLocalCurrencyPerEur = selectedCountry === 'AF'[\s\S]*?\? \(saved\.local_currency_per_eur \?\? saved\.afn_per_eur\)[\s\S]*?: saved\.local_currency_per_eur;/
+  );
+  assert.doesNotMatch(source, /saved\.local_currency_per_eur \?\? saved\.afn_per_eur/);
+});
