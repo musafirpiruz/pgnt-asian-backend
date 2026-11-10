@@ -952,6 +952,55 @@ async function getProductQuote(productId, country) {
 // registry migration is installed and a country/operator has been verified.
 const REGISTRY_LANGUAGES = new Set(['en', 'ps', 'fa', 'ur', 'hi', 'bn']);
 
+// Public, read-only country discovery API. The registry is the only source
+// of countries exposed to the customer app. Draft/legacy/unverified countries
+// are intentionally hidden until an administrator completes verification.
+app.get('/api/countries', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country registry is not configured.' });
+  }
+
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = REGISTRY_LANGUAGES.has(requestedLanguage) ? requestedLanguage : 'en';
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         c.country_code,
+         COALESCE(localized.display_name, english.display_name, c.country_name) AS display_name,
+         c.destination_currency,
+         c.calling_code,
+         c.phone_min_digits,
+         c.phone_max_digits
+       FROM country_registry c
+       LEFT JOIN country_localizations localized
+         ON localized.country_code = c.country_code
+        AND localized.language_code = $1
+       LEFT JOIN country_localizations english
+         ON english.country_code = c.country_code
+        AND english.language_code = 'en'
+       WHERE c.status = 'active'
+       ORDER BY COALESCE(localized.display_name, english.display_name, c.country_name), c.country_code`,
+      [language]
+    );
+
+    return res.json({
+      language,
+      countries: result.rows.map((row) => ({
+        countryCode: String(row.country_code).trim(),
+        displayName: String(row.display_name),
+        currency: String(row.destination_currency),
+        callingCode: String(row.calling_code),
+        phoneMinDigits: Number(row.phone_min_digits),
+        phoneMaxDigits: Number(row.phone_max_digits),
+      })),
+    });
+  } catch (error) {
+    console.error('Country discovery failed:', error.message);
+    return res.status(503).json({ error: 'Country registry is not ready.' });
+  }
+});
+
 app.get('/api/countries/:countryCode/operators', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Country registry is not configured.' });
