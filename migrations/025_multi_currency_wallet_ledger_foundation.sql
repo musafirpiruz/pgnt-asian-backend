@@ -86,7 +86,11 @@ DECLARE target_id BIGINT;
 DECLARE target_status VARCHAR(16);
 DECLARE unbalanced_count INTEGER;
 BEGIN
-  target_id := COALESCE(NEW.transaction_id, OLD.transaction_id, NEW.id, OLD.id);
+  IF TG_TABLE_NAME = 'wallet_ledger_entries' THEN
+    target_id := NEW.transaction_id;
+  ELSE
+    target_id := NEW.id;
+  END IF;
   SELECT status INTO target_status
     FROM wallet_ledger_transactions WHERE id = target_id;
   IF NOT FOUND OR target_status = 'draft' THEN
