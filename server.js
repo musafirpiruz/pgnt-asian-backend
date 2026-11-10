@@ -3071,7 +3071,7 @@ app.get('/api/admin/countries', requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/admin/countries', express.json(), requireAdmin, async (req, res) => {
+app.post('/api/admin/countries', requireAdmin, express.json(), async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
 
   const body = req.body || {};
@@ -3086,7 +3086,7 @@ app.post('/api/admin/countries', express.json(), requireAdmin, async (req, res) 
     ? body.localizations : {};
 
   if (!/^[A-Z]{2}$/.test(countryCode) ||
-      !/^[A-Z][A-Z ]{1,118}$/.test(countryName.toUpperCase()) ||
+      !/^[\\p{L}][\\p{L} .’'\\-]{1,118}$/u.test(countryName) ||
       !/^[A-Z]{3}$/.test(currency) ||
       !/^\+[1-9][0-9]{0,6}$/.test(callingCode) ||
       !Number.isInteger(phoneMinDigits) || !Number.isInteger(phoneMaxDigits) ||
