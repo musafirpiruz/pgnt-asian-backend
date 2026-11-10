@@ -952,6 +952,77 @@ async function getProductQuote(productId, country) {
 // registry migration is installed and a country/operator has been verified.
 const REGISTRY_LANGUAGES = new Set(['en', 'ps', 'fa', 'ur', 'hi', 'bn']);
 
+// Public bootstrap list: only countries with at least one fully verified,
+// active operator and product are returned. Device-region detection is a
+// client-side suggestion; it must never make a draft country sellable.
+app.get('/api/countries', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country registry is not configured.' });
+  }
+
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = REGISTRY_LANGUAGES.has(requestedLanguage) ? requestedLanguage : 'en';
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         c.country_code,
+         COALESCE(localized.display_name, c.country_name) AS display_name,
+         c.destination_currency,
+         c.calling_code,
+         c.phone_min_digits,
+         c.phone_max_digits
+       FROM country_registry c
+       LEFT JOIN country_localizations localized
+         ON localized.country_code = c.country_code
+        AND localized.language_code = $1
+       WHERE c.status = 'active'
+         AND EXISTS (
+           SELECT 1
+           FROM country_operators o
+           JOIN country_operator_products cop
+             ON cop.country_code = o.country_code
+            AND cop.operator_key = o.operator_key
+           JOIN product_catalog p ON p.id = cop.product_catalog_id
+           WHERE o.country_code = c.country_code
+             AND o.active = TRUE
+             AND o.provider_operator_id IS NOT NULL
+             AND BTRIM(o.provider_operator_id) <> ''
+             AND o.verified_at IS NOT NULL
+             AND cop.active = TRUE
+             AND cop.verified_at IS NOT NULL
+             AND p.country = c.country_code
+             AND p.currency = c.destination_currency
+             AND p.active = TRUE
+             AND p.wholesale_price_eur_cents IS NOT NULL
+             AND p.wholesale_price_eur_cents > 0
+         )
+       ORDER BY COALESCE(localized.display_name, c.country_name), c.country_code`,
+      [language]
+    );
+
+    return res.json({
+      language,
+      countries: result.rows.map((row) => ({
+        code: String(row.country_code).trim(),
+        name: String(row.display_name),
+        currency: String(row.destination_currency).trim(),
+        callingCode: String(row.calling_code),
+        phoneMinDigits: Number(row.phone_min_digits),
+        phoneMaxDigits: Number(row.phone_max_digits),
+      })),
+    });
+  } catch (error) {
+    console.error('Active country bootstrap lookup failed.', {
+      errorCode: error?.code || null,
+      errorMessage: String(error?.message || 'Unknown country registry error').slice(0, 180),
+    });
+    return res.status(503).json({
+      error: 'Active country list is temporarily unavailable.',
+    });
+  }
+});
+
 app.get('/api/countries/:countryCode/operators', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Country registry is not configured.' });
