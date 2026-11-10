@@ -559,24 +559,36 @@ String? detectAfghanOperator(String value) {
 // Final validation must also happen on the server.
 bool isValidPhone(
   String countryCode,
-  String value,
-) {
-  final phone = normalizePhone(value);
-  final digits = phone.startsWith('+')
-      ? phone.substring(1)
-      : phone;
+  String value, {
+  String? callingCode,
+  int? minDigits,
+  int? maxDigits,
+}) {
+  var digits = normalizePhone(value);
+  final hadInternationalPrefix = digits.startsWith('+');
+  if (hadInternationalPrefix) digits = digits.substring(1);
+  if (!RegExp(r'^\d+$').hasMatch(digits)) return false;
 
-  if (!RegExp(r'^\d+$').hasMatch(digits)) {
-    return false;
+  if (callingCode != null && callingCode.isNotEmpty) {
+    final normalizedCallingCode = callingCode.replaceFirst('+', '');
+    if (hadInternationalPrefix && digits.startsWith(normalizedCallingCode)) {
+      digits = digits.substring(normalizedCallingCode.length);
+    }
+  }
+  if (digits.startsWith('0') && minDigits != null) {
+    digits = digits.substring(1);
   }
 
+  if (minDigits != null && maxDigits != null) {
+    return digits.length >= minDigits && digits.length <= maxDigits;
+  }
+
+  // Legacy fallback only for bundled markets while registry data is offline.
   switch (countryCode) {
     case 'AF':
       return digits.length >= 9 && digits.length <= 12;
     case 'PK':
-      return digits.length >= 10 && digits.length <= 13;
     case 'IN':
-      return digits.length >= 10 && digits.length <= 13;
     case 'BD':
       return digits.length >= 10 && digits.length <= 13;
     default:
@@ -2303,7 +2315,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
       'PK' => '03XX XXXXXXX',
       'IN' => '10-digit mobile number',
       'BD' => '01XXXXXXXXX',
-      _ => 'Mobile number',
+      _ => selectedCountry.callingCode.isNotEmpty
+          ? '${selectedCountry.callingCode} mobile number'
+          : 'Mobile number',
     };
     return TextField(
       controller: phoneController,
@@ -2585,7 +2599,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
-    if (!isValidPhone(selectedCountry.code, phone)) {
+    if (!isValidPhone(
+      selectedCountry.code,
+      phone,
+      callingCode: selectedCountry.callingCode.isEmpty ? null : selectedCountry.callingCode,
+      minDigits: selectedCountry.callingCode.isEmpty ? null : selectedCountry.phoneMinDigits,
+      maxDigits: selectedCountry.callingCode.isEmpty ? null : selectedCountry.phoneMaxDigits,
+    )) {
       showMessage(t('invalidPhone'));
       return;
     }
