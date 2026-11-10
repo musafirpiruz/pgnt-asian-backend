@@ -18,9 +18,10 @@ function section(startToken, endToken) {
 test('checkout validation accepts a stable operator key without requiring a localized operator label', () => {
   const validator = section('function validateCheckoutInput(body)', '// =====================================================\n// PART 3/8');
   assert.match(validator, /body\.operatorKey/);
-  assert.match(validator, /operatorKey/);
-  assert.match(validator, /operatorKey,\s*amount/);
-  assert.match(validator, /operatorKey && \(!\/\^\[a-zA-Z0-9\._:-\]/);
+  assert.match(validator, /body\.productId/);
+  assert.match(validator, /if \(productId && operatorKey\)/);
+  assert.match(validator, /if \(!productId && \(/);
+  assert.match(validator, /operatorKey && !\/\^\[a-zA-Z0-9\._:-\]/);
 });
 
 test('registry product resolution uses server-side verified mapping and parameterized stable key', () => {
@@ -37,7 +38,8 @@ test('registry product resolution uses server-side verified mapping and paramete
 test('quote and checkout both pass operatorKey to the same server resolver', () => {
   const quote = section("app.get('/api/pricing/quote'", '// =====================================================\n// PART 4/8');
   const checkout = section("app.post('/api/payments/checkout'", "app.post('/api/admin/stripe-dtone/sandbox-checkout'");
-  assert.match(quote, /operatorKey: operatorKey \|\| null/);
+  assert.match(quote, /validProductId \? productId : null/);
+  assert.match(checkout, /input\.productId/);
   assert.match(checkout, /operatorKey: input\.operatorKey \|\| null/);
 });
 
@@ -84,8 +86,9 @@ test('checkout accepts productId alone and rejects mixed identity inputs', () =>
 
 test('Flutter checkout sends exact productId without conflicting operator/amount identity', () => {
   const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
-  const checkout = app.slice(app.indexOf("'/api/payments/checkout'") - 300,
-    app.indexOf("'/api/payments/checkout'") + 5000);
+  const checkoutIndex = app.indexOf('/api/payments/checkout');
+  assert.ok(checkoutIndex >= 0, 'checkout endpoint must exist in Flutter source');
+  const checkout = app.slice(checkoutIndex - 300, checkoutIndex + 5000);
   assert.match(checkout, /if \(priceQuote\?\['productId'\] != null\)/);
   assert.match(checkout, /'productId': priceQuote!\['productId'\]\.toString\(\)/);
   assert.match(checkout, /else \.\.\./);
