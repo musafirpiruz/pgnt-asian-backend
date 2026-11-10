@@ -41,3 +41,10 @@ test('customer country discovery API exposes active countries only', () => {
 test('country discovery refreshes when the app language changes', () => {
   assert.match(dart, /languageCode = value;[\s\S]{0,180}_loadRegistryCountries\(\)/);
 });
+
+test('new-country phone validation uses registry calling code and digit bounds', () => {
+  assert.match(dart, /callingCode: selectedCountry\.callingCode/);
+  assert.match(dart, /minDigits: selectedCountry\.callingCode\.isEmpty \? null : selectedCountry\.phoneMinDigits/);
+  assert.match(dart, /maxDigits: selectedCountry\.callingCode\.isEmpty \? null : selectedCountry\.phoneMaxDigits/);
+  assert.match(dart, /normalizedCallingCode/);
+});
