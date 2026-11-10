@@ -7319,8 +7319,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
       currency: currency,
       symbol: _currencySymbol(currency),
       callingCode: (json['callingCode'] ?? '').toString(),
-      phoneMinDigits: int.tryParse('\${json['phoneMinDigits']}') ?? 1,
-      phoneMaxDigits: int.tryParse('\${json['phoneMaxDigits']}') ?? 15,
+      phoneMinDigits: int.tryParse(json['phoneMinDigits']?.toString() ?? '') ?? 1,
+      phoneMaxDigits: int.tryParse(json['phoneMaxDigits']?.toString() ?? '') ?? 15,
     );
   }
 }
