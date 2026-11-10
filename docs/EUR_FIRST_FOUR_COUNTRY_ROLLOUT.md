@@ -113,3 +113,10 @@ catalogue validator. Do not describe the four-country catalogue as live or
 fully price-verified until every product has fresh DT One detail/quote
 evidence, the EUR pricing calculation is reconciled, and the full test suite
 passes.
+
+
+## Exact product selection hardening (branch update)
+
+The backend resolver now gives an exact internal `product_catalog.id` precedence over legacy operator/denomination lookup and scopes that lookup to the selected country. The quote endpoint accepts `productId` as an alternative to the legacy operator/amount parameters. Checkout validation accepts the exact catalog product ID by itself and rejects mixed `productId` + `operatorKey` identity input. The Flutter checkout request now sends the selected quote's catalog `productId` and omits the legacy operator/amount identity fields when that ID is present.
+
+This is a compatibility-safe first step, not the complete duplicate-product migration. The customer app still obtains its quote through the legacy operator/amount flow, so two products sharing the same denomination remain ambiguous at the quote-selection stage. Before importing the 186 collision rows, the next required changes are: add a read-only product-list API returning distinct catalog product IDs and service/subservice labels; update Flutter to let the customer choose the exact provider product; add schema fields and migration for provider service/subservice/product type; then remove the legacy natural-key uniqueness constraint only after all callers and migration preflight tests are updated. No production migration or activation has been performed.
