@@ -31,6 +31,7 @@ Source: `PGNT_ASIAN_TOPUP_MASTER_CATALOG_ALL_COUNTRIES.xlsx`, sheet `All_Product
 - 14 fixed-value PIN/eSIM purchases use USD as the destination/product currency (4 Pakistan, 7 India, 3 Bangladesh); these are not AFN/PKR/INR/BDT recharge denominations and must be kept in a separate eSIM/USD product class.
 - 17 products are ranged/open-range products (14 ranged-value recharge and 3 ranged-value payment); their destination amounts and EUR prices are expressed as ranges and must use ranged-pricing logic.
 - The master catalog contains no duplicate Product IDs.
+- **Critical database compatibility finding:** 186 source rows across 90 groups share the legacy database key (country + operator + destination amount + currency). These are legitimate separate provider products such as airtime, data bundles, and voice bundles that happen to have the same face amount. The existing live `product_catalog` has a unique constraint on that legacy key, so the current import route can silently skip products via `ON CONFLICT DO NOTHING`. The product model and customer selection path must be changed to use the exact DT One Product ID (and service/subservice metadata) before the full catalog can be imported safely. Do not remove the constraint until every query and checkout path has been migrated and tested.
 - Country totals remain Afghanistan 542, Bangladesh 488, India 147, Pakistan 783; the 28 operator/service groups include the eSIM entries.
 - Therefore the workbook does **not** have 17 missing wholesale/retail prices. It has 17 ranged prices. Earlier wording that described them as missing fixed prices was inaccurate and is superseded by this audit.
 
@@ -47,6 +48,7 @@ The customer checkout quote is a separate calculation. It must add the configure
 ## Country readiness checklist
 
 For each of AF, BD, IN, and PK:
+- [ ] Resolve the 90 legacy key collision groups by migrating product identity/selection to exact DT One Product IDs before importing the full 1,960 rows.
 - [ ] Import the 1,929 fixed-value local-currency recharge rows into a staging catalog with all products disabled.
 - [ ] Keep the 14 USD eSIM/PIN products in a separate product class; do not treat USD as the country's local recharge currency.
 - [ ] Keep the 17 ranged products in a separate ranged-pricing group, preserving their minimum/maximum destination and EUR price ranges.
@@ -86,8 +88,9 @@ The validator accepts normalized JSON rows with the DT One product ID,
 country, operator, service, destination amount/currency, product type, and EUR
 wholesale/retail prices. It preserves min–max ranges and permits USD only for
 fixed eSIM PIN purchases. It checks the four local country/currency pairs,
-positive values, duplicate provider IDs, duplicate destination keys, supported
-fixed/ranged product types, and retail-versus-wholesale range ordering.
+positive values, duplicate provider IDs, supported fixed/ranged product types,
+and retail-versus-wholesale range ordering. It reports, rather than silently
+rejects or drops, the 90 legacy database-key collision groups (186 rows).
 
 It deliberately returns every row with `providerVerified: false` and
 `active: false`. A structurally valid row is **not** a provider-verified
@@ -97,8 +100,10 @@ offline-only and does not connect to DT One, PostgreSQL, Stripe, or Render.
 The uploaded master workbook audit found 1,960 rows: 1,929 fixed local-currency
 recharge rows, 14 fixed USD eSIM/PIN rows, and 17 ranged rows (14 ranged
 recharge plus 3 ranged payment). All rows contain EUR wholesale and retail
-values, but ranged rows contain min–max ranges. The workbook is a staging
-source, not current DT One price evidence.
+values, but ranged rows contain min–max ranges. The validator was run against all 1,960 workbook rows: all passed structural
+validation, all remain inactive/unverified, and it identified 90 legacy key
+collision groups involving 186 rows. The workbook is a staging source, not
+current DT One price evidence.
 
 ## Current implementation boundary
 
