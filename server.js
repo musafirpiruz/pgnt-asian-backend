@@ -580,7 +580,7 @@ async function getPricingSettings(client, country) {
     `SELECT
        country,
        fee_eur_cents,
-       COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
+       CASE WHEN country = 'AF' THEN COALESCE(local_currency_per_eur, afn_per_eur) ELSE local_currency_per_eur END AS local_currency_per_eur,
        afn_per_eur,
        bonus_percent,
        stripe_fee_percent,
@@ -5360,7 +5360,7 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
       `SELECT
          country,
          fee_eur_cents,
-         COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
+         CASE WHEN country = 'AF' THEN COALESCE(local_currency_per_eur, afn_per_eur) ELSE local_currency_per_eur END AS local_currency_per_eur,
          afn_per_eur,
          bonus_percent,
          stripe_fee_percent,
