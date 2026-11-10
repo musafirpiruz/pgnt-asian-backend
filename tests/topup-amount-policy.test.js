@@ -22,11 +22,12 @@ test('checkout rejects amounts below 10, above 3000, and non-integer values', ()
   assert.ok(validator.includes('amount > PGNT_MAX_AMOUNT'));
 });
 
-test('price quote rejects amounts outside the same server policy', () => {
+test('price quote applies the same amount policy to legacy operator/amount selection', () => {
   const start = server.indexOf("app.get('/api/pricing/quote'");
   const end = server.indexOf("app.post('/api/payments/checkout'", start);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start, end);
-  assert.ok(route.includes('amount < PGNT_MIN_AMOUNT'));
-  assert.ok(route.includes('amount > PGNT_MAX_AMOUNT'));
+  assert.ok(route.includes('validLegacySelection'));
+  assert.match(route, /Number\.isSafeInteger\(amount\) && amount >= PGNT_MIN_AMOUNT && amount <= PGNT_MAX_AMOUNT/);
+  assert.match(route, /validProductId \? productId : null/);
 });
