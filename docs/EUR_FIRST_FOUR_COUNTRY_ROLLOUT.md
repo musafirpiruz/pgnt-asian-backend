@@ -72,3 +72,34 @@ Implement the equivalent EUR-wholesale-to-GBP conversion and GBP-specific Stripe
 - No database migration or production price write until the import has been reviewed against current DT One product details and a rollback/export plan exists.
 - No USD or GBP checkout until its currency conversion and Stripe settlement/fee path is implemented and tested end to end.
 - This rollout is for the four countries in today's supplied catalog; future countries require a country registry entry, DT One operator/product discovery, FX and phone validation, then the same EUR-first gates.
+
+
+## Offline catalogue staging validator
+
+The branch now includes `catalog-staging-validator.js` and
+`tests/catalog-staging-validator.test.js`.
+
+The validator accepts normalized JSON rows with the DT One product ID,
+country, operator, destination amount/currency, product type, and EUR
+wholesale/retail prices. It checks the four supported country/currency pairs,
+positive amounts and prices, duplicate provider IDs, duplicate destination
+keys, supported fixed/ranged product types, and retail-versus-wholesale order.
+
+It deliberately returns every row with `providerVerified: false` and
+`active: false`. A structurally valid row is **not** a provider-verified
+product and is not eligible for production activation. The validator is
+offline-only and does not connect to DT One, PostgreSQL, Stripe, or Render.
+
+The uploaded master workbook audit found 1,960 rows: 1,943 fixed-price rows
+and 17 ranged/open-range rows. The 17 ranged rows must be handled by the
+separate ranged-value flow and must not be assigned invented fixed prices.
+The workbook is a staging source, not current DT One price evidence.
+
+## Current implementation boundary
+
+The current backend still has an EUR-only customer checkout path. GBP/USD
+checkout and international payment-method coverage are not enabled by this
+catalogue validator. Do not describe the four-country catalogue as live or
+fully price-verified until every product has fresh DT One detail/quote
+evidence, the EUR pricing calculation is reconciled, and the full test suite
+passes.
