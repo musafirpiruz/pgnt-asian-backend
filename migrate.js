@@ -780,10 +780,10 @@ async function runMigration() {
           CREATE TABLE IF NOT EXISTS dtone_ranged_products (
             dtone_product_id BIGINT PRIMARY KEY,
             country_iso_code CHAR(3) NOT NULL
-              CHECK (country_iso_code ~ '^[A-Z]{3},
+              CHECK (country_iso_code ~ '^[A-Z]{3}$'),
             operator_name VARCHAR(160) NOT NULL,
             destination_currency CHAR(3) NOT NULL
-              CHECK (destination_currency ~ '^[A-Z]{3},
+              CHECK (destination_currency ~ '^[A-Z]{3}$'),
             min_amount NUMERIC(18,4) NOT NULL
               CHECK (min_amount > 0 AND min_amount = TRUNC(min_amount)),
             max_amount NUMERIC(18,4) NOT NULL
