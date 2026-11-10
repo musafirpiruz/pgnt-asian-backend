@@ -52,6 +52,9 @@ class AppCountry {
   final String flag;
   final String currency;
   final String symbol;
+  final String callingCode;
+  final int phoneMinDigits;
+  final int phoneMaxDigits;
 
   const AppCountry({
     required this.code,
@@ -59,6 +62,9 @@ class AppCountry {
     required this.flag,
     required this.currency,
     required this.symbol,
+    this.callingCode = '',
+    this.phoneMinDigits = 6,
+    this.phoneMaxDigits = 15,
   });
 }
 
@@ -120,12 +126,19 @@ class MobileOperator {
   final String countryCode;
   final String name;
   final String icon;
+  // Stable backend/provider identifiers are retained when an operator is
+  // loaded from the verified country registry. Curated fallback entries
+  // intentionally leave these nullable until they are mapped by an admin.
+  final String? operatorKey;
+  final String? providerOperatorId;
 
   const MobileOperator(
     this.countryCode,
     this.name,
-    this.icon,
-  );
+    this.icon, {
+    this.operatorKey,
+    this.providerOperatorId,
+  });
 }
 
 // Brand-inspired compact marks keep operator cards recognizable without
@@ -567,6 +580,70 @@ const Map<String, Map<String, String>> translations = {
     'referralCode': 'د بلنې کوډ (اختیاري)',
     'referralHint': 'اختیاري — انعام د چارج له بریالیتوب وروسته ثبتېږي.',
     'invalidReferralCode': 'د بلنې کوډ باید ۴ تر ۴۰ توري، شمېرې، _ یا - ولري.',
+    'recipientHint': "د افغانستان د ترلاسه کوونکي شمېره ولیکئ",
+    'amountCheck': "اندازه او بیه وګورئ",
+    'marketEquivalent': "د بازار اټکلي معادل",
+    'exchangeRate': "د تبادلې نرخ",
+    'totalPay': "ټوله تادیه",
+    'quoteLoading': "د سرور تایید شوې بیه ترلاسه کېږي...",
+    'quotePrompt': "د یورو بیې، فیس او بونس لیدلو لپاره هېواد، شبکه او اندازه وټاکئ.",
+    'quoteConfirmed': "بیه، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.",
+    'supportVip': "ځانګړې مرسته",
+    'helpCentre': "د مرستې مرکز",
+    'supportIntro': "د تادیاتو، موبایل چارج او د فرمایش ستونزو په اړه لارښوونې ومومئ.",
+    'supportFaqs': "عامې پوښتنې",
+    'orderGuidance': "د فرمایش لارښوونې",
+    'paymentSafety': "د تادیې خوندیتوب",
+    'supportAutoNote': "اتومات مرسته هر وخت شته. د ژوندۍ مرستې ځواب د ملاتړ د شتون پورې اړه لري.",
+    'quickHelp': "چټکه مرسته",
+    'checkOrder': "فرمایش وګورئ",
+    'checkOrderDesc': "تاریخچه خلاصه کړئ او د فرمایش وروستی حالت وګورئ.",
+    'paymentWallet': "تادیه او والټ",
+    'paymentWalletDesc': "د والټ معلومات او د تادیې لارښوونې وګورئ.",
+    'failedOrderNote': "د ناکام یا ځنډېدلي فرمایش لپاره د معاملې شمېره او رسید وساتئ. د ټکټ مستقیم لېږل او د بېرته ورکړې اتومات ارزونه د ملاتړ له نښلول شوي خدمت سره ممکن دي.",
+    'guestAccount': "مېلمه حساب",
+    'profileOptional': "پروفایل (اختیاري)",
+    'profileDetailsOptional': "که وغواړئ، خپل معلومات ورزیات کړئ.",
+    'accountSecurityNote': "د حساب امنیتي ځانګړتیاوې د حساب له جوړېدو وروسته فعالېږي.",
+    'accountSecurityNotConnected': "د حساب امنیت لا نه دی نښلول شوی.",
+    'couldNotSaveLanguage': "ستاسو ژبه ثبت نه شوه. بیا هڅه وکړئ.",
+    'countryDirectoryFallback': "د هېوادونو تازه لېست ترلاسه نه شو؛ خوندي پخوانی لېست کارول کېږي.",
+    'supportCreateTitle': "د مرستې ټکټ جوړ کړئ",
+    'supportSelectOrder': "د معاملې شمېره",
+    'supportSelectCategory': "د ستونزې ډول",
+    'supportCatPayment': "تادیه",
+    'supportCatTopup': "موبایل چارج",
+    'supportCatRefund': "د پیسو بېرته ترلاسه کول",
+    'supportCatWallet': "والټ",
+    'supportCatAccount': "حساب",
+    'supportCatOther': "نور",
+    'supportSubject': "د موضوع لنډ عنوان",
+    'supportDescribe': "ستونزه په تفصیل ولیکئ",
+    'supportSending': "لېږل کېږي...",
+    'supportSend': "د مرستې غوښتنه ولېږئ",
+    'supportChooseOrderFirst': "لومړی له تاریخچې څخه خپله معامله انتخاب کړئ.",
+    'supportCompleteFields': "د موضوع عنوان او د ستونزې تشریح بشپړه ولیکئ.",
+    'supportTicketCreated': "ستاسو د مرستې غوښتنه ثبت شوه. د ټکټ شمېره:",
+    'supportTicketFailed': "د مرستې غوښتنه ثبت نه شوه؛ بیا هڅه وکړئ.",
+    'supportHistoryTitle': "زما د مرستې غوښتنې",
+    'supportRefresh': "تازه کول",
+    'supportChooseOrderView': "د ټکټونو د کتلو لپاره خپله معامله انتخاب کړئ.",
+    'supportNoTickets': "د دې معاملې لپاره د مرستې پخوانی ټکټ نشته. د تازه کولو نښه کېکاږئ.",
+    'supportCategoryLabel': "ډول:",
+    'supportReply': "د ملاتړ ځواب",
+    'supportLoadFailed': "د ټکټونو تاریخچه نه شوه لوستل کېدای.",
+    'supportInvalidHistory': "د ملاتړ د تاریخچې ځواب ناسم دی.",
+    'supportLoadRequestsFailed': "د مرستې غوښتنې نه شوې لوستل کېدای.",
+    'supportNoOrder': "د ټکټ ثبتولو لپاره لومړی یوه معامله پیل کړئ؛ بیا یې د معاملاتو له تاریخچې څخه وټاکئ.",
+    'walletServerBalanceNote': "د حقیقي بیلانس ښودلو لپاره د سرور اتصال اړین دی.",
+    'walletAddMoneyNote': "د پیسو جمع کولو لپاره د والټ API او د تادیې تایید اړین دي.",
+    'walletStripeDescription': "تادیه د موجود Backend له لارې ترسره کېږي.",
+    'walletHistoryDescription': "د والټ د پیسو داخلېدو او وتلو معاملې",
+    'walletSecurityTitle': "د والټ امنیت",
+    'walletSecurePayments': "خوندي تادیات",
+    'walletSecretKeysNote': "د تادیې پټ کلیدونه باید یوازې په Backend کې وساتل شي.",
+    'walletStripeVerifyNote': "د Stripe تادیه باید د سرور له خوا تایید شي.",
+    'shareReceiptNotReady': "د رسید شریکولو ځانګړنه به په راتلونکي پړاو کې ورزیاته شي.",
   },
 
   'fa': {
@@ -632,6 +709,70 @@ const Map<String, Map<String, String>> translations = {
     'referralCode': 'کد دعوت (اختیاری)',
     'referralHint': 'اختیاری — پاداش پس از شارژ موفق ثبت می‌شود.',
     'invalidReferralCode': 'کد دعوت باید ۴ تا ۴۰ حرف، عدد، _ یا - داشته باشد.',
+    'recipientHint': "شماره دریافت‌کننده در افغانستان را وارد کنید",
+    'amountCheck': "بررسی مقدار و قیمت",
+    'marketEquivalent': "معادل تقریبی بازار",
+    'exchangeRate': "نرخ تبدیل",
+    'totalPay': "مبلغ کل پرداخت",
+    'quoteLoading': "دریافت قیمت تأییدشده از سرور...",
+    'quotePrompt': "برای دیدن قیمت یورو، کارمزد و پاداش، کشور، شبکه و مقدار را انتخاب کنید.",
+    'quoteConfirmed': "قیمت، کارمزد و پاداش بر اساس نرخ تأییدشده سرور نمایش داده می‌شود.",
+    'supportVip': "پشتیبانی ویژه",
+    'helpCentre': "مرکز راهنما",
+    'supportIntro': "راهنمای پرداخت‌ها، شارژ موبایل و مشکلات سفارش را پیدا کنید.",
+    'supportFaqs': "پرسش‌های متداول",
+    'orderGuidance': "راهنمای سفارش",
+    'paymentSafety': "امنیت پرداخت",
+    'supportAutoNote': "راهنمای خودکار همیشه در دسترس است. پاسخ کارشناس به زمان دسترسی پشتیبانی بستگی دارد.",
+    'quickHelp': "راهنمای سریع",
+    'checkOrder': "بررسی سفارش",
+    'checkOrderDesc': "تاریخچه را باز کنید و آخرین وضعیت سفارش را ببینید.",
+    'paymentWallet': "پرداخت و کیف پول",
+    'paymentWalletDesc': "اطلاعات کیف پول و راهنمای پرداخت را بررسی کنید.",
+    'failedOrderNote': "برای سفارش ناموفق یا با تأخیر، شماره تراکنش و رسید را نگه دارید. ارسال مستقیم تیکت و بررسی خودکار بازپرداخت به اتصال سرویس پشتیبانی نیاز دارد.",
+    'guestAccount': "حساب مهمان",
+    'profileOptional': "پروفایل (اختیاری)",
+    'profileDetailsOptional': "در صورت تمایل اطلاعات خود را اضافه کنید.",
+    'accountSecurityNote': "ویژگی‌های امنیت حساب پس از راه‌اندازی حساب فعال می‌شوند.",
+    'accountSecurityNotConnected': "امنیت حساب هنوز متصل نشده است.",
+    'couldNotSaveLanguage': "ذخیره زبان ممکن نشد. دوباره تلاش کنید.",
+    'countryDirectoryFallback': "فهرست تازه کشورها دریافت نشد؛ از فهرست محلی امن استفاده می‌شود.",
+    'supportCreateTitle': "ایجاد درخواست پشتیبانی",
+    'supportSelectOrder': "شماره تراکنش",
+    'supportSelectCategory': "نوع مشکل",
+    'supportCatPayment': "پرداخت",
+    'supportCatTopup': "شارژ موبایل",
+    'supportCatRefund': "بازپرداخت",
+    'supportCatWallet': "کیف پول",
+    'supportCatAccount': "حساب",
+    'supportCatOther': "سایر",
+    'supportSubject': "عنوان کوتاه موضوع",
+    'supportDescribe': "مشکل را با جزئیات بنویسید",
+    'supportSending': "در حال ارسال...",
+    'supportSend': "ارسال درخواست پشتیبانی",
+    'supportChooseOrderFirst': "ابتدا تراکنش خود را از تاریخچه انتخاب کنید.",
+    'supportCompleteFields': "عنوان موضوع و توضیح مشکل را کامل بنویسید.",
+    'supportTicketCreated': "درخواست پشتیبانی شما ثبت شد. شماره تیکت:",
+    'supportTicketFailed': "درخواست پشتیبانی ثبت نشد؛ دوباره تلاش کنید.",
+    'supportHistoryTitle': "درخواست‌های پشتیبانی من",
+    'supportRefresh': "تازه‌سازی",
+    'supportChooseOrderView': "برای دیدن تیکت‌ها، تراکنش خود را انتخاب کنید.",
+    'supportNoTickets': "برای این تراکنش تیکت قبلی وجود ندارد. دکمه تازه‌سازی را بزنید.",
+    'supportCategoryLabel': "نوع:",
+    'supportReply': "پاسخ پشتیبانی",
+    'supportLoadFailed': "تاریخچه تیکت‌ها بارگیری نشد.",
+    'supportInvalidHistory': "پاسخ تاریخچه پشتیبانی نامعتبر است.",
+    'supportLoadRequestsFailed': "درخواست‌های پشتیبانی بارگیری نشدند.",
+    'supportNoOrder': "برای ثبت تیکت، ابتدا یک تراکنش آغاز کنید؛ سپس آن را از تاریخچه تراکنش‌ها انتخاب کنید.",
+    'walletServerBalanceNote': "برای نمایش موجودی واقعی، اتصال به سرور لازم است.",
+    'walletAddMoneyNote': "برای افزودن پول، API کیف پول و تأیید پرداخت لازم است.",
+    'walletStripeDescription': "پرداخت از طریق Backend موجود انجام می‌شود.",
+    'walletHistoryDescription': "تراکنش‌های ورود و خروج پول کیف پول",
+    'walletSecurityTitle': "امنیت کیف پول",
+    'walletSecurePayments': "پرداخت‌های امن",
+    'walletSecretKeysNote': "کلیدهای محرمانه پرداخت باید فقط در Backend نگهداری شوند.",
+    'walletStripeVerifyNote': "پرداخت Stripe باید توسط سرور تأیید شود.",
+    'shareReceiptNotReady': "قابلیت اشتراک‌گذاری رسید در مرحله بعد اضافه می‌شود.",
   },
 
   'en': {
@@ -697,6 +838,70 @@ const Map<String, Map<String, String>> translations = {
     'referralCode': 'Referral code (optional)',
     'referralHint': 'Optional — the reward is credited after a successful top-up.',
     'invalidReferralCode': 'Referral code must be 4–40 letters, numbers, _ or -.',
+    'recipientHint': "Enter the recipient number for",
+    'amountCheck': "Check amount and price",
+    'marketEquivalent': "Estimated market equivalent",
+    'exchangeRate': "Exchange rate",
+    'totalPay': "Total payment",
+    'quoteLoading': "Getting the server-confirmed price...",
+    'quotePrompt': "Choose a country, network and amount to see the EUR price, fee and bonus.",
+    'quoteConfirmed': "Price, fee and bonus are shown using the server-confirmed quote.",
+    'supportVip': "VIP Assistance",
+    'helpCentre': "Help Centre",
+    'supportIntro': "Find guidance for payments, mobile top-ups and order problems.",
+    'supportFaqs': "FAQs",
+    'orderGuidance': "Order guidance",
+    'paymentSafety': "Payment safety",
+    'supportAutoNote': "Automated help is available at any time. Live-agent response depends on support availability.",
+    'quickHelp': "Quick help",
+    'checkOrder': "Check an order",
+    'checkOrderDesc': "Open your history to see the latest available status.",
+    'paymentWallet': "Payment and wallet",
+    'paymentWalletDesc': "Review wallet information and payment guidance.",
+    'failedOrderNote': "For a failed or delayed order, save the transaction ID and receipt. Direct ticket submission and automatic refund review still require a connected support service.",
+    'guestAccount': "Guest account",
+    'profileOptional': "Profile (optional)",
+    'profileDetailsOptional': "Add your details only if you want to.",
+    'accountSecurityNote': "Account security features require account setup.",
+    'accountSecurityNotConnected': "Account security is not connected yet.",
+    'couldNotSaveLanguage': "Could not save your language. Please try again.",
+    'countryDirectoryFallback': "The latest country list could not be loaded; the saved local list is being used.",
+    'supportCreateTitle': "Create a support ticket",
+    'supportSelectOrder': "Transaction number",
+    'supportSelectCategory': "Issue type",
+    'supportCatPayment': "Payment",
+    'supportCatTopup': "Mobile top-up",
+    'supportCatRefund': "Refund",
+    'supportCatWallet': "Wallet",
+    'supportCatAccount': "Account",
+    'supportCatOther': "Other",
+    'supportSubject': "Short subject",
+    'supportDescribe': "Describe the issue in detail",
+    'supportSending': "Submitting...",
+    'supportSend': "Send support request",
+    'supportChooseOrderFirst': "First select your transaction from history.",
+    'supportCompleteFields': "Please complete the subject and issue description.",
+    'supportTicketCreated': "Your support request was submitted. Ticket number:",
+    'supportTicketFailed': "Could not submit the support request. Please try again.",
+    'supportHistoryTitle': "My support requests",
+    'supportRefresh': "Refresh",
+    'supportChooseOrderView': "Select a transaction to view its tickets.",
+    'supportNoTickets': "There are no previous support tickets for this transaction. Tap refresh.",
+    'supportCategoryLabel': "Type:",
+    'supportReply': "Support reply",
+    'supportLoadFailed': "Could not load ticket history.",
+    'supportInvalidHistory': "Invalid support history response.",
+    'supportLoadRequestsFailed': "Could not load support requests.",
+    'supportNoOrder': "Start a transaction first to create a ticket, then select it from your transaction history.",
+    'walletServerBalanceNote': "A server connection is required to display the actual balance.",
+    'walletAddMoneyNote': "Wallet API and payment verification are required to add funds.",
+    'walletStripeDescription': "Payments are processed through the existing backend.",
+    'walletHistoryDescription': "Wallet deposits and withdrawals",
+    'walletSecurityTitle': "Wallet security",
+    'walletSecurePayments': "Secure payments",
+    'walletSecretKeysNote': "Payment secret keys must remain on the backend only.",
+    'walletStripeVerifyNote': "Stripe payments must be verified by the server.",
+    'shareReceiptNotReady': "Receipt sharing will be added in a later stage.",
   },
 
   'ur': {
@@ -762,6 +967,70 @@ const Map<String, Map<String, String>> translations = {
     'referralCode': 'دعوتی کوڈ (اختیاری)',
     'referralHint': 'اختیاری — کامیاب ریچارج کے بعد انعام درج ہوگا۔',
     'invalidReferralCode': 'دعوتی کوڈ میں ۴ سے ۴۰ حروف، اعداد، _ یا - ہوں۔',
+    'recipientHint': "افغانستان میں وصول کنندہ کا نمبر درج کریں",
+    'amountCheck': "رقم اور قیمت دیکھیں",
+    'marketEquivalent': "بازار کے مطابق اندازاً رقم",
+    'exchangeRate': "شرح تبادلہ",
+    'totalPay': "کل ادائیگی",
+    'quoteLoading': "سرور سے تصدیق شدہ قیمت حاصل کی جا رہی ہے...",
+    'quotePrompt': "یورو قیمت، فیس اور بونس دیکھنے کے لیے ملک، نیٹ ورک اور رقم منتخب کریں۔",
+    'quoteConfirmed': "قیمت، فیس اور بونس سرور کی تصدیق شدہ قیمت کے مطابق دکھائے جاتے ہیں۔",
+    'supportVip': "خصوصی معاونت",
+    'helpCentre': "مدد کا مرکز",
+    'supportIntro': "ادائیگی، موبائل ریچارج اور آرڈر کے مسائل کے بارے میں رہنمائی حاصل کریں۔",
+    'supportFaqs': "عام سوالات",
+    'orderGuidance': "آرڈر کی رہنمائی",
+    'paymentSafety': "ادائیگی کا تحفظ",
+    'supportAutoNote': "خودکار مدد ہر وقت دستیاب ہے۔ براہِ راست نمائندے کا جواب معاونت کی دستیابی پر منحصر ہے۔",
+    'quickHelp': "فوری مدد",
+    'checkOrder': "آرڈر دیکھیں",
+    'checkOrderDesc': "تاریخ کھولیں اور آرڈر کی تازہ ترین حالت دیکھیں۔",
+    'paymentWallet': "ادائیگی اور والٹ",
+    'paymentWalletDesc': "والٹ کی معلومات اور ادائیگی کی رہنمائی دیکھیں۔",
+    'failedOrderNote': "ناکام یا تاخیر والے آرڈر کے لیے ٹرانزیکشن نمبر اور رسید محفوظ رکھیں۔ براہِ راست ٹکٹ اور خودکار رقم واپسی کے جائزے کے لیے معاونت کی سروس منسلک ہونا ضروری ہے۔",
+    'guestAccount': "مہمان اکاؤنٹ",
+    'profileOptional': "پروفائل (اختیاری)",
+    'profileDetailsOptional': "اگر چاہیں تو اپنی تفصیلات شامل کریں۔",
+    'accountSecurityNote': "اکاؤنٹ کی سیکیورٹی خصوصیات اکاؤنٹ بنانے کے بعد دستیاب ہوں گی۔",
+    'accountSecurityNotConnected': "اکاؤنٹ کی سیکیورٹی ابھی منسلک نہیں ہے۔",
+    'couldNotSaveLanguage': "زبان محفوظ نہیں ہو سکی۔ دوبارہ کوشش کریں۔",
+    'countryDirectoryFallback': "تازہ ملکوں کی فہرست حاصل نہیں ہو سکی؛ محفوظ مقامی فہرست استعمال ہو رہی ہے۔",
+    'supportCreateTitle': "سپورٹ ٹکٹ بنائیں",
+    'supportSelectOrder': "لین دین نمبر",
+    'supportSelectCategory': "مسئلے کی قسم",
+    'supportCatPayment': "ادائیگی",
+    'supportCatTopup': "موبائل ریچارج",
+    'supportCatRefund': "رقم واپسی",
+    'supportCatWallet': "والٹ",
+    'supportCatAccount': "اکاؤنٹ",
+    'supportCatOther': "دیگر",
+    'supportSubject': "موضوع کا مختصر عنوان",
+    'supportDescribe': "مسئلہ تفصیل سے لکھیں",
+    'supportSending': "جمع ہو رہا ہے...",
+    'supportSend': "سپورٹ درخواست بھیجیں",
+    'supportChooseOrderFirst': "پہلے ہسٹری سے اپنا لین دین منتخب کریں۔",
+    'supportCompleteFields': "موضوع اور مسئلے کی تفصیل مکمل لکھیں۔",
+    'supportTicketCreated': "آپ کی سپورٹ درخواست درج ہو گئی۔ ٹکٹ نمبر:",
+    'supportTicketFailed': "سپورٹ درخواست جمع نہیں ہو سکی؛ دوبارہ کوشش کریں۔",
+    'supportHistoryTitle': "میری سپورٹ درخواستیں",
+    'supportRefresh': "تازہ کریں",
+    'supportChooseOrderView': "ٹکٹ دیکھنے کے لیے اپنا لین دین منتخب کریں۔",
+    'supportNoTickets': "اس لین دین کے لیے کوئی سابقہ سپورٹ ٹکٹ نہیں۔ تازہ کرنے کا بٹن دبائیں۔",
+    'supportCategoryLabel': "قسم:",
+    'supportReply': "سپورٹ کا جواب",
+    'supportLoadFailed': "ٹکٹ کی ہسٹری لوڈ نہیں ہو سکی۔",
+    'supportInvalidHistory': "سپورٹ ہسٹری کا جواب درست نہیں۔",
+    'supportLoadRequestsFailed': "سپورٹ درخواستیں لوڈ نہیں ہو سکیں۔",
+    'supportNoOrder': "ٹکٹ بنانے کے لیے پہلے ایک ٹرانزیکشن شروع کریں، پھر اسے ٹرانزیکشن ہسٹری سے منتخب کریں۔",
+    'walletServerBalanceNote': "اصل بیلنس دکھانے کے لیے سرور سے رابطہ ضروری ہے۔",
+    'walletAddMoneyNote': "رقم جمع کرنے کے لیے والٹ API اور ادائیگی کی تصدیق ضروری ہے۔",
+    'walletStripeDescription': "ادائیگی موجودہ Backend کے ذریعے ہوگی۔",
+    'walletHistoryDescription': "والٹ میں رقم جمع اور نکالنے کی ٹرانزیکشنز",
+    'walletSecurityTitle': "والٹ کی سیکیورٹی",
+    'walletSecurePayments': "محفوظ ادائیگیاں",
+    'walletSecretKeysNote': "ادائیگی کی خفیہ چابیاں صرف Backend میں ہونی چاہئیں۔",
+    'walletStripeVerifyNote': "Stripe ادائیگی کی سرور سے تصدیق ضروری ہے۔",
+    'shareReceiptNotReady': "رسید شیئر کرنے کی سہولت اگلے مرحلے میں شامل ہوگی۔",
   },
 
   'hi': {
@@ -827,6 +1096,70 @@ const Map<String, Map<String, String>> translations = {
     'referralCode': 'रेफरल कोड (वैकल्पिक)',
     'referralHint': 'वैकल्पिक — सफल रिचार्ज के बाद इनाम दर्ज होगा।',
     'invalidReferralCode': 'रेफरल कोड में 4–40 अक्षर, अंक, _ या - होने चाहिए।',
+    'recipientHint': "अफ़ग़ानिस्तान में प्राप्तकर्ता का नंबर दर्ज करें",
+    'amountCheck': "राशि और कीमत जाँचें",
+    'marketEquivalent': "बाज़ार के अनुसार अनुमानित मूल्य",
+    'exchangeRate': "विनिमय दर",
+    'totalPay': "कुल भुगतान",
+    'quoteLoading': "सर्वर से सत्यापित कीमत प्राप्त हो रही है...",
+    'quotePrompt': "यूरो कीमत, शुल्क और बोनस देखने के लिए देश, नेटवर्क और राशि चुनें।",
+    'quoteConfirmed': "कीमत, शुल्क और बोनस सर्वर द्वारा सत्यापित दर के अनुसार दिखाए जाते हैं।",
+    'supportVip': "विशेष सहायता",
+    'helpCentre': "सहायता केंद्र",
+    'supportIntro': "भुगतान, मोबाइल टॉप-अप और ऑर्डर की समस्याओं के लिए मार्गदर्शन पाएँ।",
+    'supportFaqs': "अक्सर पूछे जाने वाले प्रश्न",
+    'orderGuidance': "ऑर्डर मार्गदर्शन",
+    'paymentSafety': "भुगतान सुरक्षा",
+    'supportAutoNote': "स्वचालित सहायता हर समय उपलब्ध है। लाइव एजेंट का जवाब सहायता की उपलब्धता पर निर्भर करता है।",
+    'quickHelp': "त्वरित सहायता",
+    'checkOrder': "ऑर्डर देखें",
+    'checkOrderDesc': "इतिहास खोलें और ऑर्डर की नवीनतम स्थिति देखें।",
+    'paymentWallet': "भुगतान और वॉलेट",
+    'paymentWalletDesc': "वॉलेट की जानकारी और भुगतान संबंधी मार्गदर्शन देखें।",
+    'failedOrderNote': "विफल या विलंबित ऑर्डर के लिए लेन-देन आईडी और रसीद सुरक्षित रखें। सीधे टिकट भेजने और स्वचालित रिफंड समीक्षा के लिए सहायता सेवा जुड़ी होना आवश्यक है।",
+    'guestAccount': "अतिथि खाता",
+    'profileOptional': "प्रोफ़ाइल (वैकल्पिक)",
+    'profileDetailsOptional': "यदि चाहें तो अपनी जानकारी जोड़ें।",
+    'accountSecurityNote': "खाता सुरक्षा सुविधाओं के लिए खाता सेटअप आवश्यक है।",
+    'accountSecurityNotConnected': "खाता सुरक्षा अभी कनेक्ट नहीं है।",
+    'couldNotSaveLanguage': "आपकी भाषा सहेजी नहीं जा सकी। फिर कोशिश करें।",
+    'countryDirectoryFallback': "देशों की नई सूची नहीं मिल सकी; सुरक्षित स्थानीय सूची का उपयोग किया जा रहा है।",
+    'supportCreateTitle': "सहायता टिकट बनाएँ",
+    'supportSelectOrder': "लेन-देन संख्या",
+    'supportSelectCategory': "समस्या का प्रकार",
+    'supportCatPayment': "भुगतान",
+    'supportCatTopup': "मोबाइल रिचार्ज",
+    'supportCatRefund': "रिफंड",
+    'supportCatWallet': "वॉलेट",
+    'supportCatAccount': "खाता",
+    'supportCatOther': "अन्य",
+    'supportSubject': "विषय का छोटा शीर्षक",
+    'supportDescribe': "समस्या का विस्तार से वर्णन करें",
+    'supportSending': "जमा हो रहा है...",
+    'supportSend': "सहायता अनुरोध भेजें",
+    'supportChooseOrderFirst': "पहले इतिहास से अपना लेन-देन चुनें।",
+    'supportCompleteFields': "विषय और समस्या का विवरण पूरा लिखें।",
+    'supportTicketCreated': "आपका सहायता अनुरोध दर्ज हो गया। टिकट नंबर:",
+    'supportTicketFailed': "सहायता अनुरोध दर्ज नहीं हुआ। फिर कोशिश करें।",
+    'supportHistoryTitle': "मेरे सहायता अनुरोध",
+    'supportRefresh': "रीफ़्रेश करें",
+    'supportChooseOrderView': "टिकट देखने के लिए लेन-देन चुनें।",
+    'supportNoTickets': "इस लेन-देन के लिए कोई पुराना सहायता टिकट नहीं है। रीफ़्रेश दबाएँ।",
+    'supportCategoryLabel': "प्रकार:",
+    'supportReply': "सहायता का जवाब",
+    'supportLoadFailed': "टिकट इतिहास लोड नहीं हो सका।",
+    'supportInvalidHistory': "सहायता इतिहास का जवाब अमान्य है।",
+    'supportLoadRequestsFailed': "सहायता अनुरोध लोड नहीं हो सके।",
+    'supportNoOrder': "टिकट बनाने के लिए पहले एक लेन-देन शुरू करें, फिर उसे लेन-देन इतिहास से चुनें।",
+    'walletServerBalanceNote': "वास्तविक बैलेंस दिखाने के लिए सर्वर कनेक्शन आवश्यक है।",
+    'walletAddMoneyNote': "पैसे जोड़ने के लिए वॉलेट API और भुगतान सत्यापन आवश्यक हैं।",
+    'walletStripeDescription': "भुगतान मौजूदा Backend के माध्यम से होगा।",
+    'walletHistoryDescription': "वॉलेट में जमा और निकासी के लेन-देन",
+    'walletSecurityTitle': "वॉलेट सुरक्षा",
+    'walletSecurePayments': "सुरक्षित भुगतान",
+    'walletSecretKeysNote': "भुगतान की गुप्त कुंजियाँ केवल Backend में रहनी चाहिए।",
+    'walletStripeVerifyNote': "Stripe भुगतान की पुष्टि सर्वर द्वारा होनी चाहिए।",
+    'shareReceiptNotReady': "रसीद साझा करने की सुविधा अगले चरण में जोड़ी जाएगी।",
   },
 
   'bn': {
@@ -891,7 +1224,71 @@ const Map<String, Map<String, String>> translations = {
     'changeCountry': 'দেশ পরিবর্তন করুন',
     'referralCode': 'রেফারেল কোড (ঐচ্ছিক)',
     'referralHint': 'ঐচ্ছিক — সফল রিচার্জের পর পুরস্কার জমা হবে।',
-    'invalidReferralCode': 'রেফারেল কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।'
+    'invalidReferralCode': 'রেফারেল কোডে ৪–৪০টি অক্ষর, সংখ্যা, _ বা - থাকতে হবে।',
+    'recipientHint': "আফগানিস্তানে প্রাপকের নম্বর লিখুন",
+    'amountCheck': "পরিমাণ ও মূল্য যাচাই করুন",
+    'marketEquivalent': "বাজার অনুযায়ী আনুমানিক মূল্য",
+    'exchangeRate': "বিনিময় হার",
+    'totalPay': "মোট পরিশোধ",
+    'quoteLoading': "সার্ভার-নিশ্চিত মূল্য আনা হচ্ছে...",
+    'quotePrompt': "ইউরো মূল্য, ফি ও বোনাস দেখতে দেশ, নেটওয়ার্ক ও পরিমাণ নির্বাচন করুন।",
+    'quoteConfirmed': "সার্ভার-নিশ্চিত দর অনুযায়ী মূল্য, ফি ও বোনাস দেখানো হয়।",
+    'supportVip': "বিশেষ সহায়তা",
+    'helpCentre': "সহায়তা কেন্দ্র",
+    'supportIntro': "পেমেন্ট, মোবাইল টপ-আপ এবং অর্ডারের সমস্যার নির্দেশনা দেখুন।",
+    'supportFaqs': "সাধারণ প্রশ্ন",
+    'orderGuidance': "অর্ডার নির্দেশনা",
+    'paymentSafety': "পেমেন্ট নিরাপত্তা",
+    'supportAutoNote': "স্বয়ংক্রিয় সহায়তা সব সময় পাওয়া যায়। লাইভ প্রতিনিধির উত্তর সহায়তার প্রাপ্যতার ওপর নির্ভর করে।",
+    'quickHelp': "দ্রুত সহায়তা",
+    'checkOrder': "অর্ডার দেখুন",
+    'checkOrderDesc': "ইতিহাস খুলে অর্ডারের সর্বশেষ অবস্থা দেখুন।",
+    'paymentWallet': "পেমেন্ট ও ওয়ালেট",
+    'paymentWalletDesc': "ওয়ালেটের তথ্য ও পেমেন্ট নির্দেশনা দেখুন।",
+    'failedOrderNote': "ব্যর্থ বা বিলম্বিত অর্ডারের জন্য লেনদেন আইডি ও রসিদ সংরক্ষণ করুন। সরাসরি টিকিট পাঠানো এবং স্বয়ংক্রিয় রিফান্ড পর্যালোচনার জন্য সহায়তা পরিষেবা সংযুক্ত থাকতে হবে।",
+    'guestAccount': "অতিথি অ্যাকাউন্ট",
+    'profileOptional': "প্রোফাইল (ঐচ্ছিক)",
+    'profileDetailsOptional': "ইচ্ছা হলে আপনার তথ্য যোগ করুন।",
+    'accountSecurityNote': "অ্যাকাউন্ট নিরাপত্তা সুবিধার জন্য অ্যাকাউন্ট সেটআপ প্রয়োজন।",
+    'accountSecurityNotConnected': "অ্যাকাউন্ট নিরাপত্তা এখনো সংযুক্ত নয়।",
+    'couldNotSaveLanguage': "আপনার ভাষা সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।",
+    'countryDirectoryFallback': "দেশের নতুন তালিকা পাওয়া যায়নি; নিরাপদ স্থানীয় তালিকা ব্যবহার করা হচ্ছে।",
+    'supportCreateTitle': "সাপোর্ট টিকিট তৈরি করুন",
+    'supportSelectOrder': "লেনদেন নম্বর",
+    'supportSelectCategory': "সমস্যার ধরন",
+    'supportCatPayment': "পেমেন্ট",
+    'supportCatTopup': "মোবাইল রিচার্জ",
+    'supportCatRefund': "রিফান্ড",
+    'supportCatWallet': "ওয়ালেট",
+    'supportCatAccount': "অ্যাকাউন্ট",
+    'supportCatOther': "অন্যান্য",
+    'supportSubject': "বিষয়ের সংক্ষিপ্ত শিরোনাম",
+    'supportDescribe': "সমস্যাটি বিস্তারিত লিখুন",
+    'supportSending': "জমা হচ্ছে...",
+    'supportSend': "সাপোর্ট অনুরোধ পাঠান",
+    'supportChooseOrderFirst': "প্রথমে ইতিহাস থেকে আপনার লেনদেন নির্বাচন করুন।",
+    'supportCompleteFields': "বিষয়ের শিরোনাম ও সমস্যার বিবরণ সম্পূর্ণ লিখুন।",
+    'supportTicketCreated': "আপনার সাপোর্ট অনুরোধ জমা হয়েছে। টিকিট নম্বর:",
+    'supportTicketFailed': "সাপোর্ট অনুরোধ জমা হয়নি। আবার চেষ্টা করুন।",
+    'supportHistoryTitle': "আমার সাপোর্ট অনুরোধ",
+    'supportRefresh': "রিফ্রেশ করুন",
+    'supportChooseOrderView': "টিকিট দেখতে একটি লেনদেন নির্বাচন করুন।",
+    'supportNoTickets': "এই লেনদেনের জন্য আগের কোনো সাপোর্ট টিকিট নেই। রিফ্রেশ চাপুন।",
+    'supportCategoryLabel': "ধরন:",
+    'supportReply': "সাপোর্টের উত্তর",
+    'supportLoadFailed': "টিকিটের ইতিহাস লোড করা যায়নি।",
+    'supportInvalidHistory': "সাপোর্ট ইতিহাসের উত্তর সঠিক নয়।",
+    'supportLoadRequestsFailed': "সাপোর্ট অনুরোধ লোড করা যায়নি.",
+    'supportNoOrder': "টিকিট তৈরি করতে প্রথমে একটি লেনদেন শুরু করুন, তারপর লেনদেনের ইতিহাস থেকে সেটি নির্বাচন করুন।",
+    'walletServerBalanceNote': "প্রকৃত ব্যালেন্স দেখাতে সার্ভারের সংযোগ প্রয়োজন।",
+    'walletAddMoneyNote': "টাকা যোগ করতে ওয়ালেট API এবং পেমেন্ট যাচাই প্রয়োজন।",
+    'walletStripeDescription': "বিদ্যমান Backend-এর মাধ্যমে পেমেন্ট প্রক্রিয়া হয়।",
+    'walletHistoryDescription': "ওয়ালেটে টাকা জমা ও উত্তোলনের লেনদেন",
+    'walletSecurityTitle': "ওয়ালেটের নিরাপত্তা",
+    'walletSecurePayments': "নিরাপদ পেমেন্ট",
+    'walletSecretKeysNote': "পেমেন্টের গোপন কী শুধু Backend-এ রাখতে হবে।",
+    'walletStripeVerifyNote': "Stripe পেমেন্ট সার্ভার দ্বারা যাচাই করতে হবে।",
+    'shareReceiptNotReady': "রসিদ শেয়ার করার সুবিধা পরবর্তী ধাপে যোগ করা হবে।",
   },
 };
 
@@ -1067,8 +1464,8 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not save your language. Please try again.'),
+        SnackBar(
+          content: Text(tr(_selectedLanguage, 'couldNotSaveLanguage')),
         ),
       );
       return;
@@ -1090,126 +1487,191 @@ class _WelcomeLanguageGateState extends State<WelcomeLanguageGate> {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [primaryRed, darkRed],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.all(Radius.circular(26)),
-                    ),
-                    child: Column(
-                      children: [
-                        const PgntLogo(size: 78),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'PGNT ASIAN TOPUP',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: brightGold,
-                            fontSize: 23,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.1,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          copy['title']!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 25,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          copy['description']!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxHeight < 680;
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compact ? 14 : 20,
+                    vertical: compact ? 8 : 16,
                   ),
-                  const SizedBox(height: 24),
-                  Text(
-                    copy['subtitle']!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: primaryRed,
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  ...languages.map((language) {
-                    final selected = language.code == _selectedLanguage;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Card(
-                        margin: EdgeInsets.zero,
-                        elevation: selected ? 3 : 1,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          side: BorderSide(
-                            color: selected ? primaryRed : gold,
-                            width: selected ? 1.8 : 0.8,
-                          ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: compact ? 10 : 16,
                         ),
-                        child: RadioListTile<String>(
-                          value: language.code,
-                          groupValue: _selectedLanguage,
-                          activeColor: primaryRed,
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _selectedLanguage = value);
-                            }
-                          },
-                          title: Text(
-                            language.nativeName,
-                            textDirection: language.code == 'ps' ||
-                                    language.code == 'fa' ||
-                                    language.code == 'ur'
-                                ? TextDirection.rtl
-                                : TextDirection.ltr,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [primaryRed, darkRed],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.all(Radius.circular(22)),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            PgntLogo(size: compact ? 46 : 58),
+                            SizedBox(height: compact ? 5 : 8),
+                            const Text(
+                              'PGNT ASIAN TOPUP',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: brightGold,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.8,
+                              ),
                             ),
-                          ),
-                          subtitle: Text(language.name),
+                            SizedBox(height: compact ? 4 : 7),
+                            Text(
+                              copy['title']!,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: compact ? 19 : 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (!compact) ...[
+                              const SizedBox(height: 5),
+                              Text(
+                                copy['description']!,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  height: 1.25,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                    );
-                  }),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _continue,
-                    child: Text(copy['continue']!),
+                      SizedBox(height: compact ? 10 : 14),
+                      Text(
+                        copy['subtitle']!,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: primaryRed,
+                          fontSize: compact ? 13 : 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: compact ? 7 : 10),
+                      GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: compact ? 6 : 8,
+                        crossAxisSpacing: compact ? 7 : 9,
+                        childAspectRatio: compact ? 3.15 : 3.0,
+                        children: languages.map((language) {
+                          final selected = language.code == _selectedLanguage;
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => setState(
+                              () => _selectedLanguage = language.code,
+                            ),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 160),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? primaryRed.withOpacity(0.08)
+                                    : cardWhite,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: selected ? primaryRed : gold,
+                                  width: selected ? 1.7 : 0.8,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    selected
+                                        ? Icons.radio_button_checked
+                                        : Icons.radio_button_off,
+                                    color: selected ? primaryRed : Colors.black45,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          language.nativeName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          textDirection: language.code == 'ps' ||
+                                                  language.code == 'fa' ||
+                                                  language.code == 'ur'
+                                              ? TextDirection.rtl
+                                              : TextDirection.ltr,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        Text(
+                                          language.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.black54,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      SizedBox(height: compact ? 10 : 14),
+                      SizedBox(
+                        height: compact ? 46 : 50,
+                        child: ElevatedButton(
+                          onPressed: _continue,
+                          child: Text(copy['continue']!),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        copy['later']!,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    copy['later']!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -1351,7 +1813,12 @@ class PgntHomePage extends StatefulWidget {
 
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
+  List<AppCountry> availableCountries = countries;
   AppCountry selectedCountry = countries.first;
+  List<MobileOperator>? directoryOperators;
+  bool isLoadingCountries = false;
+  bool isLoadingOperators = false;
+  String? countryDirectoryError;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   int selectedAmount = 100;
@@ -1390,6 +1857,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   void initState() {
     super.initState();
     _restoreFuture = _restoreLocalData();
+    _loadSavedLanguageAndCountries();
     _appLinks = AppLinks();
     _referralLinkSubscription = _appLinks.uriLinkStream.listen(
       _applyReferralUri,
@@ -1398,6 +1866,171 @@ class _PgntHomePageState extends State<PgntHomePage> {
     _appLinks.getInitialLink().then((uri) {
       if (uri != null) _applyReferralUri(uri);
     }).catchError((Object _) {});
+  }
+
+  Future<void> _loadSavedLanguageAndCountries() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final saved = preferences.getString(_languagePreferenceKey);
+      if (saved != null && languages.any((item) => item.code == saved) && mounted) {
+        setState(() => languageCode = saved);
+      }
+    } catch (_) {
+      // Keep the default language if local preferences are unavailable.
+    }
+    await _loadActiveCountries();
+  }
+
+  String _countryFlag(String code) => const {
+    'AF': '🇦🇫', 'PK': '🇵🇰', 'IN': '🇮🇳', 'BD': '🇧🇩',
+  }[code] ?? '🌐';
+
+  String _currencySymbol(String currency) => const {
+    'AFN': '؋', 'PKR': 'Rs', 'INR': '₹', 'BDT': '৳', 'EUR': '€',
+  }[currency] ?? currency;
+
+  Future<void> _loadActiveCountries() async {
+    if (mounted) {
+      setState(() {
+        isLoadingCountries = true;
+        countryDirectoryError = null;
+      });
+    }
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries').replace(
+        queryParameters: {'language': languageCode},
+      );
+      final response = await http.get(
+        uri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Country directory HTTP ${response.statusCode}');
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic> || decoded['countries'] is! List) {
+        throw const FormatException('Invalid country directory response');
+      }
+      final loaded = (decoded['countries'] as List)
+          .whereType<Map<String, dynamic>>()
+          .map((row) {
+        final code = (row['code'] ?? '').toString().trim().toUpperCase();
+        final currency = (row['currency'] ?? '').toString().trim().toUpperCase();
+        if (!RegExp(r'^[A-Z]{2}$').hasMatch(code) ||
+            !RegExp(r'^[A-Z]{3}$').hasMatch(currency)) {
+          return null;
+        }
+        return AppCountry(
+          code: code,
+          name: (row['name'] ?? code).toString(),
+          flag: _countryFlag(code),
+          currency: currency,
+          symbol: _currencySymbol(currency),
+          callingCode: (row['callingCode'] ?? '').toString(),
+          phoneMinDigits: (row['phoneMinDigits'] as num?)?.toInt() ?? 6,
+          phoneMaxDigits: (row['phoneMaxDigits'] as num?)?.toInt() ?? 15,
+        );
+      }).whereType<AppCountry>().toList();
+
+      if (loaded.isEmpty) {
+        throw const FormatException('No active countries returned');
+      }
+      if (!mounted) return;
+      final previousCode = selectedCountry.code;
+      setState(() {
+        availableCountries = loaded;
+        selectedCountry = loaded.firstWhere(
+          (item) => item.code == previousCode,
+          orElse: () => loaded.first,
+        );
+        if (!loaded.any((item) => item.code == previousCode)) {
+          selectedOperator = null;
+          directoryOperators = null;
+          priceQuote = null;
+          priceQuoteError = null;
+        }
+      });
+      await _loadCountryOperators(selectedCountry.code);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        availableCountries = countries;
+        directoryOperators = null;
+        countryDirectoryError = t('countryDirectoryFallback');
+      });
+    } finally {
+      if (mounted) setState(() => isLoadingCountries = false);
+    }
+  }
+
+  Future<void> _loadCountryOperators(String countryCode) async {
+    if (mounted) setState(() => isLoadingOperators = true);
+    try {
+      final uri = Uri.parse(
+        '$backendBaseUrl/api/countries/$countryCode/operators',
+      ).replace(queryParameters: {'language': languageCode});
+      final response = await http.get(
+        uri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 15));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Operator directory HTTP ${response.statusCode}');
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic> || decoded['operators'] is! List) {
+        throw const FormatException('Invalid operator directory response');
+      }
+      final loaded = (decoded['operators'] as List)
+          .whereType<Map<String, dynamic>>()
+          .map((row) {
+        final name = (row['display_name'] ?? row['displayName'] ?? '')
+            .toString()
+            .trim();
+        if (name.isEmpty) return null;
+        final operatorKey = (row['operator_key'] ?? row['operatorKey'])
+            ?.toString()
+            .trim();
+        final providerOperatorId =
+            (row['provider_operator_id'] ?? row['providerOperatorId'])
+                ?.toString()
+                .trim();
+        return MobileOperator(
+          countryCode,
+          name,
+          '📶',
+          operatorKey: operatorKey == null || operatorKey.isEmpty
+              ? null
+              : operatorKey,
+          providerOperatorId:
+              providerOperatorId == null || providerOperatorId.isEmpty
+                  ? null
+                  : providerOperatorId,
+        );
+      }).whereType<MobileOperator>().toList();
+
+      if (!mounted || selectedCountry.code != countryCode) return;
+      setState(() {
+        // Until an admin verifies and maps DT One operator IDs, the backend
+        // may legitimately return an empty list. Keep the curated local
+        // operator list available rather than hiding every operator card.
+        directoryOperators = loaded.isEmpty ? null : loaded;
+        if (!loaded.any((item) =>
+            item.name == selectedOperator?.name &&
+            item.countryCode == selectedOperator?.countryCode)) {
+          selectedOperator = null;
+          priceQuote = null;
+          priceQuoteError = null;
+        }
+      });
+    } catch (_) {
+      if (mounted && selectedCountry.code == countryCode) {
+        setState(() => directoryOperators = null);
+      }
+    } finally {
+      if (mounted && selectedCountry.code == countryCode) {
+        setState(() => isLoadingOperators = false);
+      }
+    }
   }
 
   void _applyReferralUri(Uri uri) {
@@ -1624,9 +2257,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
   }
 
-  List<MobileOperator> get countryOperators => operators
-      .where((item) => item.countryCode == selectedCountry.code)
-      .toList();
+  List<MobileOperator> get countryOperators =>
+      directoryOperators ??
+      operators.where((item) => item.countryCode == selectedCountry.code).toList();
 
   List<int> get amounts =>
       rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
@@ -1746,14 +2379,30 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
     setState(() {
       selectedCountry = country;
+      directoryOperators = null;
+      isLoadingOperators = true;
       selectedOperator = null;
       selectedAmount =
-          (rechargeAmounts[country.currency] ?? [100]).first;
+          (rechargeAmounts[country.currency] ?? [100, 250, 500]).first;
       phoneController.clear();
       customAmountController.clear();
       priceQuote = null;
       priceQuoteError = null;
     });
+    _loadCountryOperators(country.code);
+  }
+
+  bool _isPhoneValidForSelectedCountry(String value) {
+    var digits = normalizePhone(value);
+    final callingCode = selectedCountry.callingCode.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('+')) digits = digits.substring(1);
+    if (digits.startsWith('00')) digits = digits.substring(2);
+    if (callingCode.isNotEmpty && digits.startsWith(callingCode)) {
+      digits = digits.substring(callingCode.length);
+    }
+    if (!RegExp(r'^\d+$').hasMatch(digits)) return false;
+    return digits.length >= selectedCountry.phoneMinDigits &&
+        digits.length <= selectedCountry.phoneMaxDigits;
   }
 
   void handlePhoneChanged(String value) {
@@ -1947,6 +2596,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildCountrySelector() {
+    if (isLoadingCountries && availableCountries.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
     Widget countryCard(AppCountry country, double width) {
       final selected = country.code == selectedCountry.code;
       return InkWell(
@@ -2033,7 +2685,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: countries
+              children: availableCountries
                   .map((country) => countryCard(country, cardWidth))
                   .toList(),
             ),
@@ -2083,7 +2735,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       onChanged: handlePhoneChanged,
       decoration: InputDecoration(
         hintText: phoneHint,
-        helperText: 'Enter the recipient number for ${selectedCountry.name}',
+        helperText: '${t('recipientHint')} ${selectedCountry.name}',
         counterText: '',
         prefixIcon: const Icon(
           Icons.phone_android,
@@ -2098,6 +2750,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildOperatorSelector() {
+    if (isLoadingOperators) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (countryOperators.isEmpty) {
       return Text(t('selectOperator'));
     }
@@ -2242,7 +2900,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
         hintText: t('amount'),
         prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
         suffixIcon: IconButton(
-          tooltip: 'Check amount and price',
+          tooltip: t('amountCheck'),
           icon: const Icon(Icons.check_circle_outline, color: primaryRed),
           onPressed: () => applyAmount(customAmountController.text),
         ),
@@ -2317,12 +2975,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Row(children: [
               const Icon(Icons.currency_exchange, color: primaryRed),
               const SizedBox(width: 10),
-              const Expanded(child: Text('د بازار اټکلي معادل')),
+              Expanded(child: Text(t('marketEquivalent'))),
               Text(quote['marketEquivalentEurFormatted'] is String ? quote['marketEquivalentEurFormatted'] as String : '—', style: const TextStyle(fontWeight: FontWeight.w600)),
             ]),
             Row(children: [
               const SizedBox(width: 34),
-              const Expanded(child: Text('د تبادلې نرخ', style: TextStyle(fontSize: 12, color: Colors.black54))),
+              Expanded(child: Text(t('exchangeRate'), style: const TextStyle(fontSize: 12, color: Colors.black54))),
               Text(quote['exchangeRateAfnPerEur'] is num ? '1 € = ${quote['exchangeRateAfnPerEur']} AFN' : '—', style: const TextStyle(fontSize: 12, color: Colors.black54)),
             ]),
           ],
@@ -2332,10 +2990,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
           Row(children: [const Icon(Icons.card_giftcard, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('bonus'))), Text(bonusPercent is num && bonusPercent > 0 ? '${bonusPercent.toString()}%' : '—')]),
           if (quote != null) ...[
             pgntGoldDivider(),
-            Row(children: [Expanded(child: Text('ټول تادیه', style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
+            Row(children: [Expanded(child: Text(t('totalPay'), style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
           ],
           const SizedBox(height: 12),
-          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
+          Text(isQuoteLoading ? t('quoteLoading') : (priceQuoteError ?? (quote == null ? t('quotePrompt') : t('quoteConfirmed'))), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
         ]),
       ),
     );
@@ -2382,7 +3040,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
-    if (!isValidPhone(selectedCountry.code, phone)) {
+    if (!_isPhoneValidForSelectedCountry(phone)) {
       showMessage(t('invalidPhone'));
       return;
     }
@@ -2636,7 +3294,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   onPressed: () {
                     Navigator.pop(context);
                     showMessage(
-                      'د رسید شریکولو ځانګړنه به په راتلونکي پړاو کې ورزیاته شي.',
+                      t('shareReceiptNotReady'),
                     );
                   },
                   icon: const Icon(Icons.share_outlined),
@@ -2751,8 +3409,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'د حقیقي بیلانس لپاره د سرور اتصال اړین دی.',
+                Text(
+                  t('walletServerBalanceNote'),
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
@@ -2766,7 +3424,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
           ElevatedButton.icon(
             onPressed: () => showMessage(
-              'د پیسو جمع کولو لپاره د والټ API او د تادیې تایید اړین دي.',
+              t('walletAddMoneyNote'),
             ),
             icon: const Icon(Icons.add_circle_outline),
             label: Text(t('addMoney')),
@@ -2784,12 +3442,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ),
               ),
               title: const Text('Stripe'),
-              subtitle: const Text(
-                'د موجود Backend له لارې تادیه',
+              subtitle: Text(
+                t('walletStripeDescription'),
               ),
               trailing: const Icon(Icons.lock_outline),
               onTap: () => showMessage(
-                'Stripe تادیه باید د سرور له خوا تایید شي.',
+                t('walletStripeVerifyNote'),
               ),
             ),
           ),
@@ -2804,8 +3462,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ),
               ),
               title: Text(t('history')),
-              subtitle: const Text(
-                'د والټ د داخلېدو او وتلو معاملې',
+              subtitle: Text(
+                t('walletHistoryDescription'),
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
@@ -2817,19 +3475,19 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const SizedBox(height: 16),
 
           pgntSectionTitle(
-            'د والټ امنیت',
+            t('walletSecurityTitle'),
             Icons.shield_outlined,
           ),
 
-          const Card(
+          Card(
             child: ListTile(
               leading: Icon(
                 Icons.verified_user_outlined,
                 color: successGreen,
               ),
-              title: Text('خوندي تادیات'),
+              title: Text(t('walletSecurePayments')),
               subtitle: Text(
-                'د تادیې پټ کلیدونه باید یوازې په Backend کې وي.',
+                t('walletSecretKeysNote'),
               ),
             ),
           ),
@@ -2843,11 +3501,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final subject = supportSubjectController.text.trim();
     final message = supportMessageController.text.trim();
     if (orderId == null || !_orderAccessTokens.containsKey(orderId)) {
-      showMessage('لومړی له تاریخچې څخه خپله معامله انتخاب کړئ.');
+      showMessage(t('supportChooseOrderFirst'));
       return;
     }
     if (subject.length < 4 || message.length < 10) {
-      showMessage('موضوع او د ستونزې تشریح بشپړه ولیکئ.');
+      showMessage(t('supportCompleteFields'));
       return;
     }
 
@@ -2877,11 +3535,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
       supportSubjectController.clear();
       supportMessageController.clear();
       await loadSupportTickets();
-      showMessage('ستاسو د مرستې غوښتنه ثبت شوه. د ټکټ شمېره: ${(decoded['ticket'] as Map<String, dynamic>)['id']}');
+      showMessage('${t('supportTicketCreated')} ${(decoded['ticket'] as Map<String, dynamic>)['id']}');
     } catch (error) {
       if (!mounted) return;
       final detail = error.toString().replaceFirst('Exception: ', '').trim();
-      showMessage(detail.isEmpty ? 'د مرستې غوښتنه ثبت نه شوه؛ بیا هڅه وکړئ.' : detail);
+      showMessage(detail.isEmpty ? t('supportTicketFailed') : detail);
     } finally {
       if (mounted) setState(() => isSubmittingSupport = false);
     }
@@ -2904,10 +3562,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
       final dynamic decoded = jsonDecode(response.body);
       if (response.statusCode != 200 || decoded is! Map<String, dynamic>) {
         final detail = decoded is Map<String, dynamic> ? decoded['error'] : null;
-        throw Exception(detail is String ? detail : 'Could not load support requests.');
+        throw Exception(detail is String ? detail : t('supportLoadRequestsFailed'));
       }
       final rawTickets = decoded['tickets'];
-      if (rawTickets is! List) throw Exception('Invalid support history response.');
+      if (rawTickets is! List) throw Exception(t('supportInvalidHistory'));
       final loaded = rawTickets
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
@@ -2921,7 +3579,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     } catch (error) {
       if (mounted) {
         final detail = error.toString().replaceFirst('Exception: ', '').trim();
-        showMessage(detail.isEmpty ? 'د ټکټونو تاریخچه نه شوه لوستل کېدای.' : detail);
+        showMessage(detail.isEmpty ? t('supportLoadFailed') : detail);
       }
     } finally {
       if (mounted) setState(() => isLoadingSupportTickets = false);
@@ -2936,14 +3594,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                'زما د مرستې غوښتنې',
+                t('supportHistoryTitle'),
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
             ),
             IconButton(
-              tooltip: 'تازه کول',
+              tooltip: t('supportRefresh'),
               onPressed: !hasOrder || isLoadingSupportTickets ? null : loadSupportTickets,
               icon: isLoadingSupportTickets
                   ? const SizedBox(
@@ -2956,9 +3614,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ],
         ),
         if (!hasOrder)
-          const Text('د ټکټونو د کتلو لپاره خپله معامله انتخاب کړئ.')
+          Text(t('supportChooseOrderView'))
         else if (supportTickets.isEmpty && !isLoadingSupportTickets)
-          const Text('د دې معاملې لپاره د مرستې پخوانی ټکټ نشته. د تازه کولو نښه کېکاږئ.')
+          Text(t('supportNoTickets'))
         else
           ...supportTickets.map((ticket) {
             final id = ticket['id']?.toString() ?? '—';
@@ -2983,12 +3641,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
                         Chip(label: Text(status)),
                       ],
                     ),
-                    Text('ډول: $category'),
+                    Text('${t('supportCategoryLabel')} $category'),
                     const SizedBox(height: 6),
                     Text(message),
                     if (reply.trim().isNotEmpty) ...[
                       const Divider(),
-                      const Text('د ملاتړ ځواب',
+                      Text(t('supportReply'),
                           style: TextStyle(fontWeight: FontWeight.w700)),
                       Text(reply),
                     ],
@@ -3060,12 +3718,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'VIP Assistance',
+                          t('supportVip'),
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 20,
@@ -3074,7 +3732,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                         ),
                         SizedBox(height: 5),
                         Text(
-                          'Help Centre',
+                          t('helpCentre'),
                           style: TextStyle(
                             color: gold,
                             fontWeight: FontWeight.w700,
@@ -3086,8 +3744,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ],
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Find guidance for payments, mobile top-ups and order problems.',
+              Text(
+                t('supportIntro'),
                 style: TextStyle(color: Colors.white, height: 1.45),
               ),
               const SizedBox(height: 14),
@@ -3095,14 +3753,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _supportFeatureChip(Icons.question_answer_outlined, 'FAQs'),
-                  _supportFeatureChip(Icons.receipt_long_outlined, 'Order guidance'),
-                  _supportFeatureChip(Icons.lock_outline, 'Payment safety'),
+                  _supportFeatureChip(Icons.question_answer_outlined, t('supportFaqs')),
+                  _supportFeatureChip(Icons.receipt_long_outlined, t('orderGuidance')),
+                  _supportFeatureChip(Icons.lock_outline, t('paymentSafety')),
                 ],
               ),
               const SizedBox(height: 14),
-              const Text(
-                'Automated help is available at any time. Live-agent response depends on support availability.',
+              Text(
+                t('supportAutoNote'),
                 style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
               ),
             ],
@@ -3110,15 +3768,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
         ),
         const SizedBox(height: 20),
         pgntSectionTitle(
-          'د مرستې غوښتنه ثبت کړئ',
+          t('supportCreateTitle'),
           Icons.mark_email_unread_outlined,
         ),
         if (supportOrders.isEmpty)
-          const Card(
+          Card(
             child: Padding(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               child: Text(
-                'د ټکټ ثبتولو لپاره باید لومړی یوه معامله پیل شوې وي. بیا د معاملې له تاریخچې څخه هماغه معامله انتخاب کړئ.',
+                t('supportNoOrder'),
                 style: TextStyle(height: 1.45),
               ),
             ),
@@ -3128,8 +3786,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
             value: supportOrders.any((item) => item.orderId == selectedSupportOrderId)
                 ? selectedSupportOrderId
                 : supportOrders.first.orderId,
-            decoration: const InputDecoration(
-              labelText: 'د معاملې نمبر',
+            decoration: InputDecoration(
+              labelText: t('supportSelectOrder'),
               prefixIcon: Icon(Icons.receipt_long_outlined),
             ),
             items: supportOrders.map((item) {
@@ -3150,17 +3808,17 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(
             value: supportCategory,
-            decoration: const InputDecoration(
-              labelText: 'د ستونزې ډول',
+            decoration: InputDecoration(
+              labelText: t('supportSelectCategory'),
               prefixIcon: Icon(Icons.category_outlined),
             ),
-            items: const [
-              DropdownMenuItem(value: 'payment', child: Text('تادیه')),
-              DropdownMenuItem(value: 'topup', child: Text('موبایل چارج')),
-              DropdownMenuItem(value: 'refund', child: Text('بېرته پیسې')),
-              DropdownMenuItem(value: 'wallet', child: Text('والټ')),
-              DropdownMenuItem(value: 'account', child: Text('حساب')),
-              DropdownMenuItem(value: 'other', child: Text('نور')),
+            items: [
+              DropdownMenuItem(value: 'payment', child: Text(t('supportCatPayment'))),
+              DropdownMenuItem(value: 'topup', child: Text(t('supportCatTopup'))),
+              DropdownMenuItem(value: 'refund', child: Text(t('supportCatRefund'))),
+              DropdownMenuItem(value: 'wallet', child: Text(t('supportCatWallet'))),
+              DropdownMenuItem(value: 'account', child: Text(t('supportCatAccount'))),
+              DropdownMenuItem(value: 'other', child: Text(t('supportCatOther'))),
             ],
             onChanged: (value) {
               if (value != null) setState(() => supportCategory = value);
@@ -3170,8 +3828,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           TextField(
             controller: supportSubjectController,
             maxLength: 160,
-            decoration: const InputDecoration(
-              labelText: 'د موضوع لنډ عنوان',
+            decoration: InputDecoration(
+              labelText: t('supportSubject'),
               prefixIcon: Icon(Icons.short_text_rounded),
             ),
           ),
@@ -3181,8 +3839,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
             minLines: 3,
             maxLines: 6,
             maxLength: 4000,
-            decoration: const InputDecoration(
-              labelText: 'ستونزه په تفصیل ولیکئ',
+            decoration: InputDecoration(
+              labelText: t('supportDescribe'),
               alignLabelWithHint: true,
               prefixIcon: Icon(Icons.message_outlined),
             ),
@@ -3197,14 +3855,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: brightGold),
                   )
                 : const Icon(Icons.send_rounded),
-            label: Text(isSubmittingSupport ? 'ثبتېږي...' : 'د مرستې غوښتنه ولېږئ'),
+            label: Text(isSubmittingSupport ? t('supportSending') : t('supportSend')),
           ),
         ],
         const SizedBox(height: 16),
         buildSupportTicketHistory(),
         const SizedBox(height: 20),
         pgntSectionTitle(
-          'Quick help',
+          t('quickHelp'),
           Icons.flash_on_outlined,
         ),
         const SizedBox(height: 8),
@@ -3214,12 +3872,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
               backgroundColor: Color(0x147A0C10),
               child: Icon(Icons.history_rounded, color: primaryRed),
             ),
-            title: const Text(
-              'Check an order',
+            title: Text(
+              t('checkOrder'),
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
-            subtitle: const Text(
-              'Open your history to see the latest available status.',
+            subtitle: Text(
+              t('checkOrderDesc'),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => setState(() => selectedTab = 1),
@@ -3231,12 +3889,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
               backgroundColor: Color(0x147A0C10),
               child: Icon(Icons.account_balance_wallet_outlined, color: primaryRed),
             ),
-            title: const Text(
-              'Payment and wallet',
+            title: Text(
+              t('paymentWallet'),
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
-            subtitle: const Text(
-              'Review wallet information and payment guidance.',
+            subtitle: Text(
+              t('paymentWalletDesc'),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => setState(() => selectedTab = 2),
@@ -3281,14 +3939,14 @@ class _PgntHomePageState extends State<PgntHomePage> {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: primaryRed.withValues(alpha: 0.12)),
           ),
-          child: const Row(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.info_outline, color: primaryRed),
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'For a failed or delayed order, save the transaction ID and receipt. Direct ticket submission and automatic refund review still require a connected support service.',
+                  t('failedOrderNote'),
                   style: TextStyle(height: 1.4),
                 ),
               ),
@@ -3370,8 +4028,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Guest account',
+              Text(
+                t('guestAccount'),
                 style: TextStyle(color: Colors.grey),
               ),
             ],
@@ -3432,12 +4090,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
               color: primaryRed,
             ),
             title: Text(t('security')),
-            subtitle: const Text(
-              'Account security features require account setup.',
+            subtitle: Text(
+              t('accountSecurityNote'),
             ),
             onTap: () {
               showMessage(
-                'Account security is not connected yet.',
+                t('accountSecurityNotConnected'),
               );
             },
           ),
@@ -3512,8 +4170,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.person_outline, color: primaryRed),
-                    title: const Text('Profile (optional)'),
-                    subtitle: const Text('Add your details only if you want to.'),
+                    title: Text(t('profileOptional')),
+                    subtitle: Text(t('profileDetailsOptional')),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
                       setState(() => selectedTab = 4);
@@ -3537,6 +4195,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       SharedPreferences.getInstance().then((preferences) {
                         preferences.setString(_languagePreferenceKey, value);
                       });
+                      _loadActiveCountries();
                       Navigator.pop(sheetContext);
                     },
                   ),
