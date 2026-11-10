@@ -1173,7 +1173,7 @@ app.get('/api/pricing/quote', async (req, res) => {
   const operator = String(req.query.operator || '').trim();
   const operatorKey = String(req.query.operatorKey || '').trim();
   const amount = Number(req.query.amount);
-  const validProductId = /^[1-9]\\d*$/.test(productId);
+  const validProductId = /^[1-9]\d*$/.test(productId);
   const validLegacySelection = ((!operatorKey && operator.length > 0 && operator.length <= 120) ||
     (operatorKey && /^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) &&
     Number.isSafeInteger(amount) && amount >= PGNT_MIN_AMOUNT && amount <= PGNT_MAX_AMOUNT;
