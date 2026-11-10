@@ -129,6 +129,57 @@ AFTER INSERT ON wallet_ledger_entries
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION pgnt_assert_wallet_ledger_balanced();
 
+-- Ledger lines may only be added while their journal is still a draft,
+-- and their currency must match the target chart-of-accounts entry.
+CREATE OR REPLACE FUNCTION pgnt_validate_wallet_ledger_entry_insert()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $
+DECLARE tx_status VARCHAR(16);
+DECLARE account_currency CHAR(3);
+BEGIN
+  SELECT status INTO tx_status
+    FROM wallet_ledger_transactions WHERE id = NEW.transaction_id;
+  IF NOT FOUND OR tx_status <> 'draft' THEN
+    RAISE EXCEPTION 'Wallet ledger entries can only be added to a draft transaction';
+  END IF;
+  SELECT currency INTO account_currency
+    FROM wallet_ledger_accounts WHERE id = NEW.ledger_account_id;
+  IF NOT FOUND OR account_currency <> NEW.currency THEN
+    RAISE EXCEPTION 'Wallet ledger entry currency must match its ledger account';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS trg_wallet_ledger_entry_insert_guard
+  ON wallet_ledger_entries;
+CREATE TRIGGER trg_wallet_ledger_entry_insert_guard
+BEFORE INSERT ON wallet_ledger_entries
+FOR EACH ROW EXECUTE FUNCTION pgnt_validate_wallet_ledger_entry_insert();
+
+-- Posted journal headers are immutable too; reverse them with a new journal.
+CREATE OR REPLACE FUNCTION pgnt_prevent_posted_wallet_ledger_transaction_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $
+BEGIN
+  IF OLD.status <> 'draft' THEN
+    RAISE EXCEPTION 'Posted wallet ledger transactions are immutable; create a reversal';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS trg_wallet_ledger_transaction_immutable
+  ON wallet_ledger_transactions;
+CREATE TRIGGER trg_wallet_ledger_transaction_immutable
+BEFORE UPDATE OR DELETE ON wallet_ledger_transactions
+FOR EACH ROW EXECUTE FUNCTION pgnt_prevent_posted_wallet_ledger_transaction_mutation();
+
 -- Entries are immutable. Corrections must be new reversing transactions.
 CREATE OR REPLACE FUNCTION pgnt_prevent_wallet_ledger_entry_mutation()
 RETURNS TRIGGER
