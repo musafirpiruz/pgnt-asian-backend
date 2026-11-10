@@ -61,3 +61,23 @@ test('mapping migration is deferred until registry tables exist and never seeds 
   assert.doesNotMatch(migration, /INSERT INTO country_operator_products/i);
   assert.doesNotMatch(migration, /UPDATE country_operator_products/i);
 });
+
+test('exact catalog product ID takes precedence and is country-scoped', () => {
+  const resolver = section('async function getProduct(', '// Calculate the final customer price.');
+  assert.match(resolver, /if \(productId !== null && productId !== undefined/);
+  assert.match(resolver, /WHERE id = \$1::bigint AND country = \$2/);
+  assert.match(resolver, /else if \(options\.operatorKey\)/);
+});
+
+test('quote endpoint accepts exact productId without legacy operator and amount', () => {
+  const quote = section("app.get('/api/pricing/quote'", '// =====================================================\\n// PART 4/8');
+  assert.match(quote, /req\.query\.productId/);
+  assert.match(quote, /validProductId/);
+  assert.match(quote, /validProductId \? productId : null/);
+});
+
+test('checkout accepts productId alone and rejects mixed identity inputs', () => {
+  const validator = section('function validateCheckoutInput(body)', '// =====================================================\\n// PART 3/8');
+  assert.match(validator, /if \(productId && operatorKey\)/);
+  assert.match(validator, /if \(!productId && \(/);
+});
