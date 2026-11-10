@@ -3662,13 +3662,16 @@ loadPricing.addEventListener('click',async()=>{
   const saved=(data.pricing||[]).find(item=>item.country===selectedCountry);
   if(!saved)throw new Error('No pricing settings found for '+selectedCountry+'. Run the latest backend migration first.');
   loadedCountryPricing=saved;
+  const savedLocalCurrencyPerEur = selectedCountry === 'AF'
+    ? (saved.local_currency_per_eur ?? saved.afn_per_eur)
+    : saved.local_currency_per_eur;
   feeEur.value=(Number(saved.fee_eur_cents)/100).toFixed(2);
-  afnRate.value=Number(saved.local_currency_per_eur ?? saved.afn_per_eur);
+  afnRate.value=Number(savedLocalCurrencyPerEur);
   bonusPercent.value=Number(saved.bonus_percent);
   stripeFeePercent.value=Number(saved.stripe_fee_percent);
   stripeFixedFee.value=(Number(saved.stripe_fixed_fee_cents)/100).toFixed(2);
   pricingActive.checked=saved.active===true;
-  result.textContent=JSON.stringify({loaded:true,country:saved.country,localCurrency:countryCurrencies[saved.country],appFeeEur:Number(saved.fee_eur_cents)/100,localCurrencyPerEur:Number(saved.local_currency_per_eur ?? saved.afn_per_eur),legacyBonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
+  result.textContent=JSON.stringify({loaded:true,country:saved.country,localCurrency:countryCurrencies[saved.country],appFeeEur:Number(saved.fee_eur_cents)/100,localCurrencyPerEur:Number(savedLocalCurrencyPerEur),legacyBonusPercent:Number(saved.bonus_percent),active:saved.active,stripeFeePercent:saved.stripe_fee_percent,stripeFixedFeeCents:saved.stripe_fixed_fee_cents},null,2);
  }catch(error){result.textContent='Could not load pricing: '+error.message;}
 });
 savePricing.addEventListener('click',async()=>{
