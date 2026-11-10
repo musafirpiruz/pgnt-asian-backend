@@ -708,6 +708,48 @@ async function runMigration() {
       console.log("Migration 016_payment_currency_settings is already applied.");
     }
 
+    // Version 020 stores provenance for automatically refreshed reference FX rates.
+    // Existing manual rates remain in place until a fresh, validated provider response arrives.
+    const automaticFxVersion = '020_automatic_country_fx_rates';
+    const automaticFxCheck = await client.query(
+      'SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1',
+      [automaticFxVersion]
+    );
+    if (automaticFxCheck.rows.length === 0) {
+      await client.query('BEGIN');
+      try {
+        await client.query(`
+          ALTER TABLE pricing_settings
+            ADD COLUMN IF NOT EXISTS fx_rate_source TEXT,
+            ADD COLUMN IF NOT EXISTS fx_updated_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS fx_provider_updated_at TIMESTAMPTZ;
+
+          CREATE TABLE IF NOT EXISTS fx_rate_history (
+            id BIGSERIAL PRIMARY KEY,
+            country CHAR(2) NOT NULL CHECK (country IN ('AF', 'PK', 'IN', 'BD')),
+            currency CHAR(3) NOT NULL CHECK (currency IN ('AFN', 'PKR', 'INR', 'BDT')),
+            rate_per_eur NUMERIC(18,8) NOT NULL CHECK (rate_per_eur > 0),
+            source TEXT NOT NULL,
+            provider_updated_at TIMESTAMPTZ NOT NULL,
+            recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX IF NOT EXISTS idx_fx_rate_history_country_recorded
+            ON fx_rate_history(country, recorded_at DESC);
+
+          INSERT INTO schema_migrations (version)
+          VALUES ('020_automatic_country_fx_rates')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query('COMMIT');
+        console.log('Migration 020_automatic_country_fx_rates completed; existing rates preserved and FX audit history added.');
+      } catch (migrationError) {
+        await client.query('ROLLBACK');
+        throw migrationError;
+      }
+    } else {
+      console.log('Migration 020_automatic_country_fx_rates is already applied.');
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
