@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - main
+      - fix/current-db-country-registry-bootstrap-2026-11-10
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -16,6 +17,8 @@ on:
   push:
     branches:
       - main
+      - fix/current-db-country-registry-bootstrap-2026-11-10
+      - feat/registry-driven-country-discovery-2026-11-10
       - fix/schema-server-compatibility
       - ui/homepage-redesign
       - feature/vip-support-screen

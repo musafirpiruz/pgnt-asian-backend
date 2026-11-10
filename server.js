@@ -952,6 +952,55 @@ async function getProductQuote(productId, country) {
 // registry migration is installed and a country/operator has been verified.
 const REGISTRY_LANGUAGES = new Set(['en', 'ps', 'fa', 'ur', 'hi', 'bn']);
 
+// Public, read-only country discovery API. The registry is the only source
+// of countries exposed to the customer app. Draft/legacy/unverified countries
+// are intentionally hidden until an administrator completes verification.
+app.get('/api/countries', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country registry is not configured.' });
+  }
+
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = REGISTRY_LANGUAGES.has(requestedLanguage) ? requestedLanguage : 'en';
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         c.country_code,
+         COALESCE(localized.display_name, english.display_name, c.country_name) AS display_name,
+         c.destination_currency,
+         c.calling_code,
+         c.phone_min_digits,
+         c.phone_max_digits
+       FROM country_registry c
+       LEFT JOIN country_localizations localized
+         ON localized.country_code = c.country_code
+        AND localized.language_code = $1
+       LEFT JOIN country_localizations english
+         ON english.country_code = c.country_code
+        AND english.language_code = 'en'
+       WHERE c.status = 'active'
+       ORDER BY COALESCE(localized.display_name, english.display_name, c.country_name), c.country_code`,
+      [language]
+    );
+
+    return res.json({
+      language,
+      countries: result.rows.map((row) => ({
+        countryCode: String(row.country_code).trim(),
+        displayName: String(row.display_name),
+        currency: String(row.destination_currency),
+        callingCode: String(row.calling_code),
+        phoneMinDigits: Number(row.phone_min_digits),
+        phoneMaxDigits: Number(row.phone_max_digits),
+      })),
+    });
+  } catch (error) {
+    console.error('Country discovery failed:', error.message);
+    return res.status(503).json({ error: 'Country registry is not ready.' });
+  }
+});
+
 app.get('/api/countries/:countryCode/operators', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Country registry is not configured.' });
@@ -3001,6 +3050,110 @@ function requireAdmin(req, res, next) {
 
   return next();
 }
+
+// Admin country onboarding foundation.
+// New countries can be drafted from the Admin API without deploying code.
+// This endpoint never assigns DT One IDs or activates a country.
+app.get('/api/admin/countries', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(
+      `SELECT country_code,country_name,destination_currency,calling_code,
+              phone_min_digits,phone_max_digits,provider_country_code,status,
+              configuration_version,created_at,updated_at
+       FROM country_registry
+       ORDER BY country_name,country_code`
+    );
+    return res.json({ countries: result.rows });
+  } catch (error) {
+    console.error('Admin country list failed:', error.message);
+    return res.status(503).json({ error: 'Country registry is not ready.' });
+  }
+});
+
+app.post('/api/admin/countries', requireAdmin, express.json(), async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+
+  const body = req.body || {};
+  const countryCode = String(body.countryCode || '').trim().toUpperCase();
+  const countryName = String(body.countryName || '').trim();
+  const currency = String(body.currency || '').trim().toUpperCase();
+  const callingCode = String(body.callingCode || '').trim();
+  const phoneMinDigits = Number(body.phoneMinDigits);
+  const phoneMaxDigits = Number(body.phoneMaxDigits);
+  const allowedLanguages = ['en', 'ps', 'fa', 'ur', 'hi', 'bn'];
+  const localizations = body.localizations && typeof body.localizations === 'object'
+    ? body.localizations : {};
+
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !/^[\p{L}][\p{L} .’'\-]{1,118}$/u.test(countryName) ||
+      !/^[A-Z]{3}$/.test(currency) ||
+      !/^\+[1-9][0-9]{0,6}$/.test(callingCode) ||
+      !Number.isInteger(phoneMinDigits) || !Number.isInteger(phoneMaxDigits) ||
+      phoneMinDigits < 1 || phoneMaxDigits < phoneMinDigits || phoneMaxDigits > 15) {
+    return res.status(400).json({ error: 'Invalid country configuration.' });
+  }
+
+  for (const language of Object.keys(localizations)) {
+    if (!allowedLanguages.includes(language) ||
+        typeof localizations[language] !== 'string' ||
+        !localizations[language].trim() ||
+        localizations[language].trim().length > 120) {
+      return res.status(400).json({ error: 'Invalid country localization.' });
+    }
+  }
+
+  if (!localizations.en || !String(localizations.en).trim()) {
+    localizations.en = countryName;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const inserted = await client.query(
+      `INSERT INTO country_registry
+         (country_code,country_name,destination_currency,calling_code,
+          phone_min_digits,phone_max_digits,provider,provider_country_code,status)
+       VALUES ($1,$2,$3,$4,$5,$6,'dtone',NULL,'draft')
+       ON CONFLICT (country_code) DO NOTHING
+       RETURNING country_code`,
+      [countryCode,countryName,currency,callingCode,phoneMinDigits,phoneMaxDigits]
+    );
+    if (inserted.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Country code already exists.' });
+    }
+
+    for (const language of allowedLanguages) {
+      const displayName = String(localizations[language] || (language === 'en' ? countryName : '')).trim();
+      if (!displayName) continue;
+      await client.query(
+        `INSERT INTO country_localizations(country_code,language_code,display_name)
+         VALUES ($1,$2,$3)`,
+        [countryCode,language,displayName]
+      );
+    }
+
+    await client.query('COMMIT');
+    return res.status(201).json({
+      countryCode,
+      countryName,
+      currency,
+      callingCode,
+      phoneMinDigits,
+      phoneMaxDigits,
+      status: 'draft',
+      providerCountryCode: null,
+      nextStep: 'Configure and verify FX, DT One country/operator/product IDs, and catalog before activation.',
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Admin country draft creation failed:', error.message);
+    return res.status(400).json({ error: 'Could not create country draft.' });
+  } finally {
+    client.release();
+  }
+});
 
 // Read-only wallet integrity diagnostics. This deliberately exposes no
 // customer records and performs no wallet, ledger, payment, or refund writes.
