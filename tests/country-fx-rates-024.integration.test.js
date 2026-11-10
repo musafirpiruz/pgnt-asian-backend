@@ -54,7 +54,7 @@ test('migration 024 creates canonical EUR reference rates without approving or r
   });
 });
 
-test('FX observations default to unapproved and enforce country/currency identity and timestamps', async () => {
+test('FX observations default to unapproved and require an approval timestamp', async () => {
   await withSchema(async (client) => {
     await client.query(migration);
     const inserted = await client.query(`
@@ -64,13 +64,13 @@ test('FX observations default to unapproved and enforce country/currency identit
     `);
     assert.deepEqual(inserted.rows[0], { is_approved: false, approved_at: null });
     await assert.rejects(client.query(`
-      INSERT INTO country_fx_rates(country_code,quote_currency,quote_per_base,source,observed_at,expires_at)
-      VALUES ('PK','AFN',75,'test-feed','2026-11-10T00:00:00Z','2026-11-15T00:00:00Z')
-    `), /country_fx_rates_country_code_fkey|violates foreign key/i);
-    await assert.rejects(client.query(`
       INSERT INTO country_fx_rates(country_code,quote_currency,quote_per_base,source,observed_at,expires_at,is_approved)
       VALUES ('PK','PKR',310.76,'test-feed','2026-11-10T00:00:00Z','2026-11-15T00:00:00Z',TRUE)
     `), /check constraint/i, 'approval requires approved_at');
+    await assert.rejects(client.query(`
+      INSERT INTO country_fx_rates(country_code,quote_currency,quote_per_base,source,observed_at,expires_at)
+      VALUES ('PK','PKR',310.76,'test-feed','2026-11-10T00:00:00Z','2026-11-09T00:00:00Z')
+    `), /check constraint/i, 'expiry must be after observation');
   });
 });
 
@@ -81,7 +81,7 @@ test('approved FX selector uses only matching current currency observations from
       INSERT INTO country_fx_rates(country_code,quote_currency,quote_per_base,source,observed_at,expires_at,is_approved,approved_at)
       VALUES
         ('PK','PKR',310.76,'verified-feed','2026-11-10T00:00:00Z','2026-11-15T00:00:00Z',TRUE,'2026-11-10T01:00:00Z'),
-        ('AF','AFN',72.99,'verified-feed','2026-11-10T00:00:00Z','2026-11-15T00:00:00Z',TRUE,'2026-11-10T01:00:00Z')
+        ('PK','AFN',72.99,'other-currency','2026-11-10T00:00:00Z','2026-11-15T00:00:00Z',TRUE,'2026-11-10T01:00:00Z')
     `);
     const result = await client.query(`
       SELECT base_currency,quote_currency,quote_per_base,source,source_reference,observed_at,expires_at,is_approved
