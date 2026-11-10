@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS country_operator_products (
 
 DO $$
 DECLARE
+  bad_count BIGINT;
   item RECORD;
   expected RECORD;
   normalized_key TEXT;
