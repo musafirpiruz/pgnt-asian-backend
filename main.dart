@@ -52,6 +52,9 @@ class AppCountry {
   final String flag;
   final String currency;
   final String symbol;
+  final String callingCode;
+  final int phoneMinDigits;
+  final int phoneMaxDigits;
 
   const AppCountry({
     required this.code,
@@ -59,7 +62,51 @@ class AppCountry {
     required this.flag,
     required this.currency,
     required this.symbol,
+    this.callingCode = '',
+    this.phoneMinDigits = 1,
+    this.phoneMaxDigits = 15,
   });
+
+  factory AppCountry.fromRegistryJson(Map<String, dynamic> json) {
+    final code = (json['countryCode'] ?? '').toString().trim().toUpperCase();
+    final currency = (json['currency'] ?? '').toString().trim().toUpperCase();
+    final name = (json['displayName'] ?? '').toString().trim();
+    final callingCode = (json['callingCode'] ?? '').toString().trim();
+    final minDigits = (json['phoneMinDigits'] as num?)?.toInt();
+    final maxDigits = (json['phoneMaxDigits'] as num?)?.toInt();
+    if (!RegExp(r'^[A-Z]{2}$').hasMatch(code) ||
+        !RegExp(r'^[A-Z]{3}$').hasMatch(currency) ||
+        name.isEmpty ||
+        !RegExp(r'^\+[1-9][0-9]{0,6}$').hasMatch(callingCode) ||
+        minDigits == null || maxDigits == null ||
+        minDigits < 1 || maxDigits < minDigits || maxDigits > 15) {
+      throw const FormatException('Invalid country registry record.');
+    }
+    return AppCountry(
+      code: code,
+      name: name,
+      flag: countryFlagEmoji(code),
+      currency: currency,
+      symbol: currencySymbol(currency),
+      callingCode: callingCode,
+      phoneMinDigits: minDigits,
+      phoneMaxDigits: maxDigits,
+    );
+  }
+}
+
+String countryFlagEmoji(String countryCode) {
+  final normalized = countryCode.toUpperCase();
+  if (!RegExp(r'^[A-Z]{2}$').hasMatch(normalized)) return '🌐';
+  return String.fromCharCodes(normalized.codeUnits.map((unit) => unit + 127397));
+}
+
+String currencySymbol(String currency) {
+  const symbols = {
+    'AFN': '؋', 'PKR': 'Rs', 'INR': '₹', 'BDT': '৳',
+    'USD': r'$', 'EUR': '€', 'GBP': '£',
+  };
+  return symbols[currency] ?? currency;
 }
 
 const List<AppCountry> countries = [
@@ -1390,6 +1437,9 @@ class PgntHomePage extends StatefulWidget {
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
   AppCountry selectedCountry = countries.first;
+  List<AppCountry> _availableCountries = countries;
+  int _countryRequestGeneration = 0;
+  bool _isLoadingCountries = false;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   List<MobileOperator> _registryOperators = const [];
@@ -1432,6 +1482,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     super.initState();
     customAmountController.text = '10';
     _restoreFuture = _restoreLocalData();
+    _loadRegistryCountries();
     _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
     _referralLinkSubscription = _appLinks.uriLinkStream.listen(
@@ -1664,6 +1715,60 @@ class _PgntHomePageState extends State<PgntHomePage> {
         .toList();
     for (final id in ids) {
       await refreshOrderStatus(id);
+    }
+  }
+
+  Future<void> _loadRegistryCountries() async {
+    final requestGeneration = ++_countryRequestGeneration;
+    final requestedLanguage = languageCode;
+    if (mounted) setState(() => _isLoadingCountries = true);
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries')
+          .replace(queryParameters: {'language': requestedLanguage});
+      final response = await http.get(
+        uri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) return;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map || decoded['countries'] is! List) return;
+
+      final parsed = <AppCountry>[];
+      final seen = <String>{};
+      for (final raw in decoded['countries'] as List) {
+        if (raw is! Map) continue;
+        try {
+          final item = AppCountry.fromRegistryJson(
+            Map<String, dynamic>.from(raw),
+          );
+          if (seen.add(item.code)) parsed.add(item);
+        } on FormatException {
+          // Ignore malformed records; do not invent country metadata.
+        }
+      }
+      if (!mounted ||
+          requestGeneration != _countryRequestGeneration ||
+          requestedLanguage != languageCode ||
+          parsed.isEmpty) {
+        return;
+      }
+      setState(() {
+        _availableCountries = parsed;
+        if (!parsed.any((item) => item.code == selectedCountry.code)) {
+          selectedCountry = parsed.first;
+          selectedOperator = null;
+          priceQuote = null;
+          priceQuoteError = null;
+          phoneController.clear();
+          _loadRegistryOperators(selectedCountry.code);
+        }
+      });
+    } catch (_) {
+      // Keep the bundled list for offline/older-backend startup.
+    } finally {
+      if (mounted && requestGeneration == _countryRequestGeneration) {
+        setState(() => _isLoadingCountries = false);
+      }
     }
   }
 
@@ -2147,13 +2252,18 @@ class _PgntHomePageState extends State<PgntHomePage> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: countries
-                  .map((country) => countryCard(country, cardWidth))
-                  .toList(),
-            ),
+            if (_isLoadingCountries && _availableCountries.isEmpty)
+              const Center(child: CircularProgressIndicator())
+            else if (_availableCountries.isEmpty)
+              Text(t('selectCountry'))
+            else
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: _availableCountries
+                    .map((country) => countryCard(country, cardWidth))
+                    .toList(),
+              ),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
