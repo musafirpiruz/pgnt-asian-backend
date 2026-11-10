@@ -13,10 +13,14 @@ BEGIN
   END IF;
 END $$;
 
+-- A country code alone is unique, but this composite key lets PostgreSQL
+-- enforce that every FX quote currency matches that country's reviewed currency.
+CREATE UNIQUE INDEX IF NOT EXISTS country_registry_code_currency_uidx
+  ON country_registry(country_code, destination_currency);
+
 CREATE TABLE IF NOT EXISTS country_fx_rates (
   id BIGSERIAL PRIMARY KEY,
-  country_code CHAR(2) NOT NULL
-    REFERENCES country_registry(country_code) ON DELETE RESTRICT,
+  country_code CHAR(2) NOT NULL,
   base_currency CHAR(3) NOT NULL DEFAULT 'EUR'
     CHECK (base_currency = 'EUR'),
   quote_currency CHAR(3) NOT NULL
@@ -31,6 +35,10 @@ CREATE TABLE IF NOT EXISTS country_fx_rates (
   approved_at TIMESTAMPTZ,
   approved_by TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT country_fx_rates_country_currency_fk
+    FOREIGN KEY(country_code, quote_currency)
+    REFERENCES country_registry(country_code, destination_currency)
+    ON DELETE RESTRICT,
   CHECK (expires_at > observed_at),
   CHECK (
     (is_approved = FALSE AND approved_at IS NULL)
