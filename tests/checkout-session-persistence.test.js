@@ -31,7 +31,7 @@ test('session persistence verifies the saved row and safely handles an already-s
 });
 
 test('customer checkout and explicit sandbox checkout both use the guarded persistence helper', () => {
-  assert.equal((server.match(/await persistStripeCheckoutSession\(orderId, session\.id\);/g) || []).length, 2);
+  assert.equal((server.match(/await persistStripeCheckoutSession\(orderId, session\.id\);/g) || []).length, 3);
   assert.doesNotMatch(server, /WHERE order_id = \$2 AND status = 'awaiting_payment'\s*`\s*,\s*\[session\.id, orderId\]/);
 });
 

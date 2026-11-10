@@ -1,6 +1,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -52,6 +53,9 @@ class AppCountry {
   final String flag;
   final String currency;
   final String symbol;
+  final String? callingCode;
+  final int? phoneMinDigits;
+  final int? phoneMaxDigits;
 
   const AppCountry({
     required this.code,
@@ -59,7 +63,40 @@ class AppCountry {
     required this.flag,
     required this.currency,
     required this.symbol,
+    this.callingCode,
+    this.phoneMinDigits,
+    this.phoneMaxDigits,
   });
+  factory AppCountry.fromRegistryJson(Map<String, dynamic> json) {
+    final code = (json['countryCode'] ?? '').toString().trim().toUpperCase();
+    final currency = (json['currency'] ?? '').toString().trim().toUpperCase();
+    final name = (json['name'] ?? '').toString().trim();
+    final callingCode = (json['callingCode'] ?? '').toString().trim();
+    final minDigits = int.tryParse((json['phoneMinDigits'] ?? '').toString());
+    final maxDigits = int.tryParse((json['phoneMaxDigits'] ?? '').toString());
+    if (code.length != 2 || currency.length != 3 || name.isEmpty ||
+        !callingCode.startsWith('+') || callingCode.length < 2 ||
+        minDigits == null || maxDigits == null ||
+        minDigits < 1 || maxDigits < minDigits || maxDigits > 15) {
+      throw const FormatException('Invalid country registry entry.');
+    }
+    const symbols = {
+      'AFN': '؋', 'PKR': 'Rs', 'INR': '₹', 'BDT': '৳',
+      'EUR': '€', 'USD': r'$', 'GBP': '£', 'NPR': 'रू',
+      'LKR': 'Rs', 'KES': 'KSh', 'NGN': '₦', 'GHS': '₵',
+    };
+    return AppCountry(
+      code: code,
+      name: name,
+      flag: '',
+      currency: currency,
+      symbol: symbols[currency] ?? currency,
+      callingCode: callingCode,
+      phoneMinDigits: minDigits,
+      phoneMaxDigits: maxDigits,
+    );
+  }
+
 }
 
 const List<AppCountry> countries = [
@@ -356,15 +393,6 @@ const List<MobileOperator> operators = [
   MobileOperator('BD', 'Banglalink', '☎️'),
 ];
 
-// Suggested recharge amounts.
-// Actual products and prices must be confirmed by the backend.
-const Map<String, List<int>> rechargeAmounts = {
-  'AFN': [100, 115, 250, 500, 1000],
-  'PKR': [500, 1000, 2000, 5000],
-  'INR': [200, 500, 1000, 2000],
-  'BDT': [200, 500, 1000, 2000],
-};
-
 // Transaction states
 enum TransactionStatus {
   pending,
@@ -512,24 +540,34 @@ String? detectAfghanOperator(String value) {
 // Final validation must also happen on the server.
 bool isValidPhone(
   String countryCode,
-  String value,
-) {
+  String value, {
+  AppCountry? country,
+}) {
   final phone = normalizePhone(value);
-  final digits = phone.startsWith('+')
-      ? phone.substring(1)
-      : phone;
+  final digits = phone.startsWith('+') ? phone.substring(1) : phone;
+  final digitsOnly = digits.isNotEmpty &&
+      digits.codeUnits.every((unit) => unit >= 48 && unit <= 57);
+  if (!digitsOnly) return false;
 
-  if (!RegExp(r'^\d+$').hasMatch(digits)) {
-    return false;
+  if (country != null && country.code == countryCode) {
+    final minDigits = country.phoneMinDigits;
+    final maxDigits = country.phoneMaxDigits;
+    final callingCode = country.callingCode;
+    if (minDigits == null || maxDigits == null || callingCode == null) {
+      return false;
+    }
+    final prefix = callingCode.substring(1);
+    final localDigits = digits.startsWith(prefix)
+        ? digits.substring(prefix.length)
+        : digits;
+    return localDigits.length >= minDigits && localDigits.length <= maxDigits;
   }
 
   switch (countryCode) {
     case 'AF':
       return digits.length >= 9 && digits.length <= 12;
     case 'PK':
-      return digits.length >= 10 && digits.length <= 13;
     case 'IN':
-      return digits.length >= 10 && digits.length <= 13;
     case 'BD':
       return digits.length >= 10 && digits.length <= 13;
     default:
@@ -1390,10 +1428,14 @@ class PgntHomePage extends StatefulWidget {
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
   AppCountry selectedCountry = countries.first;
+  List<AppCountry> _availableCountries = countries;
+  int _countryCatalogRequestGeneration = 0;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
+  bool _registryOperatorsLoading = false;
+  String? _registryOperatorsError;
   int _registryOperatorsRequestGeneration = 0;
   int selectedAmount = 10;
   int selectedTab = 0;
@@ -1401,6 +1443,18 @@ class _PgntHomePageState extends State<PgntHomePage> {
   bool isQuoteLoading = false;
   Map<String, dynamic>? priceQuote;
   String? priceQuoteError;
+  List<Map<String, dynamic>> _rangedProducts = [];
+  String? _rangedProductsCountry;
+  String? _rangedIdempotencyKey;
+  String? _rangedRequestFingerprint;
+
+  String _newRangedIdempotencyKey() {
+    final random = Random.secure();
+    return List.generate(
+      4,
+      (_) => random.nextInt(1 << 32).toRadixString(16).padLeft(8, '0'),
+    ).join();
+  }
 
   final TextEditingController phoneController =
       TextEditingController();
@@ -1419,6 +1473,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
   final List<Map<String, dynamic>> supportTickets = [];
   bool isLoadingSupportTickets = false;
 
+  static const String _rangedIdempotencyStorageKey = 'pgnt_ranged_quote_idempotency_key_v1';
+  static const String _rangedFingerprintStorageKey = 'pgnt_ranged_quote_fingerprint_v1';
   static const String _historyStorageKey = 'pgnt_transaction_history_v1';
   static const String _tokensStorageKey = 'pgnt_order_access_tokens_v1';
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -1432,6 +1488,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     super.initState();
     customAmountController.text = '10';
     _restoreFuture = _restoreLocalData();
+    _loadCountries();
     _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
     _referralLinkSubscription = _appLinks.uriLinkStream.listen(
@@ -1670,13 +1727,63 @@ class _PgntHomePageState extends State<PgntHomePage> {
   // Prefer the server registry when it is available; retain the bundled
   // curated list as an offline/backward-compatible fallback.
   List<MobileOperator> get countryOperators {
-    if (_registryOperatorsCountry == selectedCountry.code &&
-        _registryOperators.isNotEmpty) {
-      return _registryOperators;
+    // The backend country registry is the source of truth. Do not show
+    // bundled/legacy network names when the current country registry is absent.
+    if (_registryOperatorsCountry != selectedCountry.code) {
+      return const [];
     }
-    return operators
-        .where((item) => item.countryCode == selectedCountry.code)
-        .toList();
+    return _registryOperators;
+  }
+
+  Future<void> _loadCountries() async {
+    final requestGeneration = ++_countryCatalogRequestGeneration;
+    final requestedLanguage = languageCode;
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries')
+          .replace(queryParameters: {'language': requestedLanguage});
+      final response = await http.get(
+        uri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) return;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map || decoded['countries'] is! List) return;
+      final parsed = <AppCountry>[];
+      for (final raw in decoded['countries'] as List) {
+        if (raw is! Map) continue;
+        try {
+          parsed.add(AppCountry.fromRegistryJson(Map<String, dynamic>.from(raw)));
+        } on FormatException {
+          continue;
+        }
+      }
+      if (!mounted || requestGeneration != _countryCatalogRequestGeneration ||
+          requestedLanguage != languageCode || parsed.isEmpty) return;
+      setState(() {
+        _availableCountries = parsed;
+        final current = parsed.where((item) => item.code == selectedCountry.code);
+        if (current.isNotEmpty) {
+          selectedCountry = current.first;
+        } else {
+          selectedCountry = parsed.first;
+          selectedOperator = null;
+          _registryOperators = const [];
+          _registryOperatorsCountry = null;
+          _registryOperatorsLoading = false;
+          _registryOperatorsError = null;
+          _rangedProducts = [];
+          _rangedProductsCountry = null;
+          selectedAmount = 0;
+          priceQuote = null;
+          priceQuoteError = null;
+        }
+      });
+      if (_registryOperatorsCountry != selectedCountry.code) {
+        _loadRegistryOperators(selectedCountry.code);
+      }
+    } catch (_) {
+      // Keep the bundled launch-country list when registry discovery is offline.
+    }
   }
 
   Future<void> _loadRegistryOperators(String countryCode) async {
@@ -1684,6 +1791,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
     // an earlier registry request is still in flight.
     final requestGeneration = ++_registryOperatorsRequestGeneration;
     final requestedLanguage = languageCode;
+    if (mounted) {
+      setState(() {
+        _registryOperatorsLoading = true;
+        _registryOperatorsError = null;
+        _registryOperators = const [];
+        _registryOperatorsCountry = countryCode;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+    }
     try {
       final uri = Uri.parse(
         '$backendBaseUrl/api/countries/$countryCode/operators',
@@ -1692,9 +1809,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
         uri,
         headers: const {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return;
+      if (!mounted ||
+          requestGeneration != _registryOperatorsRequestGeneration ||
+          countryCode != selectedCountry.code ||
+          requestedLanguage != languageCode) {
+        return;
+      }
+      if (response.statusCode != 200) {
+        setState(() {
+          _registryOperatorsLoading = false;
+          _registryOperatorsError =
+              'د شبکې معلومات له سرور څخه ترلاسه نه شول (HTTP ${response.statusCode}). د Backend فعال حالت وګورئ.';
+        });
+        return;
+      }
       final decoded = jsonDecode(response.body);
-      if (decoded is! Map || decoded['operators'] is! List) return;
+      if (decoded is! Map || decoded['operators'] is! List) {
+        setState(() {
+          _registryOperatorsLoading = false;
+          _registryOperatorsError = 'د شبکو د معلوماتو ځواب ناسم دی. بیا هڅه وکړئ.';
+        });
+        return;
+      }
 
       final parsed = <MobileOperator>[];
       for (final raw in decoded['operators'] as List) {
@@ -1706,22 +1842,30 @@ class _PgntHomePageState extends State<PgntHomePage> {
         );
         if (item.name.isEmpty ||
             item.operatorKey == null ||
-            item.operatorKey!.isEmpty) {
+            item.operatorKey!.isEmpty ||
+            item.providerOperatorId == null ||
+            item.providerOperatorId!.isEmpty) {
           continue;
         }
         parsed.add(item);
       }
-      if (!mounted ||
-          requestGeneration != _registryOperatorsRequestGeneration ||
-          countryCode != selectedCountry.code ||
-          requestedLanguage != languageCode ||
-          parsed.isEmpty) {
+
+      if (parsed.isEmpty) {
+        setState(() {
+          _registryOperators = const [];
+          _registryOperatorsCountry = countryCode;
+          _registryOperatorsLoading = false;
+          _registryOperatorsError =
+              'د دې هېواد لپاره لا د DT One له خوا تایید شوې او فعاله شبکه/محصول نشته.';
+        });
         return;
       }
 
       setState(() {
         _registryOperators = parsed;
         _registryOperatorsCountry = countryCode;
+        _registryOperatorsLoading = false;
+        _registryOperatorsError = null;
         final selectedKey = selectedOperator?.operatorKey;
         if (selectedKey != null) {
           selectedOperator = parsed.cast<MobileOperator?>().firstWhere(
@@ -1735,18 +1879,74 @@ class _PgntHomePageState extends State<PgntHomePage> {
                 orElse: () => null,
               );
         }
-        if (selectedOperator == null) {
-          priceQuote = null;
-          priceQuoteError = null;
-        }
       });
+
+      // The customer may have entered the phone number before the registry
+      // request completed. Re-run prefix detection only against verified
+      // registry operators, so the network is selected automatically when
+      // its DT One mapping is available.
+      if (selectedOperator == null) {
+        _applyDetectedAfghanOperator();
+      } else {
+        loadPriceQuote();
+      }
     } catch (_) {
-      // Keep the bundled operator list if the registry is unavailable.
+      if (!mounted ||
+          requestGeneration != _registryOperatorsRequestGeneration ||
+          countryCode != selectedCountry.code ||
+          requestedLanguage != languageCode) {
+        return;
+      }
+      setState(() {
+        _registryOperatorsLoading = false;
+        _registryOperatorsError =
+            'د شبکو د معلوماتو ترلاسه کول ناکام شول. انټرنېټ او Backend وګورئ او بیا هڅه وکړئ.';
+      });
     }
   }
 
-  List<int> get amounts =>
-      rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
+  void _applyDetectedAfghanOperator() {
+    if (selectedCountry.code != 'AF') return;
+    final detectedName = detectAfghanOperator(phoneController.text);
+    if (detectedName == null) return;
+    // Registry display_name is localized (Pashto/Dari/etc.), so never
+    // compare it with an English prefix-detection label. Match the stable
+    // operator_key, which is independent of the selected app language.
+    bool matchesDetectedOperator(MobileOperator operator) {
+      final key = (operator.operatorKey ?? '').toLowerCase();
+      if (key.isEmpty) return false;
+      switch (detectedName.toUpperCase()) {
+        case 'AWCC':
+          return key.contains('awcc') || key.contains('afghan-wireless');
+        case 'ROSHAN':
+          return key.contains('roshan');
+        case 'ETISALAT':
+          return key.contains('etisalat');
+        case 'ATOMA':
+          return key.contains('atoma') || key.contains('mtn');
+        case 'SALAAM':
+          return key.contains('salaam') || key.contains('salam');
+        default:
+          return false;
+      }
+    }
+
+    MobileOperator? detected;
+    for (final operator in countryOperators) {
+      if (matchesDetectedOperator(operator)) {
+        detected = operator;
+        break;
+      }
+    }
+    if (detected == null) return;
+    if (selectedOperator?.operatorKey == detected.operatorKey) return;
+    setState(() {
+      selectedOperator = detected;
+      priceQuote = null;
+      priceQuoteError = null;
+    });
+    loadPriceQuote();
+  }
 
   @override
   void dispose() {
@@ -1772,57 +1972,79 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
 
     final countryCode = selectedCountry.code;
-    final amount = selectedAmount;
-    setState(() { isQuoteLoading = true; priceQuoteError = null; });
+    var amount = selectedAmount;
+    setState(() {
+      isQuoteLoading = true;
+      priceQuoteError = null;
+      priceQuote = null;
+      _rangedProducts = [];
+      _rangedProductsCountry = null;
+    });
 
     try {
-      final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(
-        queryParameters: {
-          'country': countryCode,
-          'operator': operator.name,
-          'amount': '$amount',
-          if (operator.operatorKey != null && operator.operatorKey!.isNotEmpty)
-            'operatorKey': operator.operatorKey!,
-        },
+      // Read-only discovery is mandatory for the four launch countries.
+      // Never fall back to an unverified fixed denomination or stale catalog.
+      final discoveryUri = Uri.parse('$backendBaseUrl/api/ranged-products')
+          .replace(queryParameters: {'country': countryCode});
+      final discoveryResponse = await http.get(
+        discoveryUri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 12));
+      if (discoveryResponse.statusCode != 200) {
+        throw Exception('د دې هېواد د DT One تایید شوي مقدارونه اوس نه شي ترلاسه کېدای.');
+      }
+      final discovery = jsonDecode(discoveryResponse.body);
+      if (discovery is! Map || discovery['products'] is! List) {
+        throw Exception('د DT One د مقدارونو ځواب ناسم دی.');
+      }
+      _rangedProducts = (discovery['products'] as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      _rangedProductsCountry = countryCode;
+
+      final rangedProduct = _rangedProducts.cast<Map<String, dynamic>?>().firstWhere(
+        (item) => item != null &&
+            (item['operatorKey']?.toString() ?? '') == (operator.operatorKey ?? ''),
+        orElse: () => null,
       );
-
-      final response = await http
-          .get(uri, headers: const {'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 60));
-
-      dynamic decoded;
-      try {
-        decoded = jsonDecode(response.body);
-      } on FormatException {
-        throw Exception(
-          'HTTP ${response.statusCode}: سرور JSON نه دی را لېږلی.',
-        );
+      if (rangedProduct == null) {
+        throw Exception('د ${operator.name} شبکې لپاره لا تایید شوی DT One مقدار نشته. مهرباني وکړئ بله شبکه وټاکئ.');
       }
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message = decoded is Map<String, dynamic>
-            ? decoded['error']?.toString()
-            : null;
-        throw Exception(
-          'HTTP ${response.statusCode}: ${(message == null || message.isEmpty) ? 'قیمت ترلاسه نه شو' : message}',
-        );
+      final minAmount = int.tryParse('${rangedProduct['minAmount']}') ?? 0;
+      final maxAmount = int.tryParse('${rangedProduct['maxAmount']}') ?? 0;
+      final increment = int.tryParse('${rangedProduct['increment']}') ?? 0;
+      if (increment <= 0 || minAmount <= 0 || maxAmount < minAmount) {
+        throw Exception('د DT One تایید شوی مقدار حد ناسم دی.');
       }
-
-      if (decoded is! Map<String, dynamic>) {
-        throw Exception('HTTP ${response.statusCode}: د سرور ځواب ناسم جوړښت لري.');
+      // If the previous country/operator amount is not valid for this provider,
+      // start at the first provider-confirmed amount instead of inventing one.
+      if (amount < minAmount || amount > maxAmount ||
+          (amount - minAmount) % increment != 0) {
+        amount = minAmount;
+        if (mounted && countryCode == selectedCountry.code &&
+            operator.operatorKey == selectedOperator?.operatorKey) {
+          setState(() {
+            selectedAmount = minAmount;
+            customAmountController.text = '$minAmount';
+          });
+        }
       }
-
-      if (!mounted ||
-          countryCode != selectedCountry.code ||
-          amount != selectedAmount ||
-          operator.operatorKey != selectedOperator?.operatorKey || operator.name != selectedOperator?.name) {
-        return;
-      }
-
+      if (!mounted || countryCode != selectedCountry.code ||
+          amount != selectedAmount || operator.operatorKey != selectedOperator?.operatorKey) return;
       setState(() {
-        priceQuote = decoded;
+        priceQuote = {
+          'isRangedAvailable': true,
+          'productId': rangedProduct['productId'],
+          'minAmount': minAmount,
+          'maxAmount': maxAmount,
+          'increment': increment,
+          'destinationCurrency': rangedProduct['destinationCurrency'],
+          'formattedFinalPrice': 'د تادیې مخکې تاییدېږي',
+        };
         priceQuoteError = null;
       });
+      return;
     } catch (error) {
       if (!mounted ||
           countryCode != selectedCountry.code ||
@@ -1866,9 +2088,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() {
       selectedCountry = country;
       selectedOperator = null;
-      selectedAmount = 10;
+      _registryOperators = const [];
+      _registryOperatorsCountry = country.code;
+      _registryOperatorsLoading = true;
+      _registryOperatorsError = null;
+      selectedAmount = 0;
+      _rangedProducts = [];
+      _rangedProductsCountry = null;
       phoneController.clear();
-      customAmountController.text = '10';
+      customAmountController.clear();
       priceQuote = null;
       priceQuoteError = null;
     });
@@ -1877,29 +2105,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   void handlePhoneChanged(String value) {
     if (mounted) setState(() {});
-    if (selectedCountry.code != 'AF') return;
-    final detectedName = detectAfghanOperator(value);
-    if (detectedName == null) return;
-
-    MobileOperator? detected;
-    for (final operator in countryOperators) {
-      if (operator.name.toLowerCase() == detectedName.toLowerCase()) {
-        detected = operator;
-        break;
-      }
-    }
-    if (detected == null ||
-        (selectedOperator?.name == detected.name &&
-            selectedOperator?.countryCode == detected.countryCode)) {
-      return;
-    }
-
-    setState(() {
-      selectedOperator = detected;
-      priceQuote = null;
-      priceQuoteError = null;
-    });
-    loadPriceQuote();
+    _applyDetectedAfghanOperator();
   }
 
   void showMessage(String message) {
@@ -2089,7 +2295,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           ),
           child: Row(
             children: [
-              Text(country.flag, style: const TextStyle(fontSize: 27)),
+              Text(country.flag.isEmpty ? '🌐' : country.flag, style: const TextStyle(fontSize: 27)),
               const SizedBox(width: 9),
               Expanded(
                 child: Column(
@@ -2150,7 +2356,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: countries
+              children: _availableCountries
                   .map((country) => countryCard(country, cardWidth))
                   .toList(),
             ),
@@ -2215,8 +2421,30 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildOperatorSelector() {
+    if (_registryOperatorsLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 18),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (countryOperators.isEmpty) {
-      return Text(t('selectOperator'));
+      final message = _registryOperatorsError ?? t('selectOperator');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(message, textAlign: TextAlign.center,
+                style: const TextStyle(color: errorRed)),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _loadRegistryOperators(selectedCountry.code),
+              icon: const Icon(Icons.refresh),
+              label: Text(t('retry')),
+            ),
+          ],
+        ),
+      );
     }
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2308,10 +2536,44 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildCustomAmountField() {
+    final operator = selectedOperator;
+    final rangedProduct = operator == null || _rangedProductsCountry != selectedCountry.code
+        ? null
+        : _rangedProducts.cast<Map<String, dynamic>?>().firstWhere(
+            (item) => item != null &&
+                (item['operatorKey']?.toString() ?? '') == (operator.operatorKey ?? ''),
+            orElse: () => null,
+          );
+    final providerMin = int.tryParse('${rangedProduct?['minAmount']}') ?? 0;
+    final providerMax = int.tryParse('${rangedProduct?['maxAmount']}') ?? 0;
+    final increment = int.tryParse('${rangedProduct?['increment']}') ?? 0;
+    final hasVerifiedRange = rangedProduct != null &&
+        providerMin > 0 && providerMax >= providerMin && increment > 0;
+
+    final suggestions = <int>[];
+    if (hasVerifiedRange) {
+      var candidate = providerMin;
+      for (var i = 0; i < 6 && candidate <= providerMax; i++) {
+        suggestions.add(candidate);
+        candidate += increment;
+      }
+    }
+
     void applyAmount(String raw) {
       final value = int.tryParse(raw.trim());
-      if (value == null || value < 10 || value > 3000) {
-        showMessage('مبلغ باید له ۱۰ څخه تر ۳۰۰۰ پورې وي.');
+      if (!hasVerifiedRange) {
+        showMessage('لومړی باید د DT One تایید شوي مقدارونه ترلاسه شي.');
+        return;
+      }
+      if (value == null || value < providerMin || value > providerMax ||
+          (value - providerMin) % increment != 0) {
+        showMessage('یوازې د DT One تایید شوي مقدارونه منل کېږي: $providerMin–$providerMax، واټن $increment.');
+        return;
+      }
+      if (hasVerifiedRange &&
+          (value < providerMin || value > providerMax ||
+              (value - providerMin) % increment != 0)) {
+        showMessage('دا شبکه یوازې د تایید شوي مقدارونو او واټن ملاتړ کوي: $providerMin–$providerMax، واټن $increment.');
         return;
       }
       setState(() {
@@ -2322,31 +2584,65 @@ class _PgntHomePageState extends State<PgntHomePage> {
       loadPriceQuote();
     }
 
-    return TextField(
-      controller: customAmountController,
-      keyboardType: TextInputType.number,
-      maxLength: 4,
-      decoration: InputDecoration(
-        labelText: '${t('customAmount')} (${selectedCountry.currency})',
-        hintText: '10 - 3000',
-        helperText: 'له ۱۰ څخه تر ۳۰۰۰ پورې هر مطلوب مبلغ ولیکئ.',
-        counterText: '',
-        prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
-        suffixIcon: IconButton(
-          tooltip: 'Check amount and price',
-          icon: const Icon(Icons.check_circle_outline, color: primaryRed),
-          onPressed: () => applyAmount(customAmountController.text),
+    if (!hasVerifiedRange) {
+      final message = operator == null
+          ? 'لومړی هېواد او شبکه وټاکئ.'
+          : isQuoteLoading
+              ? 'د DT One تایید شوي مقدارونه ترلاسه کېږي...'
+              : (priceQuoteError ?? 'د دې شبکې لپاره د DT One تایید شوي مقدارونه نشته.');
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Text(message, textAlign: TextAlign.center,
+            style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: customAmountController,
+          keyboardType: TextInputType.number,
+          maxLength: 4,
+          decoration: InputDecoration(
+            labelText: 'د مقدار لټون (${selectedCountry.currency})',
+            hintText: '$providerMin – $providerMax',
+            helperText: 'د ${operator?.name ?? ''} د DT One تایید شوی حد؛ واټن: $increment',
+            counterText: '',
+            prefixIcon: const Icon(Icons.search, color: primaryRed),
+            suffixIcon: IconButton(
+              tooltip: 'Check amount and price',
+              icon: const Icon(Icons.check_circle_outline, color: primaryRed),
+              onPressed: () => applyAmount(customAmountController.text),
+            ),
+          ),
+          onChanged: (_) {
+            if (priceQuote != null || priceQuoteError != null) {
+              setState(() {
+                priceQuote = null;
+                priceQuoteError = null;
+              });
+            }
+          },
+          onSubmitted: applyAmount,
         ),
-      ),
-      onChanged: (_) {
-        if (priceQuote != null) {
-          setState(() {
-            priceQuote = null;
-            priceQuoteError = null;
-          });
-        }
-      },
-      onSubmitted: applyAmount,
+        if (suggestions.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('د دې شبکې تایید شوي مقدارونه:', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: suggestions.map((value) => ActionChip(
+              label: Text('$value ${selectedCountry.currency}'),
+              onPressed: () {
+                customAmountController.text = '$value';
+                applyAmount('$value');
+              },
+            )).toList(),
+          ),
+        ],
+      ],
     );
   }
 
@@ -2392,6 +2688,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
     final fee = quote == null ? null : quote['formattedFee'];
     final total = quote == null ? null : quote['formattedFinalPrice'];
     final bonusPercent = quote == null ? null : quote['bonusPercent'];
+    final destinationAmountLabel = selectedOperator == null || selectedAmount <= 0
+        ? '—'
+        : '$selectedAmount ${selectedCountry.currency}';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -2401,7 +2700,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             const SizedBox(width: 10), Expanded(child: Text(t('price'))),
             Text(basePrice is String ? basePrice : '—', style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
-            Text('$selectedAmount ${selectedCountry.currency}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(destinationAmountLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
           ]),
           if (quote != null && selectedCountry.code == 'AF') ...[
             const SizedBox(height: 10),
@@ -2418,15 +2717,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
             ]),
           ],
           pgntGoldDivider(),
-          Row(children: [const Icon(Icons.receipt_outlined, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('fee'))), Text(fee is String ? fee : '—')]),
+          Row(children: [const Icon(Icons.receipt_outlined, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('fee'))), Text(quote?['isRangedAvailable'] == true ? 'په وروستي نرخ کې شامل' : (fee is String ? fee : '—'))]),
           const SizedBox(height: 12),
-          Row(children: [const Icon(Icons.card_giftcard, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('bonus'))), Text(bonusPercent is num && bonusPercent > 0 ? '${bonusPercent.toString()}%' : '—')]),
+          if (quote?['isRangedAvailable'] != true)
+            Row(children: [const Icon(Icons.card_giftcard, color: primaryRed), const SizedBox(width: 10), Expanded(child: Text(t('bonus'))), Text(bonusPercent is num && bonusPercent > 0 ? '${bonusPercent.toString()}%' : '—')]),
           if (quote != null) ...[
             pgntGoldDivider(),
             Row(children: [Expanded(child: Text('ټول تادیه', style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
           ],
           const SizedBox(height: 12),
-          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
+          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote?['isRangedAvailable'] == true ? 'د DT One وروستی عمده قیمت او د PGNT فیس به د تادیې له جوړولو مخکې تایید شي؛ تادیه یوازې ستاسو له تایید وروسته کېږي.' : (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.'))), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
         ]),
       ),
     );
@@ -2473,88 +2773,187 @@ class _PgntHomePageState extends State<PgntHomePage> {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
-    if (!isValidPhone(selectedCountry.code, phone)) {
+    if (!isValidPhone(selectedCountry.code, phone, country: selectedCountry)) {
       showMessage(t('invalidPhone'));
       return;
     }
-
     if (selectedOperator == null) {
       showMessage(t('chooseOperator'));
       return;
     }
 
     final enteredAmount = int.tryParse(customAmountController.text.trim());
-    if (enteredAmount == null || enteredAmount < 10 || enteredAmount > 3000 || enteredAmount != selectedAmount) {
+    if (enteredAmount == null ||
+        enteredAmount < 10 ||
+        enteredAmount > 3000 ||
+        enteredAmount != selectedAmount) {
       showMessage('لومړی د ۱۰ او ۳۰۰۰ ترمنځ مبلغ ولیکئ او د تایید نښه کېکاږئ.');
       return;
     }
 
     setState(() => isLoading = true);
-
     try {
-      final uri = Uri.parse(
-        '$backendBaseUrl/api/payments/checkout',
-      );
+      String? rangedOrderId;
+      String? rangedAccessToken;
+
+      // Create the DT One quote only after the customer explicitly continues.
+      if (priceQuote?['isRangedAvailable'] == true) {
+        final requestFingerprint = jsonEncode([
+          selectedCountry.code,
+          phone,
+          priceQuote!['productId'],
+          selectedOperator!.operatorKey,
+          selectedAmount,
+        ]);
+        if (_rangedIdempotencyKey == null) {
+          _rangedIdempotencyKey =
+              await _secureStorage.read(key: _rangedIdempotencyStorageKey);
+          _rangedRequestFingerprint =
+              await _secureStorage.read(key: _rangedFingerprintStorageKey);
+        }
+        if (_rangedIdempotencyKey == null ||
+            _rangedRequestFingerprint != requestFingerprint) {
+          _rangedIdempotencyKey = _newRangedIdempotencyKey();
+          _rangedRequestFingerprint = requestFingerprint;
+          await _secureStorage.write(
+            key: _rangedIdempotencyStorageKey,
+            value: _rangedIdempotencyKey,
+          );
+          await _secureStorage.write(
+            key: _rangedFingerprintStorageKey,
+            value: requestFingerprint,
+          );
+        }
+        final rangedResponse = await http
+            .post(
+              Uri.parse('$backendBaseUrl/api/ranged-quotes'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Idempotency-Key': _rangedIdempotencyKey!,
+              },
+              body: jsonEncode({
+                'country': selectedCountry.code,
+                'phone': phone,
+                'productId': priceQuote!['productId'],
+                'operatorKey': selectedOperator!.operatorKey!,
+                'amount': selectedAmount,
+              }),
+            )
+            .timeout(const Duration(seconds: 60));
+
+        dynamic rangedDecoded;
+        try {
+          rangedDecoded = jsonDecode(rangedResponse.body);
+        } on FormatException {
+          throw Exception('د DT One سرور ناسم ځواب راکړ.');
+        }
+        if ((rangedResponse.statusCode != 201 && rangedResponse.statusCode != 200) ||
+            rangedDecoded is! Map<String, dynamic>) {
+          // A definite provider rejection can be retried with a fresh key.
+          // Unknown/review outcomes retain the original key to prevent a
+          // second provider reservation after a lost response.
+          if (rangedDecoded is Map &&
+              rangedDecoded['reviewRequired'] != true &&
+              rangedDecoded['orderId'] != null) {
+            _rangedIdempotencyKey = null;
+            _rangedRequestFingerprint = null;
+            await _secureStorage.delete(key: _rangedIdempotencyStorageKey);
+            await _secureStorage.delete(key: _rangedFingerprintStorageKey);
+          }
+          final detail = rangedDecoded is Map
+              ? rangedDecoded['error']?.toString()
+              : null;
+          throw Exception(detail ?? 'د DT One قیمت تایید نه شو.');
+        }
+
+        rangedOrderId = rangedDecoded['orderId']?.toString();
+        rangedAccessToken = rangedDecoded['orderAccessToken']?.toString();
+        if (rangedOrderId == null ||
+            !RegExp(r'^[0-9a-f-]{36}$', caseSensitive: false)
+                .hasMatch(rangedOrderId) ||
+            rangedAccessToken == null ||
+            !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false)
+                .hasMatch(rangedAccessToken)) {
+          throw Exception('د خوندي نرخ د تعقیب معلومات نشته.');
+        }
+      }
+
+      final Map<String, dynamic> checkoutBody;
+      if (rangedOrderId != null && rangedAccessToken != null) {
+        checkoutBody = {
+          'rangedQuote': {
+            'orderId': rangedOrderId,
+            'orderAccessToken': rangedAccessToken,
+          },
+        };
+      } else {
+        checkoutBody = {
+          'country': selectedCountry.code,
+          'countryCode': selectedCountry.code,
+          'phone': phone,
+          'phoneNumber': phone,
+          'operator': selectedOperator!.name,
+          if (selectedOperator!.operatorKey != null &&
+              selectedOperator!.operatorKey!.isNotEmpty)
+            'operatorKey': selectedOperator!.operatorKey!,
+          'amount': selectedAmount,
+          'currency': selectedCountry.currency,
+          'productId': priceQuote?['productId'],
+        };
+      }
+
       final response = await http
           .post(
-            uri,
+            Uri.parse('$backendBaseUrl/api/payments/checkout'),
             headers: const {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
             },
-            body: jsonEncode({
-              'country': selectedCountry.code,
-              'countryCode': selectedCountry.code,
-              'phone': phone,
-              'phoneNumber': phone,
-              'operator': selectedOperator!.name,
-              if (selectedOperator!.operatorKey != null &&
-                  selectedOperator!.operatorKey!.isNotEmpty)
-                'operatorKey': selectedOperator!.operatorKey!,
-              'amount': selectedAmount,
-              'currency': selectedCountry.currency,
-              'productId': priceQuote?['productId'],
-            }),
+            body: jsonEncode(checkoutBody),
           )
           .timeout(const Duration(seconds: 30));
 
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
-        throw Exception('Checkout request failed');
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } on FormatException {
+        throw Exception('د تادیې سرور ناسم ځواب راکړ.');
       }
-
-      final dynamic decoded = jsonDecode(response.body);
-
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final detail = decoded is Map ? decoded['error']?.toString() : null;
+        throw Exception(detail ?? 'Checkout request failed');
+      }
       if (decoded is! Map<String, dynamic>) {
         throw Exception('Invalid checkout response');
       }
 
-      final dynamic rawUrl = decoded['checkoutUrl'] ??
+      final rawUrl = decoded['checkoutUrl'] ??
           decoded['url'] ??
           decoded['sessionUrl'];
       final orderId = decoded['orderId']?.toString();
-      final accessToken = decoded['orderAccessToken']?.toString();
+      final accessToken =
+          (decoded['orderAccessToken'] ?? rangedAccessToken)?.toString();
 
       if (rawUrl is! String || rawUrl.isEmpty) {
         throw Exception('Checkout URL is missing');
       }
       if (orderId == null ||
-          !RegExp(r'^[0-9a-f-]{36}$', caseSensitive: false).hasMatch(orderId) ||
+          !RegExp(r'^[0-9a-f-]{36}$', caseSensitive: false)
+              .hasMatch(orderId) ||
           accessToken == null ||
-          !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false).hasMatch(accessToken)) {
+          !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false)
+              .hasMatch(accessToken)) {
         throw Exception('Secure order tracking information is missing');
       }
 
       final paymentUri = Uri.tryParse(rawUrl);
-
       if (paymentUri == null || paymentUri.scheme != 'https') {
         throw Exception('Invalid payment URL');
       }
-
       if (!mounted) return;
 
-      // Save the order and its access token before opening the external
-      // payment app, so closing or backgrounding the app does not lose them.
+      // Persist the secure order token before opening the payment application.
       _orderAccessTokens[orderId] = accessToken;
       setState(() {
         selectedSupportOrderId ??= orderId;
@@ -2583,21 +2982,23 @@ class _PgntHomePageState extends State<PgntHomePage> {
         paymentUri,
         mode: LaunchMode.externalApplication,
       );
+      if (!opened) throw Exception('Could not open payment page');
 
-      if (!opened) {
-        throw Exception('Could not open payment page');
-      }
+      // Keep the same key until the existing Stripe session has actually
+      // opened; this also makes recovery safe after an app restart.
+      _rangedIdempotencyKey = null;
+      _rangedRequestFingerprint = null;
+      await _secureStorage.delete(key: _rangedIdempotencyStorageKey);
+      await _secureStorage.delete(key: _rangedFingerprintStorageKey);
 
       await refreshOrderStatus(orderId);
       _pollOrderStatus(orderId);
-
       showMessage(t('success'));
-    } catch (_) {
-      showMessage(t('paymentError'));
+    } catch (error) {
+      final message = error.toString().replaceFirst('Exception: ', '').trim();
+      showMessage(message.isEmpty ? t('paymentError') : message);
     } finally {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      if (mounted) setState(() => isLoading = false);
     }
   }
 

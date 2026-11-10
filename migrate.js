@@ -889,7 +889,157 @@ async function runMigration() {
       console.log("Migration 018_dtone_ranged_value_foundation is already applied.");
     }
 
-  } catch (error) {
+    // Version 019 adds stable operator identity to ranged products.
+    // Existing rows remain unmapped and inactive until an admin verifies the mapping.
+    const rangedOperatorKeyVersion = "019_dtone_ranged_operator_key";
+    const rangedOperatorKeyCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedOperatorKeyVersion]
+    );
+    if (rangedOperatorKeyCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(
+          "ALTER TABLE dtone_ranged_products ADD COLUMN IF NOT EXISTS operator_key VARCHAR(100)"
+        );
+        await client.query(
+          "CREATE INDEX IF NOT EXISTS idx_dtone_ranged_products_operator_key ON dtone_ranged_products(country_iso_code, operator_key, active) WHERE operator_key IS NOT NULL"
+        );
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [rangedOperatorKeyVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 019 completed; ranged products remain unmapped and inactive.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 019_dtone_ranged_operator_key is already applied.");
+    }
+
+    // Version 020 reconciles legacy country tables into one canonical registry.
+    // It is forward-only, conflict-sensitive, and preserves existing rows.
+    const canonicalCountryRegistryVersion = "020_canonical_country_registry";
+    const canonicalCountryRegistryCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [canonicalCountryRegistryVersion]
+    );
+    if (canonicalCountryRegistryCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        const reconciliationSql = fs.readFileSync(
+          path.join(__dirname, "migrations", "020_canonical_country_registry.sql"),
+          "utf8"
+        );
+        await client.query(reconciliationSql);
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [canonicalCountryRegistryVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 020 completed; country_registry is the canonical parent and legacy rows are preserved.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 020_canonical_country_registry is already applied.");
+    }
+
+    // Migration 017 may have been deferred on a clean database because the
+    // canonical country registry is created by migration 020 below it.
+    // Reconcile the mapping table again after 020 so fresh installs receive
+    // the same schema as upgraded installs. This creates no mappings and
+    // activates no products or operators.
+    const postRegistryMappingTable = await client.query(
+      "SELECT to_regclass('country_operator_products') IS NOT NULL AS ready"
+    );
+    if (!postRegistryMappingTable.rows[0]?.ready) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS country_operator_products (
+            id BIGSERIAL PRIMARY KEY,
+            country_code CHAR(2) NOT NULL,
+            operator_key VARCHAR(100) NOT NULL,
+            product_catalog_id BIGINT NOT NULL REFERENCES product_catalog(id) ON DELETE RESTRICT,
+            active BOOLEAN NOT NULL DEFAULT FALSE,
+            verified_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT country_operator_products_operator_fk
+              FOREIGN KEY (country_code, operator_key)
+              REFERENCES country_operators(country_code, operator_key) ON DELETE RESTRICT,
+            CONSTRAINT country_operator_products_unique
+              UNIQUE (country_code, operator_key, product_catalog_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_country_operator_products_active
+            ON country_operator_products(country_code, operator_key, active)
+            WHERE active = TRUE;
+          INSERT INTO schema_migrations (version)
+          VALUES ('017_country_operator_product_mapping')
+          ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Post-registry mapping reconciliation completed; mappings remain empty and inactive.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      const mappingColumns = await client.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'country_operator_products'`
+      );
+      const requiredMappingColumns = [
+        'country_code', 'operator_key', 'product_catalog_id',
+        'active', 'verified_at', 'created_at', 'updated_at',
+      ];
+      const actualMappingColumns = new Set(mappingColumns.rows.map((row) => row.column_name));
+      const missingMappingColumns = requiredMappingColumns.filter((column) => !actualMappingColumns.has(column));
+      if (missingMappingColumns.length) {
+        throw new Error(
+          'country_operator_products schema is incomplete; missing columns: ' +
+          missingMappingColumns.join(', ')
+        );
+      }
+      await client.query(
+        "INSERT INTO schema_migrations (version) VALUES ('017_country_operator_product_mapping') ON CONFLICT (version) DO NOTHING"
+      );
+    }
+
+    // Version 021 prevents duplicate provider reservations when a customer
+    // retries the same ranged quote request after a timeout or double tap.
+    const rangedQuoteIdempotencyVersion = "021_ranged_quote_idempotency";
+    const rangedQuoteIdempotencyCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedQuoteIdempotencyVersion]
+    );
+    if (rangedQuoteIdempotencyCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        const idempotencySql = fs.readFileSync(
+          path.join(__dirname, "migrations", "021_ranged_quote_idempotency.sql"),
+          "utf8"
+        );
+        await client.query(idempotencySql);
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [rangedQuoteIdempotencyVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 021 completed; ranged quote request keys are unique.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 021_ranged_quote_idempotency is already applied.");
+    }
+    } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
     );

@@ -68,7 +68,9 @@ test('referral tests are source-only and never call provider APIs', () => {
 test('checkout reserves referral cap capacity transactionally before commit', () => {
   assert.match(checkout, /status IN \('reserved','pending','approved','paid'\)/);
   assert.match(checkout, /VALUES \(\$1, \$2, \$3, \$4, 'reserved'\)/);
-  assert.ok(checkout.indexOf("INSERT INTO referral_ledger") < checkout.indexOf("await client.query('COMMIT')"));
+  const referralInsert = checkout.indexOf("INSERT INTO referral_ledger");
+  const referralCommit = checkout.indexOf("await client.query('COMMIT')", referralInsert);
+  assert.ok(referralInsert >= 0 && referralCommit > referralInsert);
 });
 
 test('successful DT One callback promotes a reservation instead of consuming a second slot', () => {

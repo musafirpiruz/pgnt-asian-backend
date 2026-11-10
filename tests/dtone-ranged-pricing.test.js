@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseRangedWholesalePrice } = require('../dtone-ranged-pricing');
+const { parseRangedWholesalePrice, calculateRangedCustomerPrice } = require('../dtone-ranged-pricing');
 
 function response(overrides = {}) {
   return {
@@ -76,4 +76,82 @@ test('rejects missing wholesale fee evidence and expired confirmation windows', 
   assert.throws(() => parseRangedWholesalePrice(response({
     confirmation_expiration_date: new Date(Date.now() - 1000).toISOString(),
   }), expected), /confirmation expiry/);
+});
+
+
+test('grosses up ranged EUR wholesale quote for app fee and Stripe fees', () => {
+  const result = calculateRangedCustomerPrice(190, {
+    feeCents: 49,
+    stripeFeePercent: 1.5,
+    stripeFixedFeeCents: 25,
+  });
+  assert.equal(result.currency, 'EUR');
+  assert.equal(result.wholesaleCostCents, 190);
+  assert.equal(result.feeCents, 49);
+  assert.equal(result.estimatedStripeFeeCents, 30);
+  assert.equal(result.finalPriceCents, 269);
+  assert.equal(result.netAfterStripeCents, 239);
+});
+
+test('rejects invalid or non-integer ranged pricing inputs', () => {
+  assert.throws(() => calculateRangedCustomerPrice(0, {
+    feeCents: 49, stripeFeePercent: 1.5, stripeFixedFeeCents: 25,
+  }), /wholesale cost/);
+  assert.throws(() => calculateRangedCustomerPrice(190, {
+    feeCents: -1, stripeFeePercent: 1.5, stripeFixedFeeCents: 25,
+  }), /settings are invalid/);
+  assert.throws(() => calculateRangedCustomerPrice(190, {
+    feeCents: 49, stripeFeePercent: 100, stripeFixedFeeCents: 25,
+  }), /settings are invalid/);
+});
+
+
+test('rejects a zero DT One transaction ID even when all other quote evidence is valid', () => {
+  assert.throws(() => parseRangedWholesalePrice(response({ id: 0 }), expected), /identity, CREATED status/);
+});
+
+
+test('keeps very small ranged quotes above Stripe minimum EUR charge', () => {
+  const result = calculateRangedCustomerPrice(1, {
+    feeCents: 0,
+    stripeFeePercent: 1.5,
+    stripeFixedFeeCents: 25,
+  });
+  assert.equal(result.finalPriceCents, 50);
+  assert.ok(result.finalPriceCents >= 50);
+  assert.ok(result.netAfterStripeCents >= result.wholesaleCostCents);
+});
+
+
+test('accepts exact DT One destination currencies for all four supported countries', () => {
+  const countryCurrencies = [
+    ['AF', 'AFN'],
+    ['PK', 'PKR'],
+    ['IN', 'INR'],
+    ['BD', 'BDT'],
+  ];
+  for (const [country, currency] of countryCurrencies) {
+    const value = response({
+      requested_values: { destination: { amount: 150, unit: currency, unit_type: 'CURRENCY' } },
+    });
+    const result = parseRangedWholesalePrice(value, {
+      ...expected,
+      destinationCurrency: currency,
+    });
+    assert.equal(result.destinationCurrency, currency, country);
+    assert.equal(result.wholesaleCurrency, 'EUR', country);
+    assert.equal(result.wholesaleTotalCents, 190, country);
+  }
+});
+
+test('four-country customer charge always remains EUR and covers wholesale plus app fee after Stripe estimate', () => {
+  for (const currency of ['AFN', 'PKR', 'INR', 'BDT']) {
+    const result = calculateRangedCustomerPrice(190, {
+      feeCents: 49,
+      stripeFeePercent: 1.5,
+      stripeFixedFeeCents: 25,
+    });
+    assert.equal(result.currency, 'EUR', currency);
+    assert.ok(result.netAfterStripeCents >= result.wholesaleCostCents + result.feeCents, currency);
+  }
 });

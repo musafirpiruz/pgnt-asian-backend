@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - main
+      - integration/four-country-fx-dtone-reconciliation
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -33,6 +34,7 @@ on:
       - ui/five-step-flow-current-main-v2
       - fix/flutter-disable-unverified-referral-ui
       - feature/firebase-id-token-verification-core
+      - feature/dtone-ranged-transaction-lifecycle
       - feat/first-launch-language-welcome
     paths:
       - 'main.dart'

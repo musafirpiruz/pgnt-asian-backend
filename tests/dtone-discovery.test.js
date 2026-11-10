@@ -7,16 +7,23 @@ const path = require('node:path');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
-test('DT One product discovery supports all four requested country ISO codes', () => {
-  for (const code of ['AFG', 'PAK', 'IND', 'BGD']) {
-    assert.match(server, new RegExp('<option value="' + code + '"'));
-  }
+test('DT One product discovery loads supported countries from the canonical registry', () => {
+  const countryRouteStart = server.indexOf("app.get('/api/admin/dtone/countries', requireAdmin");
+  const countryRouteEnd = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin", countryRouteStart);
+  assert.ok(countryRouteStart >= 0 && countryRouteEnd > countryRouteStart);
+  const countryRoute = server.slice(countryRouteStart, countryRouteEnd);
+  assert.match(countryRoute, /FROM country_registry/);
+  assert.match(countryRoute, /provider_country_code/);
+  assert.match(countryRoute, /source: 'country_registry'/);
+  assert.match(server, /id="loadRegistryCountries"/);
+  assert.match(server, /id="catalogCountry"/);
+
   const routeStart = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
   const routeEnd = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", routeStart);
   assert.ok(routeStart >= 0 && routeEnd > routeStart);
   const route = server.slice(routeStart, routeEnd);
   assert.match(route, /countryIsoCode/);
-  assert.match(route, /operator\?\.country\?\.iso_code/);
+  assert.ok(route.includes('operator?.country?.iso_code'));
 });
 
 test('DT One product discovery allows an omitted amount filter', () => {
@@ -29,7 +36,7 @@ test('DT One product discovery allows an omitted amount filter', () => {
 
 test('DT One product discovery remains read-only', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf("// Read-only verification of a catalog product", start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   assert.ok(start >= 0 && end > start, 'product discovery route should be present');
   const route = server.slice(start, end);
   assert.match(route, /method: 'GET'/);
@@ -53,9 +60,10 @@ test('DT One operator discovery returns compact read-only network results', () =
 
 test('product-name denomination matching uses the selected country local currency', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import', requireAdmin", start);
   const route = server.slice(start, end);
-  assert.match(route, /AFG:\s*'AFN'.*PAK:\s*'PKR'.*IND:\s*'INR'.*BGD:\s*'BDT'/s);
+  assert.match(route, /const localCurrency = countryConfig\.currency/);
+  assert.doesNotMatch(route, /countryCurrency\s*\(/);
   assert.match(route, /new RegExp\(`\\\\b\$\{amountQuery\}\\\\s\*\$\{localCurrency\}\\\\b/);
   const cases = [
     ['ATOMA 115 AFN', 115, 'AFN'],
@@ -71,7 +79,7 @@ test('product-name denomination matching uses the selected country local currenc
 
 test('product discovery explicitly flags a partial result when the page safety limit is reached', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   const route = server.slice(start, end);
   assert.match(route, /let truncated = false/);
   assert.match(route, /if \(page === 20\) truncated = true/);
@@ -81,13 +89,14 @@ test('product discovery explicitly flags a partial result when the page safety l
 });
 
 
-test('automatic country catalog discovery supports only the four configured countries', () => {
+test('automatic country catalog discovery resolves configured countries through the canonical registry', () => {
   const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
   const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
   assert.ok(start >= 0 && end > start, 'automatic country catalog sync route should exist');
   const route = server.slice(start, end);
-  for (const code of ['AFG', 'PAK', 'IND', 'BGD']) assert.ok(route.includes(code));
-  assert.match(route, /countryCurrency\(country\)/);
+  assert.match(route, /getConfiguredDtOneCountryByIso\(countryIsoCode, pool\)/);
+  assert.match(route, /const country = countryConfig\?\.countryCode/);
+  assert.doesNotMatch(route, /countryCurrency\(country\)/);
 });
 
 test('automatic country catalog sync previews before import and requires explicit confirmation', () => {
@@ -159,13 +168,13 @@ test('automatic country catalog preview calculates customer EUR pricing for ever
   assert.match(route, /productPricePreviews,/);
 });
 
-test('DT One operator discovery accepts only the four supported provider country codes', () => {
+test('DT One operator discovery resolves provider country codes through the canonical registry', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
   const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
   const route = server.slice(start, end);
-  assert.match(route, /new Set\(\['AFG', 'PAK', 'IND', 'BGD'\]\)/);
-  assert.match(route, /supportedOperatorCountries\.has\(countryIsoCode\)/);
-  assert.match(route, /one of AFG, PAK, IND, or BGD/);
+  assert.match(route, /getConfiguredDtOneCountryByIso\(countryIsoCode, pool\)/);
+  assert.match(route, /if \(!countryConfig\)/);
+  assert.doesNotMatch(route, /supportedOperatorCountries/);
 });
 
 test('DT One operator discovery marks a page-limit result as partial', () => {
@@ -201,7 +210,7 @@ test('DT One operator discovery remains GET-only and does not mutate catalog or 
 
 test('DT One discovery filters by documented product type and exposes ranged recharge capabilities', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   const route = server.slice(start, end);
   assert.match(route, /allowedProductTypes/);
   assert.match(route, /url\.searchParams\.set\('type', requestedType\)/);
@@ -218,7 +227,7 @@ test('DT One discovery filters by documented product type and exposes ranged rec
 
 test('DT One ranged amount discovery matches values inside provider min/max bounds', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   const route = server.slice(start, end);
   assert.match(route, /const rangedCapability = isRanged \? parseRangedProductCapability\(product\) : null/);
   assert.match(route, /isValidRangedDestinationAmount\(amountQuery, rangedCapability\)/);
@@ -228,7 +237,7 @@ test('DT One ranged amount discovery matches values inside provider min/max boun
 
 test('DT One product discovery remains a read-only candidate search, not an approval or activation', () => {
   const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
-  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const end = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'", start);
   const route = server.slice(start, end);
   assert.match(route, /adminApprovalRequiredForEachAmount: false/);
   assert.match(route, /catalogActivation: 'unchanged'/);
