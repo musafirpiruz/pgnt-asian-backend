@@ -7,9 +7,7 @@ const FIXED_TYPES = new Set(['FIXED_VALUE_RECHARGE', 'FIXED_VALUE_PIN_PURCHASE']
 const RANGED_TYPES = new Set(['RANGED_VALUE_RECHARGE', 'RANGED_VALUE_PAYMENT']);
 
 function parseRange(value, field) {
-  if (value === null || value === undefined || String(value).trim() === '') {
-    throw new Error(field + ' is required');
-  }
+  if (value === null || value === undefined || String(value).trim() === '') throw new Error(field + ' is required');
   const text = String(value).trim();
   const parts = text.match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:-|–|to)\s*([0-9]+(?:\.[0-9]+)?)$/i);
   if (parts) {
@@ -24,7 +22,7 @@ function parseRange(value, field) {
 
 function validateCatalogRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) throw new Error('Catalog rows must be a non-empty array');
-  const ids = new Set(), businessKeys = new Set(), normalized = [], errors = [];
+  const ids = new Set(), keyRows = new Map(), normalized = [], errors = [];
   rows.forEach((row, index) => {
     const prefix = 'row ' + (index + 1) + ': ';
     try {
@@ -48,17 +46,21 @@ function validateCatalogRows(rows) {
       const amount = parseRange(row.destinationAmount, 'destinationAmount');
       const wholesale = parseRange(row.wholesalePriceEur, 'wholesalePriceEur');
       const retail = parseRange(row.retailPriceEur, 'retailPriceEur');
-      if (retail.min < wholesale.min || retail.max < wholesale.max) {
-        throw new Error('retail EUR price range cannot be below wholesale EUR price range');
-      }
-      const key = [country, operator.toLowerCase(), amount.display, currency, type].join('|');
-      if (businessKeys.has(key)) throw new Error('duplicate country/operator/amount/currency/type key');
-      businessKeys.add(key);
+      if (retail.min < wholesale.min || retail.max < wholesale.max) throw new Error('retail EUR price range cannot be below wholesale EUR price range');
+      // This is the legacy product_catalog natural key. Do not reject source
+      // rows here: bundles/data packs can legitimately share a face amount.
+      // Instead report the collision so schema and product selection can be
+      // migrated before bulk import; never silently drop these products.
+      const legacyKey = [country, operator.toLowerCase(), amount.display, currency].join('|');
+      const group = keyRows.get(legacyKey) || [];
+      group.push(productId);
+      keyRows.set(legacyKey, group);
       normalized.push(Object.freeze({
         productId, country, operator, service: row.service || null,
-        destinationAmount: amount.display,
-        destinationCurrency: currency, productType: type,
-        wholesalePriceEur: wholesale.display, retailPriceEur: retail.display,
+        subservice: row.subservice || null, productName: row.productName || null,
+        destinationAmount: amount.display, destinationCurrency: currency,
+        productType: type, wholesalePriceEur: wholesale.display,
+        retailPriceEur: retail.display,
         catalogClass: isEsimUsd ? 'ESIM_USD_PIN' : (RANGED_TYPES.has(type) ? 'RANGED_LOCAL_CURRENCY' : 'FIXED_LOCAL_CURRENCY'),
         providerVerified: false, active: false,
       }));
@@ -69,6 +71,9 @@ function validateCatalogRows(rows) {
     error.validationErrors = errors;
     throw error;
   }
+  const keyConflicts = [...keyRows.entries()].filter(([, productIds]) => productIds.length > 1)
+    .map(([key, productIds]) => ({ key, productIds }));
+  const conflictProductIds = new Set(keyConflicts.flatMap((entry) => entry.productIds));
   const counts = normalized.reduce((acc, row) => {
     acc.byCountry[row.country] = (acc.byCountry[row.country] || 0) + 1;
     acc.byCurrency[row.destinationCurrency] = (acc.byCurrency[row.destinationCurrency] || 0) + 1;
@@ -77,9 +82,12 @@ function validateCatalogRows(rows) {
     else acc.fixedLocalCurrencyRows += 1;
     return acc;
   }, { byCountry: {}, byCurrency: {}, fixedLocalCurrencyRows: 0, rangedRows: 0, esimUsdRows: 0 });
+  counts.legacyNaturalKeyConflictGroups = keyConflicts.length;
+  counts.legacyNaturalKeyConflictRows = conflictProductIds.size;
   return Object.freeze({
-    status: 'STRUCTURE_VALID_PROVIDER_REVIEW_REQUIRED',
-    totalRows: normalized.length, counts, rows: normalized,
+    status: keyConflicts.length ? 'STRUCTURE_VALID_WITH_LEGACY_DB_KEY_CONFLICTS' : 'STRUCTURE_VALID_PROVIDER_REVIEW_REQUIRED',
+    totalRows: normalized.length, counts, keyConflicts,
+    rows: normalized,
   });
 }
 module.exports = { validateCatalogRows, COUNTRY_CURRENCY };
