@@ -4744,7 +4744,12 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
           [country, product.operator, product.amount, product.currency, product.productId,
             product.retailCents, product.wholesaleCents]
         );
-        if (result.rowCount === 1) imported.push(result.rows[0]);
+        if (result.rowCount !== 1) {
+          throw new Error(
+            `Catalog import conflict for DT One product ${product.productId}; transaction rolled back instead of silently skipping the product.`
+          );
+        }
+        imported.push(result.rows[0]);
       }
       await client.query('COMMIT');
       return res.status(200).json({
