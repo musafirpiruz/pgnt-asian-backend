@@ -37,7 +37,7 @@ test('fails closed for missing, unapproved, expired, future, stale, or invalid r
 });
 
 test('does not use another currency as an implicit fallback', () => {
-  assert.throws(() => resolveApprovedFxObservation([row({ quote_currency: 'AFN' })], 'PKR', { now }), /EUR\\/PKR/);
+  assert.throws(() => resolveApprovedFxObservation([row({ quote_currency: 'AFN' })], 'PKR', { now }), /EUR\/PKR/);
 });
 
 test('rejects conflicting newest approved rates instead of choosing arbitrarily', () => {
