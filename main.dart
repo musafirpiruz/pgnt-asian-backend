@@ -1766,17 +1766,24 @@ class _PgntHomePageState extends State<PgntHomePage> {
           parsed.isEmpty) {
         return;
       }
+      var countrySelectionChanged = false;
+      var selectedCountryCode = selectedCountry.code;
       setState(() {
         _availableCountries = parsed;
         if (!parsed.any((item) => item.code == selectedCountry.code)) {
           selectedCountry = parsed.first;
+          selectedCountryCode = selectedCountry.code;
+          countrySelectionChanged = true;
           selectedOperator = null;
           priceQuote = null;
           priceQuoteError = null;
           phoneController.clear();
-          _loadRegistryOperators(selectedCountry.code);
         }
       });
+      // Start dependent network work after setState has completed.
+      if (countrySelectionChanged) {
+        await _loadRegistryOperators(selectedCountryCode);
+      }
     } catch (_) {
       // Keep the bundled list for offline/older-backend startup.
     } finally {
