@@ -515,13 +515,17 @@ function validateCheckoutInput(body) {
     throw new Error('Invalid product ID.');
   }
 
-  // Current Flutter clients send operator + local amount, not a catalog ID.
-  if ((!productId || operatorKey) && (
+  // Exact internal catalog product ID is the preferred identity. Legacy
+  // operator/amount selection remains supported only for older app clients.
+  if (productId && operatorKey) {
+    throw new Error('Send either productId or operatorKey, not both.');
+  }
+  if (!productId && (
     (!operatorKey && (!operator || operator.length > 120)) ||
-    (operatorKey && (!/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) ||
+    (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) ||
     !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT
   )) {
-    throw new Error('Select a valid operator and top-up amount.');
+    throw new Error('Select a valid catalog product.');
   }
 
   return {
@@ -650,10 +654,23 @@ async function getPricingSettings(client, country) {
 async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
   let result;
 
-  // Stable-key selection is authoritative. Resolve the internal operator and
-  // its explicitly reviewed catalog mapping on the server; never use a
-  // localized display label or a client-supplied provider ID as identity.
-  if (options.operatorKey) {
+  // Exact internal catalog ID is authoritative when supplied. This permits
+  // distinct DT One products with the same denomination (airtime/data/voice)
+  // to be selected without ambiguity. Country is always part of the lookup.
+  if (productId !== null && productId !== undefined && String(productId).trim() !== '') {
+    result = await client.query(
+      `SELECT
+         id, country, currency, product_id AS dtone_product_id,
+         operator AS name, NULL::text AS description,
+         amount AS local_amount, price_eur_cents,
+         wholesale_price_eur_cents, active AS enabled
+       FROM product_catalog
+       WHERE id = $1::bigint AND country = $2
+       LIMIT 2`,
+      [productId, normalizeCountry(requestedCountry)]
+    );
+  // Legacy stable operator/amount selection remains for older app versions.
+  } else if (options.operatorKey) {
     result = await client.query(
       `SELECT
          p.id,
@@ -1152,15 +1169,20 @@ app.get('/api/pricing/quote', async (req, res) => {
     return res.status(503).json({ error: 'Pricing service is not configured.' });
   }
   const country = normalizeCountry(req.query.country);
+  const productId = String(req.query.productId || '').trim();
   const operator = String(req.query.operator || '').trim();
   const operatorKey = String(req.query.operatorKey || '').trim();
   const amount = Number(req.query.amount);
-  if (!isValidCountry(country) || ((!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) || !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
-    return res.status(400).json({ error: 'Select a valid country, operator, and amount.' });
+  const validProductId = /^[1-9]\\d*$/.test(productId);
+  const validLegacySelection = ((!operatorKey && operator.length > 0 && operator.length <= 120) ||
+    (operatorKey && /^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) &&
+    Number.isSafeInteger(amount) && amount >= PGNT_MIN_AMOUNT && amount <= PGNT_MAX_AMOUNT;
+  if (!isValidCountry(country) || (!validProductId && !validLegacySelection) || (productId && !validProductId)) {
+    return res.status(400).json({ error: 'Select a valid catalog product.' });
   }
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true, operatorKey: operatorKey || null });
+    const product = await getProduct(client, validProductId ? productId : null, country, operator, amount, { allowInactive: true, operatorKey: validProductId ? null : (operatorKey || null) });
     const basePricing = await getPricingSettings(client, country);
     const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
