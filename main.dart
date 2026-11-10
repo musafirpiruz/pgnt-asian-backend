@@ -3744,6 +3744,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       setState(() {
                         languageCode = value;
                       });
+                      _loadRegistryCountries();
                       _loadRegistryOperators(selectedCountry.code);
                       SharedPreferences.getInstance().then((preferences) {
                         preferences.setString(_languagePreferenceKey, value);
