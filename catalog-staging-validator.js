@@ -2,33 +2,29 @@
 
 // Offline-only catalogue validator. It never connects to PostgreSQL, DT One,
 // Stripe, or the live service. Valid rows are returned inactive and unverified.
-const COUNTRY_CURRENCY = Object.freeze({
-  AF: 'AFN',
-  PK: 'PKR',
-  IN: 'INR',
-  BD: 'BDT',
-});
+const COUNTRY_CURRENCY = Object.freeze({ AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT' });
 const FIXED_TYPES = new Set(['FIXED_VALUE_RECHARGE', 'FIXED_VALUE_PIN_PURCHASE']);
 const RANGED_TYPES = new Set(['RANGED_VALUE_RECHARGE', 'RANGED_VALUE_PAYMENT']);
 
-function positiveNumber(value, field, required = true) {
+function parseRange(value, field) {
   if (value === null || value === undefined || String(value).trim() === '') {
-    if (!required) return null;
     throw new Error(field + ' is required');
   }
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) throw new Error(field + ' must be a positive number');
-  return n;
+  const text = String(value).trim();
+  const parts = text.match(/^([0-9]+(?:\.[0-9]+)?)\s*(?:-|–|to)\s*([0-9]+(?:\.[0-9]+)?)$/i);
+  if (parts) {
+    const min = Number(parts[1]), max = Number(parts[2]);
+    if (!(min > 0) || !(max >= min)) throw new Error(field + ' has an invalid range');
+    return { min, max, display: text };
+  }
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0) throw new Error(field + ' must be positive or a valid min-max range');
+  return { min: n, max: n, display: text };
 }
 
 function validateCatalogRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) throw new Error('Catalog rows must be a non-empty array');
-  const ids = new Set();
-  const businessKeys = new Set();
-  const countries = new Set();
-  const normalized = [];
-  const errors = [];
-
+  const ids = new Set(), businessKeys = new Set(), normalized = [], errors = [];
   rows.forEach((row, index) => {
     const prefix = 'row ' + (index + 1) + ': ';
     try {
@@ -37,57 +33,53 @@ function validateCatalogRows(rows) {
       if (!Number.isSafeInteger(productId) || productId <= 0) throw new Error('productId must be a positive safe integer');
       if (ids.has(productId)) throw new Error('duplicate productId ' + productId);
       ids.add(productId);
-
       const country = String(row.country || '').trim().toUpperCase();
       if (!Object.prototype.hasOwnProperty.call(COUNTRY_CURRENCY, country)) throw new Error('unsupported country ' + country);
       const currency = String(row.destinationCurrency || '').trim().toUpperCase();
-      if (currency !== COUNTRY_CURRENCY[country]) throw new Error('destination currency mismatch for ' + country + '; expected ' + COUNTRY_CURRENCY[country]);
       const operator = String(row.operator || '').trim();
       if (!operator) throw new Error('operator is required');
-      const amount = positiveNumber(row.destinationAmount, 'destinationAmount');
       const type = String(row.productType || '').trim().toUpperCase();
       if (!FIXED_TYPES.has(type) && !RANGED_TYPES.has(type)) throw new Error('unsupported productType ' + type);
-
-      const wholesale = positiveNumber(row.wholesalePriceEur, 'wholesalePriceEur', FIXED_TYPES.has(type));
-      const retail = positiveNumber(row.retailPriceEur, 'retailPriceEur', FIXED_TYPES.has(type));
-      if (wholesale !== null && retail !== null && retail < wholesale) {
-        throw new Error('retailPriceEur cannot be below wholesalePriceEur');
+      const service = String(row.service || '').trim().toLowerCase();
+      const isEsimUsd = currency === 'USD' && service === 'esim' && type === 'FIXED_VALUE_PIN_PURCHASE';
+      if (!isEsimUsd && currency !== COUNTRY_CURRENCY[country]) {
+        throw new Error('destination currency mismatch for ' + country + '; expected ' + COUNTRY_CURRENCY[country] + ' (USD is only accepted for fixed eSIM PIN products)');
       }
-      const key = [country, operator.toLowerCase(), amount, currency].join('|');
-      if (businessKeys.has(key)) throw new Error('duplicate country/operator/amount/currency key');
+      const amount = parseRange(row.destinationAmount, 'destinationAmount');
+      const wholesale = parseRange(row.wholesalePriceEur, 'wholesalePriceEur');
+      const retail = parseRange(row.retailPriceEur, 'retailPriceEur');
+      if (retail.min < wholesale.min || retail.max < wholesale.max) {
+        throw new Error('retail EUR price range cannot be below wholesale EUR price range');
+      }
+      const key = [country, operator.toLowerCase(), amount.display, currency, type].join('|');
+      if (businessKeys.has(key)) throw new Error('duplicate country/operator/amount/currency/type key');
       businessKeys.add(key);
-      countries.add(country);
-
       normalized.push(Object.freeze({
-        productId, country, operator, destinationAmount: amount,
+        productId, country, operator, service: row.service || null,
+        destinationAmount: amount.display,
         destinationCurrency: currency, productType: type,
-        wholesalePriceEur: wholesale, retailPriceEur: retail,
+        wholesalePriceEur: wholesale.display, retailPriceEur: retail.display,
+        catalogClass: isEsimUsd ? 'ESIM_USD_PIN' : (RANGED_TYPES.has(type) ? 'RANGED_LOCAL_CURRENCY' : 'FIXED_LOCAL_CURRENCY'),
         providerVerified: false, active: false,
       }));
-    } catch (error) {
-      errors.push(prefix + error.message);
-    }
+    } catch (error) { errors.push(prefix + error.message); }
   });
-
   if (errors.length) {
     const error = new Error('Catalog validation failed: ' + errors.join('; '));
     error.validationErrors = errors;
     throw error;
   }
-
   const counts = normalized.reduce((acc, row) => {
     acc.byCountry[row.country] = (acc.byCountry[row.country] || 0) + 1;
-    if (FIXED_TYPES.has(row.productType)) acc.fixedPriceRows += 1;
-    else acc.rangedRows += 1;
+    acc.byCurrency[row.destinationCurrency] = (acc.byCurrency[row.destinationCurrency] || 0) + 1;
+    if (row.catalogClass === 'ESIM_USD_PIN') acc.esimUsdRows += 1;
+    else if (row.catalogClass === 'RANGED_LOCAL_CURRENCY') acc.rangedRows += 1;
+    else acc.fixedLocalCurrencyRows += 1;
     return acc;
-  }, { byCountry: {}, fixedPriceRows: 0, rangedRows: 0 });
-
+  }, { byCountry: {}, byCurrency: {}, fixedLocalCurrencyRows: 0, rangedRows: 0, esimUsdRows: 0 });
   return Object.freeze({
     status: 'STRUCTURE_VALID_PROVIDER_REVIEW_REQUIRED',
-    totalRows: normalized.length,
-    counts,
-    rows: normalized,
+    totalRows: normalized.length, counts, rows: normalized,
   });
 }
-
 module.exports = { validateCatalogRows, COUNTRY_CURRENCY };
