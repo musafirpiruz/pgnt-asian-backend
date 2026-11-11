@@ -25,7 +25,12 @@ test('preserves existing denomination and reports every conflicting provider ID'
   );
   assert.equal(result.toInsert.length, 0);
   assert.equal(result.conflicts.length, 2);
-  assert.deepEqual(result.conflicts.map(x => x.conflictingProductIds), [['1001'], ['1001']]);
+  // Each candidate conflicts with the stored product and with its peer in this
+  // provider batch; both IDs must be reported so neither is silently selected.
+  assert.deepEqual(result.conflicts.map(x => x.conflictingProductIds), [
+    ['1001', '1003'],
+    ['1001', '1002'],
+  ]);
 });
 
 test('allows distinct denominations and recognizes an already registered provider ID', () => {
