@@ -134,3 +134,11 @@ test('Flutter entry source contains one authoritative home page and one state cl
   assert.equal(occurrences(/Widget pgntSectionTitle\(/g), 1);
   assert.equal(occurrences(/Widget pgntGoldDivider\(/g), 1);
 });
+
+
+test('Flutter main source has no duplicate top-level class declarations', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
+  const names = [...app.matchAll(/^\\s*(?:abstract\\s+)?class\\s+([A-Za-z_]\\w*)/gm)]
+    .map((match) => match[1]);
+  assert.equal(new Set(names).size, names.length, 'duplicate top-level Dart class declaration found');
+});
