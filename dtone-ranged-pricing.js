@@ -157,11 +157,11 @@ function buildRangedTransactionPayload(input = {}) {
   let callback;
   try { callback = new URL(String(input.callbackUrl || '')); } catch (_) {}
 
-  if (!/^\\d{1,18}$/.test(productId) ||
+  if (!/^\d{1,18}$/.test(productId) ||
       !/^[A-Za-z0-9._:-]{1,100}$/.test(externalId) ||
       !RANGED_DESTINATION_CURRENCIES.has(destinationCurrency) ||
       !Number.isSafeInteger(destinationAmount) || destinationAmount < 75 || destinationAmount > 3000 ||
-      !/^\\+[1-9]\\d{7,14}$/.test(phone) ||
+      !/^\+[1-9]\d{7,14}$/.test(phone) ||
       !callback || callback.protocol !== 'https:') {
     throw new Error('Ranged DT One transaction request contains invalid identity, amount, recipient, currency, or callback URL.');
   }
@@ -188,7 +188,7 @@ function buildRangedTransactionPayload(input = {}) {
 function getRangedConfirmationPath(quote, now = Date.now()) {
   const transactionId = String(quote?.transactionId || '').trim();
   const expiration = new Date(quote?.confirmationExpiresAt || '');
-  if (!/^\\d+$/.test(transactionId) ||
+  if (!/^\d+$/.test(transactionId) ||
       !Number.isFinite(expiration.getTime()) ||
       !Number.isFinite(now) ||
       expiration.getTime() <= now ||
@@ -208,7 +208,7 @@ function verifyRangedConfirmation(response, expected = {}) {
   const externalId = String(response.external_id || '');
   const productId = String(response.product?.id ?? '').trim();
   const status = String(response.status?.message || response.status || '').trim().toUpperCase();
-  if (!/^\\d+$/.test(transactionId) ||
+  if (!/^\d+$/.test(transactionId) ||
       transactionId !== String(expected.transactionId || '') ||
       externalId !== String(expected.externalId || '') ||
       productId !== String(expected.productId || '') ||
