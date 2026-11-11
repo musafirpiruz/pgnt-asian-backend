@@ -483,61 +483,33 @@ function validateCheckoutInput(body) {
   }
 
   const country = normalizeCountry(body.country);
-
   if (!isValidCountry(country)) {
     throw new Error('Unsupported country.');
   }
 
-  // Reject USD, and any other non-EUR payment currency.
-  // The Flutter app's `currency` is the recipient currency (AFN/PKR/INR/BDT),
-  // not the Stripe payment currency. Customer payment is always EUR.
-  const paymentCurrency = normalizePaymentCurrency(
-    body.paymentCurrency || 'EUR'
-  );
-
-  const phoneResult = validatePhone(
-    body.phone || body.phoneNumber,
-    country
-  );
-
+  // Stripe customer payment remains EUR; recipient currency is country-specific.
+  const paymentCurrency = normalizePaymentCurrency(body.paymentCurrency || 'EUR');
+  const phoneResult = validatePhone(body.phone || body.phoneNumber, country);
   if (!phoneResult.valid) {
     throw new Error(phoneResult.error);
   }
 
   const rawProductId = String(body.productId || '').trim();
-  const productId = rawProductId || null;
-  const operator = String(body.operator || '').trim();
-  const rawOperatorKey = String(body.operatorKey || '').trim();
-  const operatorKey = rawOperatorKey || null;
-  const amount = Number(body.amount);
-
-  if (productId && !/^[1-9]\d*$/.test(productId)) {
-    throw new Error('Invalid product ID.');
-  }
-
-  // Exact internal catalog product ID is the preferred identity. Legacy
-  // operator/amount selection remains supported only for older app clients.
-  if (productId && operatorKey) {
-    throw new Error('Send either productId or operatorKey, not both.');
-  }
-  if (!productId && (
-    (!operatorKey && (!operator || operator.length > 120)) ||
-    (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) ||
-    !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT
-  )) {
+  if (!/^[1-9]\\d*$/.test(rawProductId)) {
     throw new Error('Select a valid catalog product.');
   }
 
   return {
     country,
     phone: phoneResult.phone,
-    productId,
-    operator,
-    operatorKey,
-    amount,
+    productId: rawProductId,
+    operator: '',
+    operatorKey: null,
+    amount: null,
     paymentCurrency,
     recipientCurrency: countryCurrency(country),
-  };}
+  };
+}
 // =====================================================
 // PART 3/8 — PRODUCTS, PRICING, FEES & BONUSES
 // All customer prices are stored in EUR cents.
@@ -651,112 +623,48 @@ async function getPricingSettings(client, country) {
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
-async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
-  let result;
-
-  // Exact internal catalog ID is authoritative when supplied. This permits
-  // distinct DT One products with the same denomination (airtime/data/voice)
-  // to be selected without ambiguity. Country is always part of the lookup.
-  if (productId !== null && productId !== undefined && String(productId).trim() !== '') {
-    result = await client.query(
-      `SELECT
-         p.id, p.country, p.currency, p.product_id AS dtone_product_id,
-         p.operator AS name, NULL::text AS description,
-         p.amount AS local_amount, p.price_eur_cents,
-         p.wholesale_price_eur_cents, p.active AS enabled
-       FROM product_catalog p
-       JOIN country_registry c
-         ON c.country_code = p.country
-       JOIN country_operator_products cop
-         ON cop.product_catalog_id = p.id
-        AND cop.country_code = c.country_code
-       JOIN country_operators o
-         ON o.country_code = cop.country_code
-        AND o.operator_key = cop.operator_key
-       WHERE p.id = $1::bigint
-         AND p.country = $2
-         AND c.status = 'active'
-         AND c.destination_currency = p.currency
-         AND o.active = TRUE
-         AND o.provider_operator_id IS NOT NULL
-         AND BTRIM(o.provider_operator_id) <> ''
-         AND o.verified_at IS NOT NULL
-         AND cop.active = TRUE
-         AND cop.verified_at IS NOT NULL
-         AND p.product_id IS NOT NULL
-         AND p.wholesale_price_eur_cents IS NOT NULL
-         AND p.wholesale_price_eur_cents > 0
-       LIMIT 2`,
-      [productId, normalizeCountry(requestedCountry)]
-    );
-  // Legacy stable operator/amount selection remains for older app versions.
-  } else if (options.operatorKey) {
-    result = await client.query(
-      `SELECT
-         p.id,
-         p.country,
-         p.currency,
-         p.product_id AS dtone_product_id,
-         p.operator AS name,
-         NULL::text AS description,
-         p.amount AS local_amount,
-         p.price_eur_cents,
-         p.wholesale_price_eur_cents,
-         p.active AS enabled
-       FROM country_registry c
-       JOIN country_operators o
-         ON o.country_code = c.country_code
-       JOIN country_operator_products cop
-         ON cop.country_code = o.country_code
-        AND cop.operator_key = o.operator_key
-       JOIN product_catalog p
-         ON p.id = cop.product_catalog_id
-       WHERE c.country_code = $1
-         AND c.status = 'active'
-         AND o.operator_key = $2
-         AND o.active = TRUE
-         AND o.provider_operator_id IS NOT NULL
-         AND BTRIM(o.provider_operator_id) <> ''
-         AND o.verified_at IS NOT NULL
-         AND cop.active = TRUE
-         AND cop.verified_at IS NOT NULL
-         AND p.country = c.country_code
-         AND p.amount = $3
-         AND p.currency = c.destination_currency
-       LIMIT 2`,
-      [normalizeCountry(requestedCountry), String(options.operatorKey), amount]
-    );
-    if (result.rowCount > 1) {
-      throw new Error('Product selection is ambiguous; select a verified operator product.');
-    }
-  } else {
-    result = await client.query(
-      `SELECT
-       id,
-       country,
-       currency,
-       product_id AS dtone_product_id,
-       operator AS name,
-       NULL::text AS description,
-       amount AS local_amount,
-       price_eur_cents,
-       wholesale_price_eur_cents,
-       active AS enabled
-     FROM product_catalog
-     WHERE (
-       ($1::bigint IS NOT NULL AND id = $1::bigint)
-       OR
-       ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
-     )
-     LIMIT 1`,
-      [productId, requestedCountry, operator, amount]
-    );
+async function getProduct(client, productId, requestedCountry = null, options = {}) {
+  // Customer selection is always an exact internal catalog ID. A denomination,
+  // operator label, or stable operator key is never sufficient to identify a
+  // provider product because DT One may expose multiple products at that amount.
+  if (productId === null || productId === undefined || !/^[1-9]\\d*$/.test(String(productId).trim())) {
+    throw new Error('Select a valid catalog product.');
   }
 
+  const result = await client.query(
+    `SELECT
+       p.id, p.country, p.currency, p.product_id AS dtone_product_id,
+       p.operator AS name, NULL::text AS description,
+       p.amount AS local_amount, p.price_eur_cents,
+       p.wholesale_price_eur_cents, p.active AS enabled
+     FROM product_catalog p
+     JOIN country_registry c
+       ON c.country_code = p.country
+     JOIN country_operator_products cop
+       ON cop.product_catalog_id = p.id
+      AND cop.country_code = c.country_code
+     JOIN country_operators o
+       ON o.country_code = cop.country_code
+      AND o.operator_key = cop.operator_key
+     WHERE p.id = $1::bigint
+       AND p.country = $2
+       AND c.status = 'active'
+       AND c.destination_currency = p.currency
+       AND o.active = TRUE
+       AND o.provider_operator_id IS NOT NULL
+       AND BTRIM(o.provider_operator_id) <> ''
+       AND o.verified_at IS NOT NULL
+       AND cop.active = TRUE
+       AND cop.verified_at IS NOT NULL
+       AND p.product_id IS NOT NULL
+       AND p.wholesale_price_eur_cents IS NOT NULL
+       AND p.wholesale_price_eur_cents > 0
+     LIMIT 2`,
+    [String(productId).trim(), normalizeCountry(requestedCountry)]
+  );
+
   if (result.rowCount !== 1) {
-    throw new Error(
-      'Product not found.'
-    );
+    throw new Error('Product not found or its provider mapping is not verified.');
   }
 
   const product = result.rows[0];
@@ -764,64 +672,36 @@ async function getProduct(client, productId, requestedCountry = null, operator =
   // Read-only quote requests may inspect inactive catalog products.
   // All checkout/order callers remain strict unless explicitly opted in.
   if (product.enabled !== true && options.allowInactive !== true) {
-    throw new Error(
-      'This product is currently unavailable.'
-    );
+    throw new Error('This product is currently unavailable.');
   }
 
-  const country = normalizeCountry(
-    product.country
-  );
-
+  const country = normalizeCountry(product.country);
   if (!isValidCountry(country)) {
-    throw new Error(
-      'Product country is not supported.'
-    );
+    throw new Error('Product country is not supported.');
+  }
+  if (product.currency !== countryCurrency(country)) {
+    throw new Error('Product currency does not match its country.');
   }
 
-  // Recipient currency must match the selected country.
-  if (
-    product.currency !== countryCurrency(country)
-  ) {
-    throw new Error(
-      'Product currency does not match its country.'
-    );
-  }
-
-  const priceCents = requirePositiveInteger(
-    product.price_eur_cents,
-    'product price in EUR cents'
-  );
-
-  const localAmount = requirePositiveInteger(
-    product.local_amount,
-    'local top-up amount'
-  );
-
+  const priceCents = requirePositiveInteger(product.price_eur_cents, 'product price in EUR cents');
+  const localAmount = requirePositiveInteger(product.local_amount, 'local top-up amount');
   if (!product.dtone_product_id) {
-    throw new Error(
-      'DT One product mapping is missing.'
-    );
+    throw new Error('DT One product mapping is missing.');
   }
 
   return {
     id: String(product.id),
     country,
     currency: product.currency,
-    dtoneProductId: String(
-      product.dtone_product_id
-    ),
+    dtoneProductId: String(product.dtone_product_id),
     name: String(product.name || ''),
-    description: String(
-      product.description || ''
-    ),
+    description: String(product.description || ''),
     localAmount,
     priceCents,
-    wholesalePriceCents: product.wholesale_price_eur_cents == null
-      ? null
-      : requirePositiveInteger(product.wholesale_price_eur_cents, 'DT One wholesale price in EUR cents'),
+    wholesalePriceCents: requirePositiveInteger(product.wholesale_price_eur_cents, 'DT One wholesale price in EUR cents'),
   };
 }
+
 
 // Calculate the final customer price.
 // The price and fee are both in EUR cents.
@@ -1289,9 +1169,9 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, validProductId ? productId : null, country, operator, amount, { allowInactive: true, operatorKey: validProductId ? null : (operatorKey || null) });
+    const product = await getProduct(client, productId, country, { allowInactive: true });
     const basePricing = await getPricingSettings(client, country);
-    const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
+    const pricing = await resolveProductPricing(client, country, product.name, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
     return res.json({
       productId: product.id,
@@ -1317,8 +1197,7 @@ app.get('/api/pricing/quote', async (req, res) => {
     // Never log phone numbers, access tokens, request headers, or credentials.
     console.error('Pricing quote calculation failed.', {
       country,
-      operator,
-      amount,
+      productId,
       errorName: error?.name || 'Error',
       errorCode: error?.code || null,
       errorMessage: String(error?.message || 'Unknown pricing error').slice(0, 240),
@@ -1406,7 +1285,7 @@ app.post('/api/payments/checkout', async (req, res) => {
       input.productId,      input.country,
       input.operator,
       input.amount,
-      { operatorKey: input.operatorKey || null }
+      {}
     );
 
     if (product.country !== input.country) {
