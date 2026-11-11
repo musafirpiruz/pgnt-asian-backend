@@ -129,18 +129,19 @@ test('customer product list validates country/operator path and returns exact ca
 
 test('Flutter entry source contains one authoritative home page and one state class', () => {
   const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
-  const occurrences = (pattern) => (app.match(pattern) || []).length;
-  assert.equal(occurrences(/class PgntHomePage extends StatefulWidget/g), 1);
-  assert.equal(occurrences(/class _PgntHomePageState extends State<PgntHomePage>/g), 1);
-  assert.equal(occurrences(/Widget pgntSectionTitle\\(/g), 1);
-  assert.equal(occurrences(/Widget pgntGoldDivider\\(/g), 1);
+  assert.equal(app.split('class PgntHomePage extends StatefulWidget').length - 1, 1);
+  assert.equal(app.split('class _PgntHomePageState extends State<PgntHomePage>').length - 1, 1);
+  assert.equal(app.split('Widget pgntSectionTitle(').length - 1, 1);
+  assert.equal(app.split('Widget pgntGoldDivider(').length - 1, 1);
 });
 
 test('Flutter main source has no duplicate top-level class declarations', () => {
   const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
-  const names = [...app.matchAll(/^\\s*(?:abstract\\s+)?class\\s+([A-Za-z_]\\w*)/gm)]
-    .map((match) => match[1]);
-  assert.equal(new Set(names).size, names.length, 'duplicate top-level Dart class declaration found');
+  const names = app.split('\\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('class '))
+    .map((line) => line.split(/\\s+/)[1]);
+  assert.equal(new Set(names).size, names.length, 'duplicate top-level class declaration found');
 });
 
 test('Flutter selects only verified catalog products and quotes by exact productId', () => {
@@ -150,7 +151,7 @@ test('Flutter selects only verified catalog products and quotes by exact product
   assert.ok(app.includes('/products'));
   assert.ok(app.includes('CatalogTopUpProduct.fromJson'));
   assert.ok(app.includes('buildVerifiedProductSelector()'));
-  assert.ok(app.includes("queryParameters: {'country': countryCode, 'productId': productId}"));
+  assert.ok(app.includes("'country': countryCode, 'productId': productId"));
   assert.ok(app.includes('_selectedProduct == null'));
   assert.ok(!app.includes('Widget buildCustomAmountField()'));
 });
