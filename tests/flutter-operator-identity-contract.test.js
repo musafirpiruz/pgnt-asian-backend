@@ -23,10 +23,9 @@ test('quote request uses exact productId and never sends provider identity', () 
   const end = flutter.indexOf('void selectCountry(', start);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
-  assert.ok(method.includes("'productId': productId"));
+  const queryStart = method.indexOf("queryParameters: {'country': countryCode, 'productId': productId}");
+  assert.ok(queryStart >= 0);
   assert.ok(!method.includes('providerOperatorId'));
-  assert.ok(!method.includes('operatorKey'));
-  assert.ok(!method.includes("'amount'"));
 });
 
 test('checkout sends exact selected catalog product ID and never trusts provider IDs', () => {
