@@ -34,7 +34,7 @@ test('intersects provider bounds with PGNT 75–3000 policy and increment', () =
   const capability = parseRangedProductCapability(product({
     destination: { unit: 'PKR', amount: { min: 25, max: 5000, increment: 25 } },
   }));
-  assert.equal(capability.selectableMinAmount, 25);
+  assert.equal(capability.selectableMinAmount, 75);
   assert.equal(capability.selectableMaxAmount, 3000);
 
   const tooHighMinimum = parseRangedProductCapability(product({
@@ -64,10 +64,10 @@ test('accepts only integer customer amounts inside provider bounds and on exact 
   const capability = parseRangedProductCapability(product({
     destination: { unit: 'AFN', amount: { min: 50, max: 1000, increment: 50 } },
   }));
-  for (const amount of [50, 100, 500, 1000]) {
+  for (const amount of [100, 150, 500, 1000]) {
     assert.equal(isValidRangedDestinationAmount(amount, capability), true);
   }
-  for (const amount of [10, 49, 74, 1001, 3000, 50.5, 'abc']) {
+  for (const amount of [10, 49, 50, 74, 1001, 3000, 50.5, 'abc']) {
     assert.equal(isValidRangedDestinationAmount(amount, capability), false);
   }
 });
