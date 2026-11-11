@@ -80,6 +80,7 @@ test('product discovery explicitly flags a partial result when the page safety l
   assert.match(route, /Partial read-only search/);
 });
 
+
 test('automatic country catalog discovery supports only the four configured countries', () => {
   const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
   const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
@@ -128,6 +129,7 @@ test('admin DT One page exposes the automatic country catalog preview and confir
   assert.match(server, /Automatically build selected country catalog/);
 });
 
+
 test('automatic country catalog sync verifies full DT One product details before pricing or import', () => {
   const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
   const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
@@ -144,6 +146,7 @@ test('automatic catalog admin confirmation keeps the admin key available for the
   assert.doesNotMatch(handler, /key\.value\s*=\s*''/);
   assert.match(handler, /countryCatalogPreviewReady&&confirmCountryCatalogImport\.checked/);
 });
+
 
 test('automatic country catalog preview calculates customer EUR pricing for every valid product', () => {
   const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
@@ -211,5 +214,25 @@ test('DT One discovery filters by documented product type and exposes ranged rec
   assert.match(route, /rangeCapabilityVerified: Boolean\(rangedCapability\)/);
   assert.match(route, /amountMode: isRanged \? 'ranged' : 'fixed_or_unclassified'/);
   assert.match(route, /adminApprovalRequiredForEachAmount: false/);
-  assert.match(route, /requiresProviderCapabilityVerificat/);
+  assert.match(route, /requiresProviderCapabilityVerification: !rangedCapability/);
+});
+
+test('DT One ranged amount discovery matches values inside provider min/max bounds', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
+  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const route = server.slice(start, end);
+  assert.match(route, /const rangedCapability = isRanged \? parseRangedProductCapability\(product\) : null/);
+  assert.match(route, /isValidRangedDestinationAmount\(amountQuery, rangedCapability\)/);
+  assert.match(route, /const amountMatches = isRanged \? rangeAmountMatch : exactAmountMatch/);
+  assert.match(route, /const rangeAmountMatch = amountQuery !== null/);
+});
+
+test('DT One product discovery remains a read-only candidate search, not an approval or activation', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin");
+  const end = server.indexOf('// Read-only verification of a catalog product', start);
+  const route = server.slice(start, end);
+  assert.match(route, /adminApprovalRequiredForEachAmount: false/);
+  assert.match(route, /catalogActivation: 'unchanged'/);
+  assert.match(route, /transactionCreated: false/);
+  assert.doesNotMatch(route, /UPDATE product_catalog SET active\s*=\s*TRUE/);
 });
