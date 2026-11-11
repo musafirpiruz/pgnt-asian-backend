@@ -77,3 +77,40 @@ test('rejects missing wholesale fee evidence and expired confirmation windows', 
     confirmation_expiration_date: new Date(Date.now() - 1000).toISOString(),
   }), expected), /confirmation expiry/);
 });
+
+test('rejects missing or malformed transaction and product identity', () => {
+  assert.throws(() => parseRangedWholesalePrice(response({ id: 'not-numeric' }), expected), /identity/);
+  assert.throws(() => parseRangedWholesalePrice(response({ product: {} }), expected), /identity/);
+  assert.throws(() => parseRangedWholesalePrice(response({ external_id: '' }), expected), /identity/);
+});
+
+test('rejects destination amounts that are fractional or have the wrong unit type', () => {
+  assert.throws(() => parseRangedWholesalePrice(response({
+    requested_values: { destination: { amount: 150.5, unit: 'AFN', unit_type: 'CURRENCY' } },
+  }), expected), /destination amount or currency/);
+  assert.throws(() => parseRangedWholesalePrice(response({
+    requested_values: { destination: { amount: 150, unit: 'AFN', unit_type: 'POINTS' } },
+  }), expected), /destination amount or currency/);
+});
+
+test('rejects zero, negative, missing, or malformed wholesale amount and fee', () => {
+  const invalidWholesaleValues = [
+    { amount: 0, fee: 0, unit: 'EUR', unit_type: 'CURRENCY' },
+    { amount: -1, fee: 0, unit: 'EUR', unit_type: 'CURRENCY' },
+    { amount: 1, fee: -0.01, unit: 'EUR', unit_type: 'CURRENCY' },
+    { amount: 1, unit: 'EUR', unit_type: 'CURRENCY' },
+    { amount: 'invalid', fee: 0, unit: 'EUR', unit_type: 'CURRENCY' },
+  ];
+  for (const wholesale of invalidWholesaleValues) {
+    assert.throws(() => parseRangedWholesalePrice(response({
+      prices: { wholesale },
+    }), expected), /wholesale price/);
+  }
+});
+
+test('rounds combined provider wholesale amount and fee upward to the next EUR cent', () => {
+  const result = parseRangedWholesalePrice(response({
+    prices: { wholesale: { amount: 1.001, fee: 0.001, unit: 'EUR', unit_type: 'CURRENCY' } },
+  }), expected);
+  assert.equal(result.wholesaleTotalCents, 101);
+});
