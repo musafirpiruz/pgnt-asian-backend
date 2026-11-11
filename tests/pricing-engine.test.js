@@ -72,3 +72,21 @@ test('rejects invalid Stripe fee configuration', () => {
     stripeFeeBasisPoints: 10000, stripeFixedFeeMinor: 0,
   }), /Stripe fee basis points/);
 });
+
+
+test('all-in quote exposes only safe integer minor-unit numbers', () => {
+  const quote = calculateAllInPrice({
+    wholesaleAmountMinor: 189, wholesaleCurrency: 'EUR',
+    paymentCurrency: 'EUR', fxRateScaled: fx1,
+    appFeeFixedMinor: 49, appFeeBasisPoints: 0,
+    stripeFeeBasisPoints: 150, stripeFixedFeeMinor: 25,
+  });
+  for (const key of [
+    'wholesaleAmountMinor', 'convertedWholesaleMinor', 'appFeeFixedMinor',
+    'appFeePercentMinor', 'appFeeMinor', 'estimatedStripeFeeMinor',
+    'customerTotalMinor',
+  ]) {
+    assert.equal(typeof quote[key], 'number', key + ' must be a JSON-safe number');
+    assert.equal(Number.isSafeInteger(quote[key]), true, key + ' must be a safe integer');
+  }
+});
