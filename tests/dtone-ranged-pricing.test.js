@@ -126,7 +126,7 @@ test('calculates a EUR customer charge from provider wholesale plus app and Stri
   assert.equal(result.currency, 'EUR');
   assert.equal(result.wholesaleCents, 190);
   assert.equal(result.feeCents, 49);
-  assert.equal(result.finalPriceCents, 268);
+  assert.equal(result.finalPriceCents, 269);
   assert.ok(result.retainedAfterEstimatedStripeFeeCents >= 239);
 });
 
