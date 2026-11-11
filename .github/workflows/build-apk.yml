@@ -34,6 +34,7 @@ on:
       - fix/flutter-disable-unverified-referral-ui
       - feature/firebase-id-token-verification-core
       - feat/first-launch-language-welcome
+      - feat/device-region-and-country-bootstrap-2026-11-10
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
