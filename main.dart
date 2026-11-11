@@ -1813,8 +1813,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   // Prefer the server registry when it is available; retain the bundled
   // curated list as an offline/backward-compatible fallback.
   List<MobileOperator> get countryOperators {
-    if (_registryOperatorsCountry == selectedCountry.code &&
-        _registryOperators.isNotEmpty) {
+    if (_registryOperatorsCountry == selectedCountry.code) {
       return _registryOperators;
     }
     return operators
@@ -1857,8 +1856,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted ||
           requestGeneration != _registryOperatorsRequestGeneration ||
           countryCode != selectedCountry.code ||
-          requestedLanguage != languageCode ||
-          parsed.isEmpty) {
+          requestedLanguage != languageCode) {
         return;
       }
 
