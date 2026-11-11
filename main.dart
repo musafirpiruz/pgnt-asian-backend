@@ -2766,7 +2766,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'phoneNumber': phone,
               'currency': selectedCountry.currency,
               'productId': _selectedProduct!.productId,
-            }),),
+            }),
           )
           .timeout(const Duration(seconds: 30));
 
