@@ -64,9 +64,9 @@ function calculateAllInPrice(input) {
   const wholesaleCurrency = normalizeCurrency(input.wholesaleCurrency, 'wholesale');
   const wholesaleMinor = positiveInteger(input.wholesaleAmountMinor, 'Wholesale amount');
   const fxRateScaled = positiveInteger(input.fxRateScaled, 'FX rate');
-  const wholesalePaymentMinor = convertMinorUnits(
+  const wholesalePaymentMinor = BigInt(convertMinorUnits(
     Number(wholesaleMinor), wholesaleCurrency, paymentCurrency, Number(fxRateScaled)
-  );
+  ));
 
   const fixedFee = nonNegativeInteger(input.appFeeFixedMinor ?? 0, 'App fixed fee');
   const feeBps = nonNegativeInteger(input.appFeeBasisPoints ?? 0, 'App fee basis points');
