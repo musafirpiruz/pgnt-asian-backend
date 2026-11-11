@@ -2237,35 +2237,52 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildProfile(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: cream,
-        indicatorColor: gold.withValues(alpha: 0.35),
-        selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
-        onDestinationSelected: (index) {
-          setState(() => selectedTab = index);
-        },
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.home_outlined),
-            selectedIcon: const Icon(Icons.home),
-            label: t('home'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.receipt_long_outlined),
-            selectedIcon: const Icon(Icons.receipt_long),
-            label: t('history'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-            selectedIcon: const Icon(Icons.account_balance_wallet),
-            label: t('wallet'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.support_agent_outlined),
-            selectedIcon: const Icon(Icons.support_agent),
-            label: t('support'),
-          ),
-        ],
+      bottomNavigationBar: Container(
+        margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: darkRed.withValues(alpha: 0.10),
+              blurRadius: 18,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: NavigationBar(
+          height: 78,
+          backgroundColor: Colors.white,
+          indicatorColor: Colors.transparent,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
+          onDestinationSelected: (index) {
+            setState(() => selectedTab = index);
+          },
+          destinations: [
+            NavigationDestination(
+              icon: const Icon(Icons.home_outlined),
+              selectedIcon: const Icon(Icons.home),
+              label: t('home'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.receipt_long_outlined),
+              selectedIcon: const Icon(Icons.receipt_long),
+              label: t('history'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.account_balance_wallet_outlined),
+              selectedIcon: const Icon(Icons.account_balance_wallet),
+              label: t('wallet'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.support_agent_outlined),
+              selectedIcon: const Icon(Icons.support_agent),
+              label: t('support'),
+            ),
+          ],
+        ),
       ),
     );
   }
