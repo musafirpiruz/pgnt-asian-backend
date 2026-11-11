@@ -114,3 +114,41 @@ test('rounds combined provider wholesale amount and fee upward to the next EUR c
   }), expected);
   assert.equal(result.wholesaleTotalCents, 101);
 });
+
+
+const { calculateRangedCustomerPrice } = require('../dtone-ranged-pricing');
+
+test('calculates a EUR customer charge from provider wholesale plus app and Stripe fees', () => {
+  const result = calculateRangedCustomerPrice(
+    { wholesaleTotalCents: 190 },
+    { feeCents: 49, stripeFeePercent: 1.5, stripeFixedFeeCents: 25 }
+  );
+  assert.equal(result.currency, 'EUR');
+  assert.equal(result.wholesaleCents, 190);
+  assert.equal(result.feeCents, 49);
+  assert.equal(result.finalPriceCents, 268);
+  assert.ok(result.retainedAfterEstimatedStripeFeeCents >= 239);
+});
+
+test('ranged pricing rejects missing wholesale evidence and unsafe fee settings', () => {
+  assert.throws(() => calculateRangedCustomerPrice(null, {
+    feeCents: 49, stripeFeePercent: 1.5, stripeFixedFeeCents: 25,
+  }), /invalid/i);
+  assert.throws(() => calculateRangedCustomerPrice({ wholesaleTotalCents: 190 }, {
+    feeCents: -1, stripeFeePercent: 1.5, stripeFixedFeeCents: 25,
+  }), /invalid/i);
+  assert.throws(() => calculateRangedCustomerPrice({ wholesaleTotalCents: 190 }, {
+    feeCents: 49, stripeFeePercent: 100, stripeFixedFeeCents: 25,
+  }), /invalid/i);
+  assert.throws(() => calculateRangedCustomerPrice({ wholesaleTotalCents: 190 }, {
+    feeCents: 49, stripeFeePercent: 1.5, stripeFixedFeeCents: 1.5,
+  }), /invalid/i);
+});
+
+test('ranged pricing grosses up until the rounded Stripe fee is fully covered', () => {
+  const result = calculateRangedCustomerPrice(
+    { wholesaleTotalCents: 101 },
+    { feeCents: 0, stripeFeePercent: 2.9, stripeFixedFeeCents: 30 }
+  );
+  assert.ok(result.finalPriceCents - result.estimatedStripeFeeCents >= 101);
+});
