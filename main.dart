@@ -204,6 +204,48 @@ class MobileOperator {
   }
 }
 
+class CatalogTopUpProduct {
+  final String productId;
+  final String providerProductId;
+  final int recipientAmount;
+  final String recipientCurrency;
+  final int priceEurCents;
+
+  const CatalogTopUpProduct({
+    required this.productId,
+    required this.providerProductId,
+    required this.recipientAmount,
+    required this.recipientCurrency,
+    required this.priceEurCents,
+  });
+
+  factory CatalogTopUpProduct.fromJson(Map<String, dynamic> json) {
+    final id = (json['productId'] ?? '').toString().trim();
+    final provider = (json['providerProductId'] ?? '').toString().trim();
+    final amount = json['recipientAmount'];
+    final price = json['priceEurCents'];
+    if (!RegExp(r'^[1-9][0-9]*$').hasMatch(id) ||
+        provider.isEmpty ||
+        amount is! num ||
+        !amount.isFinite ||
+        amount <= 0 ||
+        amount != amount.roundToDouble() ||
+        price is! num ||
+        !price.isFinite ||
+        price <= 0 ||
+        price != price.roundToDouble()) {
+      throw const FormatException('Invalid verified catalog product.');
+    }
+    return CatalogTopUpProduct(
+      productId: id,
+      providerProductId: provider,
+      recipientAmount: amount.toInt(),
+      recipientCurrency: (json['recipientCurrency'] ?? '').toString(),
+      priceEurCents: price.toInt(),
+    );
+  }
+}
+
 // Brand-inspired compact marks keep operator cards recognizable without
 // relying on emoji artwork. Official image assets can replace these later.
 class OperatorBrandMark extends StatelessWidget {
@@ -1441,6 +1483,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
   int _registryOperatorsRequestGeneration = 0;
+  List<CatalogTopUpProduct> _verifiedProducts = const [];
+  CatalogTopUpProduct? _selectedProduct;
+  String? _verifiedProductsOperatorKey;
+  int _verifiedProductsRequestGeneration = 0;
   int selectedAmount = 10;
   int selectedTab = 0;
   bool isLoading = false;
@@ -1750,6 +1796,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
             ? preferred.first
             : (current.isNotEmpty ? current.first : parsed.first);
         selectedOperator = null;
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = null;
         priceQuote = null;
         priceQuoteError = null;
       });
@@ -1858,26 +1907,114 @@ class _PgntHomePageState extends State<PgntHomePage> {
     return '€${(cents / 100).toStringAsFixed(2)}';
   }
 
+  Future<void> _loadVerifiedProducts(MobileOperator operator) async {
+    final key = operator.operatorKey;
+    if (key == null || key.isEmpty) {
+      setState(() {
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = null;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+      return;
+    }
+    final generation = ++_verifiedProductsRequestGeneration;
+    final country = selectedCountry.code;
+    setState(() {
+      _verifiedProducts = const [];
+      _selectedProduct = null;
+      _verifiedProductsOperatorKey = null;
+      priceQuote = null;
+      priceQuoteError = null;
+      isQuoteLoading = true;
+    });
+    try {
+      final uri = Uri.parse(
+        '$backendBaseUrl/api/countries/${Uri.encodeComponent(country)}/operators/${Uri.encodeComponent(key)}/products',
+      ).replace(queryParameters: {'language': languageCode});
+      final response = await http.get(
+        uri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 20));
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode != 200 ||
+          decoded is! Map ||
+          decoded['products'] is! List) {
+        throw Exception('د دې شبکې تایید شوي مقدارونه اوس نشته.');
+      }
+      final parsed = <CatalogTopUpProduct>[];
+      for (final raw in decoded['products'] as List) {
+        if (raw is! Map) continue;
+        try {
+          parsed.add(CatalogTopUpProduct.fromJson(
+            Map<String, dynamic>.from(raw),
+          ));
+        } catch (_) {
+          // Never offer malformed or unverified catalog rows.
+        }
+      }
+      if (!mounted ||
+          generation != _verifiedProductsRequestGeneration ||
+          country != selectedCountry.code ||
+          key != selectedOperator?.operatorKey) {
+        return;
+      }
+      setState(() {
+        _verifiedProducts = parsed;
+        _verifiedProductsOperatorKey = key;
+        _selectedProduct = null;
+        priceQuote = null;
+        priceQuoteError = parsed.isEmpty
+            ? 'د DT One له خوا تایید شوي مقدارونه د دې شبکې لپاره نشته.'
+            : null;
+      });
+    } catch (error) {
+      if (!mounted ||
+          generation != _verifiedProductsRequestGeneration ||
+          country != selectedCountry.code ||
+          key != selectedOperator?.operatorKey) {
+        return;
+      }
+      setState(() {
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = key;
+        priceQuote = null;
+        priceQuoteError = error.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted && generation == _verifiedProductsRequestGeneration) {
+        setState(() => isQuoteLoading = false);
+      }
+    }
+  }
+
+  void selectVerifiedProduct(CatalogTopUpProduct product) {
+    setState(() {
+      _selectedProduct = product;
+      selectedAmount = product.recipientAmount;
+      customAmountController.text = product.recipientAmount.toString();
+      priceQuote = null;
+      priceQuoteError = null;
+    });
+    loadPriceQuote();
+  }
+
   Future<void> loadPriceQuote() async {
     final operator = selectedOperator;
-    if (operator == null) {
+    final product = _selectedProduct;
+    if (operator == null || product == null) {
       if (mounted) setState(() { priceQuote = null; priceQuoteError = null; });
       return;
     }
-
     final countryCode = selectedCountry.code;
     final amount = selectedAmount;
+    final productId = product.productId;
     setState(() { isQuoteLoading = true; priceQuoteError = null; });
-
     try {
       final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(
-        queryParameters: {
-          'country': countryCode,
-          'operator': operator.name,
-          'amount': '$amount',
-          if (operator.operatorKey != null && operator.operatorKey!.isNotEmpty)
-            'operatorKey': operator.operatorKey!,
-        },
+        queryParameters: {'country': countryCode, 'productId': productId},
       );
 
       final response = await http
@@ -1909,6 +2046,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted ||
           countryCode != selectedCountry.code ||
           amount != selectedAmount ||
+          productId != _selectedProduct?.productId ||
           operator.operatorKey != selectedOperator?.operatorKey || operator.name != selectedOperator?.name) {
         return;
       }
@@ -1948,7 +2086,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (mounted &&
           countryCode == selectedCountry.code &&
           amount == selectedAmount &&
-          operator.name == selectedOperator?.name) {
+          operator.name == selectedOperator?.name &&
+          productId == _selectedProduct?.productId) {
         setState(() => isQuoteLoading = false);
       }
     }
@@ -1960,6 +2099,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() {
       selectedCountry = country;
       selectedOperator = null;
+      _verifiedProducts = const [];
+      _selectedProduct = null;
+      _verifiedProductsOperatorKey = null;
       selectedAmount = 10;
       phoneController.clear();
       customAmountController.text = '10';
@@ -1996,7 +2138,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       priceQuote = null;
       priceQuoteError = null;
     });
-    loadPriceQuote();
+    _loadVerifiedProducts(detected);
   }
 
   void showMessage(String message) {
@@ -2095,7 +2237,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildOperatorSelector(),
           const SizedBox(height: 18),
           _buildStepHeader(4, t('amount')),
-          buildCustomAmountField(),
+          buildVerifiedProductSelector(),
           const SizedBox(height: 14),
           buildPriceCard(),
           const SizedBox(height: 18),
@@ -2332,10 +2474,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
               onTap: () {
                 setState(() {
                   selectedOperator = item;
+                  _verifiedProducts = const [];
+                  _selectedProduct = null;
+                  _verifiedProductsOperatorKey = null;
                   priceQuote = null;
                   priceQuoteError = null;
                 });
-                loadPriceQuote();
+                _loadVerifiedProducts(item);
               },
               child: Container(
                 width: cardWidth,
@@ -2404,46 +2549,58 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
 
-  Widget buildCustomAmountField() {
-    void applyAmount(String raw) {
-      final value = int.tryParse(raw.trim());
-      if (value == null || value < 10 || value > 3000) {
-        showMessage('مبلغ باید له ۱۰ څخه تر ۳۰۰۰ پورې وي.');
-        return;
-      }
-      setState(() {
-        selectedAmount = value;
-        priceQuote = null;
-        priceQuoteError = null;
-      });
-      loadPriceQuote();
+  Widget buildVerifiedProductSelector() {
+    if (selectedOperator == null) return const Text('لومړی شبکه وټاکئ.');
+    if (isQuoteLoading && _verifiedProducts.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
     }
-
-    return TextField(
-      controller: customAmountController,
-      keyboardType: TextInputType.number,
-      maxLength: 4,
-      decoration: InputDecoration(
-        labelText: '${t('customAmount')} (${selectedCountry.currency})',
-        hintText: '10 - 3000',
-        helperText: 'له ۱۰ څخه تر ۳۰۰۰ پورې هر مطلوب مبلغ ولیکئ.',
-        counterText: '',
-        prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
-        suffixIcon: IconButton(
-          tooltip: 'Check amount and price',
-          icon: const Icon(Icons.check_circle_outline, color: primaryRed),
-          onPressed: () => applyAmount(customAmountController.text),
+    if (_verifiedProducts.isEmpty) {
+      return Text(
+        priceQuoteError ?? 'د دې شبکې لپاره د DT One تایید شوي مقدارونه نشته.',
+        style: const TextStyle(color: errorRed),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('یوازې د DT One تایید شوي مقدارونه ښکاري.',
+            style: TextStyle(color: Colors.black54, fontSize: 12)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _verifiedProducts.map((product) {
+            final selected = _selectedProduct?.productId == product.productId;
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => selectVerifiedProduct(product),
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 112),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFFFF1F0) : cardWhite,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: selected ? primaryRed : const Color(0xFFE7DED2),
+                    width: selected ? 1.6 : 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${product.recipientAmount} ${product.recipientCurrency}',
+                        style: TextStyle(color: selected ? primaryRed : Colors.black87, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 3),
+                    Text('DT One #${product.providerProductId}',
+                        style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                    if (selected) const Icon(Icons.check_circle, color: primaryRed, size: 15),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
         ),
-      ),
-      onChanged: (_) {
-        if (priceQuote != null) {
-          setState(() {
-            priceQuote = null;
-            priceQuoteError = null;
-          });
-        }
-      },
-      onSubmitted: applyAmount,
+      ],
     );
   }
 
@@ -2580,9 +2737,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
       return;
     }
 
-    final enteredAmount = int.tryParse(customAmountController.text.trim());
-    if (enteredAmount == null || enteredAmount < 10 || enteredAmount > 3000 || enteredAmount != selectedAmount) {
-      showMessage('لومړی د ۱۰ او ۳۰۰۰ ترمنځ مبلغ ولیکئ او د تایید نښه کېکاږئ.');
+    if (_selectedProduct == null ||
+        _verifiedProductsOperatorKey != selectedOperator!.operatorKey ||
+        priceQuote?['productId']?.toString() != _selectedProduct!.productId) {
+      showMessage('لومړی د DT One له خوا تایید شوی مقدار وټاکئ او قیمت تایید کړئ.');
       return;
     }
 
