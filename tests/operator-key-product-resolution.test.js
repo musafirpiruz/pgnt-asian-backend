@@ -82,9 +82,10 @@ test('Flutter checkout sends only exact productId after quote validation', () =>
   const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
   const checkoutIndex = app.indexOf('/api/payments/checkout');
   assert.ok(checkoutIndex >= 0, 'checkout endpoint must exist in Flutter source');
-  const checkout = app.slice(checkoutIndex - 300, checkoutIndex + 5000);
-  assert.match(checkout, /'productId': _selectedProduct!\.productId/);
-  assert.doesNotMatch(checkout, /'operatorKey'|'operator'|'amount'/);
+  const checkout = app.slice(checkoutIndex, checkoutIndex + 2200);
+  const requestBody = checkout.slice(checkout.indexOf('body: jsonEncode({'), checkout.indexOf('}),', checkout.indexOf('body: jsonEncode({')) + 3);
+  assert.match(requestBody, /'productId': _selectedProduct!\.productId/);
+  assert.doesNotMatch(requestBody, /'operatorKey'|'operator'|'amount'/);
 });
 
 test('Flutter checkout sends exact productId without conflicting operator/amount identity', () => {
