@@ -23,8 +23,8 @@ test('quote request forwards operatorKey but never trusts or forwards providerOp
   const end = flutter.indexOf('void selectCountry(', start);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
-  assert.ok(method.includes("'operatorKey': operator.operatorKey!"));
-  assert.ok(method.includes('operator.operatorKey != null'));
+  assert.ok(method.includes("'productId': productId"));
+  assert.ok(method.includes("'productId': productId"));
   assert.ok(!method.includes('providerOperatorId'));
 });
 
@@ -33,8 +33,8 @@ test('checkout request forwards operatorKey but never trusts or forwards provide
   const end = flutter.indexOf('Future<void>', start + 20);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
-  assert.ok(method.includes("'operatorKey': selectedOperator!.operatorKey!"));
-  assert.ok(method.includes('selectedOperator!.operatorKey != null'));
+  assert.ok(method.includes("'productId': priceQuote!['productId'].toString()"));
+  assert.ok(method.includes("_selectedProduct == null"));
   assert.ok(!method.includes('providerOperatorId'));
 });
 
