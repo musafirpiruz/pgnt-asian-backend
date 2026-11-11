@@ -13,7 +13,7 @@ function product(overrides = {}) {
     type: 'RANGED_VALUE_RECHARGE',
     destination: {
       unit: 'AFN',
-      amount: { min: 10, max: 3000, increment: 10 },
+      amount: { min: 75, max: 3000, increment: 10 },
     },
     accepted_calculation_modes: ['DESTINATION_AMOUNT'],
     ...overrides,
@@ -25,12 +25,12 @@ test('parses a valid DT One ranged recharge capability without activating it', (
   assert.ok(capability);
   assert.equal(capability.productId, '98765');
   assert.equal(capability.destinationCurrency, 'AFN');
-  assert.equal(capability.selectableMinAmount, 10);
+  assert.equal(capability.selectableMinAmount, 75);
   assert.equal(capability.selectableMaxAmount, 3000);
   assert.equal(capability.active, false);
 });
 
-test('intersects provider bounds with PGNT 10–3000 policy and increment', () => {
+test('intersects provider bounds with PGNT 75–3000 policy and increment', () => {
   const capability = parseRangedProductCapability(product({
     destination: { unit: 'PKR', amount: { min: 25, max: 5000, increment: 25 } },
   }));
@@ -50,13 +50,13 @@ test('rejects invalid, unsupported, or incomplete provider ranged metadata', () 
     accepted_calculation_modes: ['SOURCE_AMOUNT'],
   })), null);
   assert.equal(parseRangedProductCapability(product({
-    destination: { unit: 'AFN', amount: { min: 10, max: 3000 } },
+    destination: { unit: 'AFN', amount: { min: 75, max: 3000 } },
   })), null);
   assert.equal(parseRangedProductCapability(product({
     destination: { unit: 'AFN', amount: { min: 3000, max: 10, increment: 1 } },
   })), null);
   assert.equal(parseRangedProductCapability(product({
-    destination: { unit: 'UNKNOWN', amount: { min: 10, max: 3000, increment: 1 } },
+    destination: { unit: 'UNKNOWN', amount: { min: 75, max: 3000, increment: 1 } },
   })), null);
 });
 
@@ -67,7 +67,7 @@ test('accepts only integer customer amounts inside provider bounds and on exact 
   for (const amount of [50, 100, 500, 1000]) {
     assert.equal(isValidRangedDestinationAmount(amount, capability), true);
   }
-  for (const amount of [10, 49, 75, 1001, 3000, 50.5, 'abc']) {
+  for (const amount of [10, 49, 74, 1001, 3000, 50.5, 'abc']) {
     assert.equal(isValidRangedDestinationAmount(amount, capability), false);
   }
 });
@@ -80,9 +80,9 @@ test('rejects fractional local-currency bounds and increments until an integer-a
 
 test('requires PGNT policy and a verified ranged capability before amount selection', () => {
   const capability = parseRangedProductCapability(product());
-  assert.equal(isValidRangedDestinationAmount(10, capability), true);
+  assert.equal(isValidRangedDestinationAmount(75, capability), true);
   assert.equal(isValidRangedDestinationAmount(3000, capability), true);
-  assert.equal(isValidRangedDestinationAmount(9, capability), false);
+  assert.equal(isValidRangedDestinationAmount(74, capability), false);
   assert.equal(isValidRangedDestinationAmount(3001, capability), false);
   assert.equal(isValidRangedDestinationAmount(100, null), false);
 });
