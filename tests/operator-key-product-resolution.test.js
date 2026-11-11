@@ -67,8 +67,8 @@ test('mapping migration is deferred until registry tables exist and never seeds 
 test('exact catalog product ID takes precedence and is country-scoped', () => {
   const resolver = section('async function getProduct(', '// Calculate the final customer price.');
   assert.match(resolver, /if \(productId !== null && productId !== undefined/);
-  assert.match(resolver, /p\\.id = \\$1::bigint/);
-  assert.match(resolver, /p\\.country = \\$2/);
+  assert.ok(resolver.includes('p.id = $1::bigint'));
+  assert.ok(resolver.includes('p.country = $2'));
   for (const token of ['country_operator_products', 'cop.active = TRUE', 'cop.verified_at IS NOT NULL', 'o.verified_at IS NOT NULL', 'p.wholesale_price_eur_cents > 0']) {
     assert.ok(resolver.includes(token), 'exact product resolver missing verified mapping rule: ' + token);
   }
