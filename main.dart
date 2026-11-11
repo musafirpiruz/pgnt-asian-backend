@@ -73,7 +73,6 @@ class AppCountry {
     final code = (json['code'] ?? '').toString().trim().toUpperCase();
     final currency = (json['currency'] ?? '').toString().trim().toUpperCase();
     if (!RegExp(r'^[A-Z]{2}
-const List<AppCountry> countries = [
   AppCountry(
     code: 'AF',
     name: 'Afghanistan',
@@ -3721,37 +3720,3 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
   
 }
-).hasMatch(code) ||
-        !RegExp(r'^[A-Z]{3}
-const List<AppCountry> countries = [
-  AppCountry(
-    code: 'AF',
-    name: 'Afghanistan',
-    flag: '🇦🇫',
-    currency: 'AFN',
-    symbol: '؋',
-  ),
-  AppCountry(
-    code: 'PK',
-    name: 'Pakistan',
-    flag: '🇵🇰',
-    currency: 'PKR',
-    symbol: 'Rs',
-  ),
-  AppCountry(
-    code: 'IN',
-    name: 'India',
-    flag: '🇮🇳',
-    currency: 'INR',
-    symbol: '₹',
-  ),
-  AppCountry(
-    code: 'BD',
-    name: 'Bangladesh',
-    flag: '🇧🇩',
-    currency: 'BDT',
-    symbol: '৳',
-  ),
-];
-
-// Six app languages
