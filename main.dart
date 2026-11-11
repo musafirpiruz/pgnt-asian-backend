@@ -1812,8 +1812,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
   }
 
-  // Prefer the server registry when it is available; retain the bundled
-  // curated list as an offline/backward-compatible fallback.
+  // Customer-selectable operators must always come from the verified server registry.
   List<MobileOperator> get countryOperators {
     // Never expose bundled/demo operators when the live registry is unavailable.
     // An empty registry response is authoritative: only verified provider
@@ -1849,7 +1848,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
         uri,
         headers: const {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return;
+      if (response.statusCode != 200) {
+        throw Exception('د شبکو تایید شوی لېست اوس نه ترلاسه کېږي (HTTP ${response.statusCode}).');
+      }
       final decoded = jsonDecode(response.body);
       if (decoded is! Map || decoded['operators'] is! List) {
         throw Exception('د شبکو د سرور ځواب ناسم دی.');
