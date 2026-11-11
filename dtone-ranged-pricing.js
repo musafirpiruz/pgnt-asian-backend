@@ -140,4 +140,88 @@ function calculateRangedCustomerPrice(quote, pricing = {}) {
   });
 }
 
-module.exports = { parseRangedWholesalePrice, calculateRangedCustomerPrice };
+
+const RANGED_DESTINATION_CURRENCIES = new Set(['AFN', 'PKR', 'INR', 'BDT']);
+
+/**
+ * Build the exact two-step DT One create request for a destination-amount
+ * ranged recharge. auto_confirm is deliberately false so payment can happen
+ * before the provider transaction is confirmed.
+ */
+function buildRangedTransactionPayload(input = {}) {
+  const productId = String(input.productId || '').trim();
+  const externalId = String(input.externalId || '').trim();
+  const destinationCurrency = String(input.destinationCurrency || '').trim().toUpperCase();
+  const destinationAmount = Number(input.destinationAmount);
+  const phone = String(input.internationalPhone || '').trim();
+  let callback;
+  try { callback = new URL(String(input.callbackUrl || '')); } catch (_) {}
+
+  if (!/^\\d{1,18}$/.test(productId) ||
+      !/^[A-Za-z0-9._:-]{1,100}$/.test(externalId) ||
+      !RANGED_DESTINATION_CURRENCIES.has(destinationCurrency) ||
+      !Number.isSafeInteger(destinationAmount) || destinationAmount < 75 || destinationAmount > 3000 ||
+      !/^\\+[1-9]\\d{7,14}$/.test(phone) ||
+      !callback || callback.protocol !== 'https:') {
+    throw new Error('Ranged DT One transaction request contains invalid identity, amount, recipient, currency, or callback URL.');
+  }
+
+  return Object.freeze({
+    external_id: externalId,
+    product_id: Number(productId),
+    calculation_mode: 'DESTINATION_AMOUNT',
+    destination: {
+      unit_type: 'CURRENCY',
+      unit: destinationCurrency,
+      amount: destinationAmount,
+    },
+    credit_party_identifier: { mobile_number: phone },
+    auto_confirm: false,
+    callback_url: callback.toString(),
+  });
+}
+
+/**
+ * Return the DT One async confirmation path only while a verified CREATED
+ * quote is still within its provider-issued confirmation window.
+ */
+function getRangedConfirmationPath(quote, now = Date.now()) {
+  const transactionId = String(quote?.transactionId || '').trim();
+  const expiration = new Date(quote?.confirmationExpiresAt || '');
+  if (!/^\\d+$/.test(transactionId) ||
+      !Number.isFinite(expiration.getTime()) ||
+      !Number.isFinite(now) ||
+      expiration.getTime() <= now ||
+      quote?.providerStatus !== 'CREATED' ||
+      quote?.autoConfirmed !== false) {
+    throw new Error('DT One ranged quote is not eligible for confirmation.');
+  }
+  return `/v1/async/transactions/${encodeURIComponent(transactionId)}/confirm`;
+}
+
+/** Verify the provider's response after an explicit two-step confirmation. */
+function verifyRangedConfirmation(response, expected = {}) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error('DT One ranged confirmation response is invalid.');
+  }
+  const transactionId = String(response.id ?? '').trim();
+  const externalId = String(response.external_id || '');
+  const productId = String(response.product?.id ?? '').trim();
+  const status = String(response.status?.message || response.status || '').trim().toUpperCase();
+  if (!/^\\d+$/.test(transactionId) ||
+      transactionId !== String(expected.transactionId || '') ||
+      externalId !== String(expected.externalId || '') ||
+      productId !== String(expected.productId || '') ||
+      status !== 'CONFIRMED') {
+    throw new Error('DT One ranged confirmation identity or CONFIRMED status could not be verified.');
+  }
+  return Object.freeze({
+    transactionId,
+    externalId,
+    productId,
+    providerStatus: 'CONFIRMED',
+    confirmedAt: new Date().toISOString(),
+  });
+}
+
+module.exports = { parseRangedWholesalePrice, calculateRangedCustomerPrice, buildRangedTransactionPayload, getRangedConfirmationPath, verifyRangedConfirmation };
