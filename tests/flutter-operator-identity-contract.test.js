@@ -18,20 +18,15 @@ test('Flutter operator model keeps stable registry identity separate from displa
   assert.ok(model.includes('this.providerOperatorId,'));
 });
 
-test('quote request forwards operatorKey but never trusts or forwards providerOperatorId', () => {
+test('quote request uses exact productId and never sends provider identity', () => {
   const start = flutter.indexOf('Future<void> loadPriceQuote()');
   const end = flutter.indexOf('void selectCountry(', start);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
   assert.ok(method.includes("'productId': productId"));
-  assert.ok(method.includes("'productId': productId"));
   assert.ok(!method.includes('providerOperatorId'));
-  const bodyStart = method.indexOf('body: jsonEncode({');
-  const bodyEnd = method.indexOf('}),', bodyStart);
-  assert.ok(bodyStart >= 0 && bodyEnd > bodyStart);
-  const requestBody = method.slice(bodyStart, bodyEnd);
-  assert.ok(!requestBody.includes('operatorKey'));
-  assert.ok(!requestBody.includes('amount'));
+  assert.ok(!method.includes('operatorKey'));
+  assert.ok(!method.includes("'amount'"));
 });
 
 test('checkout sends exact selected catalog product ID and never trusts provider IDs', () => {
@@ -42,6 +37,13 @@ test('checkout sends exact selected catalog product ID and never trusts provider
   assert.ok(method.includes("'productId': _selectedProduct!.productId"));
   assert.ok(method.includes("_selectedProduct == null"));
   assert.ok(!method.includes('providerOperatorId'));
+  const bodyStart = method.indexOf('body: jsonEncode({');
+  const bodyEnd = method.indexOf('}),', bodyStart);
+  assert.ok(bodyStart >= 0 && bodyEnd > bodyStart);
+  const requestBody = method.slice(bodyStart, bodyEnd);
+  assert.ok(!requestBody.includes('operatorKey'));
+  assert.ok(!requestBody.includes("'operator'"));
+  assert.ok(!requestBody.includes("'amount'"));
 });
 
 test('registry parser preserves stable IDs independently of localized display labels', () => {
