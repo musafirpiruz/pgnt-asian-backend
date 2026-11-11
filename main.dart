@@ -1487,7 +1487,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   CatalogTopUpProduct? _selectedProduct;
   String? _verifiedProductsOperatorKey;
   int _verifiedProductsRequestGeneration = 0;
-  int selectedAmount = 10;
+  int selectedAmount = 75;
   int selectedTab = 0;
   bool isLoading = false;
   bool isQuoteLoading = false;
@@ -1522,7 +1522,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void initState() {
     super.initState();
-    customAmountController.text = '10';
+    customAmountController.text = '75';
     _restoreFuture = _restoreLocalData();
     _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
