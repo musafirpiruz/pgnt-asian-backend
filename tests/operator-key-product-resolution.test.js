@@ -154,3 +154,15 @@ test('Flutter selects only verified catalog products and quotes by exact product
   assert.match(app, /_selectedProduct == null/);
   assert.doesNotMatch(app, /Widget buildCustomAmountField\\(\\)/);
 });
+
+
+test('Flutter selects verified catalog products and requests quotes by exact productId', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
+  assert.match(app, /class CatalogTopUpProduct/);
+  assert.match(app, /api\\/countries\\/\$\\{Uri\\.encodeComponent\\(country\\)\\}\\/operators\\/\$\\{Uri\\.encodeComponent\\(key\\)\\}\\/products/);
+  assert.match(app, /CatalogTopUpProduct\\.fromJson/);
+  assert.match(app, /buildVerifiedProductSelector\\(\\)/);
+  assert.match(app, /queryParameters: \\{ 'country': countryCode, 'productId': productId \\}/);
+  assert.match(app, /_selectedProduct == null/);
+  assert.doesNotMatch(app, /Widget buildCustomAmountField\\(\\)/);
+});
