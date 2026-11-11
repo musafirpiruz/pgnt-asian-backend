@@ -238,3 +238,18 @@ test('DT One product discovery remains a read-only candidate search, not an appr
   assert.match(route, /transactionCreated: false/);
   assert.doesNotMatch(route, /UPDATE product_catalog SET active\s*=\s*TRUE/);
 });
+
+
+test('country catalog import blocks legacy denomination collisions until identity migration is applied', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  const route = server.slice(start, end);
+  assert.match(server, /require\('\.\/catalog-natural-key'\)/);
+  assert.match(server, /denominationKey/);
+  assert.match(route, /legacy_denomination_unique/);
+  assert.match(route, /legacyDenominationConstraintPresent/);
+  assert.match(route, /legacyConstraintBlockedProducts/);
+  assert.match(route, /return res\.status\(409\)\.json/);
+  assert.match(route, /No catalog rows were changed; apply the reviewed product identity migration first/);
+  assert.match(route, /importedCount: 0/);
+});
