@@ -2191,19 +2191,34 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          appName,
-          style: TextStyle(
-            color: brightGold,
-            fontWeight: FontWeight.bold,
-          ),
+        automaticallyImplyLeading: false,
+        toolbarHeight: 76,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(25)),
+        ),
+        title: Row(
+          children: [
+            PopupMenuButton<String>(
+              tooltip: 'Language',
+              icon: const Icon(Icons.language, color: Colors.white),
+              onSelected: (code) => changeLanguage(code),
+              itemBuilder: (context) => languages.map((item) =>
+                PopupMenuItem<String>(value: item.code, child: Text(item.nativeName))).toList(),
+            ),
+            const SizedBox(width: 5),
+            const Expanded(
+              child: Text(appName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+            ),
+          ],
         ),
         actions: [
           IconButton(
             tooltip: t('settings'),
-            icon: const Icon(Icons.settings_outlined),
+            icon: const Icon(Icons.settings_outlined, color: Colors.white),
             onPressed: openSettings,
           ),
+          const SizedBox(width: 6),
         ],
       ),
       body: IndexedStack(
@@ -2252,17 +2267,67 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Widget buildHome() {
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
         children: [
-          const PgntBrandHeader(
-            subtitle: 'Mobile Recharge • Wallet • Support',
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0E3E2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(t('welcome').toUpperCase(),
+                        style: const TextStyle(color: primaryRed, fontSize: 19, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 12),
+                      Text('PGNT ASIAN TOPUP',
+                        style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 5),
+                      Text('Fast • Simple • Secure',
+                        style: TextStyle(color: Colors.black54, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => setState(() => selectedTab = 2),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 142),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [primaryRed, darkRed],
+                        begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.account_balance_wallet_outlined, color: Colors.white, size: 31),
+                        const SizedBox(height: 8),
+                        Text(t('wallet').toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+                        const SizedBox(height: 7),
+                        const Text('— EUR',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 18),
-          buildWelcomeCard(),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
           _buildStepHeader(1, t('selectCountry')),
           buildCountrySelector(),
-          const SizedBox(height: 18),
+          const SizedBox(height: 15),
           _buildStepHeader(2, t('phone')),
           buildPhoneField(),
           const SizedBox(height: 18),
