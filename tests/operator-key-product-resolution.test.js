@@ -124,3 +124,13 @@ test('customer product list validates country/operator path and returns exact ca
   assert.match(route, /paymentCurrency: 'EUR'/);
   assert.match(route, /REGISTRY_LANGUAGES\.has/);
 });
+
+
+test('Flutter entry source contains one authoritative home page and one state class', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
+  const occurrences = (pattern) => (app.match(pattern) || []).length;
+  assert.equal(occurrences(/class PgntHomePage extends StatefulWidget/g), 1);
+  assert.equal(occurrences(/class _PgntHomePageState extends State<PgntHomePage>/g), 1);
+  assert.equal(occurrences(/Widget pgntSectionTitle\(/g), 1);
+  assert.equal(occurrences(/Widget pgntGoldDivider\(/g), 1);
+});
