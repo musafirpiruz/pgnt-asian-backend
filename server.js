@@ -17,9 +17,6 @@ const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
 
-const PGNT_MIN_AMOUNT = 10;
-const PGNT_MAX_AMOUNT = 3000;
-
 const app = express();
 
 app.disable('x-powered-by');
