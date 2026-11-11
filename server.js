@@ -592,10 +592,9 @@ async function getPricingSettings(client, country) {
     throw new Error('Invalid local-currency-per-EUR exchange rate.');
   }
 
-  const bonusPercent = Number(settings.bonus_percent);
-  if (!Number.isFinite(bonusPercent) || bonusPercent < 0 || bonusPercent > 100) {
-    throw new Error('Invalid bonus percentage.');
-  }
+  // Legacy general bonus is retired. Referral rewards are handled separately
+  // through the referral ledger and never alter top-up pricing.
+  const bonusPercent = 0;
 
   const stripeFeePercent = Number(settings.stripe_fee_percent);
   const stripeFixedFeeCents = requireNonNegativeInteger(
@@ -734,19 +733,9 @@ function calculateFinalPrice(product, pricing) {
     'fee'
   );
 
-  const bonusPercent = Number(
-    pricing.bonusPercent
-  );
-
-  if (
-    !Number.isFinite(bonusPercent) ||
-    bonusPercent < 0 ||
-    bonusPercent > 100
-  ) {
-    throw new Error(
-      'Invalid bonus percentage.'
-    );
-  }
+  // General bonus is permanently excluded from top-up price calculation.
+  // Referral rewards are separate ledger entries, not customer discounts.
+  const bonusPercent = 0;
 
   // Validate provider fee settings before gross-up. A percentage >= 100,
   // non-finite percentage, or invalid fixed fee can otherwise produce a
@@ -5506,7 +5495,8 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   const localCurrencyPerEur = Number(
     body.localCurrencyPerEur ?? body.afnPerEur
   );
-  const bonusPercent = Number(body.bonusPercent);
+  // Ignore legacy client bonus values. General bonus is always persisted as zero.
+  const bonusPercent = 0;
   const stripeFeePercent = Number(body.stripeFeePercent);
   const stripeFixedFeeCents = Number(body.stripeFixedFeeCents);
 
@@ -5522,16 +5512,6 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
 
   if (!Number.isFinite(localCurrencyPerEur) || localCurrencyPerEur <= 0 || localCurrencyPerEur > 1000000) {
     return res.status(400).json({ error: 'localCurrencyPerEur must be a positive number no greater than 1000000.' });
-  }
-
-  if (
-    !Number.isFinite(bonusPercent) ||
-    bonusPercent < 0 ||
-    bonusPercent > 100
-  ) {
-    return res.status(400).json({
-      error: 'bonusPercent must be between 0 and 100.',
-    });
   }
 
   if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
