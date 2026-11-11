@@ -62,5 +62,7 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/wallet-ledger-025.integration.sql
       - name: Test proposed DT One product metadata migration in isolated PostgreSQL schema
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-metadata-026.integration.sql
+      - name: Test proposed exact DT One product identity migration in isolated PostgreSQL schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-identity-027.integration.sql
       - name: Run regression tests
         run: npm test
