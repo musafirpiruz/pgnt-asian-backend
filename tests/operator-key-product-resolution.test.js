@@ -93,3 +93,34 @@ test('Flutter checkout sends exact productId without conflicting operator/amount
   assert.match(checkout, /'productId': priceQuote!\['productId'\]\.toString\(\)/);
   assert.match(checkout, /else \.\.\./);
 });
+
+
+test('customer product list returns only active products with fully verified country/operator/product mappings', () => {
+  const route = section(
+    "app.get('/api/countries/:countryCode/operators/:operatorKey/products'",
+    '// Public, read-only list of configured payment currencies.'
+  );
+  for (const token of [
+    'country_registry', 'country_operators', 'country_operator_products',
+    'p.product_id AS provider_product_id', 'p.id AS product_id',
+    'o.provider_operator_id IS NOT NULL', 'o.verified_at IS NOT NULL',
+    'cop.active = TRUE', 'cop.verified_at IS NOT NULL',
+    'p.active = TRUE', 'p.wholesale_price_eur_cents > 0',
+    'p.country = c.country_code', 'c.destination_currency = p.currency',
+    'ORDER BY p.amount, p.id',
+  ]) assert.ok(route.includes(token), 'missing verified product-list rule: ' + token);
+  assert.doesNotMatch(route, /INSERT\s+INTO|UPDATE\s+product_catalog|DELETE\s+FROM/i);
+});
+
+test('customer product list validates country/operator path and returns exact catalog product identity', () => {
+  const route = section(
+    "app.get('/api/countries/:countryCode/operators/:operatorKey/products'",
+    '// Public, read-only list of configured payment currencies.'
+  );
+  assert.match(route, /normalizeCountry\(req\.params\.countryCode\)/);
+  assert.match(route, /operatorKey\)\)/);
+  assert.match(route, /productId: String\(row\.product_id\)/);
+  assert.match(route, /providerProductId: String\(row\.provider_product_id\)/);
+  assert.match(route, /paymentCurrency: 'EUR'/);
+  assert.match(route, /REGISTRY_LANGUAGES\.has/);
+});
