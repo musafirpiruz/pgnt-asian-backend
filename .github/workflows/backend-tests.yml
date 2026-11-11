@@ -58,5 +58,7 @@ jobs:
         run: node --test tests/country-registry-migration-order.integration.test.js
       - name: Reconcile country registry schemas in isolated PostgreSQL schemas
         run: node --test tests/canonical-country-registry-reconciliation.integration.test.js
+      - name: Test proposed wallet ledger migration in isolated PostgreSQL schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/wallet-ledger-025.integration.sql
       - name: Run regression tests
         run: npm test
