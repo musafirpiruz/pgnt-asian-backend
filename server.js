@@ -1272,10 +1272,8 @@ app.post('/api/payments/checkout', async (req, res) => {
 
     const product = await getProduct(
       client,
-      input.productId,      input.country,
-      input.operator,
-      input.amount,
-      {}
+      input.productId,
+      input.country
     );
 
     if (product.country !== input.country) {
