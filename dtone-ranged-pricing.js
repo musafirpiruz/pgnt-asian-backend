@@ -153,6 +153,9 @@ function buildRangedTransactionPayload(input = {}) {
   const externalId = String(input.externalId || '').trim();
   const destinationCurrency = String(input.destinationCurrency || '').trim().toUpperCase();
   const destinationAmount = Number(input.destinationAmount);
+  const minAmount = Number(input.minAmount);
+  const maxAmount = Number(input.maxAmount);
+  const amountIncrement = Number(input.amountIncrement);
   const phone = String(input.internationalPhone || '').trim();
   let callback;
   try { callback = new URL(String(input.callbackUrl || '')); } catch (_) {}
