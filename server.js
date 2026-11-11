@@ -16,6 +16,7 @@ const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
+const { classifyCatalogCandidates } = require('./catalog-natural-key');
 
 const app = express();
 
@@ -4623,40 +4624,18 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
 
     const client = await pool.connect();
     try {
-      const existingIds = await client.query(
-        'SELECT product_id FROM product_catalog'
-      );
-      const existingIdSet = new Set(existingIds.rows.map(row => String(row.product_id)));
-      const existingDenominations = await client.query(
+      const existingCatalogRows = await client.query(
         'SELECT product_id, operator, amount, currency, active FROM product_catalog WHERE country = $1',
         [country]
       );
-      const byDenomination = new Map(existingDenominations.rows.map(row =>
-        [`${String(row.operator).trim().toLowerCase()}|${Number(row.amount)}|${String(row.currency).toUpperCase()}`, row]
-      ));
-
-      const toInsert = [];
-      const alreadyPresent = [];
-      const conflicts = [];
-      for (const product of candidates) {
-        if (existingIdSet.has(product.productId)) {
-          alreadyPresent.push(product.productId);
-          continue;
-        }
-        const key = `${product.operator.trim().toLowerCase()}|${product.amount}|${product.currency}`;
-        if (byDenomination.has(key)) {
-          conflicts.push({
-            productId: product.productId,
-            existingProductId: String(byDenomination.get(key).product_id),
-            operator: product.operator,
-            amount: product.amount,
-            currency: product.currency,
-            reason: 'Same operator and denomination already exists with a different DT One product ID; manual review required.',
-          });
-          continue;
-        }
-        toInsert.push(product);
-      }
+      // Classify existing-row and same-provider-batch denomination collisions.
+      // The legacy UNIQUE(country, operator, amount, currency) constraint remains
+      // in place, so ambiguous products are reported rather than silently dropped
+      // or causing the whole import transaction to fail.
+      const classified = classifyCatalogCandidates(candidates, existingCatalogRows.rows);
+      const toInsert = classified.toInsert;
+      const alreadyPresent = classified.alreadyPresent;
+      const conflicts = classified.conflicts;
 
       let pricingPreview = null;
       try {
