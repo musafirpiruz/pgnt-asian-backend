@@ -2059,7 +2059,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted ||
           countryCode != selectedCountry.code ||
           amount != selectedAmount ||
-          operator.operatorKey != selectedOperator?.operatorKey || operator.name != selectedOperator?.name) {
+          productId != _selectedProduct?.productId ||
+          operator.operatorKey != selectedOperator?.operatorKey ||
+          operator.name != selectedOperator?.name) {
         return;
       }
 
