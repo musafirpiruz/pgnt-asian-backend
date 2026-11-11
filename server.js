@@ -968,6 +968,10 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              AND cop.verified_at IS NOT NULL
              AND p.country = c.country_code
              AND p.currency = c.destination_currency
+             AND p.active = TRUE
+             AND p.product_id IS NOT NULL
+             AND p.wholesale_price_eur_cents IS NOT NULL
+             AND p.wholesale_price_eur_cents > 0
          )
        ORDER BY COALESCE(localized.display_name, o.display_name), o.operator_key`,
       [countryCode, language]
