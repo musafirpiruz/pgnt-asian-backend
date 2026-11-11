@@ -164,6 +164,11 @@ function buildRangedTransactionPayload(input = {}) {
       !/^[A-Za-z0-9._:-]{1,100}$/.test(externalId) ||
       !RANGED_DESTINATION_CURRENCIES.has(destinationCurrency) ||
       !Number.isSafeInteger(destinationAmount) || destinationAmount < 75 || destinationAmount > 3000 ||
+      !Number.isSafeInteger(minAmount) || minAmount < 75 ||
+      !Number.isSafeInteger(maxAmount) || maxAmount < minAmount || maxAmount > 3000 ||
+      !Number.isSafeInteger(amountIncrement) || amountIncrement < 1 ||
+      destinationAmount < minAmount || destinationAmount > maxAmount ||
+      (destinationAmount - minAmount) % amountIncrement !== 0 ||
       !/^\+[1-9]\d{7,14}$/.test(phone) ||
       !callback || callback.protocol !== 'https:') {
     throw new Error('Ranged DT One transaction request contains invalid identity, amount, recipient, currency, or callback URL.');
