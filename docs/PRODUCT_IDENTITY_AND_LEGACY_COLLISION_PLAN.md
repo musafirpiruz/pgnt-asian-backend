@@ -41,3 +41,23 @@ Status: design and acceptance checklist only. This document does not alter the d
 - Do not use workbook prices as proof of current DT One prices.
 - Do not remove the legacy unique constraint in the same change that introduces metadata without first testing all legacy query paths.
 - Do not apply the migration to production or activate products as part of this design task.
+
+
+## Code audit follow-up (2026-11-11)
+
+The source-level inventory has now confirmed these concrete legacy-key dependencies:
+
+- `database.sql` declares both the provider-ID uniqueness (`product_catalog.product_id`) and the legacy natural-key uniqueness (`country, operator, amount, currency`).
+- `migrate.js` contains three seed upserts targeting the legacy natural key (around lines 230, 259, and 304 in the audited branch revision). These must be converted deliberately; simply dropping the constraint would make those conflict targets invalid.
+- `server.js` has an exact internal catalog-ID resolver that joins the active country registry and requires active, verified operator and product mappings before returning a customer-selectable product.
+- The same resolver still contains a legacy operator-key/amount compatibility branch and a final older operator-label/amount fallback. The quote endpoint also accepts legacy operator/amount input. Checkout's validator accepts either exact product ID or legacy operator/amount identity. These compatibility paths are additional migration gates: they must be retired or explicitly bounded before same-denomination products can be safely exposed.
+- The customer product-list endpoint returns the internal catalog ID as `productId` and the DT One provider ID separately as `providerProductId`; Flutter checkout sends the exact internal `productId`.
+
+### Next implementation sequence
+
+1. Add regression tests proving that customer checkout requires an exact catalog product identity and that a supplied identity cannot be silently replaced by an operator/amount match. Preserve a deliberate compatibility window only if it is explicitly needed for older installed app versions.
+2. Update quote and checkout callers consistently, then update the Flutter request contract and tests.
+3. Rework all three migration seed upserts around provider identity with a production-like upgrade test.
+4. Only after these tests pass, prepare the additive product metadata migration and a separate constraint-removal migration.
+
+This follow-up is an inventory and sequencing update only. No database constraint, product row, import, activation, checkout behavior, or production service has been changed.
