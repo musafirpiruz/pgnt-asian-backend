@@ -4624,6 +4624,10 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
 
     const client = await pool.connect();
     try {
+      const allExistingIds = await client.query('SELECT product_id FROM product_catalog');
+      const existingIdSet = new Set(allExistingIds.rows.map(row => String(row.product_id)));
+      const alreadyRegistered = candidates.filter(product => existingIdSet.has(product.productId)).map(product => product.productId);
+      const newCandidates = candidates.filter(product => !existingIdSet.has(product.productId));
       const existingCatalogRows = await client.query(
         'SELECT product_id, operator, amount, currency, active FROM product_catalog WHERE country = $1',
         [country]
@@ -4632,9 +4636,9 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       // The legacy UNIQUE(country, operator, amount, currency) constraint remains
       // in place, so ambiguous products are reported rather than silently dropped
       // or causing the whole import transaction to fail.
-      const classified = classifyCatalogCandidates(candidates, existingCatalogRows.rows);
+      const classified = classifyCatalogCandidates(newCandidates, existingCatalogRows.rows);
       const toInsert = classified.toInsert;
-      const alreadyPresent = classified.alreadyPresent;
+      const alreadyPresent = [...alreadyRegistered, ...classified.alreadyPresent];
       const conflicts = classified.conflicts;
 
       let pricingPreview = null;
