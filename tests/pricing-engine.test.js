@@ -36,8 +36,10 @@ test('USD and GBP use the selected payment currency and minor-unit totals', () =
   assert.ok(usd.customerTotalMinor > gbp.convertedWholesaleMinor);
 });
 
-test('FX conversion rounds upward and does not use floating-point money', () => {
-  assert.equal(convertMinorUnits(101, 'EUR', 'USD', 110000000), 112);
+test('FX conversion rounds upward and returns a safe integer minor-unit amount', () => {
+  const converted = convertMinorUnits(101, 'EUR', 'USD', 110000000);
+  assert.equal(converted, 112);
+  assert.equal(Number.isSafeInteger(converted), true);
 });
 
 test('app percentage fee is included before Stripe gross-up', () => {
