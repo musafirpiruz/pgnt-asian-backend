@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - main
+      - feat/multi-currency-checkout-foundation-2026-11-10
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
