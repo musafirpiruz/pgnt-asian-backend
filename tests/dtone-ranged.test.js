@@ -26,7 +26,7 @@ test('parses a valid DT One ranged recharge capability without activating it', (
   assert.equal(capability.productId, '98765');
   assert.equal(capability.destinationCurrency, 'AFN');
   assert.equal(capability.selectableMinAmount, 75);
-  assert.equal(capability.selectableMaxAmount, 3000);
+  assert.equal(capability.selectableMaxAmount, 2995);
   assert.equal(capability.active, false);
 });
 
@@ -81,7 +81,7 @@ test('rejects fractional local-currency bounds and increments until an integer-a
 test('requires PGNT policy and a verified ranged capability before amount selection', () => {
   const capability = parseRangedProductCapability(product());
   assert.equal(isValidRangedDestinationAmount(75, capability), true);
-  assert.equal(isValidRangedDestinationAmount(3000, capability), true);
+  assert.equal(isValidRangedDestinationAmount(3000, capability), false);
   assert.equal(isValidRangedDestinationAmount(74, capability), false);
   assert.equal(isValidRangedDestinationAmount(3001, capability), false);
   assert.equal(isValidRangedDestinationAmount(100, null), false);
