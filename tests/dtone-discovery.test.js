@@ -119,7 +119,8 @@ test('automatic country catalog sync delegates denomination collisions to the sh
   assert.match(server, /require\('\.\/catalog-natural-key'\)/);
   assert.match(route, /classifyCatalogCandidates\(newCandidates, existingCatalogRows\.rows\)/);
   assert.match(route, /const conflicts = classified\.conflicts/);
-  assert.match(route, /manual review required/);
+  const classifier = fs.readFileSync(path.join(__dirname, '..', 'catalog-natural-key.js'), 'utf8');
+  assert.match(classifier, /manual review required/);
   assert.match(route, /ON CONFLICT DO NOTHING/);
 });
 
