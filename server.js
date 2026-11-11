@@ -16,7 +16,7 @@ const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
-const { classifyCatalogCandidates } = require('./catalog-natural-key');
+const { classifyCatalogCandidates, denominationKey } = require('./catalog-natural-key');
 
 const app = express();
 
@@ -4632,14 +4632,45 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         'SELECT product_id, operator, amount, currency, active FROM product_catalog WHERE country = $1',
         [country]
       );
-      // Classify existing-row and same-provider-batch denomination collisions.
-      // The legacy UNIQUE(country, operator, amount, currency) constraint remains
-      // in place, so ambiguous products are reported rather than silently dropped
-      // or causing the whole import transaction to fail.
+      // Provider product ID is the catalog identity. Distinct provider IDs may
+      // share a denomination after migration 027. Until that migration is applied,
+      // block only the affected imports so the legacy unique key cannot cause a
+      // partial or silently skipped catalog import.
       const classified = classifyCatalogCandidates(newCandidates, existingCatalogRows.rows);
       const toInsert = classified.toInsert;
       const alreadyPresent = [...alreadyRegistered, ...classified.alreadyPresent];
       const conflicts = classified.conflicts;
+      const legacyConstraintResult = await client.query(
+        `SELECT EXISTS (
+           SELECT 1 FROM pg_constraint c
+           WHERE c.conrelid = 'product_catalog'::regclass
+             AND c.contype = 'u'
+             AND (
+               SELECT array_agg(a.attname ORDER BY k.ordinality)
+               FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ordinality)
+               JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+             ) = ARRAY['country', 'operator', 'amount', 'currency']::name[]
+         ) AS legacy_denomination_unique`
+      );
+      const legacyDenominationConstraintPresent = legacyConstraintResult.rows[0]?.legacy_denomination_unique === true;
+      const existingDenominationKeys = new Set(existingCatalogRows.rows.map(denominationKey));
+      const candidateDenominationCounts = new Map();
+      for (const product of toInsert) {
+        const key = denominationKey(product);
+        candidateDenominationCounts.set(key, (candidateDenominationCounts.get(key) || 0) + 1);
+      }
+      const legacyConstraintBlockedProducts = legacyDenominationConstraintPresent
+        ? toInsert.filter(product =>
+            existingDenominationKeys.has(denominationKey(product)) ||
+            candidateDenominationCounts.get(denominationKey(product)) > 1
+          ).map(product => ({
+            productId: product.productId,
+            operator: product.operator,
+            amount: product.amount,
+            currency: product.currency,
+            reason: 'The legacy database denomination constraint is still installed. Apply the reviewed product identity migration before importing this same-denomination product.',
+          }))
+        : [];
 
       let pricingPreview = null;
       try {
@@ -4693,6 +4724,9 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         alreadyPresentCount: alreadyPresent.length,
         conflictCount: conflicts.length,
         rejectedCount: rejected.length,
+        legacyDenominationConstraintPresent,
+        legacyConstraintBlockedCount: legacyConstraintBlockedProducts.length,
+        legacyConstraintBlockedProducts,
         alreadyPresent,
         conflicts,
         rejected,
@@ -4705,6 +4739,14 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       };
 
       if (!confirmImport) return res.json(summary);
+      if (legacyConstraintBlockedProducts.length) {
+        return res.status(409).json({
+          ...summary,
+          importedCount: 0,
+          importConfirmed: false,
+          error: 'Some same-denomination provider products are blocked by the legacy database constraint. No catalog rows were changed; apply the reviewed product identity migration first.',
+        });
+      }
 
       await client.query('BEGIN');
       const imported = [];
