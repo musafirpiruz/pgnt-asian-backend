@@ -1692,7 +1692,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
         'Accept': 'application/json',
         'x-order-access-token': token,
       }).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return;
+      if (response.statusCode != 200) {
+        throw Exception('د شبکو تایید شوی لېست اوس نه ترلاسه کېږي (HTTP ${response.statusCode}).');
+      }
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic>) return;
       final nextStatus = _statusFromServer(
@@ -1813,19 +1815,32 @@ class _PgntHomePageState extends State<PgntHomePage> {
   // Prefer the server registry when it is available; retain the bundled
   // curated list as an offline/backward-compatible fallback.
   List<MobileOperator> get countryOperators {
+    // Never expose bundled/demo operators when the live registry is unavailable.
+    // An empty registry response is authoritative: only verified provider
+    // mappings may be shown to customers.
     if (_registryOperatorsCountry == selectedCountry.code) {
       return _registryOperators;
     }
-    return operators
-        .where((item) => item.countryCode == selectedCountry.code)
-        .toList();
+    return const [];
   }
 
   Future<void> _loadRegistryOperators(String countryCode) async {
-    // Ignore stale responses when the user changes country or language while
-    // an earlier registry request is still in flight.
+    // Fail closed immediately while the provider-verified registry is loading.
+    // Do not leave stale or bundled operators selectable during this request.
     final requestGeneration = ++_registryOperatorsRequestGeneration;
     final requestedLanguage = languageCode;
+    if (mounted) {
+      setState(() {
+        _registryOperators = const [];
+        _registryOperatorsCountry = countryCode;
+        selectedOperator = null;
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = null;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+    }
     try {
       final uri = Uri.parse(
         '$backendBaseUrl/api/countries/$countryCode/operators',
@@ -1836,7 +1851,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
       ).timeout(const Duration(seconds: 12));
       if (response.statusCode != 200) return;
       final decoded = jsonDecode(response.body);
-      if (decoded is! Map || decoded['operators'] is! List) return;
+      if (decoded is! Map || decoded['operators'] is! List) {
+        throw Exception('د شبکو د سرور ځواب ناسم دی.');
+      }
 
       final parsed = <MobileOperator>[];
       for (final raw in decoded['operators'] as List) {
@@ -1881,13 +1898,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
           priceQuoteError = null;
         }
       });
-    } catch (_) {
-      // Keep the bundled operator list if the registry is unavailable.
+    } catch (error) {
+      if (!mounted ||
+          requestGeneration != _registryOperatorsRequestGeneration ||
+          countryCode != selectedCountry.code ||
+          requestedLanguage != languageCode) {
+        return;
+      }
+      setState(() {
+        _registryOperators = const [];
+        _registryOperatorsCountry = countryCode;
+        selectedOperator = null;
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = null;
+        priceQuote = null;
+        priceQuoteError = 'د شبکو تایید شوی لېست نشته: ${error.toString().replaceFirst('Exception: ', '')}';
+      });
     }
   }
 
   List<int> get amounts =>
-      rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
+      rechargeAmounts[selectedCountry.currency] ?? const [];
 
   @override
   void dispose() {
@@ -2455,7 +2487,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   Widget buildOperatorSelector() {
     if (countryOperators.isEmpty) {
-      return Text(t('selectOperator'));
+      return Text(
+        priceQuoteError ?? 'د دې هېواد لپاره تایید شوې شبکې اوس نشته. مهرباني وکړئ وروسته بیا هڅه وکړئ.',
+        style: const TextStyle(color: errorRed),
+      );
     }
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2616,7 +2651,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const Divider(height: 18),
           _reviewRow(t('selectOperator'), selectedOperator?.name ?? '—'),
           const Divider(height: 18),
-          _reviewRow(t('amount'), '$selectedAmount ${selectedCountry.currency}'),
+          _reviewRow(
+            t('amount'),
+            _selectedProduct == null
+                ? '—'
+                : '${_selectedProduct!.recipientAmount} ${_selectedProduct!.recipientCurrency}',
+          ),
           const Divider(height: 18),
           _reviewRow(t('total'), quote?['formattedFinalPrice']?.toString() ?? t('priceNote')),
           if (quote == null)
@@ -2655,7 +2695,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
             const SizedBox(width: 10), Expanded(child: Text(t('price'))),
             Text(basePrice is String ? basePrice : '—', style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
-            Text('$selectedAmount ${selectedCountry.currency}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              _selectedProduct == null ? '—' : '${_selectedProduct!.recipientAmount} ${_selectedProduct!.recipientCurrency}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ]),
           if (quote != null && selectedCountry.code == 'AF') ...[
             const SizedBox(height: 10),
