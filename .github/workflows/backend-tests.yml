@@ -60,5 +60,7 @@ jobs:
         run: node --test tests/canonical-country-registry-reconciliation.integration.test.js
       - name: Test proposed wallet ledger migration in isolated PostgreSQL schema
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/wallet-ledger-025.integration.sql
+      - name: Test proposed DT One product metadata migration in isolated PostgreSQL schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-metadata-026.integration.sql
       - name: Run regression tests
         run: npm test
