@@ -166,6 +166,9 @@ test('builds a destination-amount DT One request with auto-confirm disabled', ()
     externalId: 'PGNT-ORDER-2',
     destinationCurrency: 'AFN',
     destinationAmount: 150,
+    minAmount: 75,
+    maxAmount: 3000,
+    amountIncrement: 5,
     internationalPhone: '+93700100100',
     callbackUrl: 'https://example.com/api/dtone/callback',
   });
@@ -178,12 +181,16 @@ test('builds a destination-amount DT One request with auto-confirm disabled', ()
 test('rejects invalid ranged transaction request fields and non-HTTPS callbacks', () => {
   const valid = {
     productId: '98765', externalId: 'PGNT-ORDER-2', destinationCurrency: 'AFN',
-    destinationAmount: 150, internationalPhone: '+93700100100',
+    destinationAmount: 150, minAmount: 75, maxAmount: 3000, amountIncrement: 5, internationalPhone: '+93700100100',
     callbackUrl: 'https://example.com/api/dtone/callback',
   };
   for (const patch of [
     { destinationAmount: 150.5 },
     { destinationAmount: 3001 },
+    { destinationAmount: 151 },
+    { minAmount: 160 },
+    { maxAmount: 140 },
+    { amountIncrement: 0 },
     { destinationCurrency: 'USD' },
     { internationalPhone: '0700100100' },
     { callbackUrl: 'http://example.com/callback' },
