@@ -2135,7 +2135,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       _verifiedProducts = const [];
       _selectedProduct = null;
       _verifiedProductsOperatorKey = null;
-      selectedAmount = 10;
+      selectedAmount = 75;
       phoneController.clear();
       customAmountController.text = '10';
       priceQuote = null;
