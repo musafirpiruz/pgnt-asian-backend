@@ -88,4 +88,56 @@ function parseRangedWholesalePrice(response, expected = {}) {
   });
 }
 
-module.exports = { parseRangedWholesalePrice };
+
+/**
+ * Calculate a EUR Checkout amount from a verified DT One ranged quote.
+ * Inputs are server-side settings only; no customer-supplied price is accepted.
+ * The Stripe gross-up guarantees the retained amount covers wholesale + app fee.
+ */
+function calculateRangedCustomerPrice(quote, pricing = {}) {
+  const wholesaleCents = Number(quote?.wholesaleTotalCents);
+  const feeCents = Number(pricing.feeCents);
+  const stripeFeePercent = Number(pricing.stripeFeePercent);
+  const stripeFixedFeeCents = Number(pricing.stripeFixedFeeCents);
+
+  if (!Number.isSafeInteger(wholesaleCents) || wholesaleCents <= 0 ||
+      !Number.isSafeInteger(feeCents) || feeCents < 0 ||
+      !Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100 ||
+      !Number.isSafeInteger(stripeFixedFeeCents) || stripeFixedFeeCents < 0) {
+    throw new Error('Ranged checkout pricing settings or verified wholesale amount are invalid.');
+  }
+
+  const targetNetCents = wholesaleCents + feeCents;
+  if (!Number.isSafeInteger(targetNetCents)) {
+    throw new Error('Ranged checkout target amount is outside the supported EUR range.');
+  }
+
+  const stripeRate = stripeFeePercent / 100;
+  let finalPriceCents = Math.ceil(
+    (targetNetCents + stripeFixedFeeCents) / (1 - stripeRate)
+  );
+  let estimatedStripeFeeCents =
+    Math.ceil(finalPriceCents * stripeRate) + stripeFixedFeeCents;
+
+  while (finalPriceCents - estimatedStripeFeeCents < targetNetCents) {
+    finalPriceCents += 1;
+    estimatedStripeFeeCents =
+      Math.ceil(finalPriceCents * stripeRate) + stripeFixedFeeCents;
+    if (!Number.isSafeInteger(finalPriceCents)) {
+      throw new Error('Ranged checkout customer price is outside the supported EUR range.');
+    }
+  }
+
+  return Object.freeze({
+    currency: 'EUR',
+    wholesaleCents,
+    feeCents,
+    estimatedStripeFeeCents,
+    stripeFeePercent,
+    stripeFixedFeeCents,
+    finalPriceCents,
+    retainedAfterEstimatedStripeFeeCents: finalPriceCents - estimatedStripeFeeCents,
+  });
+}
+
+module.exports = { parseRangedWholesalePrice, calculateRangedCustomerPrice };
