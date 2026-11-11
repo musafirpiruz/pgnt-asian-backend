@@ -660,12 +660,32 @@ async function getProduct(client, productId, requestedCountry = null, operator =
   if (productId !== null && productId !== undefined && String(productId).trim() !== '') {
     result = await client.query(
       `SELECT
-         id, country, currency, product_id AS dtone_product_id,
-         operator AS name, NULL::text AS description,
-         amount AS local_amount, price_eur_cents,
-         wholesale_price_eur_cents, active AS enabled
-       FROM product_catalog
-       WHERE id = $1::bigint AND country = $2
+         p.id, p.country, p.currency, p.product_id AS dtone_product_id,
+         p.operator AS name, NULL::text AS description,
+         p.amount AS local_amount, p.price_eur_cents,
+         p.wholesale_price_eur_cents, p.active AS enabled
+       FROM product_catalog p
+       JOIN country_registry c
+         ON c.country_code = p.country
+       JOIN country_operator_products cop
+         ON cop.product_catalog_id = p.id
+        AND cop.country_code = c.country_code
+       JOIN country_operators o
+         ON o.country_code = cop.country_code
+        AND o.operator_key = cop.operator_key
+       WHERE p.id = $1::bigint
+         AND p.country = $2
+         AND c.status = 'active'
+         AND c.destination_currency = p.currency
+         AND o.active = TRUE
+         AND o.provider_operator_id IS NOT NULL
+         AND BTRIM(o.provider_operator_id) <> ''
+         AND o.verified_at IS NOT NULL
+         AND cop.active = TRUE
+         AND cop.verified_at IS NOT NULL
+         AND p.product_id IS NOT NULL
+         AND p.wholesale_price_eur_cents IS NOT NULL
+         AND p.wholesale_price_eur_cents > 0
        LIMIT 2`,
       [productId, normalizeCountry(requestedCountry)]
     );
