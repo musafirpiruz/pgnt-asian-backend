@@ -112,7 +112,7 @@ test('automatic country catalog sync never activates products or creates transac
   assert.doesNotMatch(route, /UPDATE product_catalog SET active\s*=\s*TRUE|POST.*\/v1\/transactions/i);
 });
 
-test('automatic country catalog sync delegates denomination collisions to the shared classifier', () => {
+test('automatic country catalog sync delegates provider identity deduplication to the shared classifier', () => {
   const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country', requireAdmin");
   const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
   const route = server.slice(start, end);
@@ -120,7 +120,8 @@ test('automatic country catalog sync delegates denomination collisions to the sh
   assert.match(route, /classifyCatalogCandidates\(newCandidates, existingCatalogRows\.rows\)/);
   assert.match(route, /const conflicts = classified\.conflicts/);
   const classifier = fs.readFileSync(path.join(__dirname, '..', 'catalog-natural-key.js'), 'utf8');
-  assert.match(classifier, /manual review required/);
+  assert.match(classifier, /same provider product ID more than once/);
+  assert.doesNotMatch(classifier, /Same operator and denomination has another DT One product ID/);
   assert.match(route, /ON CONFLICT DO NOTHING/);
 });
 
