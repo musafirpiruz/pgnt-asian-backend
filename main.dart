@@ -215,7 +215,12 @@ class CatalogTopUpProduct {
     final id=(json['productId']??'').toString().trim();
     final provider=(json['providerProductId']??'').toString().trim();
     final amount=json['recipientAmount'], price=json['priceEurCents'];
-    if(!RegExp(r'^[1-9]\d*.hasMatch(id)||provider.isEmpty||amount is! num||!amount.isFinite||amount<=0||amount!=amount.roundToDouble()||price is! num||!price.isFinite||price<=0||price!=price.roundToDouble()) throw const FormatException('Invalid verified catalog product.');
+    if (!RegExp(r'^[1-9]\d*$').hasMatch(id) ||
+        provider.isEmpty || amount is! num || !amount.isFinite || amount <= 0 ||
+        amount != amount.roundToDouble() || price is! num || !price.isFinite ||
+        price <= 0 || price != price.roundToDouble()) {
+      throw const FormatException('Invalid verified catalog product.');
+    }
     return CatalogTopUpProduct(productId:id,providerProductId:provider,recipientAmount:amount.toInt(),recipientCurrency:(json['recipientCurrency']??'').toString(),priceEurCents:price.toInt());
   }
 }
@@ -5477,7 +5482,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
       setState((){_verifiedProducts=parsed;_verifiedProductsOperatorKey=key;_selectedProduct=null;priceQuote=null;priceQuoteError=parsed.isEmpty?'د DT One له خوا تایید شوي مقدارونه د دې شبکې لپاره نشته.':null;});
     }catch(error){
       if(!mounted||generation!=_verifiedProductsRequestGeneration||country!=selectedCountry.code||key!=selectedOperator?.operatorKey)return;
-      setState(()=>{_verifiedProducts=const[],_selectedProduct=null,_verifiedProductsOperatorKey=key,priceQuote=null,priceQuoteError=error.toString().replaceFirst('Exception: ','')});
+      setState(() {
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = key;
+        priceQuote = null;
+        priceQuoteError = error.toString().replaceFirst('Exception: ', '');
+      });
     }finally{if(mounted&&generation==_verifiedProductsRequestGeneration)setState(()=>isQuoteLoading=false);}
   }
 
