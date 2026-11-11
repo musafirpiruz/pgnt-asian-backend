@@ -88,17 +88,6 @@ test('Flutter checkout sends only exact productId after quote validation', () =>
   assert.doesNotMatch(requestBody, /'operatorKey'|'operator'|'amount'/);
 });
 
-test('Flutter checkout sends exact productId without conflicting operator/amount identity', () => {
-  const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
-  const checkoutIndex = app.indexOf('/api/payments/checkout');
-  assert.ok(checkoutIndex >= 0, 'checkout endpoint must exist in Flutter source');
-  const checkout = app.slice(checkoutIndex - 300, checkoutIndex + 5000);
-  assert.match(checkout, /if \(priceQuote\?\['productId'\] != null\)/);
-  assert.match(checkout, /'productId': priceQuote!\['productId'\]\.toString\(\)/);
-  assert.match(checkout, /else \.\.\./);
-});
-
-
 test('customer product list returns only active products with fully verified country/operator/product mappings', () => {
   const route = section(
     "app.get('/api/countries/:countryCode/operators/:operatorKey/products'",
