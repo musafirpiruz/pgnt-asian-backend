@@ -7,11 +7,11 @@ const path = require('node:path');
 
 const dart = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
 
-test('home top-up flow presents five numbered steps and custom amount control', () => {
+test('home top-up flow presents five numbered steps and verified product selection', () => {
   for (let step = 1; step <= 5; step += 1) {
     assert.match(dart, new RegExp('_buildStepHeader\\(' + step + ','));
   }
-  assert.match(dart, /buildCustomAmountField\(\)/);
+  assert.match(dart, /buildVerifiedProductSelector\(\)/);
   assert.match(dart, /customAmountController\.dispose\(\)/);
 });
 
