@@ -152,3 +152,72 @@ test('ranged pricing grosses up until the rounded Stripe fee is fully covered', 
   );
   assert.ok(result.finalPriceCents - result.estimatedStripeFeeCents >= 101);
 });
+
+
+const {
+  buildRangedTransactionPayload,
+  getRangedConfirmationPath,
+  verifyRangedConfirmation,
+} = require('../dtone-ranged-pricing');
+
+test('builds a destination-amount DT One request with auto-confirm disabled', () => {
+  const payload = buildRangedTransactionPayload({
+    productId: '98765',
+    externalId: 'PGNT-ORDER-2',
+    destinationCurrency: 'AFN',
+    destinationAmount: 150,
+    internationalPhone: '+93700100100',
+    callbackUrl: 'https://example.com/api/dtone/callback',
+  });
+  assert.equal(payload.calculation_mode, 'DESTINATION_AMOUNT');
+  assert.deepEqual(payload.destination, { unit_type: 'CURRENCY', unit: 'AFN', amount: 150 });
+  assert.equal(payload.auto_confirm, false);
+  assert.equal(payload.product_id, 98765);
+});
+
+test('rejects invalid ranged transaction request fields and non-HTTPS callbacks', () => {
+  const valid = {
+    productId: '98765', externalId: 'PGNT-ORDER-2', destinationCurrency: 'AFN',
+    destinationAmount: 150, internationalPhone: '+93700100100',
+    callbackUrl: 'https://example.com/api/dtone/callback',
+  };
+  for (const patch of [
+    { destinationAmount: 150.5 },
+    { destinationAmount: 3001 },
+    { destinationCurrency: 'USD' },
+    { internationalPhone: '0700100100' },
+    { callbackUrl: 'http://example.com/callback' },
+    { productId: '1;DROP' },
+  ]) {
+    assert.throws(() => buildRangedTransactionPayload({ ...valid, ...patch }), /invalid/i);
+  }
+});
+
+test('confirmation path is available only for an unexpired CREATED quote', () => {
+  const quote = {
+    transactionId: '123456789',
+    confirmationExpiresAt: new Date(5000).toISOString(),
+    providerStatus: 'CREATED',
+    autoConfirmed: false,
+  };
+  assert.equal(getRangedConfirmationPath(quote, 1000), '/v1/async/transactions/123456789/confirm');
+  assert.throws(() => getRangedConfirmationPath(quote, 5000), /not eligible/i);
+  assert.throws(() => getRangedConfirmationPath({ ...quote, providerStatus: 'CONFIRMED' }, 1000), /not eligible/i);
+});
+
+test('confirmation response must match provider transaction, order and product identities', () => {
+  const expected = { transactionId: '123456789', externalId: 'PGNT-ORDER-2', productId: '98765' };
+  const verified = verifyRangedConfirmation({
+    id: 123456789, external_id: 'PGNT-ORDER-2', product: { id: 98765 },
+    status: { message: 'CONFIRMED' },
+  }, expected);
+  assert.equal(verified.providerStatus, 'CONFIRMED');
+  assert.throws(() => verifyRangedConfirmation({
+    id: 123456789, external_id: 'OTHER', product: { id: 98765 },
+    status: { message: 'CONFIRMED' },
+  }, expected), /identity/i);
+  assert.throws(() => verifyRangedConfirmation({
+    id: 123456789, external_id: 'PGNT-ORDER-2', product: { id: 98765 },
+    status: { message: 'CREATED' },
+  }, expected), /identity/i);
+});
