@@ -9,36 +9,38 @@ const candidate = (productId, overrides = {}) => ({
   amount: 100, currency: 'AFN', ...overrides,
 });
 
-test('classifies two provider products with same denomination as conflicts, never picks one', () => {
+test('keeps distinct DT One products with the same denomination as separate candidates', () => {
   const result = classifyCatalogCandidates(
-    [candidate(1001), candidate(1002, { operator: 'AFGHAN WIRELESS' })], []
+    [
+      candidate(1001, { productName: '100 AFN airtime' }),
+      candidate(1002, { operator: 'AFGHAN WIRELESS', productName: '100 AFN data bundle' }),
+    ], []
   );
-  assert.equal(result.toInsert.length, 0);
-  assert.equal(result.conflicts.length, 2);
-  assert.deepEqual(result.conflicts.map(x => x.conflictingProductIds), [['1002'], ['1001']]);
+  assert.deepEqual(result.toInsert.map(x => x.productId), ['1001', '1002']);
+  assert.equal(result.conflicts.length, 0);
 });
 
-test('preserves existing denomination and reports every conflicting provider ID', () => {
+test('recognizes existing provider IDs without blocking a new same-denomination product', () => {
   const result = classifyCatalogCandidates(
-    [candidate(1002), candidate(1003)],
-    [{ product_id: 1001, operator: 'Afghan Wireless', amount: '100.00', currency: 'AFN' }]
-  );
-  assert.equal(result.toInsert.length, 0);
-  assert.equal(result.conflicts.length, 2);
-  // Each candidate conflicts with the stored product and with its peer in this
-  // provider batch; both IDs must be reported so neither is silently selected.
-  assert.deepEqual(result.conflicts.map(x => x.conflictingProductIds), [
-    ['1001', '1003'],
-    ['1001', '1002'],
-  ]);
-});
-
-test('allows distinct denominations and recognizes an already registered provider ID', () => {
-  const result = classifyCatalogCandidates(
-    [candidate(1001), candidate(1002, { amount: 200 })],
+    [candidate(1001), candidate(1002)],
     [{ product_id: 1001, operator: 'Afghan Wireless', amount: '100.00', currency: 'AFN' }]
   );
   assert.deepEqual(result.alreadyPresent, ['1001']);
-  assert.equal(result.conflicts.length, 0);
   assert.deepEqual(result.toInsert.map(x => x.productId), ['1002']);
+  assert.equal(result.conflicts.length, 0);
+});
+
+test('rejects duplicate provider product IDs within a single discovery batch', () => {
+  const result = classifyCatalogCandidates([candidate(1001), candidate(1001)], []);
+  assert.equal(result.toInsert.length, 0);
+  assert.equal(result.conflicts.length, 2);
+  assert.deepEqual(result.conflicts.map(x => x.conflictingProductIds), [['1001'], ['1001']]);
+});
+
+test('allows different denominations and currencies for separate provider IDs', () => {
+  const result = classifyCatalogCandidates(
+    [candidate(1001), candidate(1002, { amount: 200 }), candidate(1003, { currency: 'PKR' })], []
+  );
+  assert.equal(result.conflicts.length, 0);
+  assert.deepEqual(result.toInsert.map(x => x.productId), ['1001', '1002', '1003']);
 });
