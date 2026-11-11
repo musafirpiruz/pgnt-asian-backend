@@ -134,7 +134,7 @@ FOR EACH ROW EXECUTE FUNCTION pgnt_assert_wallet_ledger_balanced();
 CREATE OR REPLACE FUNCTION pgnt_validate_wallet_ledger_entry_insert()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $
+AS $$
 DECLARE tx_status VARCHAR(16);
 DECLARE account_currency CHAR(3);
 BEGIN
@@ -150,7 +150,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS trg_wallet_ledger_entry_insert_guard
   ON wallet_ledger_entries;
@@ -162,7 +162,7 @@ FOR EACH ROW EXECUTE FUNCTION pgnt_validate_wallet_ledger_entry_insert();
 CREATE OR REPLACE FUNCTION pgnt_prevent_posted_wallet_ledger_transaction_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
   IF OLD.status <> 'draft' THEN
     RAISE EXCEPTION 'Posted wallet ledger transactions are immutable; create a reversal';
@@ -172,7 +172,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS trg_wallet_ledger_transaction_immutable
   ON wallet_ledger_transactions;
