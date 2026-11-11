@@ -15,32 +15,32 @@ function section(startToken, endToken) {
   return server.slice(start, end);
 }
 
-test('checkout validation accepts a stable operator key without requiring a localized operator label', () => {
+test('checkout validation requires an exact internal catalog product ID', () => {
   const validator = section('function validateCheckoutInput(body)', '// =====================================================\n// PART 3/8');
-  assert.match(validator, /body\.operatorKey/);
   assert.match(validator, /body\.productId/);
-  assert.match(validator, /if \(productId && operatorKey\)/);
-  assert.match(validator, /if \(!productId && \(/);
-  assert.match(validator, /operatorKey && !\/\^\[a-zA-Z0-9\._:-\]/);
+  assert.match(validator, /if \(!\^\[1-9\]\\d\*\$?/.test ? /NEVER/ : /productId/);
+  assert.match(validator, /Select a valid catalog product/);
+  assert.doesNotMatch(validator, /body\.operatorKey|body\.operator|body\.amount/);
 });
 
-test('registry product resolution uses server-side verified mapping and parameterized stable key', () => {
+test('product resolution uses exact internal catalog ID and verified provider mapping only', () => {
   const resolver = section('async function getProduct(', '// Calculate the final customer price.');
   for (const token of [
-    'country_operator_products', 'product_catalog', 'country_registry',
-    'o.operator_key = $2', 'cop.verified_at IS NOT NULL',
-    'o.verified_at IS NOT NULL', 'p.amount = $3',
-    'p.currency = c.destination_currency',
-  ]) assert.ok(resolver.includes(token), 'missing secure resolver rule: ' + token);
-  assert.doesNotMatch(resolver, /providerOperatorId|req\.body/);
+    'p.id = $1::bigint', 'p.country = $2', 'country_operator_products',
+    'cop.active = TRUE', 'cop.verified_at IS NOT NULL',
+    'o.verified_at IS NOT NULL', 'p.wholesale_price_eur_cents > 0',
+  ]) assert.ok(resolver.includes(token), 'missing exact verified product rule: ' + token);
+  assert.doesNotMatch(resolver, /p\.amount\s*=|operatorKey|LOWER\(operator\)/);
 });
 
-test('quote and checkout both pass operatorKey to the same server resolver', () => {
+test('quote and checkout require exact productId and never resolve by denomination', () => {
   const quote = section("app.get('/api/pricing/quote'", '// =====================================================\n// PART 4/8');
   const checkout = section("app.post('/api/payments/checkout'", "app.post('/api/admin/stripe-dtone/sandbox-checkout'");
-  assert.match(quote, /validProductId \? productId : null/);
+  assert.match(quote, /req\.query\.productId/);
+  assert.match(quote, /getProduct\(client, productId, country/);
+  assert.doesNotMatch(quote, /req\.query\.operator|req\.query\.amount|operatorKey/);
   assert.match(checkout, /input\.productId/);
-  assert.match(checkout, /operatorKey: input\.operatorKey \|\| null/);
+  assert.doesNotMatch(checkout, /input\.operatorKey|input\.amount/);
 });
 
 test('operator listing excludes operators without active verified product mappings', () => {
@@ -64,28 +64,27 @@ test('mapping migration is deferred until registry tables exist and never seeds 
   assert.doesNotMatch(migration, /UPDATE country_operator_products/i);
 });
 
-test('exact catalog product ID takes precedence and is country-scoped', () => {
+test('same-denomination DT One products remain independently selectable by catalog ID', () => {
   const resolver = section('async function getProduct(', '// Calculate the final customer price.');
-  assert.match(resolver, /if \(productId !== null && productId !== undefined/);
-  assert.ok(resolver.includes('p.id = $1::bigint'));
-  assert.ok(resolver.includes('p.country = $2'));
-  for (const token of ['country_operator_products', 'cop.active = TRUE', 'cop.verified_at IS NOT NULL', 'o.verified_at IS NOT NULL', 'p.wholesale_price_eur_cents > 0']) {
-    assert.ok(resolver.includes(token), 'exact product resolver missing verified mapping rule: ' + token);
-  }
-  assert.match(resolver, /else if \(options\.operatorKey\)/);
+  assert.match(resolver, /WHERE p\.id = \$1::bigint[\s\S]*AND p\.country = \$2/);
+  assert.doesNotMatch(resolver, /p\.amount\s*=|LOWER\(p\.operator\)|LIMIT 1/);
+  assert.match(resolver, /cop\.product_catalog_id = p\.id/);
 });
 
-test('quote endpoint accepts exact productId without legacy operator and amount', () => {
+test('quote endpoint rejects legacy operator and amount-only selection', () => {
   const quote = section("app.get('/api/pricing/quote'", '// =====================================================\n// PART 4/8');
   assert.match(quote, /req\.query\.productId/);
-  assert.match(quote, /validProductId/);
-  assert.match(quote, /validProductId \? productId : null/);
+  assert.match(quote, /!\/\^\[1-9\]\\d\*\$\//);
+  assert.doesNotMatch(quote, /req\.query\.operator|req\.query\.amount|operatorKey/);
 });
 
-test('checkout accepts productId alone and rejects mixed identity inputs', () => {
-  const validator = section('function validateCheckoutInput(body)', '// =====================================================\n// PART 3/8');
-  assert.match(validator, /if \(productId && operatorKey\)/);
-  assert.match(validator, /if \(!productId && \(/);
+test('Flutter checkout sends only exact productId after quote validation', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
+  const checkoutIndex = app.indexOf('/api/payments/checkout');
+  assert.ok(checkoutIndex >= 0, 'checkout endpoint must exist in Flutter source');
+  const checkout = app.slice(checkoutIndex - 300, checkoutIndex + 5000);
+  assert.match(checkout, /'productId': _selectedProduct!\.productId/);
+  assert.doesNotMatch(checkout, /'operatorKey'|'operator'|'amount'/);
 });
 
 test('Flutter checkout sends exact productId without conflicting operator/amount identity', () => {
