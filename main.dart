@@ -2604,13 +2604,16 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'countryCode': selectedCountry.code,
               'phone': phone,
               'phoneNumber': phone,
-              'operator': selectedOperator!.name,
-              if (selectedOperator!.operatorKey != null &&
-                  selectedOperator!.operatorKey!.isNotEmpty)
-                'operatorKey': selectedOperator!.operatorKey!,
-              'amount': selectedAmount,
               'currency': selectedCountry.currency,
-              'productId': priceQuote?['productId'],
+              if (priceQuote?['productId'] != null)
+                'productId': priceQuote!['productId'].toString()
+              else ...{
+                'operator': selectedOperator!.name,
+                if (selectedOperator!.operatorKey != null &&
+                    selectedOperator!.operatorKey!.isNotEmpty)
+                  'operatorKey': selectedOperator!.operatorKey!,
+                'amount': selectedAmount,
+              },
             }),
           )
           .timeout(const Duration(seconds: 30));
