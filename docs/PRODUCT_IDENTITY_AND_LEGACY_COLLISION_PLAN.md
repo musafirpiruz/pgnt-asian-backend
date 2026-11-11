@@ -74,3 +74,14 @@ The application request path has now been tightened on this PR branch:
 - Regression tests were updated to enforce this request contract.
 
 **Important remaining limitation:** the existing database natural-key unique constraint on \`(country, operator, amount, currency)\` is still present, and three historical migration seeds plus admin preview/import still depend on it. Therefore this change removes ambiguous runtime fallback but does **not yet** permit two same-denomination provider products to coexist in the database. The separate schema/admin migration remains blocked until all three seed upserts, admin import logic, and production-like upgrade tests are updated. No products were imported or activated, and no production database was migrated.
+
+
+## Provider identity implementation update (2026-11-11)
+
+- Historical ATOMA seed upserts now target the unique DT One `product_id`, not the legacy denomination key. This preserves idempotency while allowing separate provider identities.
+- The shared catalog classifier now deduplicates by provider product ID. Different DT One product IDs with the same operator, amount, and currency are retained as separate import candidates.
+- Admin country import checks whether the legacy four-column unique constraint is still installed. If a candidate collides with that legacy key, the confirmed import is rejected with HTTP 409 and zero rows changed. Non-colliding products can still be imported disabled.
+- Draft migration `026_product_provider_metadata_foundation.sql` adds provider name/service/subservice/type and authenticated detail snapshot fields.
+- Draft migration `027_product_identity_uniqueness.sql` removes only the exact legacy four-column unique constraint after confirming provider product ID uniqueness, then adds a non-unique browse index.
+- Isolated PostgreSQL integration coverage verifies the additive metadata migration and verifies that distinct provider product IDs sharing a denomination coexist after migration 027, while duplicate provider IDs remain rejected.
+- These migrations are not wired into startup migration execution and have not been applied to production. The branch CI must pass before review; production backup, migration preflight, rollback plan, and explicit approval remain required.
