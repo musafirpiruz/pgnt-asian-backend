@@ -495,7 +495,7 @@ function validateCheckoutInput(body) {
   }
 
   const rawProductId = String(body.productId || '').trim();
-  if (!/^[1-9]\\d*$/.test(rawProductId)) {
+  if (!/^[1-9]\d*$/.test(rawProductId)) {
     throw new Error('Select a valid catalog product.');
   }
 
@@ -627,7 +627,7 @@ async function getProduct(client, productId, requestedCountry = null, options = 
   // Customer selection is always an exact internal catalog ID. A denomination,
   // operator label, or stable operator key is never sufficient to identify a
   // provider product because DT One may expose multiple products at that amount.
-  if (productId === null || productId === undefined || !/^[1-9]\\d*$/.test(String(productId).trim())) {
+  if (productId === null || productId === undefined || !/^[1-9]\d*$/.test(String(productId).trim())) {
     throw new Error('Select a valid catalog product.');
   }
 
@@ -1157,14 +1157,7 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const country = normalizeCountry(req.query.country);
   const productId = String(req.query.productId || '').trim();
-  const operator = String(req.query.operator || '').trim();
-  const operatorKey = String(req.query.operatorKey || '').trim();
-  const amount = Number(req.query.amount);
-  const validProductId = /^[1-9]\d*$/.test(productId);
-  const validLegacySelection = ((!operatorKey && operator.length > 0 && operator.length <= 120) ||
-    (operatorKey && /^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) &&
-    Number.isSafeInteger(amount) && amount >= PGNT_MIN_AMOUNT && amount <= PGNT_MAX_AMOUNT;
-  if (!isValidCountry(country) || (!validProductId && !validLegacySelection) || (productId && !validProductId)) {
+  if (!isValidCountry(country) || !/^[1-9]\d*$/.test(productId)) {
     return res.status(400).json({ error: 'Select a valid catalog product.' });
   }
   const client = await pool.connect();
@@ -1192,9 +1185,6 @@ app.get('/api/pricing/quote', async (req, res) => {
       marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
     });
   } catch (error) {
-    // Keep customer responses generic for configuration/database failures, but
-    // record enough non-sensitive context in Render logs to diagnose them.
-    // Never log phone numbers, access tokens, request headers, or credentials.
     console.error('Pricing quote calculation failed.', {
       country,
       productId,
@@ -3723,7 +3713,7 @@ loadSupportTickets.addEventListener('click',refreshSupportTickets);
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Checking DT One pre-production for product '+productId+'…';
  try{
   const data=await adminRequest('/api/admin/dtone/products/'+encodeURIComponent(productId));
@@ -3805,7 +3795,7 @@ operatorPricingCountry.addEventListener('change',()=>operatorPricingRows.replace
 document.getElementById('importCatalogProduct').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  if(!confirm('Import this verified provider product into the local catalog as DISABLED? No payment or top-up will be performed.')) return;
  result.textContent='Verifying provider product and importing it as disabled…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/import',{method:'POST'});result.textContent=JSON.stringify(data,null,2);}
@@ -3815,7 +3805,7 @@ document.getElementById('importCatalogProduct').addEventListener('click',async()
 document.getElementById('refreshCatalogPrices').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  if(!confirm('Refresh provider retail and wholesale prices for this existing product only if it is DISABLED and its identity matches DT One? Pricing settings will not change; no payment/top-up will be performed.')) return;
  result.textContent='Verifying DT One and refreshing prices for disabled product '+productId+'…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/refresh-prices',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmPriceRefresh:true})});result.textContent=JSON.stringify(data,null,2);}
@@ -3825,7 +3815,7 @@ document.getElementById('refreshCatalogPrices').addEventListener('click',async()
 checkDatabase.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Reading saved product '+productId+' and pricing settings…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/pricing');result.textContent=JSON.stringify(data,null,2);}
  catch(error){result.textContent='Could not verify database pricing: '+error.message;}
@@ -3975,7 +3965,7 @@ discover.addEventListener('click',async()=>{
   renderRows();
   document.getElementById('bulkImportDisabled').addEventListener('click',async()=>{
    if(!key.value){result.textContent='Enter the admin API key first.';return;}
-   const ids=[...document.querySelectorAll('.bulkProductSelect:checked')].map(el=>String(el.dataset.productId||'')).filter(id=>/^[1-9]\\d*$/.test(id));
+   const ids=[...document.querySelectorAll('.bulkProductSelect:checked')].map(el=>String(el.dataset.productId||'')).filter(id=>/^[1-9]\d*$/.test(id));
    if(!ids.length){result.textContent='Select at least one product to import.';return;}
    if(ids.length>100){result.textContent='Select no more than 100 products at a time.';return;}
    if(!confirm('Import '+ids.length+' selected DT One products into the local catalog as DISABLED? Products will be re-verified one by one. No payment or top-up will be performed.'))return;
