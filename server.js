@@ -1109,6 +1109,93 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
   }
 });
 
+
+/**
+ * Return only customer-selectable products with a fully verified DT One
+ * operator/product mapping. Product identity is the local catalog ID, never
+ * a denomination or localized operator label. This is a read-only endpoint.
+ */
+app.get('/api/countries/:countryCode/operators/:operatorKey/products', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Product catalog is not configured.' });
+  }
+
+  const countryCode = normalizeCountry(req.params.countryCode);
+  const operatorKey = String(req.params.operatorKey || '').trim();
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) {
+    return res.status(400).json({ error: 'A valid country and operator are required.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         p.id AS product_id,
+         p.product_id AS provider_product_id,
+         o.operator_key,
+         COALESCE(localized.display_name, o.display_name) AS operator_name,
+         p.amount AS recipient_amount,
+         p.currency AS recipient_currency,
+         p.price_eur_cents,
+         p.wholesale_price_eur_cents
+       FROM country_registry c
+       JOIN country_operators o
+         ON o.country_code = c.country_code
+       JOIN country_operator_products cop
+         ON cop.country_code = o.country_code
+        AND cop.operator_key = o.operator_key
+       JOIN product_catalog p
+         ON p.id = cop.product_catalog_id
+       LEFT JOIN country_operator_localizations localized
+         ON localized.operator_id = o.id
+        AND localized.language_code = $3
+       WHERE c.country_code = $1
+         AND c.status = 'active'
+         AND c.destination_currency = p.currency
+         AND o.operator_key = $2
+         AND o.active = TRUE
+         AND o.provider_operator_id IS NOT NULL
+         AND BTRIM(o.provider_operator_id) <> ''
+         AND o.verified_at IS NOT NULL
+         AND cop.active = TRUE
+         AND cop.verified_at IS NOT NULL
+         AND p.country = c.country_code
+         AND p.active = TRUE
+         AND p.product_id IS NOT NULL
+         AND p.wholesale_price_eur_cents IS NOT NULL
+         AND p.wholesale_price_eur_cents > 0
+       ORDER BY p.amount, p.id`,
+      [countryCode, operatorKey, REGISTRY_LANGUAGES.has(String(req.query.language || 'en').toLowerCase())
+        ? String(req.query.language || 'en').toLowerCase() : 'en']
+    );
+
+    return res.json({
+      countryCode,
+      operatorKey,
+      products: result.rows.map((row) => ({
+        productId: String(row.product_id),
+        providerProductId: String(row.provider_product_id),
+        operatorKey: String(row.operator_key),
+        operatorName: String(row.operator_name),
+        recipientAmount: Number(row.recipient_amount),
+        recipientCurrency: String(row.recipient_currency),
+        paymentCurrency: 'EUR',
+        priceEurCents: Number(row.price_eur_cents),
+      })),
+    });
+  } catch (error) {
+    console.error('Verified country product lookup failed.', {
+      countryCode,
+      operatorKey,
+      errorCode: error?.code || null,
+      errorMessage: String(error?.message || 'Unknown product catalog error').slice(0, 180),
+    });
+    return res.status(503).json({
+      error: 'Verified product list is temporarily unavailable.',
+    });
+  }
+});
+
 // Public, read-only list of configured payment currencies.
 // Only EUR is eligible for checkout until FX, fees, and checkout support are verified.
 app.get('/api/payment-currencies', async (req, res) => {
