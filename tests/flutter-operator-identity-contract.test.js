@@ -26,14 +26,20 @@ test('quote request forwards operatorKey but never trusts or forwards providerOp
   assert.ok(method.includes("'productId': productId"));
   assert.ok(method.includes("'productId': productId"));
   assert.ok(!method.includes('providerOperatorId'));
+  const bodyStart = method.indexOf('body: jsonEncode({');
+  const bodyEnd = method.indexOf('}),', bodyStart);
+  assert.ok(bodyStart >= 0 && bodyEnd > bodyStart);
+  const requestBody = method.slice(bodyStart, bodyEnd);
+  assert.ok(!requestBody.includes('operatorKey'));
+  assert.ok(!requestBody.includes('amount'));
 });
 
-test('checkout request forwards operatorKey but never trusts or forwards providerOperatorId', () => {
+test('checkout sends exact selected catalog product ID and never trusts provider IDs', () => {
   const start = flutter.indexOf('Future<void> startPayment()');
   const end = flutter.indexOf('Future<void>', start + 20);
   assert.ok(start >= 0 && end > start);
   const method = flutter.slice(start, end);
-  assert.ok(method.includes("'productId': priceQuote!['productId'].toString()"));
+  assert.ok(method.includes("'productId': _selectedProduct!.productId"));
   assert.ok(method.includes("_selectedProduct == null"));
   assert.ok(!method.includes('providerOperatorId'));
 });
