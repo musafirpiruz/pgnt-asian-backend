@@ -40,7 +40,7 @@ test('intersects provider bounds with PGNT 75–3000 policy and increment', () =
   const tooHighMinimum = parseRangedProductCapability(product({
     destination: { unit: 'INR', amount: { min: 3005, max: 5000, increment: 5 } },
   }));
-  assert.equal(tooHighMinimum, null, 'a provider range with no overlap in the PGNT 10–3000 policy is not selectable');
+  assert.equal(tooHighMinimum, null, 'a provider range with no overlap in the PGNT 75–3000 policy is not selectable');
 });
 
 test('rejects invalid, unsupported, or incomplete provider ranged metadata', () => {
