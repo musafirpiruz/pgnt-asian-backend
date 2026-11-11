@@ -2765,16 +2765,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'phone': phone,
               'phoneNumber': phone,
               'currency': selectedCountry.currency,
-              if (priceQuote?['productId'] != null)
-                'productId': priceQuote!['productId'].toString()
-              else ...{
-                'operator': selectedOperator!.name,
-                if (selectedOperator!.operatorKey != null &&
-                    selectedOperator!.operatorKey!.isNotEmpty)
-                  'operatorKey': selectedOperator!.operatorKey!,
-                'amount': selectedAmount,
-              },
-            }),
+              'productId': _selectedProduct!.productId,
+            }),),
           )
           .timeout(const Duration(seconds: 30));
 
