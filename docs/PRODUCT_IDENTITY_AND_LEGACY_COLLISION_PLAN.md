@@ -61,3 +61,16 @@ The source-level inventory has now confirmed these concrete legacy-key dependenc
 4. Only after these tests pass, prepare the additive product metadata migration and a separate constraint-removal migration.
 
 This follow-up is an inventory and sequencing update only. No database constraint, product row, import, activation, checkout behavior, or production service has been changed.
+
+
+## Exact-selection implementation update (2026-11-11)
+
+The application request path has now been tightened on this PR branch:
+
+- The quote endpoint requires an exact internal catalog \`productId\`; operator-label and amount-only quote requests are rejected.
+- Checkout validation requires an exact internal catalog \`productId\`; operator-label, operator-key, and amount-only checkout requests are rejected.
+- The backend resolver now resolves only \`product_catalog.id\` within the selected country and requires active, verified country, operator, and product mappings plus a positive wholesale EUR cost.
+- Flutter sends the selected catalog \`productId\` for both quote and checkout; the checkout request no longer sends operator/amount fallback identity.
+- Regression tests were updated to enforce this request contract.
+
+**Important remaining limitation:** the existing database natural-key unique constraint on \`(country, operator, amount, currency)\` is still present, and three historical migration seeds plus admin preview/import still depend on it. Therefore this change removes ambiguous runtime fallback but does **not yet** permit two same-denomination provider products to coexist in the database. The separate schema/admin migration remains blocked until all three seed upserts, admin import logic, and production-like upgrade tests are updated. No products were imported or activated, and no production database was migrated.
