@@ -2201,7 +2201,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
             PopupMenuButton<String>(
               tooltip: 'Language',
               icon: const Icon(Icons.language, color: Colors.white),
-              onSelected: (code) => changeLanguage(code),
+              onSelected: (code) {
+                setState(() => languageCode = code);
+                _loadRegistryOperators(selectedCountry.code);
+                SharedPreferences.getInstance().then((preferences) {
+                  preferences.setString(_languagePreferenceKey, code);
+                });
+              },
               itemBuilder: (context) => languages.map((item) =>
                 PopupMenuItem<String>(value: item.code, child: Text(item.nativeName))).toList(),
             ),
