@@ -86,3 +86,10 @@ Formula concept: customer total = grossed-up( converted wholesale cost + app fee
 - Missing/stale DT One or FX data blocks quote/checkout; no guessed fallback.
 - Customer-visible products still require exact catalog product ID and verified DT One mappings.
 - No production database migration, catalog activation, currency enablement, or live payment operation is performed as part of this specification.
+
+
+## First implementation slice (2026-11-11)
+
+Added an isolated server-side pricing domain module, `pricing-engine.js`, with unit tests. It uses integer minor units and a fixed-scale FX rate, calculates converted wholesale cost, fixed/percentage app fee, and Stripe fee gross-up into one all-inclusive customer total. It supports EUR/USD/GBP as payment currencies in the pure calculation layer, returns an explicit zero general bonus, and fails closed for unsupported currencies or invalid FX/fee inputs.
+
+This module is deliberately not yet wired into live quote/checkout routes. The current production route contract remains EUR-only, and existing DB settings still contain legacy bonus fields. Before wiring, the team must implement currency-specific settings and trusted FX snapshots, validate Stripe fee profiles for each currency/payment method, and test quote-to-Checkout/webhook reconciliation. USD/GBP are not enabled by this commit. No DB migration, production setting, checkout, catalog activation, or live service was changed.
