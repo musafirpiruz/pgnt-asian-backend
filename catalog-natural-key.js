@@ -1,8 +1,8 @@
 'use strict';
 
-// Classify fixed-denomination products before importing into the legacy catalog.
-// Until the natural-key database constraint is migrated, never choose one of
-// several DT One products sharing the same country/operator/amount/currency.
+// DT One product_id is the stable provider identity. Two different provider
+// products may legitimately share country/operator/amount/currency (for
+// example airtime and data bundles). Never collapse them by denomination.
 function denominationKey(product) {
   return [
     String(product.operator || '').trim().toLowerCase(),
@@ -13,18 +13,10 @@ function denominationKey(product) {
 
 function classifyCatalogCandidates(candidates, existingRows) {
   const existingIds = new Set((existingRows || []).map(row => String(row.product_id)));
-  const existingByKey = new Map();
-  for (const row of existingRows || []) {
-    const key = denominationKey(row);
-    if (!existingByKey.has(key)) existingByKey.set(key, []);
-    existingByKey.get(key).push(String(row.product_id));
-  }
-
-  const candidateGroups = new Map();
+  const counts = new Map();
   for (const product of candidates || []) {
-    const key = denominationKey(product);
-    if (!candidateGroups.has(key)) candidateGroups.set(key, []);
-    candidateGroups.get(key).push(product);
+    const id = String(product.productId);
+    counts.set(id, (counts.get(id) || 0) + 1);
   }
 
   const alreadyPresent = [];
@@ -36,20 +28,14 @@ function classifyCatalogCandidates(candidates, existingRows) {
       alreadyPresent.push(id);
       continue;
     }
-    const key = denominationKey(product);
-    const storedIds = existingByKey.get(key) || [];
-    const peerIds = (candidateGroups.get(key) || [])
-      .filter(peer => String(peer.productId) !== id)
-      .map(peer => String(peer.productId));
-    const conflictingIds = [...new Set([...storedIds, ...peerIds])];
-    if (conflictingIds.length) {
+    if (counts.get(id) > 1) {
       conflicts.push({
         productId: id,
-        conflictingProductIds: conflictingIds,
+        conflictingProductIds: [id],
         operator: product.operator,
         amount: product.amount,
         currency: product.currency,
-        reason: 'Same operator and denomination has another DT One product ID; manual review required.',
+        reason: 'The DT One discovery response contains the same provider product ID more than once.',
       });
       continue;
     }
