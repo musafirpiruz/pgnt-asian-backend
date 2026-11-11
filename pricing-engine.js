@@ -48,7 +48,11 @@ function convertMinorUnits(amountMinor, sourceCurrency, targetCurrency, fxRateSc
   const rate = positiveInteger(fxRateScaled, 'FX rate');
   const sourceScale = 10n ** BigInt(CURRENCY_MINOR_UNITS[source]);
   const targetScale = 10n ** BigInt(CURRENCY_MINOR_UNITS[target]);
-  return ceilDiv(amount * rate * targetScale, FX_SCALE * sourceScale);
+  const converted = ceilDiv(amount * rate * targetScale, FX_SCALE * sourceScale);
+  if (converted > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error('Converted wholesale amount exceeds safe integer range.');
+  }
+  return Number(converted);
 }
 
 function calculateAllInPrice(input) {
