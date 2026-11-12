@@ -2,6 +2,7 @@
 
 const PGNT_MIN_AMOUNT = 75;
 const PGNT_MAX_AMOUNT = 3000;
+const RANGED_DESTINATION_CURRENCIES = new Set(['AFN', 'PKR', 'INR', 'BDT']);
 
 function positiveFiniteNumber(value) {
   if (value === null || value === undefined || value === '') return null;
