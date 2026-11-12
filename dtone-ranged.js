@@ -28,7 +28,7 @@ function parseRangedProductCapability(product) {
 
   if (!Number.isSafeInteger(minAmount) || !Number.isSafeInteger(maxAmount) ||
       !Number.isSafeInteger(increment) || maxAmount < minAmount ||
-      !/^[A-Z]{3}$/.test(destinationCurrency) ||
+      !RANGED_DESTINATION_CURRENCIES.has(destinationCurrency) ||
       !acceptedCalculationModes.includes('DESTINATION_AMOUNT')) {
     return null;
   }
