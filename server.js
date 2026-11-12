@@ -120,14 +120,9 @@ const pool = DATABASE_URL
     })
   : null;
 
-// Country codes and recipient currencies.
-// Customer payment currency remains EUR.
-const COUNTRY_CURRENCIES = Object.freeze({
-  AF: 'AFN',
-  PK: 'PKR',
-  IN: 'INR',
-  BD: 'BDT',
-});
+// Country configuration is centralized so new markets can be added without
+// duplicating currency, phone and country identity definitions in server.js.
+const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config');
 
 // One standard customer payment currency.
 const PAYMENT_CURRENCY = 'eur';
@@ -325,35 +320,7 @@ app.get('/payment-cancelled', (req, res) => {
 // Customer payment currency: EUR (€)
 // =====================================================
 
-const SUPPORTED_COUNTRIES = Object.freeze({
-  AF: {
-    name: 'Afghanistan',
-    currency: 'AFN',
-    phoneDigits: [9, 9],
-    callingCode: '+93',
-  },
-
-  PK: {
-    name: 'Pakistan',
-    currency: 'PKR',
-    phoneDigits: [10, 10],
-    callingCode: '+92',
-  },
-
-  IN: {
-    name: 'India',
-    currency: 'INR',
-    phoneDigits: [10, 10],
-    callingCode: '+91',
-  },
-
-  BD: {
-    name: 'Bangladesh',
-    currency: 'BDT',
-    phoneDigits: [10, 10],
-    callingCode: '+880',
-  },
-});
+// Country configuration is imported from country-config.js.
 
 // Normalize and validate country code.
 function normalizeCountry(value) {
