@@ -56,4 +56,23 @@ function buildActiveCountryConfig(rows) {
   return Object.freeze(countries);
 }
 
-module.exports = { buildActiveCountryConfig };
+/**
+ * Load the canonical active country set from PostgreSQL. Callers decide when
+ * to refresh their in-memory snapshot; this function never caches or mutates
+ * registry state and never falls back to the static bootstrap list.
+ */
+async function loadActiveCountryConfig(pool) {
+  if (!pool || typeof pool.query !== 'function') {
+    throw new TypeError('A PostgreSQL pool is required to load country registry.');
+  }
+  const result = await pool.query(
+    `SELECT country_code, country_name, destination_currency, calling_code,
+            phone_min_digits, phone_max_digits, status, configuration_version
+       FROM country_registry
+      WHERE status = 'active'
+      ORDER BY country_code`
+  );
+  return buildActiveCountryConfig(result.rows);
+}
+
+module.exports = { buildActiveCountryConfig, loadActiveCountryConfig };
