@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildActiveCountryConfig } = require('../country-registry');
+const { buildActiveCountryConfig, loadActiveCountryConfig } = require('../country-registry');
 
 const activeAfghanistan = {
   country_code: 'AF',
@@ -46,4 +46,29 @@ test('rejects duplicate active country codes and freezes returned configuration'
   assert.equal(Object.isFrozen(config), true);
   assert.equal(Object.isFrozen(config.AF), true);
   assert.equal(Object.isFrozen(config.AF.phoneDigits), true);
+});
+
+
+test('database loader requests only active registry rows and validates the result', async () => {
+  let sql = '';
+  const pool = {
+    async query(statement) {
+      sql = statement;
+      return { rows: [activeAfghanistan] };
+    },
+  };
+  const config = await loadActiveCountryConfig(pool);
+  assert.match(sql, /FROM country_registry/i);
+  assert.match(sql, /WHERE status = 'active'/i);
+  assert.equal(config.AF.callingCode, '+93');
+});
+
+test('database loader fails closed when database access or registry data is invalid', async () => {
+  await assert.rejects(() => loadActiveCountryConfig(null), /PostgreSQL pool is required/);
+  await assert.rejects(() => loadActiveCountryConfig({
+    async query() { throw new Error('database unavailable'); },
+  }), /database unavailable/);
+  await assert.rejects(() => loadActiveCountryConfig({
+    async query() { return { rows: [{ ...activeAfghanistan, destination_currency: 'BAD!' }] }; },
+  }), /Invalid destination currency/);
 });
