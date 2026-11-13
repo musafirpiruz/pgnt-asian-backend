@@ -13,8 +13,8 @@ const migration = fs.readFileSync(
 );
 
 test('country sandbox evidence schema supports independently verified approvals', () => {
-  assert.match(migration, /verified_at TIMESTAMPTZ/);
-  assert.match(migration, /CHECK \\(review_status <> 'approved' OR verified_at IS NOT NULL\\)/);
+  assert.ok(migration.includes('verified_at TIMESTAMPTZ'));
+  assert.ok(migration.includes("CHECK (review_status <> 'approved' OR verified_at IS NOT NULL)"));
 });
 
 test('all four activation preflight sandbox checks require approved, recent evidence', () => {
@@ -27,7 +27,7 @@ test('all four activation preflight sandbox checks require approved, recent evid
   for (const name of ['providerConnectivity', 'sampleQuote', 'successCallback', 'failureCallback']) {
     const clause = evidenceQueries.find(query => query.includes("e.test_name='" + name + "'"));
     assert.ok(clause, 'missing sandbox check: ' + name);
-    assert.match(clause, /e\\.review_status='approved'/, name + ' must be independently approved');
-    assert.match(clause, /e\\.verified_at > NOW\\(\\) - INTERVAL '30 days'/, name + ' approval must be recent');
+    assert.ok(clause.includes("e.review_status='approved'"), name + ' must be independently approved');
+    assert.ok(clause.includes("e.verified_at > NOW() - INTERVAL '30 days'"), name + ' approval must be recent');
   }
 });
