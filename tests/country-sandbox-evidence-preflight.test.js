@@ -29,6 +29,7 @@ test('all four activation preflight sandbox checks require approved, recent evid
     assert.ok(clause, 'missing sandbox check: ' + name);
     assert.ok(clause.includes("e.review_status='approved'"), name + ' must be independently approved');
     assert.ok(clause.includes("e.verified_at > NOW() - INTERVAL '30 days'"), name + ' approval must be recent');
+    assert.ok(clause.includes('e.verified_at <= NOW()'), name + ' approval must not be future-dated');
   }
 });
 
