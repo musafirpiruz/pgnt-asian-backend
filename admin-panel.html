@@ -389,7 +389,31 @@ document.getElementById('loadCountryRegistry').addEventListener('click',async()=
     ['د تنظیم نسخه',country.configuration_version]
    ];
    for(const [label,value] of fields){const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=String(value??'—');dl.append(dt,dd);}
-   card.append(dl);host.append(card);
+   card.append(dl);
+   const preflightButton=document.createElement('button');
+   preflightButton.type='button';preflightButton.className='secondary';
+   preflightButton.textContent='د فعالولو شرطونه وڅېړه';
+   preflightButton.addEventListener('click',async()=>{
+    preflightButton.disabled=true;
+    let report=card.querySelector('.country-preflight');
+    if(!report){report=document.createElement('div');report.className='detail country-preflight';card.append(report);}
+    report.textContent='د فعالولو شرطونه کتل کېږي…';
+    try{
+     const result=await adminRequest('/api/admin/countries/'+encodeURIComponent(country.country_code)+'/activation-preflight');
+     report.replaceChildren();
+     const heading=document.createElement('strong');
+     heading.textContent=result.eligible?'ټول شرطونه پوره دي':'لا فعالولو ته چمتو نه دی';
+     report.append(heading);
+     for(const check of result.checks||[]){
+      const line=document.createElement('p');
+      line.textContent=(check.passed?'✓ ':'✗ ')+check.key;
+      report.append(line);
+     }
+     if(result.note){const note=document.createElement('p');note.className='muted';note.textContent=result.note;report.append(note);}
+    }catch(error){report.textContent='د شرطونو کتنه ناکامه شوه: '+error.message;}
+    finally{preflightButton.disabled=false;}
+   });
+   card.append(preflightButton);host.append(card);
   }
   const note=document.createElement('p');note.className='muted';note.textContent=data.note||'یوازې لوستل؛ هېڅ تنظیم نه دی بدل شوی.';host.append(note);
  }catch(error){const message=document.createElement('div');message.className='status error';message.textContent='د هېوادونو راپور ونه لوستل شو: '+error.message;host.append(message);}
