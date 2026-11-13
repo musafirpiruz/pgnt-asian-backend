@@ -19,8 +19,12 @@ function readyInput() {
     localizations: DEFAULT_REQUIRED_LANGUAGES.map(languageCode => ({ languageCode, displayName: 'Name' })),
     pricing: { active: true, paymentCurrency: 'EUR', feeCents: 49, minimumMarginCents: 1 },
     fx: { fresh: true, baseCurrency: 'EUR', destinationCurrency: 'XXX', rate: 1.2 },
+    now: '2026-11-13T00:00:00.000Z',
     sandboxChecks: ['providerConnectivity', 'sampleQuote', 'successCallback', 'failureCallback']
-      .map(name => ({ name, passed: true })),
+      .map(name => ({
+        name, passed: true, reviewStatus: 'approved',
+        verifiedAt: '2026-11-10T00:00:00.000Z',
+      })),
   };
 }
 
@@ -45,7 +49,7 @@ test('activation policy fails closed for missing provider, product, FX and sandb
     'providerCountryMappingUnverified', 'noActiveVerifiedOperator',
     'noActiveVerifiedPricedProduct', 'missingStaleOrMismatchedFxRate',
   ]) assert.ok(result.blockers.includes(blocker));
-  assert.ok(result.blockers.some(value => value.startsWith('sandboxChecksIncomplete:')));
+  assert.ok(result.blockers.some(value => value.startsWith('sandboxChecksMissingApprovedFreshEvidence:')));
 });
 
 test('activation policy requires all six localizations and valid EUR pricing', () => {
@@ -63,6 +67,25 @@ test('active or disabled country cannot be activated through the testing gate', 
   assert.ok(evaluateCountryActivation(input).blockers.includes('countryMustBeInTestingOrConfiguring'));
   input.country.status = 'disabled';
   assert.ok(evaluateCountryActivation(input).blockers.includes('countryMustBeInTestingOrConfiguring'));
+});
+
+test('activation policy rejects passed but unreviewed sandbox evidence', () => {
+  const input = readyInput();
+  input.sandboxChecks[0].reviewStatus = 'pending';
+  const result = evaluateCountryActivation(input);
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.some(value =>
+    value.includes('sandboxChecksMissingApprovedFreshEvidence:providerConnectivity')));
+});
+
+test('activation policy rejects stale or future-dated sandbox evidence', () => {
+  const stale = readyInput();
+  stale.sandboxChecks[0].verifiedAt = '2026-10-01T00:00:00.000Z';
+  assert.equal(evaluateCountryActivation(stale).eligible, false);
+
+  const future = readyInput();
+  future.sandboxChecks[0].verifiedAt = '2026-11-14T00:00:00.000Z';
+  assert.equal(evaluateCountryActivation(future).eligible, false);
 });
 
 test('malformed inputs never throw and never become eligible', () => {

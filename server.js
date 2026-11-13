@@ -181,6 +181,7 @@ app.use(
       'Authorization',
       'x-admin-api-key',
       'x-order-access-token',
+      'x-country-evidence-review-key',
     ],
   })
 );
@@ -3007,6 +3008,25 @@ async function syncStripeRefundStatus(charge) {
 
 // Admin authentication.
 // Set a long, random ADMIN_API_KEY in Render.
+// Evidence approval uses a separate credential from the ordinary admin key.
+// Configure both COUNTRY_EVIDENCE_REVIEW_API_KEY and COUNTRY_EVIDENCE_REVIEWER_ID
+// in the deployment environment; fail closed if the credentials are not distinct.
+function requireCountryEvidenceReviewer(req, res, next) {
+  const reviewerKey = String(process.env.COUNTRY_EVIDENCE_REVIEW_API_KEY || '');
+  const reviewerId = String(process.env.COUNTRY_EVIDENCE_REVIEWER_ID || '').trim();
+  if (!reviewerKey || !reviewerId || reviewerKey === ADMIN_API_KEY) {
+    return res.status(503).json({
+      error: 'Independent country evidence review is not configured.',
+    });
+  }
+  const supplied = Buffer.from(String(req.headers['x-country-evidence-review-key'] || ''));
+  const expected = Buffer.from(reviewerKey);
+  const valid = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+  if (!valid) return res.status(401).json({ error: 'Unauthorized reviewer.' });
+  req.countryEvidenceReviewerId = reviewerId;
+  return next();
+}
+
 function requireAdmin(req, res, next) {
   if (!ADMIN_API_KEY) {
     return res.status(503).json({
@@ -3112,6 +3132,52 @@ app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), r
   }
 });
 
+// Independently approve or reject submitted evidence. This route has a
+// separate reviewer credential and cannot activate a country or product.
+app.post('/api/admin/countries/:countryCode/sandbox-evidence/:testName/review',
+  express.json(), requireCountryEvidenceReviewer, async (req, res) => {
+    if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+    const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+    const testName = String(req.params.testName || '').trim();
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    if (!/^[A-Z]{2}$/.test(countryCode) ||
+        !['providerConnectivity','sampleQuote','successCallback','failureCallback'].includes(testName) ||
+        !['approve','reject'].includes(decision)) {
+      return res.status(400).json({ error: 'Valid country, test name, and approve/reject decision are required.' });
+    }
+    if (req.body?.confirmReview !== true) {
+      return res.status(400).json({ error: 'Explicit confirmation of the independent evidence review is required.' });
+    }
+    try {
+      const result = await pool.query(`
+        UPDATE country_sandbox_evidence
+           SET review_status = $3,
+               verified_at = CASE WHEN $3 = 'approved' THEN NOW() ELSE NULL END,
+               reviewed_by = $4,
+               reviewed_at = NOW()
+         WHERE country_code = $1
+           AND test_name = $2
+           AND passed = TRUE
+           AND review_status = 'submitted'
+        RETURNING country_code, test_name, passed, review_status,
+                  verified_at, reviewed_by, reviewed_at
+      `, [countryCode, testName, decision === 'approve' ? 'approved' : 'rejected',
+          req.countryEvidenceReviewerId]);
+      if (!result.rowCount) {
+        return res.status(409).json({ error: 'No pending passed evidence was found for this country and test.' });
+      }
+      return res.set('Cache-Control', 'no-store').json({
+        reviewed: true,
+        evidence: result.rows[0],
+        countryActivated: false,
+        productActivated: false,
+      });
+    } catch (error) {
+      console.error('Country sandbox evidence review failed:', error.message);
+      return res.status(500).json({ error: 'Could not review country sandbox evidence. Confirm migration 029 is installed.' });
+    }
+  });
+
 // Read-only country activation preflight. No status, mapping, product,
 // pricing, FX, or provider data is modified. Submitted sandbox evidence is
 // not counted until an independent review approves it.
@@ -3150,19 +3216,26 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
                WHERE e.country_code=c.country_code AND e.passed=TRUE
                  AND e.review_status='approved'
                  AND e.test_name='providerConnectivity'
-                 AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_provider_connectivity,
+                 AND e.verified_at > NOW() - INTERVAL '30 days'
+                 AND e.verified_at <= NOW())::int AS sandbox_provider_connectivity,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
                WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.review_status='approved'
                  AND e.test_name='sampleQuote'
-                 AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_sample_quote,
+                 AND e.verified_at > NOW() - INTERVAL '30 days'
+                 AND e.verified_at <= NOW())::int AS sandbox_sample_quote,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
                WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.review_status='approved'
                  AND e.test_name='successCallback'
-                 AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_success_callback,
+                 AND e.verified_at > NOW() - INTERVAL '30 days'
+                 AND e.verified_at <= NOW())::int AS sandbox_success_callback,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
                WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.review_status='approved'
                  AND e.test_name='failureCallback'
-                 AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_failure_callback
+                 AND e.verified_at > NOW() - INTERVAL '30 days'
+                 AND e.verified_at <= NOW())::int AS sandbox_failure_callback
         FROM country_registry c
         LEFT JOIN pricing_settings p ON p.country::text=c.country_code
        WHERE c.country_code=$1
