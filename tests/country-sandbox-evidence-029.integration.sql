@@ -32,8 +32,8 @@ VALUES
  ('IN','Network C',100,'INR',10003,FALSE),
  ('BD','Network D',100,'BDT',10004,FALSE);
 
-\\ir ../migrations/023_current_catalog_country_registry_bootstrap.sql
-\\ir ../migrations/029_country_sandbox_evidence.sql
+\ir ../migrations/023_current_catalog_country_registry_bootstrap.sql
+\ir ../migrations/029_country_sandbox_evidence.sql
 
 DO $$
 DECLARE rejected BOOLEAN := FALSE;
@@ -98,7 +98,7 @@ BEGIN
   END IF;
 END $$;
 
-\\ir ../migrations/029_country_sandbox_evidence.sql
+\ir ../migrations/029_country_sandbox_evidence.sql
 
 RESET search_path;
 DROP SCHEMA country_sandbox_evidence_029_test CASCADE;
