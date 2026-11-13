@@ -37,6 +37,8 @@ test('sandbox evidence approval requires a separate reviewer credential and reco
   assert.ok(migration.includes('reviewed_at TIMESTAMPTZ'));
   assert.ok(server.includes('COUNTRY_EVIDENCE_REVIEW_API_KEY'));
   assert.ok(server.includes("req.headers['x-country-evidence-review-key']"));
+  const corsHeaders = server.match(/allowedHeaders:\s*\[([\s\S]*?)\]/);
+  assert.ok(corsHeaders && corsHeaders[1].includes("'x-country-evidence-review-key'"), 'CORS must allow the independent reviewer header');
   assert.ok(server.includes("review_status = 'submitted'"));
   assert.ok(server.includes('req.countryEvidenceReviewerId'));
   assert.ok(server.includes("'/api/admin/countries/:countryCode/sandbox-evidence/:testName/review'"));
