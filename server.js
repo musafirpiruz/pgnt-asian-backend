@@ -181,6 +181,7 @@ app.use(
       'Authorization',
       'x-admin-api-key',
       'x-order-access-token',
+      'x-country-evidence-review-key',
     ],
   })
 );
