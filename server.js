@@ -3071,6 +3071,47 @@ app.get('/api/admin/countries/registry-summary', requireAdmin, async (req, res) 
   }
 });
 
+// Record administrator-reviewed sandbox evidence. This records evidence only;
+// it never runs a provider transaction or activates any country/product.
+app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const testName = String(req.body?.testName || '').trim();
+  const evidenceRef = String(req.body?.evidenceRef || '').trim();
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !['providerConnectivity','sampleQuote','successCallback','failureCallback'].includes(testName)) {
+    return res.status(400).json({ error: 'A valid country and supported sandbox test name are required.' });
+  }
+  if (req.body?.confirmEvidence !== true || req.body?.passed !== true) {
+    return res.status(400).json({ error: 'Explicit confirmation of a passed sandbox test is required.' });
+  }
+  if (evidenceRef.length < 8 || evidenceRef.length > 500) {
+    return res.status(400).json({ error: 'Provide an evidence reference between 8 and 500 characters.' });
+  }
+  try {
+    const country = await pool.query(
+      "SELECT country_code FROM country_registry WHERE country_code=$1 AND status IN ('testing','configuring')",
+      [countryCode]
+    );
+    if (!country.rowCount) return res.status(409).json({ error: 'Country must be in testing or configuring status.' });
+    const saved = await pool.query(`
+      INSERT INTO country_sandbox_evidence(country_code,test_name,passed,evidence_ref,verified_by,verified_at)
+      VALUES($1,$2,TRUE,$3,'admin',NOW())
+      ON CONFLICT(country_code,test_name) DO UPDATE SET
+        passed=TRUE,evidence_ref=EXCLUDED.evidence_ref,
+        verified_by=EXCLUDED.verified_by,verified_at=NOW()
+      RETURNING country_code,test_name,passed,evidence_ref,verified_at
+    `, [countryCode,testName,evidenceRef]);
+    return res.status(201).set('Cache-Control','no-store').json({
+      recorded: true, evidence: saved.rows[0],
+      note: 'Evidence recorded only; this does not activate the country.',
+    });
+  } catch (error) {
+    console.error('Country sandbox evidence recording failed:', error.message);
+    return res.status(500).json({ error: 'Could not record sandbox evidence. Confirm migration 029 is installed.' });
+  }
+});
+
 // Read-only country activation preflight. No status, mapping, product,
 // pricing, FX, or provider data is modified. Sandbox evidence is intentionally
 // reported as missing until a separately audited evidence store is implemented.
@@ -3105,6 +3146,22 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
                  AND o.verified_at IS NOT NULL AND pc.active=TRUE
                  AND pc.product_id IS NOT NULL AND pc.currency=c.destination_currency
                  AND pc.wholesale_price_eur_cents > 0)::int AS verified_product_count
+             (SELECT COUNT(*) FROM country_sandbox_evidence e
+               WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.test_name='providerConnectivity'
+                 AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_provider_connectivity,
+             (SELECT COUNT(*) FROM country_sandbox_evidence e
+               WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.test_name='sampleQuote'
+                 AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_sample_quote,
+             (SELECT COUNT(*) FROM country_sandbox_evidence e
+               WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.test_name='successCallback'
+                 AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_success_callback,
+             (SELECT COUNT(*) FROM country_sandbox_evidence e
+               WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.test_name='failureCallback'
+                 AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_failure_callback
         FROM country_registry c
         LEFT JOIN pricing_settings p ON p.country::text=c.country_code
        WHERE c.country_code=$1
@@ -3120,10 +3177,10 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
       { key: 'verifiedActiveProducts', passed: Number(row.verified_product_count) > 0 },
       { key: 'activeEurPricing', passed: row.pricing_active === true && Number.isInteger(Number(row.fee_eur_cents)) && Number(row.fee_eur_cents) >= 0 },
       { key: 'positiveDestinationFx', passed: Number.isFinite(Number(row.fx_rate)) && Number(row.fx_rate) > 0 },
-      { key: 'sandboxProviderConnectivity', passed: false },
-      { key: 'sandboxSampleQuote', passed: false },
-      { key: 'sandboxSuccessCallback', passed: false },
-      { key: 'sandboxFailureCallback', passed: false },
+      { key: 'sandboxProviderConnectivity', passed: Number(row.sandbox_provider_connectivity) > 0 },
+      { key: 'sandboxSampleQuote', passed: Number(row.sandbox_sample_quote) > 0 },
+      { key: 'sandboxSuccessCallback', passed: Number(row.sandbox_success_callback) > 0 },
+      { key: 'sandboxFailureCallback', passed: Number(row.sandbox_failure_callback) > 0 },
     ];
     const blockers = checks.filter(check => !check.passed).map(check => check.key);
     return res.set('Cache-Control', 'no-store').json({
