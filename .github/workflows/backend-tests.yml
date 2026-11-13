@@ -66,5 +66,7 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-identity-027.integration.sql
       - name: Test independently reviewed country sandbox evidence migration 029
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-sandbox-evidence-029.integration.sql
+      - name: Verify country sandbox evidence preflight and reviewer gates
+        run: node --test tests/country-sandbox-evidence-preflight.test.js
       - name: Run regression tests
         run: npm test
