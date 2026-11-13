@@ -181,6 +181,7 @@ app.use(
       'Authorization',
       'x-admin-api-key',
       'x-order-access-token',
+      'x-country-evidence-review-key',
     ],
   })
 );
@@ -3005,6 +3006,21 @@ async function syncStripeRefundStatus(charge) {
 // Customer payment currency: EUR
 // =====================================================
 
+// Independent country evidence review uses a credential separate from ADMIN_API_KEY.
+function requireCountryEvidenceReviewer(req, res, next) {
+  const reviewerKey = String(process.env.COUNTRY_EVIDENCE_REVIEW_API_KEY || '');
+  const reviewerId = String(process.env.COUNTRY_EVIDENCE_REVIEWER_ID || '').trim();
+  if (!reviewerKey || !reviewerId || reviewerKey === ADMIN_API_KEY) {
+    return res.status(503).json({ error: 'Independent country evidence review is not configured.' });
+  }
+  const supplied = Buffer.from(String(req.headers['x-country-evidence-review-key'] || ''));
+  const expected = Buffer.from(reviewerKey);
+  const valid = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+  if (!valid) return res.status(401).json({ error: 'Unauthorized reviewer.' });
+  req.countryEvidenceReviewerId = reviewerId;
+  return next();
+}
+
 // Admin authentication.
 // Set a long, random ADMIN_API_KEY in Render.
 function requireAdmin(req, res, next) {
@@ -3111,6 +3127,42 @@ app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), r
     return res.status(500).json({ error: 'Could not record sandbox evidence. Confirm migration 029 is installed.' });
   }
 });
+
+// Independently approve or reject submitted evidence. This endpoint records review metadata only.
+app.post('/api/admin/countries/:countryCode/sandbox-evidence/:testName/review',
+  express.json(), requireCountryEvidenceReviewer, async (req, res) => {
+    if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+    const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+    const testName = String(req.params.testName || '').trim();
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    if (!/^[A-Z]{2}$/.test(countryCode) ||
+        !['providerConnectivity','sampleQuote','successCallback','failureCallback'].includes(testName) ||
+        !['approve','reject'].includes(decision)) {
+      return res.status(400).json({ error: 'Valid country, test name, and approve/reject decision are required.' });
+    }
+    if (req.body?.confirmReview !== true) {
+      return res.status(400).json({ error: 'Explicit confirmation of the independent evidence review is required.' });
+    }
+    try {
+      const result = await pool.query(`
+        UPDATE country_sandbox_evidence
+           SET review_status = $3,
+               verified_at = CASE WHEN $3 = 'approved' THEN NOW() ELSE NULL END,
+               reviewed_by = $4,
+               reviewed_at = NOW()
+         WHERE country_code = $1 AND test_name = $2
+           AND passed = TRUE AND review_status = 'submitted'
+        RETURNING country_code, test_name, passed, review_status, verified_at, reviewed_by, reviewed_at
+      `, [countryCode, testName, decision === 'approve' ? 'approved' : 'rejected', req.countryEvidenceReviewerId]);
+      if (!result.rowCount) return res.status(409).json({ error: 'No pending passed evidence was found for this country and test.' });
+      return res.set('Cache-Control', 'no-store').json({
+        reviewed: true, evidence: result.rows[0], countryActivated: false, productActivated: false,
+      });
+    } catch (error) {
+      console.error('Country sandbox evidence review failed:', error.message);
+      return res.status(500).json({ error: 'Could not review country sandbox evidence. Confirm migration 029 is installed.' });
+    }
+  });
 
 // Read-only country activation preflight. No status, mapping, product,
 // pricing, FX, or provider data is modified. Submitted sandbox evidence is
