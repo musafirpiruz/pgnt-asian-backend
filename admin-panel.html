@@ -83,9 +83,9 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 </div>
 <label for="sandboxEvidenceRef">د ازموینې د ثبوت حواله</label>
 <input id="sandboxEvidenceRef" maxlength="500" placeholder="د ازموینې راپور، لاګ یا مستند حواله">
-<div class="actions"><button id="saveSandboxEvidence" type="button">د بریالۍ ازموینې ثبوت ثبت کړه</button></div>
-<p class="muted">یوازې هغه ازموینه ثبت کړئ چې واقعاً په DT One Sandbox کې ترسره او تایید شوې وي. دا ثبت د هېواد فعالول نه کوي.</p>
-<div id="sandboxEvidenceNotice" class="status" role="status" aria-live="polite">د ثبوت ثبتولو لپاره د ازموینې پایله او مستند حواله اړینه ده.</div>
+<div class="actions"><button id="saveSandboxEvidence" type="button">د ازموینې ثبوت د بیاکتنې لپاره وسپاره</button></div>
+<p class="muted">یوازې د واقعي DT One Sandbox ازموینې ثبوت وسپارئ. سپارل شوی ثبوت تر خپلواکې بیاکتنې او منظورۍ مخکې د فعالولو شرط نه پوره کوي.</p>
+<div id="sandboxEvidenceNotice" class="status" role="status" aria-live="polite">دا برخه ثبوت د بیاکتنې لپاره سپاري؛ په خپله یې نه تاییدوي.</div>
 <div id="countryRegistry"><div class="empty">د راپور لوستلو لپاره تڼۍ کېکاږئ.</div></div>
 </section>
 <section class="card">
@@ -441,11 +441,11 @@ document.getElementById('saveSandboxEvidence').addEventListener('click',async()=
  const testName=document.getElementById('sandboxEvidenceTest').value;
  const evidenceRef=document.getElementById('sandboxEvidenceRef').value.trim();
  if(!/^[A-Z]{2}$/.test(countryCode)||evidenceRef.length<8){notice.className='status warn';notice.textContent='د هېواد دوه توريز کوډ او لږ تر لږه ۸ توريزه مستنده حواله ولیکئ.';return;}
- if(!confirm('ایا دا ازموینه واقعاً په DT One Sandbox کې بریالۍ شوې او ثبوت یې کتلی دی؟'))return;
+ if(!confirm('ایا دا د واقعي DT One Sandbox ازموینې مستند ثبوت دی؟ دا یوازې د بیاکتنې لپاره سپارل کېږي او نه تاییدېږي.'))return;
  button.disabled=true;notice.className='status';notice.textContent='د ازموینې ثبوت ثبتېږي…';
  try{
   const result=await adminPost('/api/admin/countries/'+encodeURIComponent(countryCode)+'/sandbox-evidence',{testName,evidenceRef,passed:true,confirmEvidence:true});
-  notice.className='status ok';notice.textContent='ثبوت ثبت شو: '+result.evidence.testName+'. دا هېواد لا هم په اتومات ډول نه فعالېږي.';
+  notice.className='status ok';notice.textContent='ثبوت د بیاکتنې لپاره وسپارل شو: '+result.evidence.testName+'. تر خپلواکې منظورۍ مخکې د فعالولو شرط نه پوره کوي.';
   document.getElementById('sandboxEvidenceRef').value='';
  }catch(error){notice.className='status error';notice.textContent='ثبوت ثبت نه شو: '+error.message;}
  finally{button.disabled=false;}
