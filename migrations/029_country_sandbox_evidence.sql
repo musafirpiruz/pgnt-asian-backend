@@ -10,11 +10,13 @@ CREATE TABLE IF NOT EXISTS country_sandbox_evidence (
   )),
   passed BOOLEAN NOT NULL DEFAULT FALSE,
   evidence_ref VARCHAR(500) NOT NULL,
-  verified_by VARCHAR(120) NOT NULL,
-  verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  submitted_by VARCHAR(120) NOT NULL DEFAULT 'admin-session',
+  review_status VARCHAR(20) NOT NULL DEFAULT 'submitted'
+    CHECK (review_status IN ('submitted','approved','rejected')),
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(country_code,test_name),
   CHECK (BTRIM(evidence_ref) <> ''),
-  CHECK (BTRIM(verified_by) <> '')
+  CHECK (BTRIM(submitted_by) <> '')
 );
 CREATE INDEX IF NOT EXISTS country_sandbox_evidence_verified_at_idx
   ON country_sandbox_evidence(country_code,verified_at DESC);
