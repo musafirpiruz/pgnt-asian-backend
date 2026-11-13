@@ -64,5 +64,7 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-metadata-026.integration.sql
       - name: Test proposed exact DT One product identity migration in isolated PostgreSQL schema
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-identity-027.integration.sql
+      - name: Verify country sandbox evidence preflight gates
+        run: node --test tests/country-sandbox-evidence-preflight.test.js
       - name: Run regression tests
         run: npm test
