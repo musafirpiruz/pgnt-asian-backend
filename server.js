@@ -3034,6 +3034,43 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+// Read-only country onboarding overview for the admin panel.
+// It reports canonical registry state only; it never activates countries,
+// operators, products, or changes pricing/provider configuration.
+app.get('/api/admin/countries/registry-summary', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(`
+      SELECT c.country_code, c.country_name, c.destination_currency,
+             c.calling_code, c.status, c.configuration_version, c.updated_at,
+             (SELECT COUNT(*) FROM country_localizations l
+               WHERE l.country_code = c.country_code)::int AS localization_count,
+             (SELECT COUNT(*) FROM country_operators o
+               WHERE o.country_code = c.country_code
+                 AND o.active = TRUE AND o.verified_at IS NOT NULL)::int AS verified_active_operators,
+             (SELECT COUNT(*) FROM country_operator_products cop
+               JOIN product_catalog p ON p.id = cop.product_catalog_id
+               WHERE cop.country_code = c.country_code
+                 AND cop.active = TRUE AND cop.verified_at IS NOT NULL
+                 AND p.active = TRUE)::int AS verified_active_products,
+             (SELECT COUNT(*) FROM country_operators o
+               WHERE o.country_code = c.country_code)::int AS mapped_operators,
+             (SELECT COUNT(*) FROM country_operator_products cop
+               WHERE cop.country_code = c.country_code)::int AS mapped_products
+        FROM country_registry c
+       ORDER BY c.country_code
+    `);
+    return res.set('Cache-Control', 'no-store').json({
+      countries: result.rows,
+      readOnly: true,
+      note: 'This report does not activate or modify any country, operator, product, or pricing setting.',
+    });
+  } catch (error) {
+    console.error('Admin country registry summary failed:', error.message);
+    return res.status(500).json({ error: 'Could not load country registry summary.' });
+  }
+});
+
 // Read-only wallet integrity diagnostics. This deliberately exposes no
 // customer records and performs no wallet, ledger, payment, or refund writes.
 // Wallet APIs remain disabled until identity binding and ledger safeguards ship.
