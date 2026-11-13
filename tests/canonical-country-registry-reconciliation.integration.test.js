@@ -190,6 +190,15 @@ test('canonical registry reconciliation accepts the PR #204 schema without creat
     assert.equal(operator.rows[0].provider_operator_id, 'dtone-op-204');
     assert.equal(operator.rows[0].active, true);
     assert.equal(operator.rows[0].display_name, 'ډي ټي ون شبکه');
+
+    const providerIdentity = await client.query(`
+      SELECT is_nullable
+      FROM information_schema.columns
+      WHERE table_schema=$1 AND table_name='country_operators'
+        AND column_name='provider_operator_id'
+    `, [schema]);
+    assert.equal(providerIdentity.rows[0].is_nullable, 'YES',
+      'unverified catalog operators must be representable without a provider ID');
   });
 });
 

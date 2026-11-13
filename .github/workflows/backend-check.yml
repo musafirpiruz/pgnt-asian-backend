@@ -17,6 +17,7 @@ on:
     branches:
       - main
       - "fix/schema-server-compatibility"
+      - "feat/device-region-and-country-bootstrap-2026-11-10"
     paths:
       - "server.js"
       - "migrate.js"

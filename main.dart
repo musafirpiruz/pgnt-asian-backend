@@ -1,6 +1,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -14,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 const String appName = 'PGNT ASIAN TOPUP';
 const String _languagePreferenceKey = 'pgnt_selected_language_v1';
+const String _countryPreferenceKey = 'pgnt_selected_topup_country_v1';
 
 const String backendBaseUrl = String.fromEnvironment(
   'BACKEND_BASE_URL',
@@ -52,6 +54,9 @@ class AppCountry {
   final String flag;
   final String currency;
   final String symbol;
+  final String callingCode;
+  final int phoneMinDigits;
+  final int phoneMaxDigits;
 
   const AppCountry({
     required this.code,
@@ -59,7 +64,40 @@ class AppCountry {
     required this.flag,
     required this.currency,
     required this.symbol,
+    this.callingCode = '',
+    this.phoneMinDigits = 1,
+    this.phoneMaxDigits = 15,
   });
+
+  factory AppCountry.fromRegistryJson(Map<String, dynamic> json) {
+    final code = (json['code'] ?? '').toString().trim().toUpperCase();
+    final currency = (json['currency'] ?? '').toString().trim().toUpperCase();
+    if (!RegExp(r'^[A-Z]{2}$').hasMatch(code) ||
+        !RegExp(r'^[A-Z]{3}$').hasMatch(currency)) {
+      throw const FormatException('Invalid country registry code or currency.');
+    }
+    final name = (json['name'] ?? json['display_name'] ?? code).toString().trim();
+    if (name.isEmpty) throw const FormatException('Country display name is missing.');
+    const symbols = <String, String>{
+      'AFN': '؋', 'PKR': 'Rs', 'INR': '₹', 'BDT': '৳',
+      'EUR': '€', 'USD': r'$', 'GBP': '£',
+    };
+    final rawFlag = (json['flag'] ?? '').toString().trim();
+    final flag = rawFlag.isNotEmpty
+        ? rawFlag
+        : String.fromCharCodes(code.codeUnits.map((unit) => 0x1F1E6 + unit - 0x41));
+    final callingCode = (json['callingCode'] ?? json['calling_code'] ?? '').toString().trim();
+    final minDigits = int.tryParse((json['phoneMinDigits'] ?? json['phone_min_digits'] ?? '1').toString()) ?? 1;
+    final maxDigits = int.tryParse((json['phoneMaxDigits'] ?? json['phone_max_digits'] ?? '15').toString()) ?? 15;
+    if (minDigits < 1 || maxDigits < minDigits || maxDigits > 15) {
+      throw const FormatException('Invalid country phone length metadata.');
+    }
+    return AppCountry(
+      code: code, name: name, flag: flag, currency: currency,
+      symbol: (json['symbol'] ?? symbols[currency] ?? currency).toString(),
+      callingCode: callingCode, phoneMinDigits: minDigits, phoneMaxDigits: maxDigits,
+    );
+  }
 }
 
 const List<AppCountry> countries = [
@@ -162,6 +200,48 @@ class MobileOperator {
       providerOperatorId: rawProviderId?.toString().trim().isNotEmpty == true
           ? rawProviderId.toString().trim()
           : null,
+    );
+  }
+}
+
+class CatalogTopUpProduct {
+  final String productId;
+  final String providerProductId;
+  final int recipientAmount;
+  final String recipientCurrency;
+  final int priceEurCents;
+
+  const CatalogTopUpProduct({
+    required this.productId,
+    required this.providerProductId,
+    required this.recipientAmount,
+    required this.recipientCurrency,
+    required this.priceEurCents,
+  });
+
+  factory CatalogTopUpProduct.fromJson(Map<String, dynamic> json) {
+    final id = (json['productId'] ?? '').toString().trim();
+    final provider = (json['providerProductId'] ?? '').toString().trim();
+    final amount = json['recipientAmount'];
+    final price = json['priceEurCents'];
+    if (!RegExp(r'^[1-9][0-9]*$').hasMatch(id) ||
+        provider.isEmpty ||
+        amount is! num ||
+        !amount.isFinite ||
+        amount <= 0 ||
+        amount != amount.roundToDouble() ||
+        price is! num ||
+        !price.isFinite ||
+        price <= 0 ||
+        price != price.roundToDouble()) {
+      throw const FormatException('Invalid verified catalog product.');
+    }
+    return CatalogTopUpProduct(
+      productId: id,
+      providerProductId: provider,
+      recipientAmount: amount.toInt(),
+      recipientCurrency: (json['recipientCurrency'] ?? '').toString(),
+      priceEurCents: price.toInt(),
     );
   }
 }
@@ -512,12 +592,19 @@ String? detectAfghanOperator(String value) {
 // Final validation must also happen on the server.
 bool isValidPhone(
   String countryCode,
-  String value,
-) {
+  String value, {
+  int minDigits = 1,
+  int maxDigits = 15,
+  String callingCode = '',
+}) {
   final phone = normalizePhone(value);
-  final digits = phone.startsWith('+')
+  var digits = phone.startsWith('+')
       ? phone.substring(1)
       : phone;
+  final normalizedCallingCode = callingCode.replaceAll(RegExp(r'\D'), '');
+  if (normalizedCallingCode.isNotEmpty && digits.startsWith(normalizedCallingCode)) {
+    digits = digits.substring(normalizedCallingCode.length);
+  }
 
   if (!RegExp(r'^\d+$').hasMatch(digits)) {
     return false;
@@ -533,7 +620,7 @@ bool isValidPhone(
     case 'BD':
       return digits.length >= 10 && digits.length <= 13;
     default:
-      return false;
+      return digits.length >= minDigits && digits.length <= maxDigits;
   }
 }
 
@@ -1390,12 +1477,17 @@ class PgntHomePage extends StatefulWidget {
 class _PgntHomePageState extends State<PgntHomePage> {
   String languageCode = 'ps';
   AppCountry selectedCountry = countries.first;
+  List<AppCountry> _availableCountries = countries;
   bool showCountryChoices = false;
   MobileOperator? selectedOperator;
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
   int _registryOperatorsRequestGeneration = 0;
-  int selectedAmount = 10;
+  List<CatalogTopUpProduct> _verifiedProducts = const [];
+  CatalogTopUpProduct? _selectedProduct;
+  String? _verifiedProductsOperatorKey;
+  int _verifiedProductsRequestGeneration = 0;
+  int selectedAmount = 75;
   int selectedTab = 0;
   bool isLoading = false;
   bool isQuoteLoading = false;
@@ -1430,7 +1522,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   @override
   void initState() {
     super.initState();
-    customAmountController.text = '10';
+    customAmountController.text = '75';
     _restoreFuture = _restoreLocalData();
     _loadRegistryOperators(selectedCountry.code);
     _appLinks = AppLinks();
@@ -1441,6 +1533,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
     _appLinks.getInitialLink().then((uri) {
       if (uri != null) _applyReferralUri(uri);
     }).catchError((Object _) {});
+    _loadActiveCountries();
+
   }
 
   void _applyReferralUri(Uri uri) {
@@ -1598,7 +1692,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
         'Accept': 'application/json',
         'x-order-access-token': token,
       }).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return;
+      if (response.statusCode != 200) {
+        throw Exception('د شبکو تایید شوی لېست اوس نه ترلاسه کېږي (HTTP ${response.statusCode}).');
+      }
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic>) return;
       final nextStatus = _statusFromServer(
@@ -1667,23 +1763,83 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }
   }
 
-  // Prefer the server registry when it is available; retain the bundled
-  // curated list as an offline/backward-compatible fallback.
+  Future<void> _loadActiveCountries() async {
+    try {
+      final uri = Uri.parse('$backendBaseUrl/api/countries').replace(
+        queryParameters: {'language': languageCode},
+      );
+      final response = await http.get(uri, headers: const {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) {
+        _loadRegistryOperators(selectedCountry.code);
+        return;
+      }
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map || decoded['countries'] is! List) return;
+      final parsed = <AppCountry>[];
+      for (final raw in decoded['countries'] as List) {
+        if (raw is! Map) continue;
+        try {
+          parsed.add(AppCountry.fromRegistryJson(Map<String, dynamic>.from(raw)));
+        } catch (_) {
+          // Ignore malformed registry rows; never invent a country.
+        }
+      }
+      if (!mounted || parsed.isEmpty) return;
+      final preferences = await SharedPreferences.getInstance();
+      final savedCode = preferences.getString(_countryPreferenceKey)?.toUpperCase();
+      final preferredCode = savedCode ??
+          (PlatformDispatcher.instance.locale.countryCode ?? '').toUpperCase();
+      final preferred = parsed.where((item) => item.code == preferredCode);
+      final current = parsed.where((item) => item.code == selectedCountry.code);
+      setState(() {
+        _availableCountries = parsed;
+        selectedCountry = preferred.isNotEmpty
+            ? preferred.first
+            : (current.isNotEmpty ? current.first : parsed.first);
+        selectedOperator = null;
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = null;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+      await preferences.setString(_countryPreferenceKey, selectedCountry.code);
+      _loadRegistryOperators(selectedCountry.code);
+    } catch (_) {
+      // Keep the bundled four-country list when the registry is offline.
+      _loadRegistryOperators(selectedCountry.code);
+    }
+  }
+
+  // Customer-selectable operators must always come from the verified server registry.
   List<MobileOperator> get countryOperators {
-    if (_registryOperatorsCountry == selectedCountry.code &&
-        _registryOperators.isNotEmpty) {
+    // Never expose bundled/demo operators when the live registry is unavailable.
+    // An empty registry response is authoritative: only verified provider
+    // mappings may be shown to customers.
+    if (_registryOperatorsCountry == selectedCountry.code) {
       return _registryOperators;
     }
-    return operators
-        .where((item) => item.countryCode == selectedCountry.code)
-        .toList();
+    return const [];
   }
 
   Future<void> _loadRegistryOperators(String countryCode) async {
-    // Ignore stale responses when the user changes country or language while
-    // an earlier registry request is still in flight.
+    // Fail closed immediately while the provider-verified registry is loading.
+    // Do not leave stale or bundled operators selectable during this request.
     final requestGeneration = ++_registryOperatorsRequestGeneration;
     final requestedLanguage = languageCode;
+    if (mounted) {
+      setState(() {
+        _registryOperators = const [];
+        _registryOperatorsCountry = countryCode;
+        selectedOperator = null;
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = null;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+    }
     try {
       final uri = Uri.parse(
         '$backendBaseUrl/api/countries/$countryCode/operators',
@@ -1692,9 +1848,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
         uri,
         headers: const {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) return;
+      if (response.statusCode != 200) {
+        throw Exception('د شبکو تایید شوی لېست اوس نه ترلاسه کېږي (HTTP ${response.statusCode}).');
+      }
       final decoded = jsonDecode(response.body);
-      if (decoded is! Map || decoded['operators'] is! List) return;
+      if (decoded is! Map || decoded['operators'] is! List) {
+        throw Exception('د شبکو د سرور ځواب ناسم دی.');
+      }
 
       final parsed = <MobileOperator>[];
       for (final raw in decoded['operators'] as List) {
@@ -1714,8 +1874,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted ||
           requestGeneration != _registryOperatorsRequestGeneration ||
           countryCode != selectedCountry.code ||
-          requestedLanguage != languageCode ||
-          parsed.isEmpty) {
+          requestedLanguage != languageCode) {
         return;
       }
 
@@ -1740,13 +1899,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
           priceQuoteError = null;
         }
       });
-    } catch (_) {
-      // Keep the bundled operator list if the registry is unavailable.
+    } catch (error) {
+      if (!mounted ||
+          requestGeneration != _registryOperatorsRequestGeneration ||
+          countryCode != selectedCountry.code ||
+          requestedLanguage != languageCode) {
+        return;
+      }
+      setState(() {
+        _registryOperators = const [];
+        _registryOperatorsCountry = countryCode;
+        selectedOperator = null;
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = null;
+        priceQuote = null;
+        priceQuoteError = 'د شبکو تایید شوی لېست نشته: ${error.toString().replaceFirst('Exception: ', '')}';
+      });
     }
   }
 
   List<int> get amounts =>
-      rechargeAmounts[selectedCountry.currency] ?? [100, 250, 500];
+      rechargeAmounts[selectedCountry.currency] ?? const [];
 
   @override
   void dispose() {
@@ -1764,26 +1938,114 @@ class _PgntHomePageState extends State<PgntHomePage> {
     return '€${(cents / 100).toStringAsFixed(2)}';
   }
 
+  Future<void> _loadVerifiedProducts(MobileOperator operator) async {
+    final key = operator.operatorKey;
+    if (key == null || key.isEmpty) {
+      setState(() {
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = null;
+        priceQuote = null;
+        priceQuoteError = null;
+      });
+      return;
+    }
+    final generation = ++_verifiedProductsRequestGeneration;
+    final country = selectedCountry.code;
+    setState(() {
+      _verifiedProducts = const [];
+      _selectedProduct = null;
+      _verifiedProductsOperatorKey = null;
+      priceQuote = null;
+      priceQuoteError = null;
+      isQuoteLoading = true;
+    });
+    try {
+      final uri = Uri.parse(
+        '$backendBaseUrl/api/countries/${Uri.encodeComponent(country)}/operators/${Uri.encodeComponent(key)}/products',
+      ).replace(queryParameters: {'language': languageCode});
+      final response = await http.get(
+        uri,
+        headers: const {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 20));
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode != 200 ||
+          decoded is! Map ||
+          decoded['products'] is! List) {
+        throw Exception('د دې شبکې تایید شوي مقدارونه اوس نشته.');
+      }
+      final parsed = <CatalogTopUpProduct>[];
+      for (final raw in decoded['products'] as List) {
+        if (raw is! Map) continue;
+        try {
+          parsed.add(CatalogTopUpProduct.fromJson(
+            Map<String, dynamic>.from(raw),
+          ));
+        } catch (_) {
+          // Never offer malformed or unverified catalog rows.
+        }
+      }
+      if (!mounted ||
+          generation != _verifiedProductsRequestGeneration ||
+          country != selectedCountry.code ||
+          key != selectedOperator?.operatorKey) {
+        return;
+      }
+      setState(() {
+        _verifiedProducts = parsed;
+        _verifiedProductsOperatorKey = key;
+        _selectedProduct = null;
+        priceQuote = null;
+        priceQuoteError = parsed.isEmpty
+            ? 'د DT One له خوا تایید شوي مقدارونه د دې شبکې لپاره نشته.'
+            : null;
+      });
+    } catch (error) {
+      if (!mounted ||
+          generation != _verifiedProductsRequestGeneration ||
+          country != selectedCountry.code ||
+          key != selectedOperator?.operatorKey) {
+        return;
+      }
+      setState(() {
+        _verifiedProducts = const [];
+        _selectedProduct = null;
+        _verifiedProductsOperatorKey = key;
+        priceQuote = null;
+        priceQuoteError = error.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted && generation == _verifiedProductsRequestGeneration) {
+        setState(() => isQuoteLoading = false);
+      }
+    }
+  }
+
+  void selectVerifiedProduct(CatalogTopUpProduct product) {
+    setState(() {
+      _selectedProduct = product;
+      selectedAmount = product.recipientAmount;
+      customAmountController.text = product.recipientAmount.toString();
+      priceQuote = null;
+      priceQuoteError = null;
+    });
+    loadPriceQuote();
+  }
+
   Future<void> loadPriceQuote() async {
     final operator = selectedOperator;
-    if (operator == null) {
+    final product = _selectedProduct;
+    if (operator == null || product == null) {
       if (mounted) setState(() { priceQuote = null; priceQuoteError = null; });
       return;
     }
-
     final countryCode = selectedCountry.code;
     final amount = selectedAmount;
+    final productId = product.productId;
     setState(() { isQuoteLoading = true; priceQuoteError = null; });
-
     try {
       final uri = Uri.parse('$backendBaseUrl/api/pricing/quote').replace(
-        queryParameters: {
-          'country': countryCode,
-          'operator': operator.name,
-          'amount': '$amount',
-          if (operator.operatorKey != null && operator.operatorKey!.isNotEmpty)
-            'operatorKey': operator.operatorKey!,
-        },
+        queryParameters: {'country': countryCode, 'productId': productId},
       );
 
       final response = await http
@@ -1815,6 +2077,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted ||
           countryCode != selectedCountry.code ||
           amount != selectedAmount ||
+          productId != _selectedProduct?.productId ||
           operator.operatorKey != selectedOperator?.operatorKey || operator.name != selectedOperator?.name) {
         return;
       }
@@ -1827,7 +2090,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (!mounted ||
           countryCode != selectedCountry.code ||
           amount != selectedAmount ||
-          operator.operatorKey != selectedOperator?.operatorKey || operator.name != selectedOperator?.name) {
+          productId != _selectedProduct?.productId ||
+          operator.operatorKey != selectedOperator?.operatorKey ||
+          operator.name != selectedOperator?.name) {
         return;
       }
 
@@ -1854,7 +2119,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
       if (mounted &&
           countryCode == selectedCountry.code &&
           amount == selectedAmount &&
-          operator.name == selectedOperator?.name) {
+          operator.name == selectedOperator?.name &&
+          productId == _selectedProduct?.productId) {
         setState(() => isQuoteLoading = false);
       }
     }
@@ -1866,12 +2132,18 @@ class _PgntHomePageState extends State<PgntHomePage> {
     setState(() {
       selectedCountry = country;
       selectedOperator = null;
-      selectedAmount = 10;
+      _verifiedProducts = const [];
+      _selectedProduct = null;
+      _verifiedProductsOperatorKey = null;
+      selectedAmount = 75;
       phoneController.clear();
       customAmountController.text = '10';
       priceQuote = null;
       priceQuoteError = null;
     });
+    SharedPreferences.getInstance().then(
+      (preferences) => preferences.setString(_countryPreferenceKey, country.code),
+    );
     _loadRegistryOperators(country.code);
   }
 
@@ -1899,7 +2171,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       priceQuote = null;
       priceQuoteError = null;
     });
-    loadPriceQuote();
+    _loadVerifiedProducts(detected);
   }
 
   void showMessage(String message) {
@@ -1919,19 +2191,40 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          appName,
-          style: TextStyle(
-            color: brightGold,
-            fontWeight: FontWeight.bold,
-          ),
+        automaticallyImplyLeading: false,
+        toolbarHeight: 76,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(25)),
+        ),
+        title: Row(
+          children: [
+            PopupMenuButton<String>(
+              tooltip: 'Language',
+              icon: const Icon(Icons.language, color: Colors.white),
+              onSelected: (code) {
+                setState(() => languageCode = code);
+                _loadRegistryOperators(selectedCountry.code);
+                SharedPreferences.getInstance().then((preferences) {
+                  preferences.setString(_languagePreferenceKey, code);
+                });
+              },
+              itemBuilder: (context) => languages.map((item) =>
+                PopupMenuItem<String>(value: item.code, child: Text(item.nativeName))).toList(),
+            ),
+            const SizedBox(width: 5),
+            const Expanded(
+              child: Text(appName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+            ),
+          ],
         ),
         actions: [
           IconButton(
             tooltip: t('settings'),
-            icon: const Icon(Icons.settings_outlined),
+            icon: const Icon(Icons.settings_outlined, color: Colors.white),
             onPressed: openSettings,
           ),
+          const SizedBox(width: 6),
         ],
       ),
       body: IndexedStack(
@@ -1944,35 +2237,52 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildProfile(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: cream,
-        indicatorColor: gold.withValues(alpha: 0.35),
-        selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
-        onDestinationSelected: (index) {
-          setState(() => selectedTab = index);
-        },
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.home_outlined),
-            selectedIcon: const Icon(Icons.home),
-            label: t('home'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.receipt_long_outlined),
-            selectedIcon: const Icon(Icons.receipt_long),
-            label: t('history'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-            selectedIcon: const Icon(Icons.account_balance_wallet),
-            label: t('wallet'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.support_agent_outlined),
-            selectedIcon: const Icon(Icons.support_agent),
-            label: t('support'),
-          ),
-        ],
+      bottomNavigationBar: Container(
+        margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: darkRed.withValues(alpha: 0.10),
+              blurRadius: 18,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: NavigationBar(
+          height: 78,
+          backgroundColor: Colors.white,
+          indicatorColor: Colors.transparent,
+          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
+          onDestinationSelected: (index) {
+            setState(() => selectedTab = index);
+          },
+          destinations: [
+            NavigationDestination(
+              icon: const Icon(Icons.home_outlined),
+              selectedIcon: const Icon(Icons.home),
+              label: t('home'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.receipt_long_outlined),
+              selectedIcon: const Icon(Icons.receipt_long),
+              label: t('history'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.account_balance_wallet_outlined),
+              selectedIcon: const Icon(Icons.account_balance_wallet),
+              label: t('wallet'),
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.support_agent_outlined),
+              selectedIcon: const Icon(Icons.support_agent),
+              label: t('support'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1980,17 +2290,67 @@ class _PgntHomePageState extends State<PgntHomePage> {
   Widget buildHome() {
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
         children: [
-          const PgntBrandHeader(
-            subtitle: 'Mobile Recharge • Wallet • Support',
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0E3E2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(t('welcome').toUpperCase(),
+                        style: const TextStyle(color: primaryRed, fontSize: 19, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 12),
+                      Text('PGNT ASIAN TOPUP',
+                        style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 5),
+                      Text('Fast • Simple • Secure',
+                        style: TextStyle(color: Colors.black54, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => setState(() => selectedTab = 2),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 142),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [primaryRed, darkRed],
+                        begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.account_balance_wallet_outlined, color: Colors.white, size: 31),
+                        const SizedBox(height: 8),
+                        Text(t('wallet').toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+                        const SizedBox(height: 7),
+                        const Text('— EUR',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 18),
-          buildWelcomeCard(),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
           _buildStepHeader(1, t('selectCountry')),
           buildCountrySelector(),
-          const SizedBox(height: 18),
+          const SizedBox(height: 15),
           _buildStepHeader(2, t('phone')),
           buildPhoneField(),
           const SizedBox(height: 18),
@@ -1998,7 +2358,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildOperatorSelector(),
           const SizedBox(height: 18),
           _buildStepHeader(4, t('amount')),
-          buildCustomAmountField(),
+          buildVerifiedProductSelector(),
           const SizedBox(height: 14),
           buildPriceCard(),
           const SizedBox(height: 18),
@@ -2150,7 +2510,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: countries
+              children: _availableCountries
                   .map((country) => countryCard(country, cardWidth))
                   .toList(),
             ),
@@ -2216,7 +2576,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   Widget buildOperatorSelector() {
     if (countryOperators.isEmpty) {
-      return Text(t('selectOperator'));
+      return Text(
+        priceQuoteError ?? 'د دې هېواد لپاره تایید شوې شبکې اوس نشته. مهرباني وکړئ وروسته بیا هڅه وکړئ.',
+        style: const TextStyle(color: errorRed),
+      );
     }
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2235,10 +2598,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
               onTap: () {
                 setState(() {
                   selectedOperator = item;
+                  _verifiedProducts = const [];
+                  _selectedProduct = null;
+                  _verifiedProductsOperatorKey = null;
                   priceQuote = null;
                   priceQuoteError = null;
                 });
-                loadPriceQuote();
+                _loadVerifiedProducts(item);
               },
               child: Container(
                 width: cardWidth,
@@ -2307,46 +2673,58 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
 
-  Widget buildCustomAmountField() {
-    void applyAmount(String raw) {
-      final value = int.tryParse(raw.trim());
-      if (value == null || value < 10 || value > 3000) {
-        showMessage('مبلغ باید له ۱۰ څخه تر ۳۰۰۰ پورې وي.');
-        return;
-      }
-      setState(() {
-        selectedAmount = value;
-        priceQuote = null;
-        priceQuoteError = null;
-      });
-      loadPriceQuote();
+  Widget buildVerifiedProductSelector() {
+    if (selectedOperator == null) return const Text('لومړی شبکه وټاکئ.');
+    if (isQuoteLoading && _verifiedProducts.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
     }
-
-    return TextField(
-      controller: customAmountController,
-      keyboardType: TextInputType.number,
-      maxLength: 4,
-      decoration: InputDecoration(
-        labelText: '${t('customAmount')} (${selectedCountry.currency})',
-        hintText: '10 - 3000',
-        helperText: 'له ۱۰ څخه تر ۳۰۰۰ پورې هر مطلوب مبلغ ولیکئ.',
-        counterText: '',
-        prefixIcon: const Icon(Icons.edit_outlined, color: primaryRed),
-        suffixIcon: IconButton(
-          tooltip: 'Check amount and price',
-          icon: const Icon(Icons.check_circle_outline, color: primaryRed),
-          onPressed: () => applyAmount(customAmountController.text),
+    if (_verifiedProducts.isEmpty) {
+      return Text(
+        priceQuoteError ?? 'د دې شبکې لپاره د DT One تایید شوي مقدارونه نشته.',
+        style: const TextStyle(color: errorRed),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('یوازې د DT One تایید شوي مقدارونه ښکاري.',
+            style: TextStyle(color: Colors.black54, fontSize: 12)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _verifiedProducts.map((product) {
+            final selected = _selectedProduct?.productId == product.productId;
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => selectVerifiedProduct(product),
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 112),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFFFF1F0) : cardWhite,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: selected ? primaryRed : const Color(0xFFE7DED2),
+                    width: selected ? 1.6 : 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${product.recipientAmount} ${product.recipientCurrency}',
+                        style: TextStyle(color: selected ? primaryRed : Colors.black87, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 3),
+                    Text('DT One #${product.providerProductId}',
+                        style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                    if (selected) const Icon(Icons.check_circle, color: primaryRed, size: 15),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
         ),
-      ),
-      onChanged: (_) {
-        if (priceQuote != null) {
-          setState(() {
-            priceQuote = null;
-            priceQuoteError = null;
-          });
-        }
-      },
-      onSubmitted: applyAmount,
+      ],
     );
   }
 
@@ -2362,7 +2740,12 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const Divider(height: 18),
           _reviewRow(t('selectOperator'), selectedOperator?.name ?? '—'),
           const Divider(height: 18),
-          _reviewRow(t('amount'), '$selectedAmount ${selectedCountry.currency}'),
+          _reviewRow(
+            t('amount'),
+            _selectedProduct == null
+                ? '—'
+                : '${_selectedProduct!.recipientAmount} ${_selectedProduct!.recipientCurrency}',
+          ),
           const Divider(height: 18),
           _reviewRow(t('total'), quote?['formattedFinalPrice']?.toString() ?? t('priceNote')),
           if (quote == null)
@@ -2401,7 +2784,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
             const SizedBox(width: 10), Expanded(child: Text(t('price'))),
             Text(basePrice is String ? basePrice : '—', style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
-            Text('$selectedAmount ${selectedCountry.currency}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              _selectedProduct == null ? '—' : '${_selectedProduct!.recipientAmount} ${_selectedProduct!.recipientCurrency}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ]),
           if (quote != null && selectedCountry.code == 'AF') ...[
             const SizedBox(height: 10),
@@ -2473,7 +2859,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     await _restoreFuture;
     final phone = normalizePhone(phoneController.text);
 
-    if (!isValidPhone(selectedCountry.code, phone)) {
+    if (!isValidPhone(selectedCountry.code, phone, minDigits: selectedCountry.phoneMinDigits, maxDigits: selectedCountry.phoneMaxDigits, callingCode: selectedCountry.callingCode)) {
       showMessage(t('invalidPhone'));
       return;
     }
@@ -2483,9 +2869,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
       return;
     }
 
-    final enteredAmount = int.tryParse(customAmountController.text.trim());
-    if (enteredAmount == null || enteredAmount < 10 || enteredAmount > 3000 || enteredAmount != selectedAmount) {
-      showMessage('لومړی د ۱۰ او ۳۰۰۰ ترمنځ مبلغ ولیکئ او د تایید نښه کېکاږئ.');
+    if (_selectedProduct == null ||
+        _verifiedProductsOperatorKey != selectedOperator!.operatorKey ||
+        priceQuote?['productId']?.toString() != _selectedProduct!.productId) {
+      showMessage('لومړی د DT One له خوا تایید شوی مقدار وټاکئ او قیمت تایید کړئ.');
       return;
     }
 
@@ -2507,13 +2894,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
               'countryCode': selectedCountry.code,
               'phone': phone,
               'phoneNumber': phone,
-              'operator': selectedOperator!.name,
-              if (selectedOperator!.operatorKey != null &&
-                  selectedOperator!.operatorKey!.isNotEmpty)
-                'operatorKey': selectedOperator!.operatorKey!,
-              'amount': selectedAmount,
               'currency': selectedCountry.currency,
-              'productId': priceQuote?['productId'],
+              'productId': _selectedProduct!.productId,
             }),
           )
           .timeout(const Duration(seconds: 30));

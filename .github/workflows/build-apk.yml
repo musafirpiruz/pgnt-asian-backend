@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - main
+      - feat/multi-currency-checkout-foundation-2026-11-10
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -34,6 +35,7 @@ on:
       - fix/flutter-disable-unverified-referral-ui
       - feature/firebase-id-token-verification-core
       - feat/first-launch-language-welcome
+      - feat/device-region-and-country-bootstrap-2026-11-10
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -59,7 +61,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2

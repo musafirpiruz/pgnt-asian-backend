@@ -77,3 +77,154 @@ test('rejects missing wholesale fee evidence and expired confirmation windows', 
     confirmation_expiration_date: new Date(Date.now() - 1000).toISOString(),
   }), expected), /confirmation expiry/);
 });
+
+test('rejects missing or malformed transaction and product identity', () => {
+  assert.throws(() => parseRangedWholesalePrice(response({ id: 'not-numeric' }), expected), /identity/);
+  assert.throws(() => parseRangedWholesalePrice(response({ product: {} }), expected), /identity/);
+  assert.throws(() => parseRangedWholesalePrice(response({ external_id: '' }), expected), /identity/);
+});
+
+test('rejects destination amounts that are fractional or have the wrong unit type', () => {
+  assert.throws(() => parseRangedWholesalePrice(response({
+    requested_values: { destination: { amount: 150.5, unit: 'AFN', unit_type: 'CURRENCY' } },
+  }), expected), /destination amount or currency/);
+  assert.throws(() => parseRangedWholesalePrice(response({
+    requested_values: { destination: { amount: 150, unit: 'AFN', unit_type: 'POINTS' } },
+  }), expected), /destination amount or currency/);
+});
+
+test('rejects zero, negative, missing, or malformed wholesale amount and fee', () => {
+  const invalidWholesaleValues = [
+    { amount: 0, fee: 0, unit: 'EUR', unit_type: 'CURRENCY' },
+    { amount: -1, fee: 0, unit: 'EUR', unit_type: 'CURRENCY' },
+    { amount: 1, fee: -0.01, unit: 'EUR', unit_type: 'CURRENCY' },
+    { amount: 1, unit: 'EUR', unit_type: 'CURRENCY' },
+    { amount: 'invalid', fee: 0, unit: 'EUR', unit_type: 'CURRENCY' },
+  ];
+  for (const wholesale of invalidWholesaleValues) {
+    assert.throws(() => parseRangedWholesalePrice(response({
+      prices: { wholesale },
+    }), expected), /wholesale price/);
+  }
+});
+
+test('rounds combined provider wholesale amount and fee upward to the next EUR cent', () => {
+  const result = parseRangedWholesalePrice(response({
+    prices: { wholesale: { amount: 1.001, fee: 0.001, unit: 'EUR', unit_type: 'CURRENCY' } },
+  }), expected);
+  assert.equal(result.wholesaleTotalCents, 101);
+});
+
+
+const { calculateRangedCustomerPrice } = require('../dtone-ranged-pricing');
+
+test('calculates a EUR customer charge from provider wholesale plus app and Stripe fees', () => {
+  const result = calculateRangedCustomerPrice(
+    { wholesaleTotalCents: 190 },
+    { feeCents: 49, stripeFeePercent: 1.5, stripeFixedFeeCents: 25 }
+  );
+  assert.equal(result.currency, 'EUR');
+  assert.equal(result.wholesaleCents, 190);
+  assert.equal(result.feeCents, 49);
+  assert.equal(result.finalPriceCents, 269);
+  assert.ok(result.retainedAfterEstimatedStripeFeeCents >= 239);
+});
+
+test('ranged pricing rejects missing wholesale evidence and unsafe fee settings', () => {
+  assert.throws(() => calculateRangedCustomerPrice(null, {
+    feeCents: 49, stripeFeePercent: 1.5, stripeFixedFeeCents: 25,
+  }), /invalid/i);
+  assert.throws(() => calculateRangedCustomerPrice({ wholesaleTotalCents: 190 }, {
+    feeCents: -1, stripeFeePercent: 1.5, stripeFixedFeeCents: 25,
+  }), /invalid/i);
+  assert.throws(() => calculateRangedCustomerPrice({ wholesaleTotalCents: 190 }, {
+    feeCents: 49, stripeFeePercent: 100, stripeFixedFeeCents: 25,
+  }), /invalid/i);
+  assert.throws(() => calculateRangedCustomerPrice({ wholesaleTotalCents: 190 }, {
+    feeCents: 49, stripeFeePercent: 1.5, stripeFixedFeeCents: 1.5,
+  }), /invalid/i);
+});
+
+test('ranged pricing grosses up until the rounded Stripe fee is fully covered', () => {
+  const result = calculateRangedCustomerPrice(
+    { wholesaleTotalCents: 101 },
+    { feeCents: 0, stripeFeePercent: 2.9, stripeFixedFeeCents: 30 }
+  );
+  assert.ok(result.finalPriceCents - result.estimatedStripeFeeCents >= 101);
+});
+
+
+const {
+  buildRangedTransactionPayload,
+  getRangedConfirmationPath,
+  verifyRangedConfirmation,
+} = require('../dtone-ranged-pricing');
+
+test('builds a destination-amount DT One request with auto-confirm disabled', () => {
+  const payload = buildRangedTransactionPayload({
+    productId: '98765',
+    externalId: 'PGNT-ORDER-2',
+    destinationCurrency: 'AFN',
+    destinationAmount: 150,
+    minAmount: 75,
+    maxAmount: 3000,
+    amountIncrement: 5,
+    internationalPhone: '+93700100100',
+    callbackUrl: 'https://example.com/api/dtone/callback',
+  });
+  assert.equal(payload.calculation_mode, 'DESTINATION_AMOUNT');
+  assert.deepEqual(payload.destination, { unit_type: 'CURRENCY', unit: 'AFN', amount: 150 });
+  assert.equal(payload.auto_confirm, false);
+  assert.equal(payload.product_id, 98765);
+});
+
+test('rejects invalid ranged transaction request fields and non-HTTPS callbacks', () => {
+  const valid = {
+    productId: '98765', externalId: 'PGNT-ORDER-2', destinationCurrency: 'AFN',
+    destinationAmount: 150, minAmount: 75, maxAmount: 3000, amountIncrement: 5, internationalPhone: '+93700100100',
+    callbackUrl: 'https://example.com/api/dtone/callback',
+  };
+  for (const patch of [
+    { destinationAmount: 150.5 },
+    { destinationAmount: 3001 },
+    { destinationAmount: 151 },
+    { minAmount: 160 },
+    { maxAmount: 140 },
+    { amountIncrement: 0 },
+    { destinationCurrency: 'USD' },
+    { internationalPhone: '0700100100' },
+    { callbackUrl: 'http://example.com/callback' },
+    { productId: '1;DROP' },
+  ]) {
+    assert.throws(() => buildRangedTransactionPayload({ ...valid, ...patch }), /invalid/i);
+  }
+});
+
+test('confirmation path is available only for an unexpired CREATED quote', () => {
+  const quote = {
+    transactionId: '123456789',
+    confirmationExpiresAt: new Date(5000).toISOString(),
+    providerStatus: 'CREATED',
+    autoConfirmed: false,
+  };
+  assert.equal(getRangedConfirmationPath(quote, 1000), '/v1/async/transactions/123456789/confirm');
+  assert.throws(() => getRangedConfirmationPath(quote, 5000), /not eligible/i);
+  assert.throws(() => getRangedConfirmationPath({ ...quote, providerStatus: 'CONFIRMED' }, 1000), /not eligible/i);
+});
+
+test('confirmation response must match provider transaction, order and product identities', () => {
+  const expected = { transactionId: '123456789', externalId: 'PGNT-ORDER-2', productId: '98765' };
+  const verified = verifyRangedConfirmation({
+    id: 123456789, external_id: 'PGNT-ORDER-2', product: { id: 98765 },
+    status: { message: 'CONFIRMED' },
+  }, expected);
+  assert.equal(verified.providerStatus, 'CONFIRMED');
+  assert.throws(() => verifyRangedConfirmation({
+    id: 123456789, external_id: 'OTHER', product: { id: 98765 },
+    status: { message: 'CONFIRMED' },
+  }, expected), /identity/i);
+  assert.throws(() => verifyRangedConfirmation({
+    id: 123456789, external_id: 'PGNT-ORDER-2', product: { id: 98765 },
+    status: { message: 'CREATED' },
+  }, expected), /identity/i);
+});

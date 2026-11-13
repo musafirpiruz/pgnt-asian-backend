@@ -1,7 +1,8 @@
 'use strict';
 
-const PGNT_MIN_AMOUNT = 10;
+const PGNT_MIN_AMOUNT = 75;
 const PGNT_MAX_AMOUNT = 3000;
+const RANGED_DESTINATION_CURRENCIES = new Set(['AFN', 'PKR', 'INR', 'BDT']);
 
 function positiveFiniteNumber(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -27,7 +28,7 @@ function parseRangedProductCapability(product) {
 
   if (!Number.isSafeInteger(minAmount) || !Number.isSafeInteger(maxAmount) ||
       !Number.isSafeInteger(increment) || maxAmount < minAmount ||
-      !/^[A-Z]{3}$/.test(destinationCurrency) ||
+      !RANGED_DESTINATION_CURRENCIES.has(destinationCurrency) ||
       !acceptedCalculationModes.includes('DESTINATION_AMOUNT')) {
     return null;
   }

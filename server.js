@@ -16,9 +16,7 @@ const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
-
-const PGNT_MIN_AMOUNT = 10;
-const PGNT_MAX_AMOUNT = 3000;
+const { classifyCatalogCandidates, denominationKey } = require('./catalog-natural-key');
 
 const app = express();
 
@@ -122,14 +120,9 @@ const pool = DATABASE_URL
     })
   : null;
 
-// Country codes and recipient currencies.
-// Customer payment currency remains EUR.
-const COUNTRY_CURRENCIES = Object.freeze({
-  AF: 'AFN',
-  PK: 'PKR',
-  IN: 'INR',
-  BD: 'BDT',
-});
+// Country configuration is centralized so new markets can be added without
+// duplicating currency, phone and country identity definitions in server.js.
+const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config');
 
 // One standard customer payment currency.
 const PAYMENT_CURRENCY = 'eur';
@@ -188,6 +181,7 @@ app.use(
       'Authorization',
       'x-admin-api-key',
       'x-order-access-token',
+      'x-country-evidence-review-key',
     ],
   })
 );
@@ -327,35 +321,7 @@ app.get('/payment-cancelled', (req, res) => {
 // Customer payment currency: EUR (€)
 // =====================================================
 
-const SUPPORTED_COUNTRIES = Object.freeze({
-  AF: {
-    name: 'Afghanistan',
-    currency: 'AFN',
-    phoneDigits: [9, 9],
-    callingCode: '+93',
-  },
-
-  PK: {
-    name: 'Pakistan',
-    currency: 'PKR',
-    phoneDigits: [10, 10],
-    callingCode: '+92',
-  },
-
-  IN: {
-    name: 'India',
-    currency: 'INR',
-    phoneDigits: [10, 10],
-    callingCode: '+91',
-  },
-
-  BD: {
-    name: 'Bangladesh',
-    currency: 'BDT',
-    phoneDigits: [10, 10],
-    callingCode: '+880',
-  },
-});
+// Country configuration is imported from country-config.js.
 
 // Normalize and validate country code.
 function normalizeCountry(value) {
@@ -483,57 +449,33 @@ function validateCheckoutInput(body) {
   }
 
   const country = normalizeCountry(body.country);
-
   if (!isValidCountry(country)) {
     throw new Error('Unsupported country.');
   }
 
-  // Reject USD, and any other non-EUR payment currency.
-  // The Flutter app's `currency` is the recipient currency (AFN/PKR/INR/BDT),
-  // not the Stripe payment currency. Customer payment is always EUR.
-  const paymentCurrency = normalizePaymentCurrency(
-    body.paymentCurrency || 'EUR'
-  );
-
-  const phoneResult = validatePhone(
-    body.phone || body.phoneNumber,
-    country
-  );
-
+  // Stripe customer payment remains EUR; recipient currency is country-specific.
+  const paymentCurrency = normalizePaymentCurrency(body.paymentCurrency || 'EUR');
+  const phoneResult = validatePhone(body.phone || body.phoneNumber, country);
   if (!phoneResult.valid) {
     throw new Error(phoneResult.error);
   }
 
   const rawProductId = String(body.productId || '').trim();
-  const productId = rawProductId || null;
-  const operator = String(body.operator || '').trim();
-  const rawOperatorKey = String(body.operatorKey || '').trim();
-  const operatorKey = rawOperatorKey || null;
-  const amount = Number(body.amount);
-
-  if (productId && !/^[1-9]\d*$/.test(productId)) {
-    throw new Error('Invalid product ID.');
-  }
-
-  // Current Flutter clients send operator + local amount, not a catalog ID.
-  if ((!productId || operatorKey) && (
-    (!operatorKey && (!operator || operator.length > 120)) ||
-    (operatorKey && (!/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) ||
-    !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT
-  )) {
-    throw new Error('Select a valid operator and top-up amount.');
+  if (!/^[1-9]\d*$/.test(rawProductId)) {
+    throw new Error('Select a valid catalog product.');
   }
 
   return {
     country,
     phone: phoneResult.phone,
-    productId,
-    operator,
-    operatorKey,
-    amount,
+    productId: rawProductId,
+    operator: '',
+    operatorKey: null,
+    amount: null,
     paymentCurrency,
     recipientCurrency: countryCurrency(country),
-  };}
+  };
+}
 // =====================================================
 // PART 3/8 — PRODUCTS, PRICING, FEES & BONUSES
 // All customer prices are stored in EUR cents.
@@ -618,10 +560,9 @@ async function getPricingSettings(client, country) {
     throw new Error('Invalid local-currency-per-EUR exchange rate.');
   }
 
-  const bonusPercent = Number(settings.bonus_percent);
-  if (!Number.isFinite(bonusPercent) || bonusPercent < 0 || bonusPercent > 100) {
-    throw new Error('Invalid bonus percentage.');
-  }
+  // Legacy general bonus is retired. Referral rewards are handled separately
+  // through the referral ledger and never alter top-up pricing.
+  const bonusPercent = 0;
 
   const stripeFeePercent = Number(settings.stripe_fee_percent);
   const stripeFixedFeeCents = requireNonNegativeInteger(
@@ -647,79 +588,48 @@ async function getPricingSettings(client, country) {
 
 // Read an enabled product from the database.
 // Expected database table: product_catalog
-async function getProduct(client, productId, requestedCountry = null, operator = null, amount = null, options = {}) {
-  let result;
-
-  // Stable-key selection is authoritative. Resolve the internal operator and
-  // its explicitly reviewed catalog mapping on the server; never use a
-  // localized display label or a client-supplied provider ID as identity.
-  if (options.operatorKey) {
-    result = await client.query(
-      `SELECT
-         p.id,
-         p.country,
-         p.currency,
-         p.product_id AS dtone_product_id,
-         p.operator AS name,
-         NULL::text AS description,
-         p.amount AS local_amount,
-         p.price_eur_cents,
-         p.wholesale_price_eur_cents,
-         p.active AS enabled
-       FROM country_registry c
-       JOIN country_operators o
-         ON o.country_code = c.country_code
-       JOIN country_operator_products cop
-         ON cop.country_code = o.country_code
-        AND cop.operator_key = o.operator_key
-       JOIN product_catalog p
-         ON p.id = cop.product_catalog_id
-       WHERE c.country_code = $1
-         AND c.status = 'active'
-         AND o.operator_key = $2
-         AND o.active = TRUE
-         AND o.provider_operator_id IS NOT NULL
-         AND BTRIM(o.provider_operator_id) <> ''
-         AND o.verified_at IS NOT NULL
-         AND cop.active = TRUE
-         AND cop.verified_at IS NOT NULL
-         AND p.country = c.country_code
-         AND p.amount = $3
-         AND p.currency = c.destination_currency
-       LIMIT 2`,
-      [normalizeCountry(requestedCountry), String(options.operatorKey), amount]
-    );
-    if (result.rowCount > 1) {
-      throw new Error('Product selection is ambiguous; select a verified operator product.');
-    }
-  } else {
-    result = await client.query(
-      `SELECT
-       id,
-       country,
-       currency,
-       product_id AS dtone_product_id,
-       operator AS name,
-       NULL::text AS description,
-       amount AS local_amount,
-       price_eur_cents,
-       wholesale_price_eur_cents,
-       active AS enabled
-     FROM product_catalog
-     WHERE (
-       ($1::bigint IS NOT NULL AND id = $1::bigint)
-       OR
-       ($1::bigint IS NULL AND country = $2 AND LOWER(operator) = LOWER($3) AND amount = $4)
-     )
-     LIMIT 1`,
-      [productId, requestedCountry, operator, amount]
-    );
+async function getProduct(client, productId, requestedCountry = null, options = {}) {
+  // Customer selection is always an exact internal catalog ID. A denomination,
+  // operator label, or stable operator key is never sufficient to identify a
+  // provider product because DT One may expose multiple products at that amount.
+  if (productId === null || productId === undefined || !/^[1-9]\d*$/.test(String(productId).trim())) {
+    throw new Error('Select a valid catalog product.');
   }
 
+  const result = await client.query(
+    `SELECT
+       p.id, p.country, p.currency, p.product_id AS dtone_product_id,
+       p.operator AS name, NULL::text AS description,
+       p.amount AS local_amount, p.price_eur_cents,
+       p.wholesale_price_eur_cents, p.active AS enabled
+     FROM product_catalog p
+     JOIN country_registry c
+       ON c.country_code = p.country
+     JOIN country_operator_products cop
+       ON cop.product_catalog_id = p.id
+      AND cop.country_code = c.country_code
+     JOIN country_operators o
+       ON o.country_code = cop.country_code
+      AND o.operator_key = cop.operator_key
+     WHERE p.id = $1::bigint
+       AND p.country = $2
+       AND c.status = 'active'
+       AND c.destination_currency = p.currency
+       AND o.active = TRUE
+       AND o.provider_operator_id IS NOT NULL
+       AND BTRIM(o.provider_operator_id) <> ''
+       AND o.verified_at IS NOT NULL
+       AND cop.active = TRUE
+       AND cop.verified_at IS NOT NULL
+       AND p.product_id IS NOT NULL
+       AND p.wholesale_price_eur_cents IS NOT NULL
+       AND p.wholesale_price_eur_cents > 0
+     LIMIT 2`,
+    [String(productId).trim(), normalizeCountry(requestedCountry)]
+  );
+
   if (result.rowCount !== 1) {
-    throw new Error(
-      'Product not found.'
-    );
+    throw new Error('Product not found or its provider mapping is not verified.');
   }
 
   const product = result.rows[0];
@@ -727,64 +637,39 @@ async function getProduct(client, productId, requestedCountry = null, operator =
   // Read-only quote requests may inspect inactive catalog products.
   // All checkout/order callers remain strict unless explicitly opted in.
   if (product.enabled !== true && options.allowInactive !== true) {
-    throw new Error(
-      'This product is currently unavailable.'
-    );
+    throw new Error('This product is currently unavailable.');
   }
 
-  const country = normalizeCountry(
-    product.country
-  );
-
+  const country = normalizeCountry(product.country);
   if (!isValidCountry(country)) {
-    throw new Error(
-      'Product country is not supported.'
-    );
+    throw new Error('Product country is not supported.');
+  }
+  if (product.currency !== countryCurrency(country)) {
+    throw new Error('Product currency does not match its country.');
   }
 
-  // Recipient currency must match the selected country.
-  if (
-    product.currency !== countryCurrency(country)
-  ) {
-    throw new Error(
-      'Product currency does not match its country.'
-    );
+  const priceCents = requirePositiveInteger(product.price_eur_cents, 'product price in EUR cents');
+  const localAmount = requirePositiveInteger(product.local_amount, 'local top-up amount');
+  if (localAmount < 75 || localAmount > 3000) {
+    throw new Error('Top-up amount must be between 75 and 3000 in the destination currency.');
   }
-
-  const priceCents = requirePositiveInteger(
-    product.price_eur_cents,
-    'product price in EUR cents'
-  );
-
-  const localAmount = requirePositiveInteger(
-    product.local_amount,
-    'local top-up amount'
-  );
-
   if (!product.dtone_product_id) {
-    throw new Error(
-      'DT One product mapping is missing.'
-    );
+    throw new Error('DT One product mapping is missing.');
   }
 
   return {
     id: String(product.id),
     country,
     currency: product.currency,
-    dtoneProductId: String(
-      product.dtone_product_id
-    ),
+    dtoneProductId: String(product.dtone_product_id),
     name: String(product.name || ''),
-    description: String(
-      product.description || ''
-    ),
+    description: String(product.description || ''),
     localAmount,
     priceCents,
-    wholesalePriceCents: product.wholesale_price_eur_cents == null
-      ? null
-      : requirePositiveInteger(product.wholesale_price_eur_cents, 'DT One wholesale price in EUR cents'),
+    wholesalePriceCents: requirePositiveInteger(product.wholesale_price_eur_cents, 'DT One wholesale price in EUR cents'),
   };
 }
+
 
 // Calculate the final customer price.
 // The price and fee are both in EUR cents.
@@ -819,19 +704,9 @@ function calculateFinalPrice(product, pricing) {
     'fee'
   );
 
-  const bonusPercent = Number(
-    pricing.bonusPercent
-  );
-
-  if (
-    !Number.isFinite(bonusPercent) ||
-    bonusPercent < 0 ||
-    bonusPercent > 100
-  ) {
-    throw new Error(
-      'Invalid bonus percentage.'
-    );
-  }
+  // General bonus is permanently excluded from top-up price calculation.
+  // Referral rewards are separate ledger entries, not customer discounts.
+  const bonusPercent = 0;
 
   // Validate provider fee settings before gross-up. A percentage >= 100,
   // non-finite percentage, or invalid fixed fee can otherwise produce a
@@ -952,6 +827,77 @@ async function getProductQuote(productId, country) {
 // registry migration is installed and a country/operator has been verified.
 const REGISTRY_LANGUAGES = new Set(['en', 'ps', 'fa', 'ur', 'hi', 'bn']);
 
+// Public bootstrap list: only countries with at least one fully verified,
+// active operator and product are returned. Device-region detection is a
+// client-side suggestion; it must never make a draft country sellable.
+app.get('/api/countries', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Country registry is not configured.' });
+  }
+
+  const requestedLanguage = String(req.query.language || 'en').trim().toLowerCase();
+  const language = REGISTRY_LANGUAGES.has(requestedLanguage) ? requestedLanguage : 'en';
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         c.country_code,
+         COALESCE(localized.display_name, c.country_name) AS display_name,
+         c.destination_currency,
+         c.calling_code,
+         c.phone_min_digits,
+         c.phone_max_digits
+       FROM country_registry c
+       LEFT JOIN country_localizations localized
+         ON localized.country_code = c.country_code
+        AND localized.language_code = $1
+       WHERE c.status = 'active'
+         AND EXISTS (
+           SELECT 1
+           FROM country_operators o
+           JOIN country_operator_products cop
+             ON cop.country_code = o.country_code
+            AND cop.operator_key = o.operator_key
+           JOIN product_catalog p ON p.id = cop.product_catalog_id
+           WHERE o.country_code = c.country_code
+             AND o.active = TRUE
+             AND o.provider_operator_id IS NOT NULL
+             AND BTRIM(o.provider_operator_id) <> ''
+             AND o.verified_at IS NOT NULL
+             AND cop.active = TRUE
+             AND cop.verified_at IS NOT NULL
+             AND p.country = c.country_code
+             AND p.currency = c.destination_currency
+             AND p.active = TRUE
+             AND p.wholesale_price_eur_cents IS NOT NULL
+             AND p.wholesale_price_eur_cents > 0
+         )
+       ORDER BY COALESCE(localized.display_name, c.country_name), c.country_code`,
+      [language]
+    );
+
+    return res.json({
+      language,
+      countries: result.rows.map((row) => ({
+        code: String(row.country_code).trim(),
+        name: String(row.display_name),
+        currency: String(row.destination_currency).trim(),
+        callingCode: String(row.calling_code),
+        phoneMinDigits: Number(row.phone_min_digits),
+        phoneMaxDigits: Number(row.phone_max_digits),
+      })),
+    });
+  } catch (error) {
+    console.error('Active country bootstrap lookup failed.', {
+      errorCode: error?.code || null,
+      errorMessage: String(error?.message || 'Unknown country registry error').slice(0, 180),
+    });
+    return res.status(503).json({
+      error: 'Active country list is temporarily unavailable.',
+    });
+  }
+});
+
 app.get('/api/countries/:countryCode/operators', async (req, res) => {
   if (!pool) {
     return res.status(503).json({ error: 'Country registry is not configured.' });
@@ -993,6 +939,12 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              AND cop.verified_at IS NOT NULL
              AND p.country = c.country_code
              AND p.currency = c.destination_currency
+             AND p.active = TRUE
+             AND p.amount >= 75
+             AND p.amount <= 3000
+             AND p.product_id IS NOT NULL
+             AND p.wholesale_price_eur_cents IS NOT NULL
+             AND p.wholesale_price_eur_cents > 0
          )
        ORDER BY COALESCE(localized.display_name, o.display_name), o.operator_key`,
       [countryCode, language]
@@ -1017,6 +969,95 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
     });
     return res.status(503).json({
       error: 'Country operator registry is temporarily unavailable.',
+    });
+  }
+});
+
+
+/**
+ * Return only customer-selectable products with a fully verified DT One
+ * operator/product mapping. Product identity is the local catalog ID, never
+ * a denomination or localized operator label. This is a read-only endpoint.
+ */
+app.get('/api/countries/:countryCode/operators/:operatorKey/products', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Product catalog is not configured.' });
+  }
+
+  const countryCode = normalizeCountry(req.params.countryCode);
+  const operatorKey = String(req.params.operatorKey || '').trim();
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey)) {
+    return res.status(400).json({ error: 'A valid country and operator are required.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         p.id AS product_id,
+         p.product_id AS provider_product_id,
+         o.operator_key,
+         COALESCE(localized.display_name, o.display_name) AS operator_name,
+         p.amount AS recipient_amount,
+         p.currency AS recipient_currency,
+         p.price_eur_cents,
+         p.wholesale_price_eur_cents
+       FROM country_registry c
+       JOIN country_operators o
+         ON o.country_code = c.country_code
+       JOIN country_operator_products cop
+         ON cop.country_code = o.country_code
+        AND cop.operator_key = o.operator_key
+       JOIN product_catalog p
+         ON p.id = cop.product_catalog_id
+       LEFT JOIN country_operator_localizations localized
+         ON localized.operator_id = o.id
+        AND localized.language_code = $3
+       WHERE c.country_code = $1
+         AND c.status = 'active'
+         AND c.destination_currency = p.currency
+         AND o.operator_key = $2
+         AND o.active = TRUE
+         AND o.provider_operator_id IS NOT NULL
+         AND BTRIM(o.provider_operator_id) <> ''
+         AND o.verified_at IS NOT NULL
+         AND cop.active = TRUE
+         AND cop.verified_at IS NOT NULL
+         AND p.country = c.country_code
+         AND p.active = TRUE
+         AND p.amount >= 75
+         AND p.amount <= 3000
+         AND p.product_id IS NOT NULL
+         AND p.wholesale_price_eur_cents IS NOT NULL
+         AND p.wholesale_price_eur_cents > 0
+       ORDER BY p.amount, p.id`,
+      [countryCode, operatorKey, REGISTRY_LANGUAGES.has(String(req.query.language || 'en').toLowerCase())
+        ? String(req.query.language || 'en').toLowerCase() : 'en']
+    );
+
+    return res.json({
+      countryCode,
+      operatorKey,
+      products: result.rows.map((row) => ({
+        productId: String(row.product_id),
+        providerProductId: String(row.provider_product_id),
+        operatorKey: String(row.operator_key),
+        operatorName: String(row.operator_name),
+        recipientAmount: Number(row.recipient_amount),
+        recipientCurrency: String(row.recipient_currency),
+        paymentCurrency: 'EUR',
+        priceEurCents: Number(row.price_eur_cents),
+      })),
+    });
+  } catch (error) {
+    console.error('Verified country product lookup failed.', {
+      countryCode,
+      operatorKey,
+      errorCode: error?.code || null,
+      errorMessage: String(error?.message || 'Unknown product catalog error').slice(0, 180),
+    });
+    return res.status(503).json({
+      error: 'Verified product list is temporarily unavailable.',
     });
   }
 });
@@ -1081,17 +1122,15 @@ app.get('/api/pricing/quote', async (req, res) => {
     return res.status(503).json({ error: 'Pricing service is not configured.' });
   }
   const country = normalizeCountry(req.query.country);
-  const operator = String(req.query.operator || '').trim();
-  const operatorKey = String(req.query.operatorKey || '').trim();
-  const amount = Number(req.query.amount);
-  if (!isValidCountry(country) || ((!operatorKey && (!operator || operator.length > 120)) || (operatorKey && !/^[a-zA-Z0-9._:-]{2,100}$/.test(operatorKey))) || !Number.isSafeInteger(amount) || amount < PGNT_MIN_AMOUNT || amount > PGNT_MAX_AMOUNT) {
-    return res.status(400).json({ error: 'Select a valid country, operator, and amount.' });
+  const productId = String(req.query.productId || '').trim();
+  if (!isValidCountry(country) || !/^[1-9]\d*$/.test(productId)) {
+    return res.status(400).json({ error: 'Select a valid catalog product.' });
   }
   const client = await pool.connect();
   try {
-    const product = await getProduct(client, null, country, operator, amount, { allowInactive: true, operatorKey: operatorKey || null });
+    const product = await getProduct(client, productId, country, { allowInactive: true });
     const basePricing = await getPricingSettings(client, country);
-    const pricing = await resolveProductPricing(client, country, operator, product, basePricing);
+    const pricing = await resolveProductPricing(client, country, product.name, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
     return res.json({
       productId: product.id,
@@ -1112,13 +1151,9 @@ app.get('/api/pricing/quote', async (req, res) => {
       marketEquivalentEurFormatted: product.currency === 'AFN' ? formatEuro(Math.round((product.localAmount / pricing.afnPerEur) * 100)) : null,
     });
   } catch (error) {
-    // Keep customer responses generic for configuration/database failures, but
-    // record enough non-sensitive context in Render logs to diagnose them.
-    // Never log phone numbers, access tokens, request headers, or credentials.
     console.error('Pricing quote calculation failed.', {
       country,
-      operator,
-      amount,
+      productId,
       errorName: error?.name || 'Error',
       errorCode: error?.code || null,
       errorMessage: String(error?.message || 'Unknown pricing error').slice(0, 240),
@@ -1203,10 +1238,8 @@ app.post('/api/payments/checkout', async (req, res) => {
 
     const product = await getProduct(
       client,
-      input.productId,      input.country,
-      input.operator,
-      input.amount,
-      { operatorKey: input.operatorKey || null }
+      input.productId,
+      input.country
     );
 
     if (product.country !== input.country) {
@@ -2973,6 +3006,21 @@ async function syncStripeRefundStatus(charge) {
 // Customer payment currency: EUR
 // =====================================================
 
+// Independent country evidence review uses a credential separate from ADMIN_API_KEY.
+function requireCountryEvidenceReviewer(req, res, next) {
+  const reviewerKey = String(process.env.COUNTRY_EVIDENCE_REVIEW_API_KEY || '');
+  const reviewerId = String(process.env.COUNTRY_EVIDENCE_REVIEWER_ID || '').trim();
+  if (!reviewerKey || !reviewerId || reviewerKey === ADMIN_API_KEY) {
+    return res.status(503).json({ error: 'Independent country evidence review is not configured.' });
+  }
+  const supplied = Buffer.from(String(req.headers['x-country-evidence-review-key'] || ''));
+  const expected = Buffer.from(reviewerKey);
+  const valid = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+  if (!valid) return res.status(401).json({ error: 'Unauthorized reviewer.' });
+  req.countryEvidenceReviewerId = reviewerId;
+  return next();
+}
+
 // Admin authentication.
 // Set a long, random ADMIN_API_KEY in Render.
 function requireAdmin(req, res, next) {
@@ -3001,6 +3049,218 @@ function requireAdmin(req, res, next) {
 
   return next();
 }
+
+// Read-only country onboarding overview for the admin panel.
+// It reports canonical registry state only; it never activates countries,
+// operators, products, or changes pricing/provider configuration.
+app.get('/api/admin/countries/registry-summary', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(`
+      SELECT c.country_code, c.country_name, c.destination_currency,
+             c.calling_code, c.status, c.configuration_version, c.updated_at,
+             (SELECT COUNT(*) FROM country_localizations l
+               WHERE l.country_code = c.country_code)::int AS localization_count,
+             (SELECT COUNT(*) FROM country_operators o
+               WHERE o.country_code = c.country_code
+                 AND o.active = TRUE AND o.verified_at IS NOT NULL)::int AS verified_active_operators,
+             (SELECT COUNT(*) FROM country_operator_products cop
+               JOIN product_catalog p ON p.id = cop.product_catalog_id
+               WHERE cop.country_code = c.country_code
+                 AND cop.active = TRUE AND cop.verified_at IS NOT NULL
+                 AND p.active = TRUE)::int AS verified_active_products,
+             (SELECT COUNT(*) FROM country_operators o
+               WHERE o.country_code = c.country_code)::int AS mapped_operators,
+             (SELECT COUNT(*) FROM country_operator_products cop
+               WHERE cop.country_code = c.country_code)::int AS mapped_products
+        FROM country_registry c
+       ORDER BY c.country_code
+    `);
+    return res.set('Cache-Control', 'no-store').json({
+      countries: result.rows,
+      readOnly: true,
+      note: 'This report does not activate or modify any country, operator, product, or pricing setting.',
+    });
+  } catch (error) {
+    console.error('Admin country registry summary failed:', error.message);
+    return res.status(500).json({ error: 'Could not load country registry summary.' });
+  }
+});
+
+// Record administrator-reviewed sandbox evidence. This records evidence only;
+// it never runs a provider transaction or activates any country/product.
+app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const testName = String(req.body?.testName || '').trim();
+  const evidenceRef = String(req.body?.evidenceRef || '').trim();
+  if (!/^[A-Z]{2}$/.test(countryCode) ||
+      !['providerConnectivity','sampleQuote','successCallback','failureCallback'].includes(testName)) {
+    return res.status(400).json({ error: 'A valid country and supported sandbox test name are required.' });
+  }
+  if (req.body?.confirmEvidence !== true || req.body?.passed !== true) {
+    return res.status(400).json({ error: 'Explicit confirmation of a passed sandbox test is required.' });
+  }
+  if (evidenceRef.length < 8 || evidenceRef.length > 500) {
+    return res.status(400).json({ error: 'Provide an evidence reference between 8 and 500 characters.' });
+  }
+  try {
+    const country = await pool.query(
+      "SELECT country_code FROM country_registry WHERE country_code=$1 AND status IN ('testing','configuring')",
+      [countryCode]
+    );
+    if (!country.rowCount) return res.status(409).json({ error: 'Country must be in testing or configuring status.' });
+    const saved = await pool.query(`
+      INSERT INTO country_sandbox_evidence(country_code,test_name,passed,evidence_ref,submitted_by,review_status,submitted_at)
+      VALUES($1,$2,TRUE,$3,'admin-session','submitted',NOW())
+      ON CONFLICT(country_code,test_name) DO UPDATE SET
+        passed=TRUE,evidence_ref=EXCLUDED.evidence_ref,
+        submitted_by=EXCLUDED.submitted_by,review_status='submitted',submitted_at=NOW()
+      RETURNING country_code,test_name,passed,evidence_ref,review_status,submitted_at
+    `, [countryCode,testName,evidenceRef]);
+    return res.status(201).set('Cache-Control','no-store').json({
+      recorded: true, evidence: saved.rows[0],
+      note: 'Evidence recorded only; this does not activate the country.',
+    });
+  } catch (error) {
+    console.error('Country sandbox evidence recording failed:', error.message);
+    return res.status(500).json({ error: 'Could not record sandbox evidence. Confirm migration 029 is installed.' });
+  }
+});
+
+// Independently approve or reject submitted evidence. This endpoint records review metadata only.
+app.post('/api/admin/countries/:countryCode/sandbox-evidence/:testName/review',
+  express.json(), requireCountryEvidenceReviewer, async (req, res) => {
+    if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+    const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+    const testName = String(req.params.testName || '').trim();
+    const decision = String(req.body?.decision || '').trim().toLowerCase();
+    if (!/^[A-Z]{2}$/.test(countryCode) ||
+        !['providerConnectivity','sampleQuote','successCallback','failureCallback'].includes(testName) ||
+        !['approve','reject'].includes(decision)) {
+      return res.status(400).json({ error: 'Valid country, test name, and approve/reject decision are required.' });
+    }
+    if (req.body?.confirmReview !== true) {
+      return res.status(400).json({ error: 'Explicit confirmation of the independent evidence review is required.' });
+    }
+    try {
+      const result = await pool.query(`
+        UPDATE country_sandbox_evidence
+           SET review_status = $3,
+               verified_at = CASE WHEN $3 = 'approved' THEN NOW() ELSE NULL END,
+               reviewed_by = $4,
+               reviewed_at = NOW()
+         WHERE country_code = $1 AND test_name = $2
+           AND passed = TRUE AND review_status = 'submitted'
+        RETURNING country_code, test_name, passed, review_status, verified_at, reviewed_by, reviewed_at
+      `, [countryCode, testName, decision === 'approve' ? 'approved' : 'rejected', req.countryEvidenceReviewerId]);
+      if (!result.rowCount) return res.status(409).json({ error: 'No pending passed evidence was found for this country and test.' });
+      return res.set('Cache-Control', 'no-store').json({
+        reviewed: true, evidence: result.rows[0], countryActivated: false, productActivated: false,
+      });
+    } catch (error) {
+      console.error('Country sandbox evidence review failed:', error.message);
+      return res.status(500).json({ error: 'Could not review country sandbox evidence. Confirm migration 029 is installed.' });
+    }
+  });
+
+// Read-only country activation preflight. No status, mapping, product,
+// pricing, FX, or provider data is modified. Submitted sandbox evidence is
+// not counted until an independent review approves it.
+app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return res.status(400).json({ error: 'A valid two-letter country code is required.' });
+  }
+  try {
+    const result = await pool.query(`
+      SELECT c.country_code, c.country_name, c.destination_currency,
+             c.calling_code, c.phone_min_digits, c.phone_max_digits,
+             c.provider, c.provider_country_code, c.status,
+             p.active AS pricing_active, p.fee_eur_cents,
+             COALESCE(p.local_currency_per_eur, p.afn_per_eur) AS fx_rate,
+             (SELECT COUNT(*) FROM country_localizations l
+               WHERE l.country_code = c.country_code
+                 AND l.language_code IN ('en','ps','fa','ur','hi','bn')
+                 AND BTRIM(l.display_name) <> '')::int AS required_language_count,
+             (SELECT COUNT(*) FROM country_operators o
+               WHERE o.country_code = c.country_code AND o.active = TRUE
+                 AND o.verified_at IS NOT NULL
+                 AND o.provider_operator_id IS NOT NULL
+                 AND BTRIM(o.provider_operator_id) <> '')::int AS verified_operator_count,
+             (SELECT COUNT(*) FROM country_operator_products cop
+               JOIN country_operators o ON o.country_code=cop.country_code
+                 AND o.operator_key=cop.operator_key
+               JOIN product_catalog pc ON pc.id=cop.product_catalog_id
+               WHERE cop.country_code=c.country_code AND cop.active=TRUE
+                 AND cop.verified_at IS NOT NULL AND o.active=TRUE
+                 AND o.verified_at IS NOT NULL AND pc.active=TRUE
+                 AND pc.product_id IS NOT NULL AND pc.currency=c.destination_currency
+                 AND pc.wholesale_price_eur_cents > 0)::int AS verified_product_count,
+             (SELECT COUNT(*) FROM country_sandbox_evidence e
+               WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.review_status='approved'
+                 AND e.test_name='providerConnectivity'
+                 AND e.verified_at > NOW() - INTERVAL '30 days'
+                 AND e.verified_at <= NOW())::int AS sandbox_provider_connectivity,
+             (SELECT COUNT(*) FROM country_sandbox_evidence e
+               WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.test_name='sampleQuote'
+                 AND e.review_status='approved'
+                 AND e.verified_at > NOW() - INTERVAL '30 days'
+                 AND e.verified_at <= NOW())::int AS sandbox_sample_quote,
+             (SELECT COUNT(*) FROM country_sandbox_evidence e
+               WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.test_name='successCallback'
+                 AND e.review_status='approved'
+                 AND e.verified_at > NOW() - INTERVAL '30 days'
+                 AND e.verified_at <= NOW())::int AS sandbox_success_callback,
+             (SELECT COUNT(*) FROM country_sandbox_evidence e
+               WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.test_name='failureCallback'
+                 AND e.review_status='approved'
+                 AND e.verified_at > NOW() - INTERVAL '30 days'
+                 AND e.verified_at <= NOW())::int AS sandbox_failure_callback
+        FROM country_registry c
+        LEFT JOIN pricing_settings p ON p.country::text=c.country_code
+       WHERE c.country_code=$1
+       LIMIT 1
+    `, [countryCode]);
+    if (result.rowCount !== 1) return res.status(404).json({ error: 'Country is not registered.' });
+    const row = result.rows[0];
+    const checks = [
+      { key: 'countryInTesting', passed: ['testing','configuring'].includes(String(row.status).toLowerCase()) },
+      { key: 'providerCountryMapping', passed: Boolean(row.provider && row.provider_country_code) },
+      { key: 'sixRequiredLanguages', passed: Number(row.required_language_count) === 6 },
+      { key: 'verifiedActiveOperators', passed: Number(row.verified_operator_count) > 0 },
+      { key: 'verifiedActiveProducts', passed: Number(row.verified_product_count) > 0 },
+      { key: 'activeEurPricing', passed: row.pricing_active === true && Number.isInteger(Number(row.fee_eur_cents)) && Number(row.fee_eur_cents) >= 0 },
+      { key: 'positiveDestinationFx', passed: Number.isFinite(Number(row.fx_rate)) && Number(row.fx_rate) > 0 },
+      { key: 'sandboxProviderConnectivity', passed: Number(row.sandbox_provider_connectivity) > 0 },
+      { key: 'sandboxSampleQuote', passed: Number(row.sandbox_sample_quote) > 0 },
+      { key: 'sandboxSuccessCallback', passed: Number(row.sandbox_success_callback) > 0 },
+      { key: 'sandboxFailureCallback', passed: Number(row.sandbox_failure_callback) > 0 },
+    ];
+    const blockers = checks.filter(check => !check.passed).map(check => check.key);
+    return res.set('Cache-Control', 'no-store').json({
+      country: {
+        countryCode: row.country_code, countryName: row.country_name,
+        destinationCurrency: row.destination_currency, status: row.status,
+      },
+      eligible: blockers.length === 0,
+      checks, blockers,
+      verifiedOperatorCount: Number(row.verified_operator_count),
+      verifiedProductCount: Number(row.verified_product_count),
+      requiredLanguageCount: Number(row.required_language_count),
+      readOnly: true,
+      note: 'Submitted evidence does not count as verified until an independent review approves it. This endpoint cannot activate a country.',
+    });
+  } catch (error) {
+    console.error('Country activation preflight failed:', { countryCode, message: error.message });
+    return res.status(500).json({ error: 'Could not evaluate country activation readiness.' });
+  }
+});
 
 // Read-only wallet integrity diagnostics. This deliberately exposes no
 // customer records and performs no wallet, ledger, payment, or refund writes.
@@ -3644,7 +3904,7 @@ loadSupportTickets.addEventListener('click',refreshSupportTickets);
 form.addEventListener('submit',async event=>{
  event.preventDefault();
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Checking DT One pre-production for product '+productId+'…';
  try{
   const data=await adminRequest('/api/admin/dtone/products/'+encodeURIComponent(productId));
@@ -3726,7 +3986,7 @@ operatorPricingCountry.addEventListener('change',()=>operatorPricingRows.replace
 document.getElementById('importCatalogProduct').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  if(!confirm('Import this verified provider product into the local catalog as DISABLED? No payment or top-up will be performed.')) return;
  result.textContent='Verifying provider product and importing it as disabled…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/import',{method:'POST'});result.textContent=JSON.stringify(data,null,2);}
@@ -3736,7 +3996,7 @@ document.getElementById('importCatalogProduct').addEventListener('click',async()
 document.getElementById('refreshCatalogPrices').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  if(!confirm('Refresh provider retail and wholesale prices for this existing product only if it is DISABLED and its identity matches DT One? Pricing settings will not change; no payment/top-up will be performed.')) return;
  result.textContent='Verifying DT One and refreshing prices for disabled product '+productId+'…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/refresh-prices',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmPriceRefresh:true})});result.textContent=JSON.stringify(data,null,2);}
@@ -3746,7 +4006,7 @@ document.getElementById('refreshCatalogPrices').addEventListener('click',async()
 checkDatabase.addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  const productId=String(document.getElementById('productIdInput').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){result.textContent='Enter a valid positive DT One product ID.';return;}
  result.textContent='Reading saved product '+productId+' and pricing settings…';
  try{const data=await adminRequest('/api/admin/catalog/'+encodeURIComponent(productId)+'/pricing');result.textContent=JSON.stringify(data,null,2);}
  catch(error){result.textContent='Could not verify database pricing: '+error.message;}
@@ -3896,7 +4156,7 @@ discover.addEventListener('click',async()=>{
   renderRows();
   document.getElementById('bulkImportDisabled').addEventListener('click',async()=>{
    if(!key.value){result.textContent='Enter the admin API key first.';return;}
-   const ids=[...document.querySelectorAll('.bulkProductSelect:checked')].map(el=>String(el.dataset.productId||'')).filter(id=>/^[1-9]\\d*$/.test(id));
+   const ids=[...document.querySelectorAll('.bulkProductSelect:checked')].map(el=>String(el.dataset.productId||'')).filter(id=>/^[1-9]\d*$/.test(id));
    if(!ids.length){result.textContent='Select at least one product to import.';return;}
    if(ids.length>100){result.textContent='Select no more than 100 products at a time.';return;}
    if(!confirm('Import '+ids.length+' selected DT One products into the local catalog as DISABLED? Products will be re-verified one by one. No payment or top-up will be performed.'))return;
@@ -4559,40 +4819,53 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
 
     const client = await pool.connect();
     try {
-      const existingIds = await client.query(
-        'SELECT product_id FROM product_catalog'
-      );
-      const existingIdSet = new Set(existingIds.rows.map(row => String(row.product_id)));
-      const existingDenominations = await client.query(
+      const allExistingIds = await client.query('SELECT product_id FROM product_catalog');
+      const existingIdSet = new Set(allExistingIds.rows.map(row => String(row.product_id)));
+      const alreadyRegistered = candidates.filter(product => existingIdSet.has(product.productId)).map(product => product.productId);
+      const newCandidates = candidates.filter(product => !existingIdSet.has(product.productId));
+      const existingCatalogRows = await client.query(
         'SELECT product_id, operator, amount, currency, active FROM product_catalog WHERE country = $1',
         [country]
       );
-      const byDenomination = new Map(existingDenominations.rows.map(row =>
-        [`${String(row.operator).trim().toLowerCase()}|${Number(row.amount)}|${String(row.currency).toUpperCase()}`, row]
-      ));
-
-      const toInsert = [];
-      const alreadyPresent = [];
-      const conflicts = [];
-      for (const product of candidates) {
-        if (existingIdSet.has(product.productId)) {
-          alreadyPresent.push(product.productId);
-          continue;
-        }
-        const key = `${product.operator.trim().toLowerCase()}|${product.amount}|${product.currency}`;
-        if (byDenomination.has(key)) {
-          conflicts.push({
+      // Provider product ID is the catalog identity. Distinct provider IDs may
+      // share a denomination after migration 027. Until that migration is applied,
+      // block only the affected imports so the legacy unique key cannot cause a
+      // partial or silently skipped catalog import.
+      const classified = classifyCatalogCandidates(newCandidates, existingCatalogRows.rows);
+      const toInsert = classified.toInsert;
+      const alreadyPresent = [...alreadyRegistered, ...classified.alreadyPresent];
+      const conflicts = classified.conflicts;
+      const legacyConstraintResult = await client.query(
+        `SELECT EXISTS (
+           SELECT 1 FROM pg_constraint c
+           WHERE c.conrelid = 'product_catalog'::regclass
+             AND c.contype = 'u'
+             AND (
+               SELECT array_agg(a.attname ORDER BY k.ordinality)
+               FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ordinality)
+               JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+             ) = ARRAY['country', 'operator', 'amount', 'currency']::name[]
+         ) AS legacy_denomination_unique`
+      );
+      const legacyDenominationConstraintPresent = legacyConstraintResult.rows[0]?.legacy_denomination_unique === true;
+      const existingDenominationKeys = new Set(existingCatalogRows.rows.map(denominationKey));
+      const candidateDenominationCounts = new Map();
+      for (const product of toInsert) {
+        const key = denominationKey(product);
+        candidateDenominationCounts.set(key, (candidateDenominationCounts.get(key) || 0) + 1);
+      }
+      const legacyConstraintBlockedProducts = legacyDenominationConstraintPresent
+        ? toInsert.filter(product =>
+            existingDenominationKeys.has(denominationKey(product)) ||
+            candidateDenominationCounts.get(denominationKey(product)) > 1
+          ).map(product => ({
             productId: product.productId,
-            existingProductId: String(byDenomination.get(key).product_id),
             operator: product.operator,
             amount: product.amount,
             currency: product.currency,
-            reason: 'Same operator and denomination already exists with a different DT One product ID; manual review required.',
-          });
-          continue;
-        }
-        toInsert.push(product);
-      }
+            reason: 'The legacy database denomination constraint is still installed. Apply the reviewed product identity migration before importing this same-denomination product.',
+          }))
+        : [];
 
       let pricingPreview = null;
       try {
@@ -4646,6 +4919,9 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         alreadyPresentCount: alreadyPresent.length,
         conflictCount: conflicts.length,
         rejectedCount: rejected.length,
+        legacyDenominationConstraintPresent,
+        legacyConstraintBlockedCount: legacyConstraintBlockedProducts.length,
+        legacyConstraintBlockedProducts,
         alreadyPresent,
         conflicts,
         rejected,
@@ -4658,6 +4934,14 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       };
 
       if (!confirmImport) return res.json(summary);
+      if (legacyConstraintBlockedProducts.length) {
+        return res.status(409).json({
+          ...summary,
+          importedCount: 0,
+          importConfirmed: false,
+          error: 'Some same-denomination provider products are blocked by the legacy database constraint. No catalog rows were changed; apply the reviewed product identity migration first.',
+        });
+      }
 
       await client.query('BEGIN');
       const imported = [];
@@ -4673,7 +4957,12 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
           [country, product.operator, product.amount, product.currency, product.productId,
             product.retailCents, product.wholesaleCents]
         );
-        if (result.rowCount === 1) imported.push(result.rows[0]);
+        if (result.rowCount !== 1) {
+          throw new Error(
+            `Catalog import conflict for DT One product ${product.productId}; transaction rolled back instead of silently skipping the product.`
+          );
+        }
+        imported.push(result.rows[0]);
       }
       await client.query('COMMIT');
       return res.status(200).json({
@@ -5036,7 +5325,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
   const countryCurrencyByIso = Object.freeze({
     AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT',
   });
-  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\\d{0,17}$/.test(productId)) {
+  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\d{0,17}$/.test(productId)) {
     return res.status(400).json({
       imported: false,
       error: 'A supported country_iso_code and valid DT One product_id are required.',
@@ -5412,7 +5701,8 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   const localCurrencyPerEur = Number(
     body.localCurrencyPerEur ?? body.afnPerEur
   );
-  const bonusPercent = Number(body.bonusPercent);
+  // Ignore legacy client bonus values. General bonus is always persisted as zero.
+  const bonusPercent = 0;
   const stripeFeePercent = Number(body.stripeFeePercent);
   const stripeFixedFeeCents = Number(body.stripeFixedFeeCents);
 
@@ -5428,16 +5718,6 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
 
   if (!Number.isFinite(localCurrencyPerEur) || localCurrencyPerEur <= 0 || localCurrencyPerEur > 1000000) {
     return res.status(400).json({ error: 'localCurrencyPerEur must be a positive number no greater than 1000000.' });
-  }
-
-  if (
-    !Number.isFinite(bonusPercent) ||
-    bonusPercent < 0 ||
-    bonusPercent > 100
-  ) {
-    return res.status(400).json({
-      error: 'bonusPercent must be between 0 and 100.',
-    });
   }
 
   if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {

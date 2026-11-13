@@ -63,8 +63,8 @@ test('pricing quote logs diagnostic fields without logging customer phone or acc
   const diagnostic = route.slice(diagnosticStart, diagnosticEnd);
   assert.doesNotMatch(diagnostic, /req\.body|req\.headers|req\.query\.phone|orderAccessToken|x-order-access-token|STRIPE_SECRET_KEY|DTONE_API_SECRET/i);
   assert.match(diagnostic, /country,/);
-  assert.match(diagnostic, /operator,/);
-  assert.match(diagnostic, /amount,/);
+  assert.match(diagnostic, /productId,/);
+  assert.doesNotMatch(diagnostic, /operator,|amount,/);
 });
 
 test('legacy AFN quote field uses the configured local-currency exchange rate', () => {

@@ -1,0 +1,29 @@
+-- PGNT ASIAN TOPUP: administrator-reviewed sandbox evidence.
+-- Evidence is country-scoped, expires from readiness checks after 30 days,
+-- and is never sufficient by itself to activate a country.
+BEGIN;
+CREATE TABLE IF NOT EXISTS country_sandbox_evidence (
+  id BIGSERIAL PRIMARY KEY,
+  country_code CHAR(2) NOT NULL REFERENCES country_registry(country_code) ON DELETE RESTRICT,
+  test_name VARCHAR(40) NOT NULL CHECK (test_name IN (
+    'providerConnectivity','sampleQuote','successCallback','failureCallback'
+  )),
+  passed BOOLEAN NOT NULL DEFAULT FALSE,
+  evidence_ref VARCHAR(500) NOT NULL,
+  submitted_by VARCHAR(120) NOT NULL DEFAULT 'admin-session',
+  review_status VARCHAR(20) NOT NULL DEFAULT 'submitted'
+    CHECK (review_status IN ('submitted','approved','rejected')),
+  -- Set only when an independent administrator approves the evidence.
+  -- The activation preflight requires both approved status and a recent timestamp.
+  verified_at TIMESTAMPTZ,
+  reviewed_by VARCHAR(120),
+  reviewed_at TIMESTAMPTZ,
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(country_code,test_name),
+  CHECK (BTRIM(evidence_ref) <> ''),
+  CHECK (BTRIM(submitted_by) <> ''),
+  CHECK (review_status <> 'approved' OR (verified_at IS NOT NULL AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS country_sandbox_evidence_submitted_at_idx
+  ON country_sandbox_evidence(country_code,submitted_at DESC);
+COMMIT;

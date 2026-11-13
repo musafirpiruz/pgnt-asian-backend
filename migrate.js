@@ -227,7 +227,7 @@ async function runMigration() {
           ('AF', 'ATOMA', 250,  'AFN', 7203, 411, 0, FALSE, NOW()),
           ('AF', 'ATOMA', 500,  'AFN', 7213, 821, 0, FALSE, NOW()),
           ('AF', 'ATOMA', 1000, 'AFN', 7233, 1641, 0, FALSE, NOW())
-        ON CONFLICT (country, operator, amount, currency)
+        ON CONFLICT (product_id)
         DO UPDATE SET
           product_id = EXCLUDED.product_id,
           price_eur_cents = EXCLUDED.price_eur_cents,
@@ -256,7 +256,7 @@ async function runMigration() {
         INSERT INTO product_catalog
           (country, operator, amount, currency, product_id, price_eur_cents, bonus_amount, active, updated_at)
         VALUES ('AF', 'ATOMA', 115, 'AFN', 7194, 189, 0, FALSE, NOW())
-        ON CONFLICT (country, operator, amount, currency)
+        ON CONFLICT (product_id)
         DO UPDATE SET
           product_id = EXCLUDED.product_id,
           price_eur_cents = EXCLUDED.price_eur_cents,
@@ -301,7 +301,7 @@ async function runMigration() {
             (country, operator, amount, currency, product_id,
              price_eur_cents, wholesale_price_eur_cents, bonus_amount, active, updated_at)
           VALUES ('AF', 'ATOMA', 115, 'AFN', 7194, 210, 189, 0, FALSE, NOW())
-          ON CONFLICT (country, operator, amount, currency)
+          ON CONFLICT (product_id)
           DO UPDATE SET
             product_id = EXCLUDED.product_id,
             price_eur_cents = EXCLUDED.price_eur_cents,

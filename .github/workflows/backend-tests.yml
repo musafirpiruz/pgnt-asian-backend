@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feat/device-region-and-country-bootstrap-2026-11-10
 
 jobs:
   test:
@@ -57,5 +58,17 @@ jobs:
         run: node --test tests/country-registry-migration-order.integration.test.js
       - name: Reconcile country registry schemas in isolated PostgreSQL schemas
         run: node --test tests/canonical-country-registry-reconciliation.integration.test.js
+      - name: Test country registry bootstrap and FX migrations 023-024 in isolated PostgreSQL schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-registry-fx-023-024.integration.sql
+      - name: Test proposed wallet ledger migration in isolated PostgreSQL schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/wallet-ledger-025.integration.sql
+      - name: Test proposed DT One product metadata migration in isolated PostgreSQL schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-metadata-026.integration.sql
+      - name: Test proposed exact DT One product identity migration in isolated PostgreSQL schema
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-identity-027.integration.sql
+      - name: Test independently reviewed country sandbox evidence migration 029
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-sandbox-evidence-029.integration.sql
+      - name: Verify country sandbox evidence preflight and reviewer gates
+        run: node --test tests/country-sandbox-evidence-preflight.test.js
       - name: Run regression tests
         run: npm test
