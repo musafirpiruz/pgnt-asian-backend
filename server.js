@@ -3153,14 +3153,17 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
                  AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_provider_connectivity,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
                WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.review_status='approved'
                  AND e.test_name='sampleQuote'
                  AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_sample_quote,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
                WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.review_status='approved'
                  AND e.test_name='successCallback'
                  AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_success_callback,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
                WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.review_status='approved'
                  AND e.test_name='failureCallback'
                  AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_failure_callback
         FROM country_registry c
