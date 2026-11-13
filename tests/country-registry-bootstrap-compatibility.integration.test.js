@@ -56,11 +56,14 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
     const before = await client.query(`
       SELECT
         (SELECT COUNT(*)::int FROM country_localizations) AS country_localizations,
-        (SELECT COUNT(*)::int FROM country_operators) AS operators,
-        CASE WHEN to_regclass('country_operator_localizations') IS NULL THEN 0
-          ELSE (SELECT COUNT(*)::int FROM country_operator_localizations)
-        END AS operator_localizations
+        (SELECT COUNT(*)::int FROM country_operators) AS operators
     `);
+    const beforeOperatorLocalizations = await client.query(
+      "SELECT to_regclass('country_operator_localizations') IS NOT NULL AS present"
+    );
+    const beforeOperatorLocalizationCount = beforeOperatorLocalizations.rows[0].present
+      ? (await client.query('SELECT COUNT(*)::int AS count FROM country_operator_localizations')).rows[0].count
+      : 0;
 
     let migrationError;
     try {
@@ -77,12 +80,17 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
     const after = await client.query(`
       SELECT
         (SELECT COUNT(*)::int FROM country_localizations) AS country_localizations,
-        (SELECT COUNT(*)::int FROM country_operators) AS operators,
-        CASE WHEN to_regclass('country_operator_localizations') IS NULL THEN 0
-          ELSE (SELECT COUNT(*)::int FROM country_operator_localizations)
-        END AS operator_localizations
+        (SELECT COUNT(*)::int FROM country_operators) AS operators
     `);
+    const afterOperatorLocalizations = await client.query(
+      "SELECT to_regclass('country_operator_localizations') IS NOT NULL AS present"
+    );
+    const afterOperatorLocalizationCount = afterOperatorLocalizations.rows[0].present
+      ? (await client.query('SELECT COUNT(*)::int AS count FROM country_operator_localizations')).rows[0].count
+      : 0;
     assert.deepEqual(after.rows, before.rows, 'failed 023 must preserve existing localization and operator rows');
+    assert.equal(afterOperatorLocalizationCount, beforeOperatorLocalizationCount,
+      'failed 023 must preserve operator-localization rows');
 
     const registryCount = await client.query(`
       SELECT COUNT(*)::int AS count
