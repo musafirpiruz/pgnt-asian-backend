@@ -84,3 +84,15 @@ These are source-level incompatibilities inferred directly from the checked-in m
 3. Migrate existing localization rows without deleting or overwriting translations; verify one-to-one operator identity before switching foreign keys.
 4. Rebuild/validate child foreign keys so every country-scoped child points to the canonical country root.
 5. Only after the reconciliation test passes on both historical fixtures should 023/024 be considered for a controlled release migration. No automatic startup wiring.
+
+
+### Compatibility regression test added on 2026-11-13
+
+Added `tests/country-registry-bootstrap-compatibility.integration.test.js` on this branch. It builds disposable schemas from both checked-in historical fixtures, supplies the pricing/catalog prerequisites, attempts migration 023, and asserts that:
+
+- the legacy-196 fixture is rejected for the missing `country_operators.verified_at` column;
+- the newer-204 fixture is rejected because `provider_operator_id` is NOT NULL while 023 inserts NULL;
+- existing country localization, operator, and operator-localization row counts remain unchanged after the failed transactional migration; and
+- tables created inside the failed 023 transaction are rolled back.
+
+The test is PostgreSQL-backed and skips when `DATABASE_URL` is absent. It has been committed to the feature branch, but its CI execution result is not yet available. This is a regression guard documenting the current failure, **not** a reconciliation fix. A separate data-preserving canonical-schema reconciliation remains required before 023 can be safely retried.
