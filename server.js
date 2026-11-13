@@ -3071,6 +3071,80 @@ app.get('/api/admin/countries/registry-summary', requireAdmin, async (req, res) 
   }
 });
 
+// Read-only country activation preflight. No status, mapping, product,
+// pricing, FX, or provider data is modified. Sandbox evidence is intentionally
+// reported as missing until a separately audited evidence store is implemented.
+app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return res.status(400).json({ error: 'A valid two-letter country code is required.' });
+  }
+  try {
+    const result = await pool.query(`
+      SELECT c.country_code, c.country_name, c.destination_currency,
+             c.calling_code, c.phone_min_digits, c.phone_max_digits,
+             c.provider, c.provider_country_code, c.status,
+             p.active AS pricing_active, p.fee_eur_cents,
+             COALESCE(p.local_currency_per_eur, p.afn_per_eur) AS fx_rate,
+             (SELECT COUNT(*) FROM country_localizations l
+               WHERE l.country_code = c.country_code
+                 AND l.language_code IN ('en','ps','fa','ur','hi','bn')
+                 AND BTRIM(l.display_name) <> '')::int AS required_language_count,
+             (SELECT COUNT(*) FROM country_operators o
+               WHERE o.country_code = c.country_code AND o.active = TRUE
+                 AND o.verified_at IS NOT NULL
+                 AND o.provider_operator_id IS NOT NULL
+                 AND BTRIM(o.provider_operator_id) <> '')::int AS verified_operator_count,
+             (SELECT COUNT(*) FROM country_operator_products cop
+               JOIN country_operators o ON o.country_code=cop.country_code
+                 AND o.operator_key=cop.operator_key
+               JOIN product_catalog pc ON pc.id=cop.product_catalog_id
+               WHERE cop.country_code=c.country_code AND cop.active=TRUE
+                 AND cop.verified_at IS NOT NULL AND o.active=TRUE
+                 AND o.verified_at IS NOT NULL AND pc.active=TRUE
+                 AND pc.product_id IS NOT NULL AND pc.currency=c.destination_currency
+                 AND pc.wholesale_price_eur_cents > 0)::int AS verified_product_count
+        FROM country_registry c
+        LEFT JOIN pricing_settings p ON p.country::text=c.country_code
+       WHERE c.country_code=$1
+       LIMIT 1
+    `, [countryCode]);
+    if (result.rowCount !== 1) return res.status(404).json({ error: 'Country is not registered.' });
+    const row = result.rows[0];
+    const checks = [
+      { key: 'countryInTesting', passed: ['testing','configuring'].includes(String(row.status).toLowerCase()) },
+      { key: 'providerCountryMapping', passed: Boolean(row.provider && row.provider_country_code) },
+      { key: 'sixRequiredLanguages', passed: Number(row.required_language_count) === 6 },
+      { key: 'verifiedActiveOperators', passed: Number(row.verified_operator_count) > 0 },
+      { key: 'verifiedActiveProducts', passed: Number(row.verified_product_count) > 0 },
+      { key: 'activeEurPricing', passed: row.pricing_active === true && Number.isInteger(Number(row.fee_eur_cents)) && Number(row.fee_eur_cents) >= 0 },
+      { key: 'positiveDestinationFx', passed: Number.isFinite(Number(row.fx_rate)) && Number(row.fx_rate) > 0 },
+      { key: 'sandboxProviderConnectivity', passed: false },
+      { key: 'sandboxSampleQuote', passed: false },
+      { key: 'sandboxSuccessCallback', passed: false },
+      { key: 'sandboxFailureCallback', passed: false },
+    ];
+    const blockers = checks.filter(check => !check.passed).map(check => check.key);
+    return res.set('Cache-Control', 'no-store').json({
+      country: {
+        countryCode: row.country_code, countryName: row.country_name,
+        destinationCurrency: row.destination_currency, status: row.status,
+      },
+      eligible: blockers.length === 0,
+      checks, blockers,
+      verifiedOperatorCount: Number(row.verified_operator_count),
+      verifiedProductCount: Number(row.verified_product_count),
+      requiredLanguageCount: Number(row.required_language_count),
+      readOnly: true,
+      note: 'Sandbox checks remain blocked because verified evidence is not yet stored. This endpoint cannot activate a country.',
+    });
+  } catch (error) {
+    console.error('Country activation preflight failed:', { countryCode, message: error.message });
+    return res.status(500).json({ error: 'Could not evaluate country activation readiness.' });
+  }
+});
+
 // Read-only wallet integrity diagnostics. This deliberately exposes no
 // customer records and performs no wallet, ledger, payment, or refund writes.
 // Wallet APIs remain disabled until identity binding and ledger safeguards ship.
