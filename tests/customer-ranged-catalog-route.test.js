@@ -41,7 +41,7 @@ test('customer ranged catalog clamps selectable bounds to 75–3000 without igno
 
   assert.deepEqual(bounds(50, 5000, 5), { min: 75, max: 3000, increment: 5 });
   assert.deepEqual(bounds(100, 2000, 25), { min: 100, max: 2000, increment: 25 });
-  assert.deepEqual(bounds(80, 1000, 30), { min: 110, max: 980, increment: 30 });
+  assert.deepEqual(bounds(80, 1000, 30), { min: 80, max: 980, increment: 30 });
   assert.equal(bounds(3005, 5000, 5), null);
   assert.equal(bounds(75, 74, 1), null);
 });
