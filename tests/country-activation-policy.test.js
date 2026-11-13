@@ -49,7 +49,7 @@ test('activation policy fails closed for missing provider, product, FX and sandb
     'providerCountryMappingUnverified', 'noActiveVerifiedOperator',
     'noActiveVerifiedPricedProduct', 'missingStaleOrMismatchedFxRate',
   ]) assert.ok(result.blockers.includes(blocker));
-  assert.ok(result.blockers.some(value => value.startsWith('sandboxChecksIncomplete:')));
+  assert.ok(result.blockers.some(value => value.startsWith('sandboxChecksMissingApprovedFreshEvidence:')));
 });
 
 test('activation policy requires all six localizations and valid EUR pricing', () => {
