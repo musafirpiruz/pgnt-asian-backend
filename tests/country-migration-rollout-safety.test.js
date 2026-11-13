@@ -30,7 +30,7 @@ test('review-only wallet, catalog identity, ranged-order and evidence migrations
 
 test('country bootstrap keeps provider mappings inactive and aborts on unsafe catalog state', () => {
   assert.match(m023, /local_currency_per_eur IS NULL OR p\.local_currency_per_eur <= 0/i);
-  assert.match(m023, /p\.active/i);
+  assert.match(m023, /SELECT COUNT\(\*\) INTO bad_count FROM product_catalog WHERE active/i);
   assert.match(m023, /active BOOLEAN NOT NULL DEFAULT FALSE, verified_at TIMESTAMPTZ/i);
   assert.match(m023, /Bootstrap invariant failed: product mapping activation\/verification found/i);
   assert.doesNotMatch(m023, /SET\s+active\s*=\s*TRUE/i);
