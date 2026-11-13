@@ -69,6 +69,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="notice" class="status" role="status" aria-live="polite">د پیل لپاره کیلي ولیکئ او «د کتنې فرمایشونه ښکاره کړه» کېکاږئ.</div>
 </section>
 <section class="card">
+<h2>د هېوادونو د ثبت او تایید راپور (یوازې لوستل)</h2>
+<p class="muted">د هېوادونو حالت، ژبې، تایید شوې شبکې او محصولات ښيي. دا راپور هېڅ هېواد یا محصول نه فعالوي.</p>
+<div class="actions"><button class="secondary" id="loadCountryRegistry">د هېوادونو راپور ولوله</button></div>
+<div id="countryRegistry"><div class="empty">د راپور لوستلو لپاره تڼۍ کېکاږئ.</div></div>
+</section>
+<section class="card">
 <h2>۲. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
 <p class="muted">یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.</p>
 <div id="queue"><div class="empty">تر اوسه فرمایشونه نه دي لوستل شوي.</div></div>
@@ -355,6 +361,40 @@ document.getElementById('createReferralCode').addEventListener('click',async()=>
  finally{button.disabled=false;}
 });
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
+
+// Read-only country registry overview. All values are rendered as text.
+document.getElementById('loadCountryRegistry').addEventListener('click',async()=>{
+ const host=document.getElementById('countryRegistry');
+ const button=document.getElementById('loadCountryRegistry');
+ button.disabled=true;host.replaceChildren();
+ try{
+  const data=await adminRequest('/api/admin/countries/registry-summary');
+  const rows=Array.isArray(data.countries)?data.countries:[];
+  if(!rows.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='د هېوادونو ثبت لا نه دی موجود.';host.append(empty);}
+  for(const country of rows){
+   const card=document.createElement('div');card.className='order';
+   const top=document.createElement('div');top.className='order-top';
+   const title=document.createElement('strong');title.textContent=(country.country_name||country.country_code)+' ('+country.country_code+')';
+   const status=document.createElement('span');status.className='pill';status.textContent='حالت: '+(country.status||'—');
+   top.append(title,status);card.append(top);
+   const dl=document.createElement('dl');dl.className='detail';
+   const fields=[
+    ['د ترلاسه کوونکي اسعار',country.destination_currency],
+    ['د ټیلیفون کوډ',country.calling_code],
+    ['د ژبو شمېر',country.localization_count],
+    ['تایید شوې فعالې شبکې',country.verified_active_operators],
+    ['تایید شوي فعال محصولات',country.verified_active_products],
+    ['ټولې ثبت شوې شبکې',country.mapped_operators],
+    ['ټول ثبت شوي محصولات',country.mapped_products],
+    ['د تنظیم نسخه',country.configuration_version]
+   ];
+   for(const [label,value] of fields){const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=String(value??'—');dl.append(dt,dd);}
+   card.append(dl);host.append(card);
+  }
+  const note=document.createElement('p');note.className='muted';note.textContent=data.note||'یوازې لوستل؛ هېڅ تنظیم نه دی بدل شوی.';host.append(note);
+ }catch(error){const message=document.createElement('div');message.className='status error';message.textContent='د هېوادونو راپور ونه لوستل شو: '+error.message;host.append(message);}
+ finally{button.disabled=false;}
+});
 </script>
 </body>
 </html>
