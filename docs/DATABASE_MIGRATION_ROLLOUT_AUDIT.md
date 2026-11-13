@@ -37,3 +37,31 @@ These SQL files exist in `migrations/`, but their presence in the repository doe
 - No authenticated DT One product/price evidence was obtained by this source audit.
 - No current FX rate, customer price, country activation, live checkout, refund, wallet movement, or product import is approved by this document.
 - EUR remains the only live checkout currency in the current backend path. GBP/USD remain future work and require real currency conversion and payment-fee verification.
+
+
+## Follow-up findings from the 2026-11-13 migration-order review
+
+### 023/024 test coverage
+
+The branch contains an isolated PostgreSQL script, `tests/country-registry-fx-023-024.integration.sql`, that applies 023 then 024 twice and checks four country rows, 24 localizations, inactive operator/product mappings, no imported FX observations, idempotency, and country/currency FK enforcement. The separate 024 integration test also checks that legacy `pricing_settings` values are not rewritten and that FX observations default to unapproved.
+
+This is useful isolated-schema evidence, but it does not prove that 023 is safe against the current Render database. In particular, 023 intentionally aborts if **any** `product_catalog` row is active, and it requires positive `pricing_settings.local_currency_per_eur` for all four countries. Those exact production preconditions must be measured on a restorable clone before any rollout.
+
+### Canonical registry migration-order conflict
+
+The existing `tests/country-registry-migration-order.integration.test.js` is explicitly diagnostic: it demonstrates that two older registry migration fixtures can create competing root tables (`countries` and `country_registry`), while shared child tables bind their foreign keys to whichever root was created first. The test currently asserts that this conflict remains observable; it is not a passing reconciliation of the two roots.
+
+Therefore, do not treat the presence of `country_registry` after 023 as sufficient proof of a canonical schema. Before production rollout, reconcile the legacy `countries` root and the newer `country_registry` root, prove which existing routes and foreign keys use each, and add an upgrade test that guarantees one canonical parent with no orphaned or duplicated country/operator data.
+
+### Startup and version-number policy
+
+The startup runner currently executes through the 018 ranged-value foundation. The repository's migrations directory contains 023–029, with no 019–022 SQL files in this branch. The numbering gap alone does not establish that migrations are missing or safe to invent. Do not create placeholder versions or silently mark them applied. Keep 023/024 as separately reviewed rollout candidates until the competing-registry issue and production preconditions are resolved. Keep 025–029 out of startup as required by `tests/country-migration-rollout-safety.test.js`.
+
+### Updated decision
+
+- **Do not change `migrate.js` yet.** Wiring 023/024 into automatic startup could expose every deployment to the active-catalog guard and to the unresolved dual-root registry history.
+- First add a disposable upgrade fixture representing the actual current schema, including both legacy and canonical registry objects and their foreign keys.
+- Then reconcile the canonical registry with explicit data-preservation assertions, validate 023/024 on that fixture, and only afterward design a controlled release migration step.
+- 025 remains a financial-ledger proposal; 026/027 remain catalog-identity proposals; 028 remains blocked on complete ranged-order runtime support; 029 remains dependent on a reconciled canonical registry and independent evidence review.
+
+No database was connected, no migration was executed, no production data was modified, and no country/operator/product was activated during this follow-up review.
