@@ -650,8 +650,8 @@ async function getProduct(client, productId, requestedCountry = null, options = 
 
   const priceCents = requirePositiveInteger(product.price_eur_cents, 'product price in EUR cents');
   const localAmount = requirePositiveInteger(product.local_amount, 'local top-up amount');
-  if (localAmount < 75 || localAmount > 3000) {
-    throw new Error('Top-up amount must be between 75 and 3000 in the destination currency.');
+  if (localAmount < 10 || localAmount > 3000) {
+    throw new Error('Top-up amount must be between 10 and 3000 in the destination currency.');
   }
   if (!product.dtone_product_id) {
     throw new Error('DT One product mapping is missing.');
@@ -940,7 +940,7 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              AND p.country = c.country_code
              AND p.currency = c.destination_currency
              AND p.active = TRUE
-             AND p.amount >= 75
+             AND p.amount >= 10
              AND p.amount <= 3000
              AND p.product_id IS NOT NULL
              AND p.wholesale_price_eur_cents IS NOT NULL
@@ -1025,7 +1025,7 @@ app.get('/api/countries/:countryCode/operators/:operatorKey/products', async (re
          AND cop.verified_at IS NOT NULL
          AND p.country = c.country_code
          AND p.active = TRUE
-         AND p.amount >= 75
+         AND p.amount >= 10
          AND p.amount <= 3000
          AND p.product_id IS NOT NULL
          AND p.wholesale_price_eur_cents IS NOT NULL
