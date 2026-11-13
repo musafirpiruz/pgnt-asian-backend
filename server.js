@@ -5327,8 +5327,12 @@ app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
     BD: 'BGD',
   });
   const providerCountryCode = providerCountryCodes[countryCode];
+  const operatorFilter = String(req.query.operator || '').trim();
   if (!providerCountryCode) {
     return res.status(400).json({ error: 'Unsupported country.' });
+  }
+  if (operatorFilter.length > 160) {
+    return res.status(400).json({ error: 'Invalid operator filter.' });
   }
 
   try {
@@ -5368,8 +5372,9 @@ app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
          AND rp.accepted_calculation_modes ? 'DESTINATION_AMOUNT'
          AND rp.min_amount <= 3000
          AND rp.max_amount >= 75
+         AND ($3 = '' OR LOWER(rp.operator_name) = LOWER($3))
        ORDER BY rp.operator_name, rp.dtone_product_id`,
-      [providerCountryCode, countryCode]
+      [providerCountryCode, countryCode, operatorFilter]
     );
 
     const products = result.rows
