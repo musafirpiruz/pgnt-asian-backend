@@ -58,3 +58,12 @@ test('customer ranged catalog returns only public product identity and amount ca
   assert.match(route, /increment/);
   assert.match(route, /products: \[\]/);
 });
+test('customer ranged catalog scopes results to the selected operator with a parameterized filter', () => {
+  const start = server.indexOf("app.get('/api/countries/:countryCode/ranged-products'");
+  const end = server.indexOf('// Import one verified DT One ranged recharge capability', start);
+  const route = server.slice(start, end);
+  assert.match(route, /const operatorFilter = String\(req\.query\.operator \|\| ''\)\.trim\(\)/);
+  assert.match(route, /operatorFilter\.length > 160/);
+  assert.match(route, /LOWER\(rp\.operator_name\) = LOWER\(\$3\)/);
+  assert.match(route, /\[providerCountryCode, countryCode, operatorFilter\]/);
+});
