@@ -5347,13 +5347,13 @@ app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
          rp.dtone_product_id,
          rp.operator_name,
          rp.destination_currency,
-         GREATEST(
-           rp.min_amount::bigint,
-           75::bigint + MOD(
-             (rp.min_amount::bigint - 75::bigint + rp.amount_increment::bigint - 1),
-             rp.amount_increment::bigint
-           )
-         ) AS selectable_min_amount,
+         (
+           rp.min_amount
+           + CEIL(
+               (GREATEST(rp.min_amount, 75) - rp.min_amount)
+               / rp.amount_increment
+             ) * rp.amount_increment
+         )::bigint AS selectable_min_amount,
          LEAST(rp.max_amount::bigint, 3000::bigint) AS provider_max_amount,
          rp.amount_increment::bigint AS amount_increment,
          rp.capability_verified_at
