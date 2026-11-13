@@ -3113,8 +3113,8 @@ app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), r
 });
 
 // Read-only country activation preflight. No status, mapping, product,
-// pricing, FX, or provider data is modified. Sandbox evidence is intentionally
-// reported as missing until a separately audited evidence store is implemented.
+// pricing, FX, or provider data is modified. Recorded sandbox evidence is
+// administrator-entered and is not independently verified by DT One.
 app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
@@ -3145,7 +3145,7 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
                  AND cop.verified_at IS NOT NULL AND o.active=TRUE
                  AND o.verified_at IS NOT NULL AND pc.active=TRUE
                  AND pc.product_id IS NOT NULL AND pc.currency=c.destination_currency
-                 AND pc.wholesale_price_eur_cents > 0)::int AS verified_product_count
+                 AND pc.wholesale_price_eur_cents > 0)::int AS verified_product_count,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
                WHERE e.country_code=c.country_code AND e.passed=TRUE
                  AND e.test_name='providerConnectivity'
