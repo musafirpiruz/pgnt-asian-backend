@@ -3095,12 +3095,12 @@ app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), r
     );
     if (!country.rowCount) return res.status(409).json({ error: 'Country must be in testing or configuring status.' });
     const saved = await pool.query(`
-      INSERT INTO country_sandbox_evidence(country_code,test_name,passed,evidence_ref,verified_by,verified_at)
-      VALUES($1,$2,TRUE,$3,'admin',NOW())
+      INSERT INTO country_sandbox_evidence(country_code,test_name,passed,evidence_ref,submitted_by,review_status,submitted_at)
+      VALUES($1,$2,TRUE,$3,'admin-session','submitted',NOW())
       ON CONFLICT(country_code,test_name) DO UPDATE SET
         passed=TRUE,evidence_ref=EXCLUDED.evidence_ref,
-        verified_by=EXCLUDED.verified_by,verified_at=NOW()
-      RETURNING country_code,test_name,passed,evidence_ref,verified_at
+        submitted_by=EXCLUDED.submitted_by,review_status='submitted',submitted_at=NOW()
+      RETURNING country_code,test_name,passed,evidence_ref,review_status,submitted_at
     `, [countryCode,testName,evidenceRef]);
     return res.status(201).set('Cache-Control','no-store').json({
       recorded: true, evidence: saved.rows[0],
@@ -3113,8 +3113,8 @@ app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), r
 });
 
 // Read-only country activation preflight. No status, mapping, product,
-// pricing, FX, or provider data is modified. Recorded sandbox evidence is
-// administrator-entered and is not independently verified by DT One.
+// pricing, FX, or provider data is modified. Submitted sandbox evidence is
+// not counted until an independent review approves it.
 app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
@@ -3148,6 +3148,7 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
                  AND pc.wholesale_price_eur_cents > 0)::int AS verified_product_count,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
                WHERE e.country_code=c.country_code AND e.passed=TRUE
+                 AND e.review_status='approved'
                  AND e.test_name='providerConnectivity'
                  AND e.verified_at > NOW() - INTERVAL '30 days')::int AS sandbox_provider_connectivity,
              (SELECT COUNT(*) FROM country_sandbox_evidence e
@@ -3194,7 +3195,7 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
       verifiedProductCount: Number(row.verified_product_count),
       requiredLanguageCount: Number(row.required_language_count),
       readOnly: true,
-      note: 'Sandbox checks remain blocked because verified evidence is not yet stored. This endpoint cannot activate a country.',
+      note: 'Submitted evidence does not count as verified until an independent review approves it. This endpoint cannot activate a country.',
     });
   } catch (error) {
     console.error('Country activation preflight failed:', { countryCode, message: error.message });
