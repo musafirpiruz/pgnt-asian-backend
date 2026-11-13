@@ -72,6 +72,20 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <h2>د هېوادونو د ثبت او تایید راپور (یوازې لوستل)</h2>
 <p class="muted">د هېوادونو حالت، ژبې، تایید شوې شبکې او محصولات ښيي. دا راپور هېڅ هېواد یا محصول نه فعالوي.</p>
 <div class="actions"><button class="secondary" id="loadCountryRegistry">د هېوادونو راپور ولوله</button></div>
+<div class="grid">
+ <div><label for="sandboxEvidenceCountry">د هېواد کوډ</label><input id="sandboxEvidenceCountry" maxlength="2" placeholder="AF" autocomplete="off"></div>
+ <div><label for="sandboxEvidenceTest">د Sandbox ازموینه</label><select id="sandboxEvidenceTest">
+  <option value="providerConnectivity">د Provider اتصال</option>
+  <option value="sampleQuote">د قیمت نمونه</option>
+  <option value="successCallback">د بریالي Callback ازموینه</option>
+  <option value="failureCallback">د ناکام Callback ازموینه</option>
+ </select></div>
+</div>
+<label for="sandboxEvidenceRef">د ازموینې د ثبوت حواله</label>
+<input id="sandboxEvidenceRef" maxlength="500" placeholder="د ازموینې راپور، لاګ یا مستند حواله">
+<div class="actions"><button id="saveSandboxEvidence" type="button">د بریالۍ ازموینې ثبوت ثبت کړه</button></div>
+<p class="muted">یوازې هغه ازموینه ثبت کړئ چې واقعاً په DT One Sandbox کې ترسره او تایید شوې وي. دا ثبت د هېواد فعالول نه کوي.</p>
+<div id="sandboxEvidenceNotice" class="status" role="status" aria-live="polite">د ثبوت ثبتولو لپاره د ازموینې پایله او مستند حواله اړینه ده.</div>
 <div id="countryRegistry"><div class="empty">د راپور لوستلو لپاره تڼۍ کېکاږئ.</div></div>
 </section>
 <section class="card">
@@ -417,6 +431,23 @@ document.getElementById('loadCountryRegistry').addEventListener('click',async()=
   }
   const note=document.createElement('p');note.className='muted';note.textContent=data.note||'یوازې لوستل؛ هېڅ تنظیم نه دی بدل شوی.';host.append(note);
  }catch(error){const message=document.createElement('div');message.className='status error';message.textContent='د هېوادونو راپور ونه لوستل شو: '+error.message;host.append(message);}
+ finally{button.disabled=false;}
+});
+
+document.getElementById('saveSandboxEvidence').addEventListener('click',async()=>{
+ const button=document.getElementById('saveSandboxEvidence');
+ const notice=document.getElementById('sandboxEvidenceNotice');
+ const countryCode=document.getElementById('sandboxEvidenceCountry').value.trim().toUpperCase();
+ const testName=document.getElementById('sandboxEvidenceTest').value;
+ const evidenceRef=document.getElementById('sandboxEvidenceRef').value.trim();
+ if(!/^[A-Z]{2}$/.test(countryCode)||evidenceRef.length<8){notice.className='status warn';notice.textContent='د هېواد دوه توريز کوډ او لږ تر لږه ۸ توريزه مستنده حواله ولیکئ.';return;}
+ if(!confirm('ایا دا ازموینه واقعاً په DT One Sandbox کې بریالۍ شوې او ثبوت یې کتلی دی؟'))return;
+ button.disabled=true;notice.className='status';notice.textContent='د ازموینې ثبوت ثبتېږي…';
+ try{
+  const result=await adminPost('/api/admin/countries/'+encodeURIComponent(countryCode)+'/sandbox-evidence',{testName,evidenceRef,passed:true,confirmEvidence:true});
+  notice.className='status ok';notice.textContent='ثبوت ثبت شو: '+result.evidence.testName+'. دا هېواد لا هم په اتومات ډول نه فعالېږي.';
+  document.getElementById('sandboxEvidenceRef').value='';
+ }catch(error){notice.className='status error';notice.textContent='ثبوت ثبت نه شو: '+error.message;}
  finally{button.disabled=false;}
 });
 </script>
