@@ -18,6 +18,6 @@ CREATE TABLE IF NOT EXISTS country_sandbox_evidence (
   CHECK (BTRIM(evidence_ref) <> ''),
   CHECK (BTRIM(submitted_by) <> '')
 );
-CREATE INDEX IF NOT EXISTS country_sandbox_evidence_verified_at_idx
+CREATE INDEX IF NOT EXISTS country_sandbox_evidence_submitted_at_idx
   ON country_sandbox_evidence(country_code,submitted_at DESC);
 COMMIT;
