@@ -2137,6 +2137,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   void selectVerifiedProduct(CatalogTopUpProduct product) {
     setState(() {
+      _selectedRangedProduct = null;
       _selectedProduct = product;
       selectedAmount = product.recipientAmount;
       customAmountController.text = product.recipientAmount.toString();
@@ -2927,9 +2928,13 @@ class _PgntHomePageState extends State<PgntHomePage> {
           const Divider(height: 18),
           _reviewRow(
             t('amount'),
-            _selectedProduct == null
-                ? '—'
-                : '${_selectedProduct!.recipientAmount} ${_selectedProduct!.recipientCurrency}',
+            _selectedRangedProduct != null
+                ? ( _selectedRangedProduct!.accepts(selectedAmount)
+                    ? '$selectedAmount ${_selectedRangedProduct!.currency}'
+                    : 'مقدار ناسم')
+                : (_selectedProduct == null
+                    ? '—'
+                    : '${_selectedProduct!.recipientAmount} ${_selectedProduct!.recipientCurrency}'),
           ),
           const Divider(height: 18),
           _reviewRow(t('total'), quote?['formattedFinalPrice']?.toString() ?? t('priceNote')),
@@ -2997,7 +3002,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             Row(children: [Expanded(child: Text('ټول تادیه', style: const TextStyle(fontWeight: FontWeight.bold))), Text(total is String ? total : '—', style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold, fontSize: 18))]),
           ],
           const SizedBox(height: 12),
-          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.')), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
+          Text(isQuoteLoading ? 'د سرور تایید شوی قیمت ترلاسه کېږي...' : (_selectedRangedProduct != null ? 'د متغیر مقدار لپاره د EUR قیمت او خوندي تادیې API لا تر جوړېدو لاندې دی؛ تادیه بنده ده.' : (priceQuoteError ?? (quote == null ? 'د یورو قیمت، فیس او بونس لپاره هېواد، آپرېټر او اندازه وټاکئ.' : 'قیمت، فیس او بونس د سرور له تایید شوي نرخ څخه ښودل کېږي.'))), style: TextStyle(color: priceQuoteError == null ? Colors.black54 : errorRed, fontSize: 12), textAlign: TextAlign.center),
         ]),
       ),
     );
