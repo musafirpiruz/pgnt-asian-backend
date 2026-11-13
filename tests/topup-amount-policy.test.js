@@ -34,3 +34,14 @@ test('quote and checkout both use the same exact internal catalog product identi
   assert.match(checkout, /input\.productId/);
   assert.doesNotMatch(checkout, /input\.amount|input\.operatorKey/);
 });
+
+
+test('verified catalog supports the requested 10 to 3000 destination amount range', () => {
+  const productRouteStart = server.indexOf("app.get('/api/countries/:countryCode/operators/:operatorKey/products'");
+  const productRouteEnd = server.indexOf("app.", productRouteStart + 40);
+  assert.ok(productRouteStart >= 0 && productRouteEnd > productRouteStart);
+  const productRoute = server.slice(productRouteStart, productRouteEnd);
+  assert.match(productRoute, /p\.amount >= 10/);
+  assert.match(productRoute, /p\.amount <= 3000/);
+  assert.match(server, /localAmount < 10 \|\| localAmount > 3000/);
+});
