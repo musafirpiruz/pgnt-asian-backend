@@ -129,6 +129,11 @@ BEGIN
              WHEN verified_at IS NULL THEN FALSE
              ELSE active
            END;
+    -- Unknown provider IDs are legitimate during bootstrap. Migration 023
+    -- inserts inactive candidate operators before DT One identity is verified.
+    -- Keep the provider-scoped unique constraint; PostgreSQL permits multiple
+    -- NULL identities while preventing duplicate non-NULL provider IDs.
+    ALTER TABLE country_operators ALTER COLUMN provider_operator_id DROP NOT NULL;
     ALTER TABLE country_operators ALTER COLUMN provider SET DEFAULT 'dtone';
     ALTER TABLE country_operators ALTER COLUMN provider SET NOT NULL;
   END IF;
