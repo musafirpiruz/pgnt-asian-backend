@@ -14,7 +14,7 @@ const migration = fs.readFileSync(
 
 test('country sandbox evidence schema supports independently verified approvals', () => {
   assert.ok(migration.includes('verified_at TIMESTAMPTZ'));
-  assert.ok(migration.includes("CHECK (review_status <> 'approved' OR verified_at IS NOT NULL)"));
+  assert.ok(migration.includes("CHECK (review_status <> 'approved' OR (verified_at IS NOT NULL AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL))"));
 });
 
 test('all four activation preflight sandbox checks require approved, recent evidence', () => {
