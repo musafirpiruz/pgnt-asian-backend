@@ -5266,7 +5266,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
   const countryCurrencyByIso = Object.freeze({
     AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT',
   });
-  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\\d{0,17}$/.test(productId)) {
+  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\d{0,17}$/.test(productId)) {
     return res.status(400).json({
       imported: false,
       error: 'A supported country_iso_code and valid DT One product_id are required.',
