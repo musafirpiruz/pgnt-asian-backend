@@ -96,3 +96,12 @@ Added `tests/country-registry-bootstrap-compatibility.integration.test.js` on th
 - tables created inside the failed 023 transaction are rolled back.
 
 The test is PostgreSQL-backed and skips when `DATABASE_URL` is absent. It has been committed to the feature branch, but its CI execution result is not yet available. This is a regression guard documenting the current failure, **not** a reconciliation fix. A separate data-preserving canonical-schema reconciliation remains required before 023 can be safely retried.
+
+
+### CI regression result and corrective follow-up — 2026-11-13
+
+The first PostgreSQL-backed run of the new 023 compatibility test exposed a test-harness defect in the PR #240 commit: the newer-204 fixture intentionally has no `country_operator_localizations` table, but the test attempted to count it before migration. The failing subtest was test setup (`42P01 relation does not exist`), not evidence that 023 had succeeded. The legacy-196 rejection test passed, and the pre-existing canonical reconciliation integration suite passed in that same run.
+
+Corrected the test to treat an absent operator-localization table as zero rows while still asserting that any existing rows remain unchanged. Separately strengthened the reconciliation fixture: it now drops NOT NULL from `country_operators.provider_operator_id`, because unknown provider identities must be representable as NULL until independently verified; the newer-204 regression test now asserts this schema contract.
+
+These corrections are committed on the PR branch. The latest CI runs are queued/in progress at the time of this audit update. No production migration was run.
