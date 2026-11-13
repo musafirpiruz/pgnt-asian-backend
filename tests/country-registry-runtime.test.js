@@ -34,7 +34,9 @@ test('failed refresh preserves the last known-good snapshot', async () => {
   const before = runtime.getSnapshot();
   shouldFail = true;
   await assert.rejects(runtime.refresh(), /database unavailable/);
-  assert.equal(runtime.getSnapshot(), before);
+  const after = runtime.getSnapshot();
+  assert.equal(after.countries, before.countries);
+  assert.equal(after.refreshedAt, before.refreshedAt);
 });
 
 test('concurrent refresh calls share one database load', async () => {
