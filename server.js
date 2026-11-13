@@ -5312,6 +5312,108 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
 });
 
 
+// Customer-facing list of explicitly activated DT One ranged recharge capabilities.
+// Only verified active products are returned; provider costs and snapshots stay private.
+app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Database is not configured.' });
+  }
+
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const providerCountryCodes = Object.freeze({
+    AF: 'AFG',
+    PK: 'PAK',
+    IN: 'IND',
+    BD: 'BGD',
+  });
+  const providerCountryCode = providerCountryCodes[countryCode];
+  if (!providerCountryCode) {
+    return res.status(400).json({ error: 'Unsupported country.' });
+  }
+
+  try {
+    const schema = await pool.query(
+      "SELECT to_regclass('dtone_ranged_products') IS NOT NULL AS ranged_ready, to_regclass('country_registry') IS NOT NULL AS registry_ready"
+    );
+    if (!schema.rows[0]?.ranged_ready || !schema.rows[0]?.registry_ready) {
+      return res.status(503).json({
+        error: 'Verified ranged recharge catalog is not configured.',
+        products: [],
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         rp.dtone_product_id,
+         rp.operator_name,
+         rp.destination_currency,
+         GREATEST(
+           rp.min_amount::bigint,
+           75::bigint + MOD(
+             (rp.min_amount::bigint - 75::bigint + rp.amount_increment::bigint - 1),
+             rp.amount_increment::bigint
+           )
+         ) AS selectable_min_amount,
+         LEAST(rp.max_amount::bigint, 3000::bigint) AS provider_max_amount,
+         rp.amount_increment::bigint AS amount_increment,
+         rp.capability_verified_at
+       FROM dtone_ranged_products rp
+       JOIN country_registry cr
+         ON cr.country_code = $2
+        AND cr.destination_currency = rp.destination_currency
+        AND cr.status IN ('active', 'legacy')
+       WHERE rp.country_iso_code = $1
+         AND rp.active = TRUE
+         AND rp.capability_verified_at IS NOT NULL
+         AND rp.accepted_calculation_modes ? 'DESTINATION_AMOUNT'
+         AND rp.min_amount <= 3000
+         AND rp.max_amount >= 75
+       ORDER BY rp.operator_name, rp.dtone_product_id`,
+      [providerCountryCode, countryCode]
+    );
+
+    const products = result.rows
+      .map((row) => {
+        const min = Number(row.selectable_min_amount);
+        const max = Number(row.provider_max_amount);
+        const increment = Number(row.amount_increment);
+        if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) ||
+            !Number.isSafeInteger(increment) || increment <= 0 ||
+            min < 75 || max > 3000 || min > max) return null;
+        const lastValid = min + Math.floor((max - min) / increment) * increment;
+        if (lastValid < min) return null;
+        return {
+          productId: String(row.dtone_product_id),
+          operator: String(row.operator_name),
+          currency: String(row.destination_currency),
+          minAmount: min,
+          maxAmount: lastValid,
+          increment,
+          capabilityVerifiedAt: row.capability_verified_at,
+        };
+      })
+      .filter(Boolean);
+
+    return res.json({
+      country: countryCode,
+      amountPolicy: { min: 75, max: 3000 },
+      products,
+      count: products.length,
+      source: 'verified_active_dtone_capabilities',
+    });
+  } catch (error) {
+    console.error('Customer ranged product catalog lookup failed:', {
+      countryCode,
+      errorMessage: String(error?.message || 'Unknown catalog error').slice(0, 180),
+    });
+    return res.status(500).json({
+      error: 'Could not load verified ranged recharge products.',
+      products: [],
+    });
+  }
+});
+
+
 // Import one verified DT One ranged recharge capability as disabled metadata.
 // This endpoint never creates a provider transaction, Stripe session, or active product.
 app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, res) => {
