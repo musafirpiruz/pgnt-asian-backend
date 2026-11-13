@@ -65,3 +65,22 @@ The startup runner currently executes through the 018 ranged-value foundation. T
 - 025 remains a financial-ledger proposal; 026/027 remain catalog-identity proposals; 028 remains blocked on complete ranged-order runtime support; 029 remains dependent on a reconciled canonical registry and independent evidence review.
 
 No database was connected, no migration was executed, no production data was modified, and no country/operator/product was activated during this follow-up review.
+
+
+## Concrete legacy-schema incompatibilities confirmed from both migration fixtures
+
+The upgrade-order fixtures expose more than competing foreign-key roots:
+
+- **Legacy registry first (migration fixture 196 / `017_database_country_registry`):** its existing `country_operators` table has no `verified_at` column. Migration 023 later inserts into `country_operators(..., active, verified_at)`, so it will fail on that schema unless a deliberate additive reconciliation is performed first. Its existing `country_operator_localizations` also uses the legacy composite key `(country_code, operator_key, language_code)`, while 023 expects the newer `operator_id` key shape.
+- **Newer registry first (migration fixture 204 / `017_dynamic_country_registry`):** its existing `country_operator_localizations` table likewise has no `operator_id` column; it is keyed by `(country_code, operator_key, language_code)`. Migration 023 attempts to insert `operator_id`, so it is incompatible here too. Its existing `country_operators.provider_operator_id` is NOT NULL, whereas 023 seeds rows with NULL provider IDs, creating another potential NOT NULL violation when a catalog operator has no provider ID.
+- In either order, `CREATE TABLE IF NOT EXISTS` does not reconcile an already-existing table's columns or foreign keys. It silently leaves the older shape in place, so 023's later statements cannot assume its preferred schema merely because the table name exists.
+
+These are source-level incompatibilities inferred directly from the checked-in migration fixtures and 023 SQL. They have not been tested against a live database. The current migration-order integration test is diagnostic and should be extended to assert the expected 023 failure in both starting-schema variants, then replaced by a reconciliation migration with explicit preservation of all existing localization/operator rows and FK ownership.
+
+### Required remediation before retrying 023
+
+1. Inspect actual schema shape using `information_schema.columns`, `pg_constraint`, and row counts on a restorable clone.
+2. Design one canonical `country_operators` and `country_operator_localizations` model, including a reviewed strategy for nullable/unknown provider operator IDs.
+3. Migrate existing localization rows without deleting or overwriting translations; verify one-to-one operator identity before switching foreign keys.
+4. Rebuild/validate child foreign keys so every country-scoped child points to the canonical country root.
+5. Only after the reconciliation test passes on both historical fixtures should 023/024 be considered for a controlled release migration. No automatic startup wiring.
