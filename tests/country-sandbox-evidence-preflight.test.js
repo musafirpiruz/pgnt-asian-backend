@@ -14,7 +14,7 @@ const migration = fs.readFileSync(
 
 test('country sandbox evidence schema supports independently verified approvals', () => {
   assert.match(migration, /verified_at TIMESTAMPTZ/);
-  assert.match(migration, /CHECK \(review_status <> 'approved' OR verified_at IS NOT NULL\)/);
+  assert.match(migration, /CHECK \\(review_status <> 'approved' OR verified_at IS NOT NULL\\)/);
 });
 
 test('all four activation preflight sandbox checks require approved, recent evidence', () => {
@@ -22,11 +22,12 @@ test('all four activation preflight sandbox checks require approved, recent evid
   const end = server.indexOf("app.get('/api/", start + 20);
   assert.ok(start >= 0 && end > start, 'activation preflight route must exist');
   const route = server.slice(start, end);
+  const evidenceQueries = route.split('(SELECT COUNT(*) FROM country_sandbox_evidence e').slice(1);
+  assert.equal(evidenceQueries.length, 4, 'exactly four sandbox evidence checks must be present');
   for (const name of ['providerConnectivity', 'sampleQuote', 'successCallback', 'failureCallback']) {
-    const at = route.indexOf("e.test_name='" + name + "'");
-    assert.ok(at >= 0, 'missing sandbox check: ' + name);
-    const clause = route.slice(Math.max(0, at - 220), at + name.length + 30);
-    assert.match(clause, /e\.review_status='approved'/, name + ' must be independently approved');
-    assert.match(clause, /e\.verified_at > NOW\(\) - INTERVAL '30 days'/, name + ' approval must be recent');
+    const clause = evidenceQueries.find(query => query.includes("e.test_name='" + name + "'"));
+    assert.ok(clause, 'missing sandbox check: ' + name);
+    assert.match(clause, /e\\.review_status='approved'/, name + ' must be independently approved');
+    assert.match(clause, /e\\.verified_at > NOW\\(\\) - INTERVAL '30 days'/, name + ' approval must be recent');
   }
 });
