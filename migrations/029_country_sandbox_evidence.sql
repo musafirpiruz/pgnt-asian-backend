@@ -19,5 +19,5 @@ CREATE TABLE IF NOT EXISTS country_sandbox_evidence (
   CHECK (BTRIM(submitted_by) <> '')
 );
 CREATE INDEX IF NOT EXISTS country_sandbox_evidence_verified_at_idx
-  ON country_sandbox_evidence(country_code,verified_at DESC);
+  ON country_sandbox_evidence(country_code,submitted_at DESC);
 COMMIT;
