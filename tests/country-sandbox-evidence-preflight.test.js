@@ -31,3 +31,13 @@ test('all four activation preflight sandbox checks require approved, recent evid
     assert.ok(clause.includes("e.verified_at > NOW() - INTERVAL '30 days'"), name + ' approval must be recent');
   }
 });
+
+test('sandbox evidence approval requires a separate reviewer credential and records reviewer identity', () => {
+  assert.ok(migration.includes('reviewed_by VARCHAR(120)'));
+  assert.ok(migration.includes('reviewed_at TIMESTAMPTZ'));
+  assert.ok(server.includes('COUNTRY_EVIDENCE_REVIEW_API_KEY'));
+  assert.ok(server.includes("req.headers['x-country-evidence-review-key']"));
+  assert.ok(server.includes("review_status = 'submitted'"));
+  assert.ok(server.includes('req.countryEvidenceReviewerId'));
+  assert.ok(server.includes("'/api/admin/countries/:countryCode/sandbox-evidence/:testName/review'"));
+});
