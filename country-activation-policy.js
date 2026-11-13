@@ -65,10 +65,22 @@ function evaluateCountryActivation(input = {}) {
   }
 
   const requiredSandboxChecks = ['providerConnectivity', 'sampleQuote', 'successCallback', 'failureCallback'];
-  const passedSandboxChecks = new Set(sandboxChecks.filter(check =>
-    check && check.passed === true).map(check => check.name));
-  const missingSandboxChecks = requiredSandboxChecks.filter(name => !passedSandboxChecks.has(name));
-  if (missingSandboxChecks.length) blockers.push('sandboxChecksIncomplete:' + missingSandboxChecks.join(','));
+  const nowValue = input.now === undefined ? Date.now() : new Date(input.now).getTime();
+  const maxEvidenceAgeMs = 30 * 24 * 60 * 60 * 1000;
+  const approvedFreshChecks = new Set();
+  for (const check of sandboxChecks) {
+    if (!check || check.passed !== true || check.reviewStatus !== 'approved') continue;
+    const verifiedAtMs = typeof check.verifiedAt === 'number'
+      ? check.verifiedAt
+      : Date.parse(check.verifiedAt);
+    if (!Number.isFinite(verifiedAtMs) || !Number.isFinite(nowValue)
+        || verifiedAtMs > nowValue || nowValue - verifiedAtMs > maxEvidenceAgeMs) continue;
+    approvedFreshChecks.add(check.name);
+  }
+  const missingSandboxChecks = requiredSandboxChecks.filter(name => !approvedFreshChecks.has(name));
+  if (missingSandboxChecks.length) {
+    blockers.push('sandboxChecksMissingApprovedFreshEvidence:' + missingSandboxChecks.join(','));
+  }
 
   return Object.freeze({
     eligible: blockers.length === 0,
