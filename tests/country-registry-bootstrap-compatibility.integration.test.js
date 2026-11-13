@@ -57,7 +57,9 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
       SELECT
         (SELECT COUNT(*)::int FROM country_localizations) AS country_localizations,
         (SELECT COUNT(*)::int FROM country_operators) AS operators,
-        (SELECT COUNT(*)::int FROM country_operator_localizations) AS operator_localizations
+        CASE WHEN to_regclass('country_operator_localizations') IS NULL THEN 0
+          ELSE (SELECT COUNT(*)::int FROM country_operator_localizations)
+        END AS operator_localizations
     `);
 
     let migrationError;
@@ -76,7 +78,9 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
       SELECT
         (SELECT COUNT(*)::int FROM country_localizations) AS country_localizations,
         (SELECT COUNT(*)::int FROM country_operators) AS operators,
-        (SELECT COUNT(*)::int FROM country_operator_localizations) AS operator_localizations
+        CASE WHEN to_regclass('country_operator_localizations') IS NULL THEN 0
+          ELSE (SELECT COUNT(*)::int FROM country_operator_localizations)
+        END AS operator_localizations
     `);
     assert.deepEqual(after.rows, before.rows, 'failed 023 must preserve existing localization and operator rows');
 
