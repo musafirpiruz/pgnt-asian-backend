@@ -31,7 +31,7 @@ function createRangedCheckoutService(deps) {
     const productId = String(input?.productId || '').trim();
     const amount = Number(input?.amount);
     const phoneResult = validatePhone(input?.phone, country);
-    if (!providerCountry || !currency || !phoneResult?.valid ||
+    if (countryConfig?.provider !== 'dtone' || !providerCountry || !currency || !phoneResult?.valid ||
         !/^[1-9]\d{0,17}$/.test(productId) ||
         !Number.isSafeInteger(amount) || amount < 75 || amount > 3000) {
       const error = new Error('Ranged checkout country, product, phone, or amount is invalid.');
