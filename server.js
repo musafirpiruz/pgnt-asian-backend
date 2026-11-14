@@ -4503,7 +4503,6 @@ savePricing.addEventListener('click',async()=>{
 });
 const operatorPricingCountry=document.getElementById('operatorPricingCountry');
 const operatorPricingRows=document.getElementById('operatorPricingRows');
-const operatorNames={AF:['AWCC','Roshan','Etisalat','Salaam','ATOMA'],PK:['Jazz','Zong','Telenor','Ufone'],IN:['Airtel','Jio','Vi','BSNL'],BD:['Grameenphone','Robi','Banglalink','Teletalk']};
 document.getElementById('loadOperatorPricing').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  operatorPricingRows.replaceChildren();
@@ -6251,17 +6250,6 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
   }
 });
 
-// Admin pricing overview.
-// Prices and fees are returned in EUR cents.
-// Known operators are seeded for convenience, then augmented from the real
-// local catalog so new networks in any supported country appear automatically.
-const SUPPORTED_OPERATOR_PRICING = {
-  AF: ['AWCC', 'Roshan', 'Etisalat', 'Salaam', 'ATOMA'],
-  PK: ['Jazz', 'Zong', 'Telenor', 'Ufone'],
-  IN: ['Airtel', 'Jio', 'Vi', 'BSNL'],
-  BD: ['Grameenphone', 'Robi', 'Banglalink', 'Teletalk'],
-};
-
 app.get('/api/admin/operator-pricing', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const country = normalizeCountry(req.query.country || 'AF');
@@ -6275,13 +6263,11 @@ app.get('/api/admin/operator-pricing', requireAdmin, async (req, res) => {
         ORDER BY operator`, [country]),
     ]);
     const saved = new Map(savedResult.rows.map(row => [String(row.operator).toLowerCase(), row]));
+    // Operator fee controls are derived only from names present in the local
+    // provider catalog. Static seed names and orphaned saved rows must never
+    // be presented as verified provider networks.
     const names = new Map();
-    for (const operator of SUPPORTED_OPERATOR_PRICING[country] || []) names.set(operator.toLowerCase(), operator);
     for (const row of catalogResult.rows) {
-      const operator = String(row.operator).trim();
-      if (operator) names.set(operator.toLowerCase(), operator);
-    }
-    for (const row of savedResult.rows) {
       const operator = String(row.operator).trim();
       if (operator) names.set(operator.toLowerCase(), operator);
     }
@@ -6309,11 +6295,8 @@ app.put('/api/admin/operator-pricing/:country/:operator', requireAdmin, async (r
   try {
     const known = await pool.query(`SELECT operator FROM product_catalog
       WHERE country = $1 AND LOWER(BTRIM(operator)) = LOWER($2) LIMIT 1`, [country, requested]);
-    const seeded = (SUPPORTED_OPERATOR_PRICING[country] || []).find(name => name.toLowerCase() === requested.toLowerCase());
-    const savedExisting = await pool.query(`SELECT operator FROM operator_pricing_settings
-      WHERE country = $1 AND LOWER(operator) = LOWER($2) LIMIT 1`, [country, requested]);
-    const operator = String(known.rows[0]?.operator || savedExisting.rows[0]?.operator || seeded || '').trim();
-    if (!operator) return res.status(400).json({ error: 'This operator is not known for the selected country. Import or map a verified catalog product first.' });
+    const operator = String(known.rows[0]?.operator || '').trim();
+    if (!operator) return res.status(400).json({ error: 'This operator is not present in the provider catalog for the selected country. Import a verified DT One product first.' });
     const result = await pool.query(`INSERT INTO operator_pricing_settings
       (country, operator, fee_eur_cents, fee_percent, active, updated_at) VALUES ($1,$2,$3,$4,$5,NOW())
       ON CONFLICT (country, operator) DO UPDATE SET fee_eur_cents=EXCLUDED.fee_eur_cents,
