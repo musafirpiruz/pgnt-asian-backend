@@ -5313,13 +5313,19 @@ app.get('/api/admin/dtone/operators', requireAdmin, async (req, res) => {
     return res.status(503).json({ verified: false, error: 'DT One credentials are not configured.' });
   }
 
-  const countryIsoCode = String(req.query.country_iso_code || 'AFG').trim().toUpperCase();
-  const supportedOperatorCountries = new Set(['AFG', 'PAK', 'IND', 'BGD']);
-  if (!supportedOperatorCountries.has(countryIsoCode)) {
-    return res.status(400).json({
-      verified: false,
-      error: 'country_iso_code must be one of AFG, PAK, IND, or BGD.',
-    });
+  const countryIsoCode = String(req.query.country_iso_code || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{2,8}$/.test(countryIsoCode)) {
+    return res.status(400).json({ verified: false, error: 'A valid DT One provider country code is required.' });
+  }
+  let countryMapping;
+  try {
+    countryMapping = await resolveDtOneCountryMapping(countryIsoCode);
+  } catch (error) {
+    console.error('DT One operator country registry lookup failed:', error.message);
+    return res.status(503).json({ verified: false, error: 'Country registry mapping is unavailable.' });
+  }
+  if (!countryMapping) {
+    return res.status(422).json({ verified: false, error: 'No unique DT One provider-country mapping exists in country_registry.' });
   }
 
   try {
