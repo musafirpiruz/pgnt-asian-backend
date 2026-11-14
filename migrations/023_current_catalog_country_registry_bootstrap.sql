@@ -9,10 +9,37 @@ BEGIN
      OR to_regclass(current_schema() || '.product_catalog') IS NULL THEN
     RAISE EXCEPTION 'Current-schema bootstrap requires pricing_settings and product_catalog';
   END IF;
-  SELECT COUNT(*) INTO bad_count
-  FROM (VALUES ('AF','AFN'),('PK','PKR'),('IN','INR'),('BD','BDT')) expected(country_code,currency)
-  LEFT JOIN pricing_settings p ON p.country::text=expected.country_code
-  WHERE p.country IS NULL OR p.local_currency_per_eur IS NULL OR p.local_currency_per_eur <= 0;
+  -- Older PGNT databases call the destination FX column afn_per_eur even
+  -- though it stores the local-currency-per-EUR reference for all four markets.
+  -- Prefer the normalized column when present; otherwise validate the legacy
+  -- column dynamically so PostgreSQL never parses a reference to a missing field.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema()
+      AND table_name='pricing_settings'
+      AND column_name='local_currency_per_eur'
+  ) THEN
+    EXECUTE $q$
+      SELECT COUNT(*) FROM
+        (VALUES ('AF','AFN'),('PK','PKR'),('IN','INR'),('BD','BDT')) expected(country_code,currency)
+      LEFT JOIN pricing_settings p ON p.country::text=expected.country_code
+      WHERE p.country IS NULL OR p.local_currency_per_eur IS NULL OR p.local_currency_per_eur <= 0
+    $q$ INTO bad_count;
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema()
+      AND table_name='pricing_settings'
+      AND column_name='afn_per_eur'
+  ) THEN
+    EXECUTE $q$
+      SELECT COUNT(*) FROM
+        (VALUES ('AF','AFN'),('PK','PKR'),('IN','INR'),('BD','BDT')) expected(country_code,currency)
+      LEFT JOIN pricing_settings p ON p.country::text=expected.country_code
+      WHERE p.country IS NULL OR p.afn_per_eur IS NULL OR p.afn_per_eur <= 0
+    $q$ INTO bad_count;
+  ELSE
+    RAISE EXCEPTION 'Pricing settings has no supported local-currency-per-EUR rate column';
+  END IF;
   IF bad_count > 0 THEN RAISE EXCEPTION 'Missing pricing settings or valid local FX for % expected countries', bad_count; END IF;
   SELECT COUNT(*) INTO bad_count FROM product_catalog p
   WHERE (p.country='AF' AND p.currency <> 'AFN') OR (p.country='PK' AND p.currency <> 'PKR')
