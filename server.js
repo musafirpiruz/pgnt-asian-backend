@@ -2227,8 +2227,20 @@ async function processPaidStripeSession(session) {
   // DT One expects the recipient number in international format.
   // Build it from the validated local number and this country's
   // configured calling code; never rely on an undeclared variable.
-  const countryConfig = SUPPORTED_COUNTRIES[order.country];
-  if (!countryConfig || !countryConfig.callingCode) {
+  let countryConfig = null;
+  try {
+    if (countryRegistryRuntime) {
+      const registrySnapshot = await countryRegistryRuntime.getFreshSnapshot();
+      countryConfig = registrySnapshot.countries[order.country] || null;
+    }
+  } catch (registryError) {
+    console.error('Could not load active country configuration for fulfillment:', {
+      orderId,
+      country: order.country,
+      errorMessage: String(registryError?.message || 'Unknown registry error').slice(0, 200),
+    });
+  }
+  if (!countryConfig || !countryConfig.callingCode || countryConfig.currency !== order.currency) {
     await pool.query(
       `UPDATE orders
        SET status = 'topup_review',
@@ -2237,7 +2249,7 @@ async function processPaidStripeSession(session) {
          AND status = 'processing_topup'`,
       [orderId]
     );
-    throw new Error('Recipient calling code is not configured.');
+    throw new Error('Active recipient country configuration or currency is unavailable.');
   }
   const internationalPhone = `${countryConfig.callingCode}${phone}`;
 
