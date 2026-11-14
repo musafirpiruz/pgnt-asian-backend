@@ -105,7 +105,7 @@ test('country registry runtime is initialized from the database pool and fails c
 
 test('admin DT One catalog country resolution uses only unique explicit country_registry mappings', () => {
   const helperStart = server.indexOf('async function resolveDtOneCountryMapping(');
-  const helperEnd = server.indexOf('// One standard customer payment currency.', helperStart);
+  const helperEnd = server.indexOf('// Customer payments always use EUR.', helperStart);
   assert.ok(helperStart >= 0 && helperEnd > helperStart, 'registry mapping resolver must exist');
   const helper = server.slice(helperStart, helperEnd);
   assert.match(helper, /FROM country_registry/);
