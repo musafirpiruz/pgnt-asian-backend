@@ -110,3 +110,53 @@ This section supersedes any older "latest head" or CI statements above. Always r
 
 ## New-chat handoff instruction
 Continue PGNT ASIAN TOPUP from this repository, branch, PR, and this checkpoint. First fetch the latest PR head and this checkpoint. Preserve every completed item above; do not rebuild or repeat them. Work only on the listed missing RANGED checkout/webhook lifecycle and its regression tests. Keep RANGED payment blocked until tests pass. Never merge, deploy, run production migrations, activate products, or perform real payments/top-ups without explicit user approval.
+
+
+## AUTHORITATIVE HANDOFF — 2026-11-14 (supersedes all earlier status sections)
+
+### Live GitHub state verified
+- Repository: https://github.com/musafirpiruz/pgnt-asian-backend
+- Branch: `feat/customer-ranged-catalog-2026-11-13`
+- PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
+- Exact HEAD at verification: `9f85d5c10dc6c1a0c34b2d56f39879d69b39650f`
+- PR state: OPEN, DRAFT, not merged; GitHub reported mergeable=true at this check.
+- CI attached to this exact HEAD:
+  - Backend Syntax Check: SUCCESS — run 43545200737.
+  - Backend tests: SUCCESS — run 43545200803.
+  - Android APK Build: IN_PROGRESS — run 43545200729, job 132294789564. Do not call APK build passed until a completed successful run is verified.
+- Latest source changes include the separate RANGED checkout service and server webhook/callback handling. Older sections in this file that say those features are not implemented are superseded by the implementation status below.
+
+### Verified implementation present at HEAD
+- Customer ranged catalog route and Flutter selection/amount validation remain present.
+- Country foundations present:
+  - `country-config.js`: static definitions for AF/PK/IN/BD (AFN/PKR/INR/BDT, calling codes and phone lengths).
+  - `country-registry.js`: validates ACTIVE database registry rows and builds immutable country config.
+  - `country-registry-runtime.js`: atomic refresh/snapshot manager with last-known-good behavior on failed refresh.
+  - `country-activation-policy.js`: fail-closed activation gate requiring valid country/provider mapping, verified operators/products, all six localizations, active EUR pricing, fresh matching FX and approved recent sandbox evidence.
+  - Migration `023_current_catalog_country_registry_bootstrap.sql`: creates country, localization, operator and operator-product registry tables and seeds the existing four markets in non-active/legacy state; provider operator/product mappings are deliberately inactive/unverified.
+  - Migrations 024–029 also exist for FX, wallet ledger foundation, provider metadata, product identity, ranged order identity and sandbox evidence.
+- RANGED checkout/fulfillment implementation present:
+  - Separate `ranged-checkout-service.js` and `POST /api/payments/ranged-checkout`.
+  - Server-authoritative product/range/amount/phone/currency validation and DT One async quote; EUR pricing calculated server-side; RANGED order and provider transaction persisted; Stripe EUR Checkout created.
+  - RANGED checkout remains fail-closed behind `RANGED_CHECKOUT_ENABLED !== 'true'`; do not enable without provider contract and end-to-end validation.
+  - Paid Stripe webhook has separate RANGED processing; durable CREATED → CONFIRMING claim is committed before DT One confirm request; duplicate webhook does not repeat confirmation; identity/status is rechecked; ambiguous outcomes go to REVIEW rather than blind retry.
+  - RANGED DT One callback validates transaction/order/product identity and reconciles final provider status.
+  - Existing FIXED checkout route and fulfillment remain separate and must not be behaviorally changed.
+  - RANGED referral is intentionally blocked pending secure identity controls.
+- Tests present for ranged pricing, checkout, amount validation, duplicate webhook safety, identity mismatch, callback reconciliation, Stripe failure/review path and migration assertions.
+
+### Important architecture gap — next implementation task
+- Although DB-backed country registry, runtime snapshot manager and activation policy exist, `server.js` still imports `COUNTRY_CURRENCIES` and `SUPPORTED_COUNTRIES` from static `country-config.js`. The runtime registry is not yet the single source of truth throughout request validation, phone validation, ranged catalog country mapping, pricing/FX and Admin Panel workflows.
+- Next chat MUST continue this exact branch and close this integration gap. Do not recreate registry tables, migration 023–029, activation policy, or runtime manager.
+- Trace all uses of `SUPPORTED_COUNTRIES`, `COUNTRY_CURRENCIES`, `getCountryConfig`, country-code allowlists, phone validation and DT One country mappings. Replace hard-coded country assumptions with one validated active registry snapshot where safe.
+- Ensure startup/refresh behavior fails closed for customer-facing country operations if the registry is unavailable/stale; never silently fall back to static countries for activation or payment decisions. Preserve legacy/static bootstrap only where explicitly required for backward compatibility.
+- Build Admin Panel country lifecycle around DRAFT/CONFIGURING/TESTING/ACTIVE/DISABLED with audit trail and strict activation gate. Never auto-activate imported countries, operators or products.
+- New country onboarding should require ISO country/currency, calling code and phone rules, provider country/operator/product identity, verified product/currency/range/pricing, FX freshness, six localizations (en, ps, fa, ur, hi, bn), and approved sandbox connectivity/quote/success/failure callback evidence.
+- Keep EUR as initial customer payment currency. USD/GBP are later phases; do not mix destination currency with settlement currency.
+- Preserve AF/PK/IN/BD and existing fixed product flow. Future markets must be data/config additions rather than scattered code edits.
+
+### Handoff safety and verification
+- Do not merge PR #242, deploy, run production migrations, activate products/countries, enable ranged checkout, or execute real payments/top-ups without explicit user approval.
+- Before editing in a new chat: fetch live PR #242 head; read this authoritative handoff; inspect actual current files and CI for that exact head. Never trust old SHA/run status in older sections.
+- After code changes: run backend tests, syntax check, Dart analysis and APK build on the exact resulting HEAD; review all failures and rerun after fixes.
+- The user explicitly requires this checkpoint to be read and completed work verified at the start of the next chat. Do not restart or repeat completed work.
