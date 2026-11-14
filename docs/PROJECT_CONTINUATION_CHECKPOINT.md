@@ -160,3 +160,23 @@ Continue PGNT ASIAN TOPUP from this repository, branch, PR, and this checkpoint.
 - Before editing in a new chat: fetch live PR #242 head; read this authoritative handoff; inspect actual current files and CI for that exact head. Never trust old SHA/run status in older sections.
 - After code changes: run backend tests, syntax check, Dart analysis and APK build on the exact resulting HEAD; review all failures and rerun after fixes.
 - The user explicitly requires this checkpoint to be read and completed work verified at the start of the next chat. Do not restart or repeat completed work.
+
+
+## Continuation update — 2026-11-14 (latest verified state)
+
+- Active PR: #242, OPEN and DRAFT; branch `feat/customer-ranged-catalog-2026-11-13`; base `feat/device-region-and-country-bootstrap-2026-11-10`.
+- Latest HEAD: `4e447608919df61d7fb27814ad3e063ee5f79fa2`.
+- Latest commits in this correction sequence:
+  - `933f56f8180b0e3fb3aa25c4149bff0843337795`: restore migration 023's fail-closed behavior for incompatible pre-existing country registry schemas. The prior attempt to loosen legacy constraints was reverted because tests deliberately require legacy 196 and newer 204 competing schemas to be rejected without damaging existing rows.
+  - `75071bb69ef4c95ecccc934ce4cc2096e421483f`: attempted test assertion adjustment (still had over-escaped regex).
+  - `4e447608919df61d7fb27814ad3e063ee5f79fa2`: corrected runtime test regular expressions using proper JS regex escapes.
+- CI for latest HEAD:
+  - Backend Syntax Check: SUCCESS (run `43597313789`, job `132454489819`).
+  - Backend Tests: IN PROGRESS at last check (run `43597313776`, job `132454489566`).
+  - Android APK Build: IN PROGRESS at last check (run `43597313785`, job `132454489699`).
+- Previous Backend Tests run `43597103954` had 428 passed, 3 failed. Two failures were the migration compatibility tests for legacy 196 / newer 204; one was the runtime test's over-escaped regex. Do not treat those old failures as current final status; latest code corrected migration fail-closed behavior and the regex, and new CI is pending.
+- Earlier investigation confirmed migration 023 should NOT silently reconcile/alter incompatible legacy schemas. Tests expect transactional rejection and preservation of existing rows. Keep that security behavior.
+- Registry runtime is initialized in server.js from the DB pool with 60-second freshness; customer ranged route uses getFreshSnapshot and fails closed.
+- Do not merge PR, apply production migrations, activate countries/products, enable ranged checkout, or perform real payments/top-ups. User has not authorized those actions.
+- Next action: poll CI for HEAD `4e447608919df61d7fb27814ad3e063ee5f79fa2`. If tests fail, inspect exact failing test names/logs and fix the underlying issue, not by weakening safety assertions. If CI passes, continue integrating country registry lifecycle/admin/audit into server routes while preserving fixed checkout.
+- User explicitly asked for a reliable handoff in case this chat ends. This section is the latest project continuation state.
