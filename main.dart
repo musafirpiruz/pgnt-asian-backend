@@ -1530,6 +1530,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   MobileOperator? selectedOperator;
   List<MobileOperator> _registryOperators = const [];
   String? _registryOperatorsCountry;
+  bool _isLoadingRegistryOperators = false;
   int _registryOperatorsRequestGeneration = 0;
   List<CatalogTopUpProduct> _verifiedProducts = const [];
   CatalogTopUpProduct? _selectedProduct;
@@ -1885,6 +1886,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       setState(() {
         _registryOperators = const [];
         _registryOperatorsCountry = countryCode;
+        _isLoadingRegistryOperators = true;
         selectedOperator = null;
         _verifiedProducts = const [];
         _selectedProduct = null;
@@ -1934,6 +1936,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       setState(() {
         _registryOperators = parsed;
         _registryOperatorsCountry = countryCode;
+        _isLoadingRegistryOperators = false;
         final selectedKey = selectedOperator?.operatorKey;
         if (selectedKey != null) {
           selectedOperator = parsed.cast<MobileOperator?>().firstWhere(
@@ -1962,6 +1965,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       setState(() {
         _registryOperators = const [];
         _registryOperatorsCountry = countryCode;
+        _isLoadingRegistryOperators = false;
         selectedOperator = null;
         _verifiedProducts = const [];
         _selectedProduct = null;
@@ -2703,9 +2707,29 @@ class _PgntHomePageState extends State<PgntHomePage> {
 
   Widget buildOperatorSelector() {
     if (countryOperators.isEmpty) {
-      return Text(
-        priceQuoteError ?? 'د دې هېواد لپاره تایید شوې شبکې اوس نشته. مهرباني وکړئ وروسته بیا هڅه وکړئ.',
-        style: const TextStyle(color: errorRed),
+      if (_isLoadingRegistryOperators) {
+        return const Row(
+          children: [
+            SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(width: 10),
+            Expanded(child: Text('د DT One تایید شوې شبکې ترلاسه کېږي...')),
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            priceQuoteError ?? 'د دې هېواد لپاره لا د DT One تایید شوې شبکې نشته. د اډمین له خوا د شبکې پېژندپاڼه، تایید شوي محصولات او فعالول اړین دي.',
+            style: const TextStyle(color: errorRed),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _loadRegistryOperators(selectedCountry.code),
+            icon: const Icon(Icons.refresh),
+            label: const Text('د شبکو لېست بیا تازه کړه'),
+          ),
+        ],
       );
     }
     return LayoutBuilder(
