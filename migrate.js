@@ -1013,6 +1013,7 @@ async function runMigration() {
       { version: "022_canonical_country_registry_reconciliation", file: "022_canonical_country_registry_reconciliation.sql" },
       { version: "023_current_catalog_country_registry_bootstrap", file: "023_current_catalog_country_registry_bootstrap.sql" },
       { version: "024_country_fx_rates", file: "024_country_fx_rates.sql" },
+      { version: "030_country_registry_audit_trail", file: "030_country_registry_audit_trail.sql" },
     ];
 
     for (const migration of countryRegistryMigrations) {
