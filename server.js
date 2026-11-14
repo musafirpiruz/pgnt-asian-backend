@@ -2737,6 +2737,26 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     const order = result.rows[0];
 
+    let rangedCallbackTransaction = null;
+    if (order.fulfillment_type === 'RANGED') {
+      const rangedResult = await client.query(
+        `SELECT * FROM dtone_ranged_transactions
+         WHERE order_id = $1 FOR UPDATE`,
+        [orderId]
+      );
+      if (rangedResult.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Ranged transaction record is missing.' });
+      }
+      rangedCallbackTransaction = rangedResult.rows[0];
+      if (String(rangedCallbackTransaction.dtone_transaction_id) !== providerTransactionId ||
+          String(rangedCallbackTransaction.external_id) !== orderId ||
+          String(rangedCallbackTransaction.dtone_product_id) !== String(order.ranged_product_id)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Ranged callback identity does not match the saved provider transaction.' });
+      }
+    }
+
     // A durable refund reservation wins over later provider callbacks. Once an
     // admin has reserved a refund, a delayed success callback must not race the
     // Stripe refund and turn the same order into a delivered top-up.
@@ -2988,6 +3008,20 @@ app.post('/api/dtone/callback', async (req, res) => {
         providerStatus,
       ]
     );
+
+    if (rangedCallbackTransaction) {
+      if (providerStatus === 'completed' || providerStatus === 'failed') {
+        const rangedProviderStatus = providerStatus === 'completed' ? 'COMPLETED' : 'FAILED';
+        await client.query(
+          `UPDATE dtone_ranged_transactions
+           SET provider_status = $1, updated_at = NOW()
+           WHERE order_id = $2
+             AND dtone_transaction_id = $3
+             AND provider_status IN ('CONFIRMED','COMPLETED','FAILED','REVIEW')`,
+          [rangedProviderStatus, orderId, providerTransactionId]
+        );
+      }
+    }
 
     // Record or reconcile the referral reward only after final DT One success.
     if (nextStatus === 'completed') {
