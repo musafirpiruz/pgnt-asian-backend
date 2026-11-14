@@ -154,3 +154,44 @@ test('authenticated DT One callbacks verify ranged identity and reconcile ranged
   assert.match(callback, /UPDATE dtone_ranged_transactions/);
   assert.match(callback, /'COMPLETED' : 'FAILED'/);
 });
+
+
+test('ranged checkout fails closed when DT One quote identity is inconsistent', async () => {
+  const { service, restoreFetch } = deps();
+  let stripeCalled = false;
+  const originalStripe = service;
+  global.fetch = async () => ({
+    ok: true,
+    async text() {
+      return JSON.stringify({
+        id: 123456789,
+        external_id: 'WRONG-ORDER',
+        product: { id: 98765 },
+        status: { message: 'CREATED' },
+        confirmation_expiration_date: new Date(Date.now() + 600000).toISOString(),
+        requested_values: { destination: { amount: 150, unit: 'AFN', unit_type: 'CURRENCY' } },
+        prices: { wholesale: { amount: 1.89, fee: 0, unit: 'EUR', unit_type: 'CURRENCY' } },
+      });
+    },
+  });
+  try {
+    await assert.rejects(
+      originalStripe({ country: 'AF', phone: '700100100', productId: '98765', amount: 150 }),
+      /identity|external/i
+    );
+    assert.equal(stripeCalled, false);
+  } finally { restoreFetch(); }
+});
+
+test('ranged checkout marks provider quote for review when Stripe Checkout creation fails', async () => {
+  const stripe = { checkout: { sessions: { async create() { throw new Error('Stripe unavailable'); } } } };
+  const { service, queries, restoreFetch } = deps({ stripe });
+  try {
+    await assert.rejects(
+      service({ country: 'AF', phone: '700100100', productId: '98765', amount: 150 }),
+      /Stripe unavailable/
+    );
+    assert.ok(queries.some((entry) => entry.sql.includes("provider_status='REVIEW'")));
+    assert.ok(queries.some((entry) => entry.sql.includes("status='payment_failed'")));
+  } finally { restoreFetch(); }
+});
