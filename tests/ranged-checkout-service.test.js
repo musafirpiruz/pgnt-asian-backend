@@ -194,3 +194,74 @@ test('ranged checkout marks provider quote for review when Stripe Checkout creat
     assert.ok(queries.some((entry) => entry.sql.includes("status='payment_failed'")));
   } finally { restoreFetch(); }
 });
+
+
+test('ranged checkout cancels the unsubmitted DT One quote when Stripe session creation fails', async () => {
+  const stripe = { checkout: { sessions: { async create() { throw new Error('Stripe unavailable'); } } } };
+  const { service, queries, restoreFetch } = deps({ stripe });
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({ url, method: options.method });
+    if (url.endsWith('/v1/async/transactions')) {
+      const request = JSON.parse(options.body);
+      return {
+        ok: true,
+        status: 201,
+        async text() {
+          return JSON.stringify({
+            id: 123456789,
+            external_id: request.external_id,
+            product: { id: request.product_id },
+            status: { message: 'CREATED' },
+            confirmation_expiration_date: new Date(Date.now() + 600000).toISOString(),
+            requested_values: { destination: { amount: 150, unit: 'AFN', unit_type: 'CURRENCY' } },
+            prices: { wholesale: { amount: 1.89, fee: 0, unit: 'EUR', unit_type: 'CURRENCY' } },
+          });
+        },
+      };
+    }
+    return { ok: true, status: 202, async text() { return ''; } };
+  };
+  try {
+    await assert.rejects(
+      service({ country: 'AF', phone: '700100100', productId: '98765', amount: 150 }),
+      /Stripe unavailable/
+    );
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].method, 'POST');
+    assert.match(requests[1].url, /\/v1\/transactions\/123456789\/cancel$/);
+    assert.ok(queries.some((entry) => entry.sql.includes("provider_status='CANCELLED'")));
+    assert.ok(queries.some((entry) => entry.sql.includes("status='payment_failed'")));
+  } finally { restoreFetch(); }
+});
+
+test('ranged checkout leaves provider quote for review when DT One cancellation is not confirmed', async () => {
+  const stripe = { checkout: { sessions: { async create() { throw new Error('Stripe unavailable'); } } } };
+  const { service, queries, restoreFetch } = deps({ stripe });
+  global.fetch = async (url, options) => {
+    if (url.endsWith('/v1/async/transactions')) {
+      const request = JSON.parse(options.body);
+      return {
+        ok: true, status: 201,
+        async text() {
+          return JSON.stringify({
+            id: 123456789, external_id: request.external_id,
+            product: { id: request.product_id }, status: { message: 'CREATED' },
+            confirmation_expiration_date: new Date(Date.now() + 600000).toISOString(),
+            requested_values: { destination: { amount: 150, unit: 'AFN', unit_type: 'CURRENCY' } },
+            prices: { wholesale: { amount: 1.89, fee: 0, unit: 'EUR', unit_type: 'CURRENCY' } },
+          });
+        },
+      };
+    }
+    return { ok: false, status: 409, async text() { return '{"error":"cannot cancel"}'; } };
+  };
+  try {
+    await assert.rejects(
+      service({ country: 'AF', phone: '700100100', productId: '98765', amount: 150 }),
+      /Stripe unavailable/
+    );
+    assert.ok(queries.some((entry) => entry.sql.includes("provider_status='REVIEW'")));
+    assert.equal(queries.some((entry) => entry.sql.includes("provider_status='CANCELLED'")), false);
+  } finally { restoreFetch(); }
+});
