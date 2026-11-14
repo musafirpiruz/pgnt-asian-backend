@@ -1221,8 +1221,8 @@ app.post('/api/payments/ranged-checkout', async (req, res) => {
       const code = normalizeCountry(country);
       const config = activeCountries[code];
       if (!config) throw new Error('Unsupported country.');
-      let phone = String(value || '').trim().replace(/[\\s().-]/g, '');
-      if (!/^\\+?\\d+$/.test(phone)) throw new Error('Phone number contains invalid characters.');
+      let phone = String(value || '').trim().replace(/[\s().-]/g, '');
+      if (!/^\+?\d+$/.test(phone)) throw new Error('Phone number contains invalid characters.');
       if (phone.startsWith(config.callingCode)) phone = phone.slice(config.callingCode.length);
       else if (phone.startsWith('00') && phone.slice(2).startsWith(config.callingCode.slice(1))) {
         phone = phone.slice(config.callingCode.length + 1);
@@ -1236,7 +1236,7 @@ app.post('/api/payments/ranged-checkout', async (req, res) => {
       if (!config) return { valid: false, error: 'Unsupported country.' };
       const normalized = normalizePhoneFromRegistry(phone, code);
       const [minDigits, maxDigits] = config.phoneDigits;
-      if (!/^\\d+$/.test(normalized)) return { valid: false, error: 'Phone number must contain digits only.' };
+      if (!/^\d+$/.test(normalized)) return { valid: false, error: 'Phone number must contain digits only.' };
       if (normalized.length < minDigits || normalized.length > maxDigits) {
         return { valid: false, error: `Invalid phone number length for ${config.name}.` };
       }
