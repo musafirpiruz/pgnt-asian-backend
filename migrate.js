@@ -1005,6 +1005,43 @@ async function runMigration() {
       console.log("Migration 020_ranged_confirmation_claim is already applied.");
     }
 
+    // Versions 022-024 and 029 install the canonical country registry,
+    // destination FX schema, and reviewed sandbox evidence foundation.
+    // These SQL files are forward-only and fail closed on conflicting legacy
+    // identities. They are run only when migrate.js is explicitly invoked.
+    const countryRegistryMigrations = [
+      { version: "022_canonical_country_registry_reconciliation", file: "022_canonical_country_registry_reconciliation.sql" },
+      { version: "023_current_catalog_country_registry_bootstrap", file: "023_current_catalog_country_registry_bootstrap.sql" },
+      { version: "024_country_fx_rates", file: "024_country_fx_rates.sql" },
+      { version: "029_country_sandbox_evidence", file: "029_country_sandbox_evidence.sql" },
+    ];
+
+    for (const migration of countryRegistryMigrations) {
+      const applied = await client.query(
+        "SELECT 1 FROM schema_migrations WHERE version = $1 LIMIT 1",
+        [migration.version]
+      );
+      if (applied.rowCount > 0) {
+        console.log(`Migration ${migration.version} is already applied.`);
+        continue;
+      }
+
+      const sqlPath = path.join(__dirname, "migrations", migration.file);
+      if (!fs.existsSync(sqlPath)) {
+        throw new Error(`Required migration file is missing: ${migration.file}`);
+      }
+      const sql = fs.readFileSync(sqlPath, "utf8");
+      if (!sql.trim()) throw new Error(`Migration file is empty: ${migration.file}`);
+
+      console.log(`Applying ${migration.version} in the current database schema...`);
+      await client.query(sql);
+      await client.query(
+        "INSERT INTO schema_migrations(version) VALUES($1) ON CONFLICT(version) DO NOTHING",
+        [migration.version]
+      );
+      console.log(`Migration ${migration.version} completed successfully.`);
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
