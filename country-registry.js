@@ -26,13 +26,13 @@ function buildActiveCountryConfig(rows) {
     const name = String(row.country_name || '').trim();
     const currency = String(row.destination_currency || '').trim().toUpperCase();
     const callingCode = String(row.calling_code || '').trim();
-    const status = String(row.status || '').trim().toLowerCase();
+    const status = String(row.status || '').trim().toLowerCase();\n    const provider = String(row.provider || '').trim().toLowerCase();\n    const providerCountryCode = String(row.provider_country_code || '').trim().toUpperCase();
 
     if (status !== 'active') continue;
     if (!ISO_COUNTRY.test(code)) throw new Error('Invalid country code in active country registry.');
     if (!name || name.length > 120) throw new Error(`Invalid country name for ${code}.`);
     if (!ISO_CURRENCY.test(currency)) throw new Error(`Invalid destination currency for ${code}.`);
-    if (!CALLING_CODE.test(callingCode)) throw new Error(`Invalid calling code for ${code}.`);
+    if (!CALLING_CODE.test(callingCode)) throw new Error(`Invalid calling code for ${code}.`);\n    if (!/^[a-z][a-z0-9_-]{1,31}$/.test(provider)) throw new Error(`Invalid provider for ${code}.`);\n    if (!PROVIDER_CODE.test(providerCountryCode)) throw new Error(`Invalid provider country mapping for ${code}.`);
 
     const minDigits = positiveInteger(row.phone_min_digits, 'phone_min_digits');
     const maxDigits = positiveInteger(row.phone_max_digits, 'phone_max_digits');
@@ -66,7 +66,7 @@ async function loadActiveCountryConfig(pool) {
     throw new TypeError('A PostgreSQL pool is required to load country registry.');
   }
   const result = await pool.query(
-    `SELECT country_code, country_name, destination_currency, calling_code,
+    `SELECT country_code, country_name, destination_currency, calling_code,\n            provider, provider_country_code,
             phone_min_digits, phone_max_digits, status, configuration_version
        FROM country_registry
       WHERE status = 'active'
