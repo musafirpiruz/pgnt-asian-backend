@@ -649,8 +649,8 @@ async function getProduct(client, productId, requestedCountry = null, options = 
   }
 
   const country = normalizeCountry(product.country);
-  if (!isValidCountry(country)) {
-    throw new Error('Product country is not supported.');
+  if (!product.registry_currency) {
+    throw new Error('Product country is not present in the active country registry.');
   }
   if (product.currency !== product.registry_currency) {
     throw new Error('Product currency does not match its country.');
