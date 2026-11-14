@@ -3452,6 +3452,15 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
     return res.status(400).json({ error: 'A valid two-letter country code is required.' });
   }
   try {
+    const evidenceSchema = await pool.query(
+      "SELECT to_regclass('country_sandbox_evidence') IS NOT NULL AS ready"
+    );
+    if (!evidenceSchema.rows[0]?.ready) {
+      return res.status(503).json({
+        error: 'Country sandbox evidence migration 029 is not installed. Activation preflight is unavailable.',
+        eligible: false,
+      });
+    }
     const result = await pool.query(`
       SELECT c.country_code, c.country_name, c.destination_currency,
              c.calling_code, c.phone_min_digits, c.phone_max_digits,
