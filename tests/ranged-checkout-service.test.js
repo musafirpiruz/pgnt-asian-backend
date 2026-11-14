@@ -82,6 +82,18 @@ test('ranged checkout rejects an unsupported amount before any provider or payme
   } finally { restoreFetch(); }
 });
 
+test('ranged checkout rejects countries assigned to a different provider', async () => {
+  const { service, restoreFetch } = deps({
+    supportedCountries: { AF: { callingCode: '+93', providerCountryCode: 'AFG', provider: 'other-provider' } },
+  });
+  try {
+    await assert.rejects(
+      service({ country: 'AF', phone: '700100100', productId: '98765', amount: 150 }),
+      /country, product, phone, or amount is invalid/
+    );
+  } finally { restoreFetch(); }
+});
+
 test('ranged checkout obtains a CREATED EUR quote, stores RANGED identity, and creates EUR Stripe session', async () => {
   const { service, queries, restoreFetch } = deps();
   try {
