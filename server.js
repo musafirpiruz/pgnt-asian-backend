@@ -3359,7 +3359,9 @@ app.get('/api/admin/countries/registry-summary', requireAdmin, async (req, res) 
   try {
     const result = await pool.query(`
       SELECT c.country_code, c.country_name, c.destination_currency,
-             c.calling_code, c.status, c.configuration_version, c.updated_at,
+             c.calling_code, c.phone_min_digits, c.phone_max_digits,
+             c.provider, c.provider_country_code,
+             c.status, c.configuration_version, c.updated_at,
              (SELECT COUNT(*) FROM country_localizations l
                WHERE l.country_code = c.country_code)::int AS localization_count,
              (SELECT COUNT(*) FROM country_operators o
