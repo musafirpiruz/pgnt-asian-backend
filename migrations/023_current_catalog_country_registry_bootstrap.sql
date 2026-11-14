@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS country_operator_products (
  FOREIGN KEY(country_code,operator_key) REFERENCES country_operators(country_code,operator_key) ON DELETE RESTRICT,
  UNIQUE(country_code,operator_key,product_catalog_id)
 );
-DO $
+DO $bootstrap$
 DECLARE
  item RECORD; expected RECORD; normalized_key TEXT; existing_row RECORD;
  bad_count BIGINT; active_operators_before BIGINT; active_mappings_before BIGINT; active_products_before BIGINT;
@@ -139,5 +139,5 @@ BEGIN
  IF bad_count <> active_mappings_before THEN RAISE EXCEPTION 'Bootstrap changed product-mapping activation or verification state'; END IF;
  SELECT COUNT(*) INTO bad_count FROM product_catalog WHERE active;
  IF bad_count <> active_products_before THEN RAISE EXCEPTION 'Bootstrap changed product catalog activation state'; END IF;
-END $$;
+END $bootstrap$;
 COMMIT;
