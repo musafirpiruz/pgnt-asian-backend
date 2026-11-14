@@ -1005,15 +1005,14 @@ async function runMigration() {
       console.log("Migration 020_ranged_confirmation_claim is already applied.");
     }
 
-    // Versions 022-024 and 029 install the canonical country registry,
-    // destination FX schema, and reviewed sandbox evidence foundation.
-    // These SQL files are forward-only and fail closed on conflicting legacy
-    // identities. They are run only when migrate.js is explicitly invoked.
+    // Versions 022-024 install the canonical country registry and destination
+    // FX schema. They are forward-only, fail closed on conflicting legacy
+    // identities, and run only when migrate.js is explicitly invoked.
+    // Migration 029 remains a separately reviewed/manual rollout gate.
     const countryRegistryMigrations = [
       { version: "022_canonical_country_registry_reconciliation", file: "022_canonical_country_registry_reconciliation.sql" },
       { version: "023_current_catalog_country_registry_bootstrap", file: "023_current_catalog_country_registry_bootstrap.sql" },
       { version: "024_country_fx_rates", file: "024_country_fx_rates.sql" },
-      { version: "029_country_sandbox_evidence", file: "029_country_sandbox_evidence.sql" },
     ];
 
     for (const migration of countryRegistryMigrations) {
