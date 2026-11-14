@@ -905,57 +905,54 @@ async function runMigration() {
             ADD COLUMN IF NOT EXISTS fulfillment_type VARCHAR(20) NOT NULL DEFAULT 'FIXED';
           ALTER TABLE orders
             ADD COLUMN IF NOT EXISTS ranged_product_id BIGINT;
-
           ALTER TABLE orders
             ALTER COLUMN product_id DROP NOT NULL;
-
-          DO $
-          BEGIN
-            IF NOT EXISTS (
-              SELECT 1 FROM pg_constraint
-              WHERE conrelid = 'orders'::regclass
-                AND conname = 'orders_fulfillment_type_check'
-            ) THEN
-              ALTER TABLE orders
-                ADD CONSTRAINT orders_fulfillment_type_check
-                CHECK (fulfillment_type IN ('FIXED', 'RANGED'));
-            END IF;
-
-            IF NOT EXISTS (
-              SELECT 1 FROM pg_constraint
-              WHERE conrelid = 'orders'::regclass
-                AND conname = 'orders_fulfillment_identity_check'
-            ) THEN
-              ALTER TABLE orders
-                ADD CONSTRAINT orders_fulfillment_identity_check
-                CHECK (
-                  (fulfillment_type = 'FIXED'
-                    AND product_id IS NOT NULL
-                    AND ranged_product_id IS NULL)
-                  OR
-                  (fulfillment_type = 'RANGED'
-                    AND product_id IS NULL
-                    AND ranged_product_id IS NOT NULL)
-                );
-            END IF;
-
-            IF NOT EXISTS (
-              SELECT 1 FROM pg_constraint
-              WHERE conrelid = 'orders'::regclass
-                AND conname = 'orders_ranged_product_fk'
-            ) THEN
-              ALTER TABLE orders
-                ADD CONSTRAINT orders_ranged_product_fk
-                FOREIGN KEY (ranged_product_id)
-                REFERENCES dtone_ranged_products(dtone_product_id)
-                ON DELETE RESTRICT;
-            END IF;
-          END;
-          $;
-
           CREATE INDEX IF NOT EXISTS idx_orders_fulfillment_type_status
             ON orders (fulfillment_type, status, created_at DESC);
         `);
+
+        const fulfillmentTypeConstraint = await client.query(
+          "SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND conname = 'orders_fulfillment_type_check'"
+        );
+        if (fulfillmentTypeConstraint.rowCount === 0) {
+          await client.query(`
+            ALTER TABLE orders
+              ADD CONSTRAINT orders_fulfillment_type_check
+              CHECK (fulfillment_type IN ('FIXED', 'RANGED'))
+          `);
+        }
+
+        const fulfillmentIdentityConstraint = await client.query(
+          "SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND conname = 'orders_fulfillment_identity_check'"
+        );
+        if (fulfillmentIdentityConstraint.rowCount === 0) {
+          await client.query(`
+            ALTER TABLE orders
+              ADD CONSTRAINT orders_fulfillment_identity_check
+              CHECK (
+                (fulfillment_type = 'FIXED'
+                  AND product_id IS NOT NULL
+                  AND ranged_product_id IS NULL)
+                OR
+                (fulfillment_type = 'RANGED'
+                  AND product_id IS NULL
+                  AND ranged_product_id IS NOT NULL)
+              )
+          `);
+        }
+
+        const rangedProductForeignKey = await client.query(
+          "SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND conname = 'orders_ranged_product_fk'"
+        );
+        if (rangedProductForeignKey.rowCount === 0) {
+          await client.query(`
+            ALTER TABLE orders
+              ADD CONSTRAINT orders_ranged_product_fk
+              FOREIGN KEY (ranged_product_id)
+              REFERENCES dtone_ranged_products(dtone_product_id)
+              ON DELETE RESTRICT
+          `);
+        }
         await client.query(
           "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
           [rangedOrderIdentityVersion]
