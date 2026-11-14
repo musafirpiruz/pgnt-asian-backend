@@ -117,7 +117,7 @@ function createRangedCheckoutService(deps) {
       catch (_) { providerData = {}; }
       if (!response.ok) throw new Error('DT One could not create the ranged quote; no payment was created.');
 
-      providerQuote = parseRangedWholesalePrice(providerData, {
+      providerCreated = true;\n      providerQuote = parseRangedWholesalePrice(providerData, {
         externalId: orderId,
         productId,
         destinationAmount: amount,
