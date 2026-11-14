@@ -1193,6 +1193,10 @@ function getCheckoutUrls() {
 // Dedicated ranged checkout: provider quote and EUR wholesale evidence are
 // obtained server-side before Stripe is offered. Fixed checkout remains separate.
 app.post('/api/payments/ranged-checkout', async (req, res) => {
+  // Fail closed until the durable ranged Stripe-webhook confirmation path is complete.
+  if (process.env.RANGED_CHECKOUT_ENABLED !== 'true') {
+    return res.status(503).json({ error: 'Ranged checkout is not enabled yet. Please use an available fixed-value product.' });
+  }
   if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
     return res.status(503).json({ error: 'Payment and fulfillment environments are not safely matched.' });
   }
