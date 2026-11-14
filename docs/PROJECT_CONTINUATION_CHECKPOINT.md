@@ -4,7 +4,7 @@ Last updated: 2026-11-14
 Repository: musafirpiruz/pgnt-asian-backend
 Active PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
 Branch: feat/customer-ranged-catalog-2026-11-13
-Current head commit: f7bcb0a7e2a2f2c8864012661d8d8072e6d22015
+Current head commit: 6e36aa5c7ae89b028527ef82cb442cbfc8449023
 
 ## Why this checkpoint exists
 Continue the existing PGNT ASIAN TOPUP project from its current implementation. Do not rebuild from scratch, repeat completed work, or change unrelated working features.
@@ -27,13 +27,18 @@ Customer-facing verified DT One ranged recharge catalog for Afghanistan, Pakista
 - Added PostgreSQL integration assertion for migration 019 in tests/ranged-order-identity-019.integration.sql.
 - Corrected that SQL test to inspect orders.product_id nullability separately from fulfillment_type default.
 
-## Latest verified CI for current head f7bcb0a7e2a2f2c8864012661d8d8072e6d22015
+## Latest CI for current head 6e36aa5c7ae89b028527ef82cb442cbfc8449023
 - Backend Syntax Check: SUCCESS
-  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542322027
+  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542492232
 - Backend tests, including PostgreSQL migration 019 assertions: SUCCESS
-  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542322022
+  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542492202
 - Android APK build: IN PROGRESS at last check
-  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542322021
+  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542492445
+
+## Current implementation boundary
+- The separate ranged quote/checkout route and ranged branch in the Stripe paid-session webhook are NOT implemented yet.
+- The pure pricing/request/confirmation helpers and unit tests exist, but no customer ranged payment is enabled.
+- The next implementation must use a separate RANGED path and preserve the existing FIXED checkout and fulfillment behavior.
 
 Earlier failed run 43542061313 was on the prior commit and its test assertion bug has been corrected. Do not treat that old failure as current head status.
 
