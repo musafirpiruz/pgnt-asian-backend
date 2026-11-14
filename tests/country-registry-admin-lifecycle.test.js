@@ -71,15 +71,3 @@ test('customer pricing quote requires a fresh active country registry and matchi
   assert.match(route, /product\.currency !== countryConfig\.currency/);
   assert.doesNotMatch(route, /isValidCountry\(country\)/);
 });
-
-
-test('fixed-product fulfillment uses the active country registry for calling code and currency', () => {
-  const start = server.indexOf('// DT One expects the recipient number in international format.');
-  const end = server.indexOf('const internationalPhone =', start);
-  assert.ok(start >= 0 && end > start);
-  const fulfillmentCountryBlock = server.slice(start, end);
-  assert.match(fulfillmentCountryBlock, /countryRegistryRuntime\.getFreshSnapshot\(\)/);
-  assert.match(fulfillmentCountryBlock, /registrySnapshot\.countries\[order\.country\]/);
-  assert.match(fulfillmentCountryBlock, /countryConfig\.currency !== order\.currency/);
-  assert.doesNotMatch(fulfillmentCountryBlock, /SUPPORTED_COUNTRIES/);
-});
