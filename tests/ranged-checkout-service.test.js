@@ -124,7 +124,7 @@ test('paid ranged webhook claims CREATED to CONFIRMING and commits before DT One
   assert.match(handler, /confirmation outcome is unknown/);
 });
 
-test('Stripe webhook resumes interrupted ranged processing without changing fixed fulfillment routing', () => {
+test('duplicate Stripe webhook never restarts ranged confirmation and fixed fulfillment remains separate', () => {
   const fs = require('node:fs');
   const server = fs.readFileSync(require.resolve('../server.js'), 'utf8');
   const start = server.indexOf('async function processPaidStripeSession');
@@ -133,7 +133,8 @@ test('Stripe webhook resumes interrupted ranged processing without changing fixe
   assert.match(handler, /session\.payment_status !== 'paid'/);
   assert.match(handler, /session\.currency !== 'eur'/);
   assert.match(handler, /order\.fulfillment_type === 'RANGED'/);
-  assert.match(handler, /resumeRangedProcessing/);
+  assert.match(handler, /Do not restart a ranged provider confirmation on a duplicate webhook/);
+  assert.doesNotMatch(handler, /resumeRangedProcessing/);
   assert.match(handler, /product_catalog/);
   assert.match(server, /RANGED_CHECKOUT_ENABLED !== 'true'/);
 });
