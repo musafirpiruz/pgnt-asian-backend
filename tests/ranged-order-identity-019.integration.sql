@@ -90,4 +90,4 @@ BEGIN
   IF NOT confirming_check THEN
     RAISE EXCEPTION 'Ranged provider status must permit the durable CONFIRMING claim state';
   END IF;
-END $;
+END $$;
