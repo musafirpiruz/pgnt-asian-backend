@@ -19,8 +19,12 @@ test('customer ranged catalog exposes only active, verified DT One destination-a
   assert.match(route, /rp\.min_amount <= 3000/);
   assert.match(route, /rp\.max_amount >= 75/);
   assert.match(route, /cr\.destination_currency = rp\.destination_currency/);
-  assert.match(route, /cr\.status IN \('active', 'legacy'\)/);
-  assert.match(route, /AF: 'AFG'[\s\S]*PK: 'PAK'[\s\S]*IN: 'IND'[\s\S]*BD: 'BGD'/);
+  assert.match(route, /cr\.status = 'active'/);
+  assert.match(route, /cr\.provider = 'dtone'/);
+  assert.match(route, /cr\.provider_country_code = \$1/);
+  assert.match(route, /countryRegistryRuntime\.getFreshSnapshot\(\)/);
+  assert.match(route, /countryConfig\.providerCountryCode/);
+  assert.doesNotMatch(route, /providerCountryCodes/);
   assert.doesNotMatch(route, /wholesale_price_range|provider_snapshot|wholesale_amount/);
 });
 
