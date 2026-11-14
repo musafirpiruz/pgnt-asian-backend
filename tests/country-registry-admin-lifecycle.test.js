@@ -62,7 +62,7 @@ test('country audit history is read-only, bounded and country-scoped', () => {
 
 test('customer pricing quote requires a fresh active country registry and matching destination currency', () => {
   const start = server.indexOf("app.get('/api/pricing/quote'");
-  const end = server.indexOf('// =====================================================\\n// PART 4/8', start);
+  const end = server.indexOf("app.post('/api/payments/checkout'", start);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start, end);
   assert.match(route, /countryRegistryRuntime\.getFreshSnapshot\(\)/);
