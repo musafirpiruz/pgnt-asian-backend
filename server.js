@@ -1966,21 +1966,47 @@ async function processPaidRangedOrder(order, orderId) {
   }
 
   const finalClient = await pool.connect();
+  let persistedOrderStatus = 'topup_review';
+  let persistedProviderStatus = 'REVIEW';
   try {
     await finalClient.query('BEGIN');
+    // A final DT One callback can win the race while the confirm request or
+    // canonical status lookup is in flight. Preserve that terminal evidence;
+    // never overwrite COMPLETED/FAILED with the intermediate CONFIRMED state.
     const txUpdate = await finalClient.query(
-      `UPDATE dtone_ranged_transactions SET provider_status='CONFIRMED',
-       confirmed_at=NOW(),updated_at=NOW()
-       WHERE order_id=$1 AND provider_status='CONFIRMING'
-         AND dtone_transaction_id=$2 AND external_id=$3`,
+      `UPDATE dtone_ranged_transactions
+       SET provider_status = CASE
+             WHEN provider_status = 'CONFIRMING' THEN 'CONFIRMED'
+             ELSE provider_status
+           END,
+           confirmed_at = CASE
+             WHEN provider_status = 'CONFIRMING' THEN COALESCE(confirmed_at, NOW())
+             ELSE confirmed_at
+           END,
+           updated_at = NOW()
+       WHERE order_id=$1
+         AND provider_status IN ('CONFIRMING','CONFIRMED','COMPLETED','FAILED','REVIEW')
+         AND dtone_transaction_id=$2 AND external_id=$3
+       RETURNING provider_status`,
       [orderId, verified.transactionId, verified.externalId]
     );
-    if (txUpdate.rowCount !== 1) throw new Error('Ranged confirmation claim was lost before final persistence.');
-    await finalClient.query(
-      `UPDATE orders SET status='topup_submitted',dtone_transaction_id=$2,updated_at=NOW()
-       WHERE order_id=$1 AND status='processing_topup'`,
-      [orderId, verified.transactionId]
+    if (txUpdate.rowCount !== 1) throw new Error('Ranged confirmation claim or callback identity was lost before final persistence.');
+    persistedProviderStatus = String(txUpdate.rows[0].provider_status || 'REVIEW');
+    const orderUpdate = await finalClient.query(
+      `UPDATE orders
+       SET status = CASE
+             WHEN $2 = 'CONFIRMED' AND status = 'processing_topup' THEN 'topup_submitted'
+             WHEN $2 IN ('FAILED','REVIEW') AND status IN ('processing_topup','topup_submitted') THEN 'topup_review'
+             ELSE status
+           END,
+           dtone_transaction_id=$3,
+           updated_at=NOW()
+       WHERE order_id=$1
+       RETURNING status`,
+      [orderId, persistedProviderStatus, verified.transactionId]
     );
+    if (orderUpdate.rowCount !== 1) throw new Error('Ranged order disappeared before final persistence.');
+    persistedOrderStatus = String(orderUpdate.rows[0].status || 'topup_review');
     await finalClient.query('COMMIT');
   } catch (error) {
     try { await finalClient.query('ROLLBACK'); } catch (_) {}
@@ -1990,7 +2016,7 @@ async function processPaidRangedOrder(order, orderId) {
       WHERE order_id=$1 AND status='processing_topup'`, [orderId]).catch(() => {});
     throw error;
   } finally { finalClient.release(); }
-  return { status: 'topup_submitted', orderId, providerReference: verified.transactionId };
+  return { status: persistedOrderStatus, orderId, providerReference: verified.transactionId, providerStatus: persistedProviderStatus };
 }
 
 async function processPaidStripeSession(session) {
@@ -3082,7 +3108,7 @@ app.post('/api/dtone/callback', async (req, res) => {
            SET provider_status = $1, updated_at = NOW()
            WHERE order_id = $2
              AND dtone_transaction_id = $3
-             AND provider_status IN ('CONFIRMED','COMPLETED','FAILED','REVIEW')`,
+             AND provider_status IN ('CONFIRMING','CONFIRMED','COMPLETED','FAILED','REVIEW')`,
           [rangedProviderStatus, orderId, providerTransactionId]
         );
       }
