@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS country_operators (
 -- Legacy country_operators schemas may require a provider ID. Bootstrap rows
 -- are intentionally unverified, so provider_operator_id must remain nullable
 -- until an authoritative DT One operator mapping is confirmed.
+-- Existing installations may already have a country_operators table from
+-- the earlier registry draft. Bring its verification metadata forward safely.
+ALTER TABLE country_operators ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 ALTER TABLE country_operators ALTER COLUMN provider_operator_id DROP NOT NULL;
 CREATE TABLE IF NOT EXISTS country_operator_localizations (
  operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
