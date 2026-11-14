@@ -15,12 +15,19 @@ BEGIN
     RAISE EXCEPTION 'Migration 019_ranged_order_identity was not applied';
   END IF;
 
-  SELECT column_default, is_nullable
-    INTO fulfillment_default, product_nullable
+  SELECT column_default
+    INTO fulfillment_default
   FROM information_schema.columns
   WHERE table_schema = current_schema()
     AND table_name = 'orders'
     AND column_name = 'fulfillment_type';
+
+  SELECT is_nullable
+    INTO product_nullable
+  FROM information_schema.columns
+  WHERE table_schema = current_schema()
+    AND table_name = 'orders'
+    AND column_name = 'product_id';
 
   IF fulfillment_default IS NULL OR fulfillment_default NOT LIKE '%FIXED%' THEN
     RAISE EXCEPTION 'Existing orders must default to FIXED fulfillment';
