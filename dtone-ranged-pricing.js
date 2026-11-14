@@ -220,14 +220,14 @@ function verifyRangedConfirmation(response, expected = {}) {
       transactionId !== String(expected.transactionId || '') ||
       externalId !== String(expected.externalId || '') ||
       productId !== String(expected.productId || '') ||
-      status !== 'CONFIRMED') {
+      !['CONFIRMED', 'SUBMITTED'].includes(status)) {
     throw new Error('DT One ranged confirmation identity or CONFIRMED status could not be verified.');
   }
   return Object.freeze({
     transactionId,
     externalId,
     productId,
-    providerStatus: 'CONFIRMED',
+    providerStatus: status,
     confirmedAt: new Date().toISOString(),
   });
 }
