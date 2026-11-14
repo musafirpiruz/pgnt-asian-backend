@@ -3,7 +3,9 @@
 -- Run with: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-registry-fx-023-024.integration.sql
 
 CREATE SCHEMA country_registry_fx_023_024_test;
-SET search_path TO country_registry_fx_023_024_test, public;
+-- Keep this fixture fully isolated: falling back to public can make CREATE TABLE IF NOT EXISTS
+-- reuse unrelated legacy tables and invalidate the schema-shape assertions below.
+SET search_path TO country_registry_fx_023_024_test;
 
 CREATE TABLE schema_migrations (
   version TEXT PRIMARY KEY,
