@@ -70,6 +70,10 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-identity-027.integration.sql
       - name: Test independently reviewed country sandbox evidence migration 029
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-sandbox-evidence-029.integration.sql
+      - name: Verify country registry audit migration 030 in PostgreSQL
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-registry-audit-030.integration.sql
+      - name: Verify country registry admin lifecycle and audit routes
+        run: node --test tests/country-registry-admin-lifecycle.test.js
       - name: Verify country sandbox evidence preflight and reviewer gates
         run: node --test tests/country-sandbox-evidence-preflight.test.js
       - name: Run regression tests
