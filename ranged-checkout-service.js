@@ -211,7 +211,7 @@ function createRangedCheckoutService(deps) {
       try {
         await client.query('ROLLBACK');
       } catch (_) {}
-      if (orderCreated && !stripeSessionCreated) {
+      if (orderCreated) {
         await pool.query(
           `UPDATE orders SET status='payment_failed', updated_at=NOW()
            WHERE order_id=$1 AND status='awaiting_payment'`,
