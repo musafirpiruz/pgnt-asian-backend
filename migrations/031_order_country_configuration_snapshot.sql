@@ -19,7 +19,7 @@ BEGIN
       ADD CONSTRAINT orders_recipient_calling_code_snapshot_check
       CHECK (
         recipient_calling_code_snapshot IS NULL
-        OR recipient_calling_code_snapshot ~ '^\\+[1-9][0-9]{0,3}$'
+        OR recipient_calling_code_snapshot ~ '^[+][1-9][0-9]{0,3}$'
       );
   END IF;
 
