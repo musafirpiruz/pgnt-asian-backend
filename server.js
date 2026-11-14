@@ -1823,6 +1823,8 @@ async function processPaidRangedOrder(order, orderId) {
     await client.query('COMMIT');
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) {}
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status IN ('CREATED','CONFIRMING')`, [orderId]).catch(() => {});
     await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
       WHERE order_id=$1 AND status='processing_topup'`, [orderId]).catch(() => {});
     throw error;
@@ -1945,6 +1947,7 @@ async function processPaidStripeSession(session) {
 
   const client = await pool.connect();
   let order;
+  let resumeRangedProcessing = false;
 
   try {
     await client.query('BEGIN');
@@ -1987,31 +1990,35 @@ async function processPaidStripeSession(session) {
       ].includes(order.status)
     ) {
       await client.query('COMMIT');
-      return { status: order.status, duplicate: true };
+      if (order.fulfillment_type === 'RANGED' && order.status === 'processing_topup') {
+        resumeRangedProcessing = true;
+      } else {
+        return { status: order.status, duplicate: true };
+      }
     }
 
-    if (order.status !== 'awaiting_payment') {
+    if (!resumeRangedProcessing && order.status !== 'awaiting_payment') {
       throw new Error(
         `Order cannot be fulfilled from status: ${order.status}`
       );
     }
 
-    const paymentIntentId =
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : session.payment_intent?.id || null;
-
-    await client.query(
-      `UPDATE orders
-       SET status = 'processing_topup',
-           stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
-           paid_at = COALESCE(paid_at, NOW()),
-           updated_at = NOW()
-       WHERE order_id = $1`,
-      [orderId, paymentIntentId]
-    );
-
-    await client.query('COMMIT');
+    if (!resumeRangedProcessing) {
+      const paymentIntentId =
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id || null;
+      await client.query(
+        `UPDATE orders
+         SET status = 'processing_topup',
+             stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+             paid_at = COALESCE(paid_at, NOW()),
+             updated_at = NOW()
+         WHERE order_id = $1`,
+        [orderId, paymentIntentId]
+      );
+      await client.query('COMMIT');
+    }
   } catch (error) {
     try {
       await client.query('ROLLBACK');
