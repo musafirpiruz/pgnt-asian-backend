@@ -141,3 +141,13 @@ test('ranged DT One capability import resolves destination currency from country
   assert.match(route, /destinationCurrency !== countryMapping\.destinationCurrency/);
   assert.doesNotMatch(route, /countryCurrencyByIso/);
 });
+
+test('DT One operator discovery accepts only provider countries explicitly mapped in the registry', () => {
+  const start = server.indexOf("app.get('/api/admin/dtone/operators'");
+  const end = server.indexOf("app.get('/api/admin/dtone/products'", start);
+  assert.ok(start >= 0 && end > start);
+  const route = server.slice(start, end);
+  assert.match(route, /resolveDtOneCountryMapping\(countryIsoCode\)/);
+  assert.match(route, /No unique DT One provider-country mapping/);
+  assert.doesNotMatch(route, /supportedOperatorCountries|AFG, PAK, IND, or BGD/);
+});
