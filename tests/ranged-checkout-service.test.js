@@ -106,3 +106,34 @@ test('ranged checkout service is distinct from the fixed checkout endpoint', () 
   assert.match(server, /RANGED_CHECKOUT_ENABLED !== 'true'/);
   assert.match(server, /api\/payments\/checkout/);
 });
+
+test('paid ranged webhook claims CREATED to CONFIRMING and commits before DT One confirmation', () => {
+  const fs = require('node:fs');
+  const server = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+  const start = server.indexOf('async function processPaidRangedOrder');
+  const end = server.indexOf('async function processPaidStripeSession', start);
+  assert.ok(start >= 0 && end > start, 'ranged webhook processor must exist');
+  const handler = server.slice(start, end);
+  const claim = handler.indexOf("SET provider_status='CONFIRMING'");
+  const commit = handler.indexOf("await client.query('COMMIT')", claim);
+  const providerCall = handler.indexOf('providerResponse = await fetch', commit);
+  assert.ok(claim >= 0 && commit > claim && providerCall > commit,
+    'durable confirmation claim must commit before provider request');
+  assert.match(handler, /provider_status='REVIEW'/);
+  assert.match(handler, /verifyRangedConfirmation/);
+  assert.match(handler, /confirmation outcome is unknown/);
+});
+
+test('Stripe webhook resumes interrupted ranged processing without changing fixed fulfillment routing', () => {
+  const fs = require('node:fs');
+  const server = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+  const start = server.indexOf('async function processPaidStripeSession');
+  const end = server.indexOf('// =====================================================', start);
+  const handler = server.slice(start, end);
+  assert.match(handler, /session\.payment_status !== 'paid'/);
+  assert.match(handler, /session\.currency !== 'eur'/);
+  assert.match(handler, /order\.fulfillment_type === 'RANGED'/);
+  assert.match(handler, /resumeRangedProcessing/);
+  assert.match(handler, /product_catalog/);
+  assert.match(server, /RANGED_CHECKOUT_ENABLED !== 'true'/);
+});
