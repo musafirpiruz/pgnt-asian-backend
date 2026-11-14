@@ -3727,7 +3727,14 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
              c.calling_code, c.phone_min_digits, c.phone_max_digits,
              c.provider, c.provider_country_code, c.status,
              p.active AS pricing_active, p.fee_eur_cents,
-             COALESCE(p.local_currency_per_eur, p.afn_per_eur) AS fx_rate,
+             (SELECT COUNT(*) FROM country_fx_rates fx
+               WHERE fx.country_code=c.country_code
+                 AND fx.base_currency='EUR'
+                 AND fx.quote_currency=c.destination_currency
+                 AND fx.is_approved=TRUE
+                 AND fx.approved_at IS NOT NULL
+                 AND fx.observed_at <= NOW()
+                 AND fx.expires_at > NOW())::int AS approved_fresh_fx_count,
              (SELECT COUNT(*) FROM country_localizations l
                WHERE l.country_code = c.country_code
                  AND l.language_code IN ('en','ps','fa','ur','hi','bn')
@@ -3784,7 +3791,7 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
       { key: 'verifiedActiveOperators', passed: Number(row.verified_operator_count) > 0 },
       { key: 'verifiedActiveProducts', passed: Number(row.verified_product_count) > 0 },
       { key: 'activeEurPricing', passed: row.pricing_active === true && Number.isInteger(Number(row.fee_eur_cents)) && Number(row.fee_eur_cents) >= 0 },
-      { key: 'positiveDestinationFx', passed: Number.isFinite(Number(row.fx_rate)) && Number(row.fx_rate) > 0 },
+      { key: 'approvedFreshDestinationFx', passed: Number(row.approved_fresh_fx_count) > 0 },
       { key: 'sandboxProviderConnectivity', passed: Number(row.sandbox_provider_connectivity) > 0 },
       { key: 'sandboxSampleQuote', passed: Number(row.sandbox_sample_quote) > 0 },
       { key: 'sandboxSuccessCallback', passed: Number(row.sandbox_success_callback) > 0 },
