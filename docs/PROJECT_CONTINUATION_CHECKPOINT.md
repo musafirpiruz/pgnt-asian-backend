@@ -93,13 +93,13 @@ This section supersedes any older "latest head" or CI statements above. Always r
 - Repository: https://github.com/musafirpiruz/pgnt-asian-backend
 - Active branch: `feat/customer-ranged-catalog-2026-11-13`
 - Active PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
-- Verified PR state before this checkpoint update: OPEN, DRAFT, not merged, mergeable.
-- Verified branch head before this checkpoint update: `undefined`.
-- Latest exact-head CI (commit `undefined`):
+- Verified PR state before this checkpoint update: OPEN, DRAFT, not merged. Mergeability is recalculated by GitHub and must be checked live.
+- Last implementation commit before this checkpoint-only documentation update: `d27289df703dd788061e95af65b40084d2c9655e`.
+- Exact-head CI for that implementation commit:
   - Backend Tests: SUCCESS — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486326
   - Backend Syntax Check: SUCCESS — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486234
   - Android APK Build: SUCCESS, including Dart analysis, release APK build, APK verification and artifact upload — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486204
-- The Android APK workflow is green on this exact head; do not repeat the APK setup/build work unless source changes require a new build.
+- The Android APK workflow was green on implementation commit `d27289df703dd788061e95af65b40084d2c9655e`; do not repeat the APK setup/build work unless source changes require a new build.
 - Completed implementation to preserve: customer ranged catalog endpoint; disabled-only verified DT One ranged product import; Flutter ranged product selection and local amount validation; migrations 018, 019 and 020; helper module `dtone-ranged.js`; helper module `dtone-ranged-pricing.js`; existing pricing/identity/confirmation unit tests; PostgreSQL migration assertions; existing FIXED checkout and fulfillment flow.
 - Migration 020 permits the durable `CONFIRMING` state. It is defined in `migrate.js` and has been exercised by isolated PostgreSQL CI migrations; it has NOT been applied to production.
 - Still NOT implemented: separate server-authoritative RANGED quote/checkout endpoint; RANGED order/transaction persistence and Stripe session creation; RANGED branch in `processPaidStripeSession`; durable one-time DT One confirm request and verified response handling; RANGED duplicate-webhook/expiry/timeout/review regression tests. Ranged customer payment remains blocked.
