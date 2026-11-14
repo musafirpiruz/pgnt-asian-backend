@@ -1977,7 +1977,6 @@ async function processPaidStripeSession(session) {
 
   const client = await pool.connect();
   let order;
-  let resumeRangedProcessing = false;
 
   try {
     await client.query('BEGIN');
@@ -2020,35 +2019,31 @@ async function processPaidStripeSession(session) {
       ].includes(order.status)
     ) {
       await client.query('COMMIT');
-      if (order.fulfillment_type === 'RANGED' && order.status === 'processing_topup') {
-        resumeRangedProcessing = true;
-      } else {
-        return { status: order.status, duplicate: true };
-      }
+      // Do not restart a ranged provider confirmation on a duplicate webhook.
+      // A worker interruption requires manual reconciliation, never a second POST.
+      return { status: order.status, duplicate: true };
     }
 
-    if (!resumeRangedProcessing && order.status !== 'awaiting_payment') {
+    if (order.status !== 'awaiting_payment') {
       throw new Error(
         `Order cannot be fulfilled from status: ${order.status}`
       );
     }
 
-    if (!resumeRangedProcessing) {
-      const paymentIntentId =
-        typeof session.payment_intent === 'string'
-          ? session.payment_intent
-          : session.payment_intent?.id || null;
-      await client.query(
-        `UPDATE orders
-         SET status = 'processing_topup',
-             stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
-             paid_at = COALESCE(paid_at, NOW()),
-             updated_at = NOW()
-         WHERE order_id = $1`,
-        [orderId, paymentIntentId]
-      );
-      await client.query('COMMIT');
-    }
+    const paymentIntentId =
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : session.payment_intent?.id || null;
+    await client.query(
+      `UPDATE orders
+       SET status = 'processing_topup',
+           stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+           paid_at = COALESCE(paid_at, NOW()),
+           updated_at = NOW()
+       WHERE order_id = $1`,
+      [orderId, paymentIntentId]
+    );
+    await client.query('COMMIT');
   } catch (error) {
     try {
       await client.query('ROLLBACK');
