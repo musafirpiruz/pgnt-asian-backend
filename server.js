@@ -1647,9 +1647,11 @@ app.post('/api/admin/stripe-dtone/sandbox-checkout', express.json(), requireAdmi
     await client.query(
       `INSERT INTO orders (
          order_id, country, operator, phone, product_id, amount, currency,
-         product_price_cents, fee_cents, charge_cents, status, created_at, updated_at
+         product_price_cents, fee_cents, charge_cents, status,
+         recipient_calling_code_snapshot, recipient_currency_snapshot,
+         created_at, updated_at
        ) VALUES ($1, 'AF', 'ATOMA-SANDBOX-TEST', '+93700100100', $2, 115, 'AFN',
-                 $3, $4, $5, 'awaiting_payment', NOW(), NOW())`,
+                 $3, $4, $5, 'awaiting_payment', '+93', 'AFN', NOW(), NOW())`,
       [orderId, String(product.id), price.basePriceCents, price.feeCents, price.finalPriceCents]
     );
     await client.query('COMMIT');
