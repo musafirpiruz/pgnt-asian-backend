@@ -196,8 +196,12 @@ test('ranged checkout marks provider quote for review when Stripe Checkout creat
 });
 
 
-test('ranged checkout cancels the unsubmitted DT One quote when Stripe session creation fails', async () => {
-  const stripe = { checkout: { sessions: { async create() { throw new Error('Stripe unavailable'); } } } };
+test('ranged checkout cancels the unsubmitted DT One quote after a definitive Stripe 400 rejection', async () => {
+  const stripe = { checkout: { sessions: { async create() {
+    const error = new Error('Stripe rejected the Checkout request');
+    error.statusCode = 400;
+    throw error;
+  } } } };
   const { service, queries, restoreFetch } = deps({ stripe });
   const requests = [];
   global.fetch = async (url, options) => {
