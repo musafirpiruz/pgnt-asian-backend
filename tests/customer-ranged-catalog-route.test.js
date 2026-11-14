@@ -101,3 +101,33 @@ test('country registry runtime is initialized from the database pool and fails c
   assert.match(server, /const countryRegistryRuntime = pool[\s\S]*createCountryRegistryRuntime\(\{ pool, maxAgeMs: 60_000 \}\)/);
   assert.match(server, /countryRegistryRuntime\.getFreshSnapshot\(\)/);
 });
+
+
+test('admin DT One catalog country resolution uses only unique explicit country_registry mappings', () => {
+  const helperStart = server.indexOf('async function resolveDtOneCountryMapping(');
+  const helperEnd = server.indexOf('// One standard customer payment currency.', helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart, 'registry mapping resolver must exist');
+  const helper = server.slice(helperStart, helperEnd);
+  assert.match(helper, /FROM country_registry/);
+  assert.match(helper, /provider = 'dtone'/);
+  assert.match(helper, /provider_country_code = \$1/);
+  assert.match(helper, /result\.rowCount !== 1/);
+  assert.match(helper, /destination_currency/);
+
+  const refreshStart = server.indexOf("app.post('/api/admin/catalog/:productId/refresh-prices'");
+  const importStart = server.indexOf("app.post('/api/admin/catalog/:productId/import'");
+  const syncStart = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country'");
+  const operatorsStart = server.indexOf("app.get('/api/admin/dtone/operators'");
+  assert.ok(refreshStart >= 0 && importStart > refreshStart && syncStart > importStart && operatorsStart > syncStart);
+  const refresh = server.slice(refreshStart, importStart);
+  const importRoute = server.slice(importStart, syncStart);
+  const sync = server.slice(syncStart, operatorsStart);
+  for (const route of [refresh, importRoute, sync]) {
+    assert.match(route, /resolveDtOneCountryMapping\(/);
+    assert.doesNotMatch(route, /countryMap\s*=\s*(?:Object\.freeze\()?\s*\{\s*AFG:/);
+  }
+  assert.match(refresh, /countryMapping\.destinationCurrency/);
+  assert.match(importRoute, /countryMapping\.destinationCurrency/);
+  assert.match(sync, /recipientCurrency = countryMapping\.destinationCurrency/);
+  assert.match(sync, /currency !== recipientCurrency/);
+});
