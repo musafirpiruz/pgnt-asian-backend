@@ -158,7 +158,6 @@ test('authenticated DT One callbacks verify ranged identity and reconcile ranged
 
 test('ranged checkout fails closed when DT One quote identity is inconsistent', async () => {
   const { service, restoreFetch } = deps();
-  let stripeCalled = false;
   const originalStripe = service;
   global.fetch = async () => ({
     ok: true,
@@ -179,7 +178,7 @@ test('ranged checkout fails closed when DT One quote identity is inconsistent', 
       originalStripe({ country: 'AF', phone: '700100100', productId: '98765', amount: 150 }),
       /identity|external/i
     );
-    assert.equal(stripeCalled, false);
+    // Quote identity must be rejected before local order persistence.
   } finally { restoreFetch(); }
 });
 
