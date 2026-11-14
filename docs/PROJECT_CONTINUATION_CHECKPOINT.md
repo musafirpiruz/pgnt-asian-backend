@@ -222,3 +222,16 @@ Continue PGNT ASIAN TOPUP from this repository, branch, PR, and this checkpoint.
 
 ### New-chat instruction
 The user explicitly requests that previous work be verified if this chat ends. Start by fetching live PR #242 HEAD and this checkpoint, then confirm the three successful CI runs above against the exact HEAD. Continue the existing project; do not rebuild, redo completed work, or rely on stale earlier sections.
+
+## AUTHORITATIVE HANDOFF UPDATE — 2026-11-14 19:20 CET
+
+- Latest implementation commit: `5b57fac4a09d087f033426e35ee98574a03dc504`.
+- This commit strengthens country activation preflight: activation now requires an approved, reviewed, current EUR-to-destination FX row from `country_fx_rates` (`is_approved=TRUE`, reviewer timestamp present, observed no later than now, expiry later than now). Legacy `pricing_settings` reference rates no longer satisfy this activation gate by themselves.
+- Regression test asserts the approval, reviewer, observation and expiry checks.
+- CI on this exact commit: Backend Syntax #1448 SUCCESS; Backend Tests #1727 SUCCESS; Android APK Build #870 SUCCESS.
+- Backend test job passed isolated PostgreSQL migrations and regression tests, including migrations 023/024, 029, 030, 031 and the country activation preflight/reviewer gates.
+- Latest APK artifact: `pgnt-asian-topup-apk`, ID `14122457891`, ZIP size 25,291,114 bytes, SHA256 `d47557febad7f0b575b894990e64302d8d098bf4d8c19b3dd991d1b4e444c1ba`, expires 2026-11-28 16:40 UTC.
+- Workflow: https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43616451835
+- Artifact: https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43616451835/artifacts/14122457891
+- PR #242 remains OPEN and unmerged. No production migration, product/country activation, deployment, real payment, or top-up was performed.
+- Remaining blockers: real DT One pre-production E2E with approved credentials/test numbers and callback authentication evidence; independent review of sandbox evidence; final audit of country/admin/product/operator/FX flows. Keep ranged checkout gated off.
