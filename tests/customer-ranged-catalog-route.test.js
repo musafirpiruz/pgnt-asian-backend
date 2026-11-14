@@ -67,3 +67,28 @@ test('customer ranged catalog scopes results to the selected operator with a par
   assert.match(route, /LOWER\(rp\.operator_name\) = LOWER\(\$3\)/);
   assert.match(route, /\[providerCountryCode, countryCode, operatorFilter\]/);
 });
+
+
+test('ranged order identity migration is registered as an additive version and preserves fixed orders', () => {
+  const migration = fs.readFileSync(path.join(__dirname, '..', 'migrate.js'), 'utf8');
+  const start = migration.indexOf('const rangedOrderIdentityVersion = "019_ranged_order_identity"');
+  const end = migration.indexOf('console.log("Migration 019_ranged_order_identity is already applied.")', start);
+  assert.ok(start >= 0 && end > start, 'version 019 must be registered in the explicit migration runner');
+  const block = migration.slice(start, end);
+  assert.match(block, /DEFAULT 'FIXED'/);
+  assert.match(block, /ALTER COLUMN product_id DROP NOT NULL/);
+  assert.match(block, /fulfillment_type = 'FIXED'[\s\S]*product_id IS NOT NULL[\s\S]*ranged_product_id IS NULL/);
+  assert.match(block, /fulfillment_type = 'RANGED'[\s\S]*product_id IS NULL[\s\S]*ranged_product_id IS NOT NULL/);
+  assert.match(block, /REFERENCES dtone_ranged_products\(dtone_product_id\)/);
+  assert.match(block, /ON DELETE RESTRICT/);
+  assert.match(block, /BEGIN/);
+  assert.match(block, /COMMIT/);
+  assert.match(block, /ROLLBACK/);
+  assert.doesNotMatch(block, /UPDATE orders[\s\S]*SET fulfillment_type = 'RANGED'/);
+});
+
+test('ranged order identity migration is not automatically applied at server startup', () => {
+  const start = server.indexOf("app.get('/api/countries/:countryCode/ranged-products'");
+  const startup = server.slice(0, start);
+  assert.doesNotMatch(startup, /runMigration\(|019_ranged_order_identity/);
+});
