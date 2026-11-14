@@ -124,7 +124,7 @@ const pool = DATABASE_URL
 
 // Country configuration is centralized so new markets can be added without
 // duplicating currency, phone and country identity definitions in server.js.
-const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config');
+const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config'); // Legacy fixed-flow compatibility only.\nconst { createCountryRegistryRuntime } = require('./country-registry-runtime');
 
 // One standard customer payment currency.
 const PAYMENT_CURRENCY = 'eur';
@@ -5556,15 +5556,8 @@ app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
   }
 
   const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
-  const providerCountryCodes = Object.freeze({
-    AF: 'AFG',
-    PK: 'PAK',
-    IN: 'IND',
-    BD: 'BGD',
-  });
-  const providerCountryCode = providerCountryCodes[countryCode];
   const operatorFilter = String(req.query.operator || '').trim();
-  if (!providerCountryCode) {
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
     return res.status(400).json({ error: 'Unsupported country.' });
   }
   if (operatorFilter.length > 160) {
@@ -5572,6 +5565,16 @@ app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
   }
 
   try {
+    if (!countryRegistryRuntime) {
+      return res.status(503).json({ error: 'Active country registry is unavailable.', products: [] });
+    }
+    const registrySnapshot = await countryRegistryRuntime.getFreshSnapshot();
+    const countryConfig = registrySnapshot.countries[countryCode];
+    if (!countryConfig || countryConfig.provider !== 'dtone' || !countryConfig.providerCountryCode) {
+      return res.status(404).json({ error: 'Country is not active for this provider.', products: [] });
+    }
+    const providerCountryCode = countryConfig.providerCountryCode;
+
     const schema = await pool.query(
       "SELECT to_regclass('dtone_ranged_products') IS NOT NULL AS ranged_ready, to_regclass('country_registry') IS NOT NULL AS registry_ready"
     );
@@ -5601,7 +5604,7 @@ app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
        JOIN country_registry cr
          ON cr.country_code = $2
         AND cr.destination_currency = rp.destination_currency
-        AND cr.status IN ('active', 'legacy')
+        AND cr.status = 'active'\n         AND cr.provider = 'dtone'\n         AND cr.provider_country_code = $1
        WHERE rp.country_iso_code = $1
          AND rp.active = TRUE
          AND rp.capability_verified_at IS NOT NULL
