@@ -16,7 +16,7 @@ test('ranged discovery imports only a freshly verified DT One product detail', (
   assert.match(route, /String\(product\.id\) !== productId/);
   assert.match(route, /parseRangedProductCapability\(product\)/);
   assert.match(route, /providerCountry !== countryIsoCode/);
-  assert.match(route, /destinationCurrency !== countryCurrencyByIso\[countryIsoCode\]/);
+  assert.match(route, /destinationCurrency !== countryMapping.destinationCurrency/);
 });
 
 test('ranged product import is admin-only, disabled, and transaction-free', () => {
