@@ -124,7 +124,8 @@ const pool = DATABASE_URL
 
 // Country configuration is centralized so new markets can be added without
 // duplicating currency, phone and country identity definitions in server.js.
-const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config'); // Legacy fixed-flow compatibility only.\nconst { createCountryRegistryRuntime } = require('./country-registry-runtime');
+const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config'); // Legacy fixed-flow compatibility only.
+const { createCountryRegistryRuntime } = require('./country-registry-runtime');
 
 // One standard customer payment currency.
 const PAYMENT_CURRENCY = 'eur';
@@ -4591,9 +4592,11 @@ async function refreshReferralReport(){
     if(!ref.active){result.textContent='Activate this referral code before sharing its invite link.';return;}
     try{
      await navigator.clipboard.writeText(inviteUrl);
-     result.textContent='App invite link copied: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
+     result.textContent='App invite link copied: '+inviteUrl+'\
+This opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
     }catch(error){
-     result.textContent='Copy was unavailable. Copy this invite link manually: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
+     result.textContent='Copy was unavailable. Copy this invite link manually: '+inviteUrl+'\
+This opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
     }
    });
    card.append(copyInvite);
@@ -5604,7 +5607,9 @@ app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
        JOIN country_registry cr
          ON cr.country_code = $2
         AND cr.destination_currency = rp.destination_currency
-        AND cr.status = 'active'\n         AND cr.provider = 'dtone'\n         AND cr.provider_country_code = $1
+        AND cr.status = 'active'
+         AND cr.provider = 'dtone'
+         AND cr.provider_country_code = $1
        WHERE rp.country_iso_code = $1
          AND rp.active = TRUE
          AND rp.capability_verified_at IS NOT NULL
