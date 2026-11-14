@@ -131,3 +131,13 @@ test('admin DT One catalog country resolution uses only unique explicit country_
   assert.match(sync, /recipientCurrency = countryMapping\.destinationCurrency/);
   assert.match(sync, /currency !== recipientCurrency/);
 });
+
+test('ranged DT One capability import resolves destination currency from country_registry', () => {
+  const start = server.indexOf("app.post('/api/admin/dtone/ranged-products/import'");
+  const end = server.indexOf('//', start + 20);
+  assert.ok(start >= 0);
+  const route = server.slice(start, server.indexOf("app.", start + 20) > 0 ? server.indexOf("app.", start + 20) : server.length);
+  assert.match(route, /resolveDtOneCountryMapping\(countryIsoCode\)/);
+  assert.match(route, /destinationCurrency !== countryMapping\.destinationCurrency/);
+  assert.doesNotMatch(route, /countryCurrencyByIso/);
+});
