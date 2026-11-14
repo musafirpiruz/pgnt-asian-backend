@@ -1154,12 +1154,33 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const country = normalizeCountry(req.query.country);
   const productId = String(req.query.productId || '').trim();
-  if (!isValidCountry(country) || !/^[1-9]\d*$/.test(productId)) {
+  if (!/^[1-9]\d*$/.test(productId) || !/^[A-Z]{2}$/.test(country)) {
     return res.status(400).json({ error: 'Select a valid catalog product.' });
   }
+
+  // Customer pricing quotes must use the same fresh DB-backed registry as
+  // checkout. The legacy static bootstrap list is not an activation source.
+  if (!countryRegistryRuntime) {
+    return res.status(503).json({ error: 'Active country registry is unavailable.' });
+  }
+  let countryConfig;
+  try {
+    const snapshot = await countryRegistryRuntime.getFreshSnapshot();
+    countryConfig = snapshot.countries[country];
+  } catch (registryError) {
+    console.error('Pricing quote country registry unavailable:', registryError.message);
+    return res.status(503).json({ error: 'Active country registry is unavailable.' });
+  }
+  if (!countryConfig) {
+    return res.status(404).json({ error: 'Country is not active.' });
+  }
+
   const client = await pool.connect();
   try {
     const product = await getProduct(client, productId, country, { allowInactive: true });
+    if (product.country !== country || product.currency !== countryConfig.currency) {
+      return res.status(409).json({ error: 'Catalog product does not match the active country currency.' });
+    }
     const basePricing = await getPricingSettings(client, country);
     const pricing = await resolveProductPricing(client, country, product.name, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
