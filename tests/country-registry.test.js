@@ -8,7 +8,9 @@ const activeAfghanistan = {
   country_code: 'AF',
   country_name: 'Afghanistan',
   destination_currency: 'AFN',
-  calling_code: '+93',\n  provider: 'dtone',\n  provider_country_code: 'AFG',
+  calling_code: '+93',
+  provider: 'dtone',
+  provider_country_code: 'AFG',
   phone_min_digits: 9,
   phone_max_digits: 9,
   status: 'active',
@@ -21,14 +23,17 @@ test('only active countries are exposed to customer configuration', () => {
     { ...activeAfghanistan, country_code: 'PK', status: 'testing' },
   ]);
   assert.deepEqual(Object.keys(config), ['AF']);
-  assert.equal(config.AF.currency, 'AFN');\n  assert.equal(config.AF.provider, 'dtone');\n  assert.equal(config.AF.providerCountryCode, 'AFG');
+  assert.equal(config.AF.currency, 'AFN');
+  assert.equal(config.AF.provider, 'dtone');
+  assert.equal(config.AF.providerCountryCode, 'AFG');
 });
 
 test('validates country identity, currency, calling code and phone rules', () => {
   for (const patch of [
     { country_code: 'A1' },
     { destination_currency: 'EURO' },
-    { calling_code: '93' },\n    { provider_country_code: null },
+    { calling_code: '93' },
+    { provider_country_code: null },
     { phone_min_digits: 0 },
     { phone_min_digits: 10, phone_max_digits: 9 },
     { configuration_version: 0 },
