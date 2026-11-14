@@ -4,7 +4,7 @@ Last updated: 2026-11-14
 Repository: musafirpiruz/pgnt-asian-backend
 Active PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
 Branch: feat/customer-ranged-catalog-2026-11-13
-Current head commit: undefined
+Current branch head: always fetch live from PR #242 before editing; last implementation commit before checkpoint-only updates: d27289df703dd788061e95af65b40084d2c9655e.
 
 ## Why this checkpoint exists
 Continue the existing PGNT ASIAN TOPUP project from its current implementation. Do not rebuild from scratch, repeat completed work, or change unrelated working features.
@@ -95,7 +95,7 @@ This section supersedes any older "latest head" or CI statements above. Always r
 - Active PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
 - Verified PR state before this checkpoint update: OPEN, DRAFT, not merged. Mergeability is recalculated by GitHub and must be checked live.
 - Last implementation commit before this checkpoint-only documentation update: `d27289df703dd788061e95af65b40084d2c9655e`.
-- Exact-head CI for that implementation commit:
+- CI for last implementation commit d27289df703dd788061e95af65b40084d2c9655e:
   - Backend Tests: SUCCESS — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486326
   - Backend Syntax Check: SUCCESS — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486234
   - Android APK Build: SUCCESS, including Dart analysis, release APK build, APK verification and artifact upload — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486204
