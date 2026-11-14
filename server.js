@@ -16,6 +16,7 @@ const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
+const { createRangedCheckoutService } = require('./ranged-checkout-service');
 const { classifyCatalogCandidates, denominationKey } = require('./catalog-natural-key');
 
 const app = express();
@@ -1189,6 +1190,55 @@ function getCheckoutUrls() {
 
 // Create a checkout session and store its order.
 // IMPORTANT: register this route AFTER express.json().
+// Dedicated ranged checkout: provider quote and EUR wholesale evidence are
+// obtained server-side before Stripe is offered. Fixed checkout remains separate.
+app.post('/api/payments/ranged-checkout', async (req, res) => {
+  if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
+    return res.status(503).json({ error: 'Payment and fulfillment environments are not safely matched.' });
+  }
+  if (!pool || !stripe || !DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'Ranged payment service is not configured.' });
+  }
+  if (req.body?.referralCode || req.body?.referralInstallId) {
+    return res.status(503).json({
+      code: 'REFERRAL_IDENTITY_VERIFICATION_REQUIRED',
+      error: 'Referral rewards are unavailable until secure account verification is enabled.',
+    });
+  }
+  try {
+    const createRangedCheckout = createRangedCheckoutService({
+      pool,
+      stripe,
+      dtoneBaseUrl: DTONE_API_BASE_URL,
+      dtoneTransactionPath: DTONE_TRANSACTION_PATH,
+      dtoneAuthHeader: getDtOneAuthHeader(),
+      callbackUrl: DTONE_CALLBACK_URL,
+      appBaseUrl: APP_BASE_URL,
+      getPricingSettings,
+      validatePhone,
+      countryCurrency,
+      normalizePhone,
+      supportedCountries: SUPPORTED_COUNTRIES,
+      formatEuro,
+    });
+    const result = await createRangedCheckout({
+      country: req.body?.country,
+      phone: req.body?.phone || req.body?.phoneNumber,
+      productId: req.body?.productId,
+      amount: req.body?.amount,
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 502;
+    console.error('Ranged checkout creation failed:', {
+      errorMessage: String(error?.message || 'Unknown ranged checkout error').slice(0, 240),
+    });
+    return res.status(statusCode).json({
+      error: statusCode < 500 ? error.message : 'Could not safely create ranged checkout. No customer payment was confirmed.',
+    });
+  }
+});
+
 app.post('/api/payments/checkout', async (req, res) => {
   if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
     console.error('Checkout blocked: Stripe mode and DT One environment do not match.');
