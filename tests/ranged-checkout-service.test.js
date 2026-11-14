@@ -65,7 +65,7 @@ function deps(overrides = {}) {
     validatePhone: (phone, country) => ({ valid: true, phone: '700100100', country, currency: 'AFN' }),
     countryCurrency: () => 'AFN',
     normalizePhone: (phone) => phone,
-    supportedCountries: { AF: { callingCode: '+93', providerCountryCode: 'AFG' } },
+    supportedCountries: { AF: { callingCode: '+93', provider: 'dtone', providerCountryCode: 'AFG' } },
     formatEuro: (cents) => `€${(cents / 100).toFixed(2)}`,
     ...overrides,
   });
