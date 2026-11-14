@@ -3388,6 +3388,183 @@ app.get('/api/admin/countries/registry-summary', requireAdmin, async (req, res) 
   }
 });
 
+// Update non-active country configuration with optimistic concurrency and an audit row.
+// This endpoint cannot activate a country. Activation remains a separate evidence-gated process.
+app.put('/api/admin/countries/:countryCode/configuration', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const expectedVersion = Number(req.body?.expectedConfigurationVersion);
+  if (!/^[A-Z]{2}$/.test(countryCode) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+    return res.status(400).json({ error: 'A valid country code and expectedConfigurationVersion are required.' });
+  }
+
+  const allowedStatuses = new Set(['draft','configuring','testing','disabled','legacy']);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const currentResult = await client.query(
+      `SELECT country_code,country_name,destination_currency,calling_code,
+              phone_min_digits,phone_max_digits,provider,provider_country_code,
+              status,configuration_version
+         FROM country_registry WHERE country_code=$1 FOR UPDATE`,
+      [countryCode]
+    );
+    if (currentResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Country is not registered.' });
+    }
+    const current = currentResult.rows[0];
+    if (Number(current.configuration_version) !== expectedVersion) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Country configuration changed since it was loaded. Reload before editing.',
+        currentConfigurationVersion: Number(current.configuration_version),
+      });
+    }
+    if (String(current.status).toLowerCase() === 'active') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Active country configuration is immutable through this endpoint.' });
+    }
+
+    const body = req.body || {};
+    const next = {
+      country_name: body.countryName === undefined ? current.country_name : String(body.countryName).trim(),
+      destination_currency: body.destinationCurrency === undefined ? String(current.destination_currency).trim().toUpperCase() : String(body.destinationCurrency).trim().toUpperCase(),
+      calling_code: body.callingCode === undefined ? current.calling_code : String(body.callingCode).trim(),
+      phone_min_digits: body.phoneMinDigits === undefined ? Number(current.phone_min_digits) : Number(body.phoneMinDigits),
+      phone_max_digits: body.phoneMaxDigits === undefined ? Number(current.phone_max_digits) : Number(body.phoneMaxDigits),
+      provider: body.provider === undefined ? String(current.provider).trim().toLowerCase() : String(body.provider).trim().toLowerCase(),
+      provider_country_code: body.providerCountryCode === undefined
+        ? (current.provider_country_code == null ? null : String(current.provider_country_code).trim().toUpperCase())
+        : (body.providerCountryCode == null || String(body.providerCountryCode).trim() === '' ? null : String(body.providerCountryCode).trim().toUpperCase()),
+      status: body.status === undefined ? String(current.status).trim().toLowerCase() : String(body.status).trim().toLowerCase(),
+    };
+    if (!next.country_name || next.country_name.length > 120 ||
+        !/^[A-Z]{3}$/.test(next.destination_currency) ||
+        !/^\\+[1-9]\\d{0,3}$/.test(next.calling_code) ||
+        !Number.isSafeInteger(next.phone_min_digits) || next.phone_min_digits < 1 || next.phone_min_digits > 15 ||
+        !Number.isSafeInteger(next.phone_max_digits) || next.phone_max_digits < next.phone_min_digits || next.phone_max_digits > 15 ||
+        !/^[a-z][a-z0-9_-]{1,31}$/.test(next.provider) ||
+        (next.provider_country_code !== null && !/^[A-Z0-9_-]{2,8}$/.test(next.provider_country_code)) ||
+        !allowedStatuses.has(next.status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Country configuration contains an invalid name, currency, calling code, phone range, provider, mapping, or status.' });
+    }
+    const oldStatus = String(current.status).trim().toLowerCase();
+    const permittedTransitions = {
+      draft: new Set(['draft','configuring']),
+      legacy: new Set(['legacy','configuring']),
+      disabled: new Set(['disabled','configuring']),
+      configuring: new Set(['configuring','testing']),
+      testing: new Set(['testing','configuring']),
+    };
+    if (!permittedTransitions[oldStatus]?.has(next.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This country status transition is not permitted. Activation requires the separate reviewed process.' });
+    }
+    if (next.status === 'testing' && (!next.provider_country_code || !next.calling_code ||
+        !Number.isSafeInteger(next.phone_min_digits) || !Number.isSafeInteger(next.phone_max_digits))) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ error: 'Provider mapping, calling code, and phone validation must be configured before sandbox testing.' });
+    }
+    if (next.provider_country_code) {
+      const duplicate = await client.query(
+        `SELECT country_code FROM country_registry
+          WHERE provider=$1 AND provider_country_code=$2 AND country_code<>$3 LIMIT 1`,
+        [next.provider,next.provider_country_code,countryCode]
+      );
+      if (duplicate.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'This provider country code is already assigned to another country.' });
+      }
+    }
+
+    const oldValues = {
+      countryName: current.country_name,
+      destinationCurrency: current.destination_currency,
+      callingCode: current.calling_code,
+      phoneMinDigits: Number(current.phone_min_digits),
+      phoneMaxDigits: Number(current.phone_max_digits),
+      provider: current.provider,
+      providerCountryCode: current.provider_country_code,
+      status: oldStatus,
+    };
+    const newValues = {
+      countryName: next.country_name,
+      destinationCurrency: next.destination_currency,
+      callingCode: next.calling_code,
+      phoneMinDigits: next.phone_min_digits,
+      phoneMaxDigits: next.phone_max_digits,
+      provider: next.provider,
+      providerCountryCode: next.provider_country_code,
+      status: next.status,
+    };
+    const updated = await client.query(
+      `UPDATE country_registry
+          SET country_name=$1,destination_currency=$2,calling_code=$3,
+              phone_min_digits=$4,phone_max_digits=$5,provider=$6,
+              provider_country_code=$7,status=$8,
+              configuration_version=configuration_version+1,updated_at=NOW()
+        WHERE country_code=$9 AND configuration_version=$10
+        RETURNING country_code,country_name,destination_currency,calling_code,
+                  phone_min_digits,phone_max_digits,provider,provider_country_code,
+                  status,configuration_version,updated_at`,
+      [next.country_name,next.destination_currency,next.calling_code,
+       next.phone_min_digits,next.phone_max_digits,next.provider,
+       next.provider_country_code,next.status,countryCode,expectedVersion]
+    );
+    if (updated.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Country configuration changed concurrently. Reload before editing.' });
+    }
+    await client.query(
+      `INSERT INTO country_registry_audit
+         (country_code,actor,action,previous_version,new_version,old_values,new_values)
+       VALUES ($1,'admin-api-key',$2,$3,$4,$5::jsonb,$6::jsonb)`,
+      [countryCode,oldStatus === next.status ? 'configuration_updated' : 'status_transition',
+       expectedVersion,Number(updated.rows[0].configuration_version),
+       JSON.stringify(oldValues),JSON.stringify(newValues)]
+    );
+    await client.query('COMMIT');
+    return res.set('Cache-Control','no-store').json({
+      updated: true,
+      country: updated.rows[0],
+      countryActivated: false,
+      auditRecorded: true,
+      note: 'Country configuration was saved and audited. This action cannot activate a country or enable products.',
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Country registry configuration update failed:', error.message);
+    return res.status(500).json({ error: 'Could not update country configuration. Confirm migration 030 is installed.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Read-only country configuration audit history. Secrets and credential values are never stored here.
+app.get('/api/admin/countries/:countryCode/audit', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const requestedLimit = Number(req.query.limit || 50);
+  const limit = Number.isSafeInteger(requestedLimit) ? Math.max(1,Math.min(100,requestedLimit)) : 50;
+  if (!/^[A-Z]{2}$/.test(countryCode)) return res.status(400).json({ error: 'A valid country code is required.' });
+  try {
+    const result = await pool.query(
+      `SELECT id,country_code,actor,action,previous_version,new_version,
+              old_values,new_values,created_at
+         FROM country_registry_audit
+        WHERE country_code=$1
+        ORDER BY id DESC LIMIT $2`,
+      [countryCode,limit]
+    );
+    return res.set('Cache-Control','no-store').json({ countryCode, entries: result.rows, count: result.rowCount });
+  } catch (error) {
+    console.error('Country registry audit lookup failed:', error.message);
+    return res.status(503).json({ error: 'Country audit history is unavailable. Confirm migration 030 is installed.' });
+  }
+});
+
 // Record administrator-reviewed sandbox evidence. This records evidence only;
 // it never runs a provider transaction or activates any country/product.
 app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), requireAdmin, async (req, res) => {
