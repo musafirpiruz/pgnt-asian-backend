@@ -135,7 +135,7 @@ VALUES
 \ir ../migrations/023_current_catalog_country_registry_bootstrap.sql
 \ir ../migrations/024_country_fx_rates.sql
 
-DO $
+DO $legacy$
 DECLARE country_count INTEGER; operator_count INTEGER; mapping_count INTEGER;
 BEGIN
   SELECT COUNT(*) INTO country_count FROM country_registry;
@@ -145,7 +145,7 @@ BEGIN
     RAISE EXCEPTION 'Legacy FX schema bootstrap counts differ: countries %, operators %, mappings %',
       country_count, operator_count, mapping_count;
   END IF;
-END $;
+END $legacy$;
 
 RESET search_path;
 DROP SCHEMA country_registry_fx_legacy_023_024_test CASCADE;
