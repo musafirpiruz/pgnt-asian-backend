@@ -25,7 +25,8 @@ function createRangedCheckoutService(deps) {
 
   return async function createRangedCheckout(input) {
     const country = String(input?.country || '').trim().toUpperCase();
-    const providerCountry = providerCountryCode(country);
+    const countryConfig = supportedCountries?.[country];
+    const providerCountry = String(countryConfig?.providerCountryCode || '').trim().toUpperCase() || null;
     const currency = countryCurrency(country);
     const productId = String(input?.productId || '').trim();
     const amount = Number(input?.amount);
@@ -78,7 +79,6 @@ function createRangedCheckoutService(deps) {
         throw error;
       }
 
-      const countryConfig = supportedCountries[country];
       if (!countryConfig?.callingCode) throw new Error('Recipient calling code is not configured.');
       const normalizedPhone = normalizePhone(phoneResult.phone, country);
       const internationalPhone = `${countryConfig.callingCode}${normalizedPhone}`;
