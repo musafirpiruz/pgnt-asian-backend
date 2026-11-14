@@ -71,3 +71,44 @@ test('runtime rejects missing pool and invalid loader output without publishing'
   await assert.rejects(runtime.refresh(), /invalid snapshot/);
   assert.equal(runtime.getSnapshot(), null);
 });
+
+
+test('fresh snapshot is reused until its configured age expires', async () => {
+  let clock = 1000;
+  let loads = 0;
+  const runtime = createCountryRegistryRuntime({
+    pool: { async query() {} },
+    loader: async () => {
+      loads += 1;
+      return Object.freeze({ AF: Object.freeze({ currency: 'AFN' }) });
+    },
+    now: () => clock,
+    maxAgeMs: 100,
+  });
+  await runtime.getFreshSnapshot();
+  clock = 1099;
+  await runtime.getFreshSnapshot();
+  assert.equal(loads, 1);
+  clock = 1100;
+  await runtime.getFreshSnapshot();
+  assert.equal(loads, 2);
+});
+
+test('stale snapshot is not returned when registry refresh fails', async () => {
+  let clock = 100;
+  let fail = false;
+  const runtime = createCountryRegistryRuntime({
+    pool: { async query() {} },
+    loader: async () => {
+      if (fail) throw new Error('registry unavailable');
+      return Object.freeze({ AF: Object.freeze({ currency: 'AFN' }) });
+    },
+    now: () => clock,
+    maxAgeMs: 10,
+  });
+  await runtime.getFreshSnapshot();
+  clock = 111;
+  fail = true;
+  await assert.rejects(runtime.getFreshSnapshot(), /registry unavailable/);
+  assert.ok(runtime.getSnapshot());
+});
