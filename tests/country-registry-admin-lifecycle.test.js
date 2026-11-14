@@ -71,3 +71,23 @@ test('customer pricing quote requires a fresh active country registry and matchi
   assert.match(route, /product\.currency !== countryConfig\.currency/);
   assert.doesNotMatch(route, /isValidCountry\(country\)/);
 });
+
+
+test('fixed orders persist immutable recipient country settings for later fulfillment', () => {
+  const checkoutStart = server.indexOf("app.post('/api/payments/checkout'");
+  const checkoutEnd = server.indexOf("app.post('/api/admin/stripe-dtone/sandbox-checkout'", checkoutStart);
+  assert.ok(checkoutStart >= 0 && checkoutEnd > checkoutStart);
+  const checkout = server.slice(checkoutStart, checkoutEnd);
+  assert.match(checkout, /recipient_calling_code_snapshot/);
+  assert.match(checkout, /recipient_currency_snapshot/);
+  assert.match(checkout, /country_configuration_version_snapshot/);
+  assert.match(checkout, /activeCountryConfigs\[input\.country\]\.callingCode/);
+
+  const fulfillmentStart = server.indexOf('// Re-read trusted product information from the database.');
+  const fulfillmentEnd = server.indexOf('// Configure this endpoint and payload to match the', fulfillmentStart);
+  assert.ok(fulfillmentStart >= 0 && fulfillmentEnd > fulfillmentStart);
+  const fulfillment = server.slice(fulfillmentStart, fulfillmentEnd);
+  assert.match(fulfillment, /order\.recipient_currency_snapshot \|\| countryCurrency\(order\.country\)/);
+  assert.match(fulfillment, /order\.recipient_calling_code_snapshot/);
+  assert.match(fulfillment, /SUPPORTED_COUNTRIES\[order\.country\]/);
+});
