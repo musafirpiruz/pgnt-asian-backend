@@ -889,6 +889,87 @@ async function runMigration() {
       console.log("Migration 018_dtone_ranged_value_foundation is already applied.");
     }
 
+    // Version 019 explicitly separates fixed catalog identity from DT One
+    // ranged-product identity. Existing orders remain FIXED. This migration
+    // is additive and is not run unless migrate.js is explicitly invoked.
+    const rangedOrderIdentityVersion = "019_ranged_order_identity";
+    const rangedOrderIdentityCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedOrderIdentityVersion]
+    );
+    if (rangedOrderIdentityCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE orders
+            ADD COLUMN IF NOT EXISTS fulfillment_type VARCHAR(20) NOT NULL DEFAULT 'FIXED';
+          ALTER TABLE orders
+            ADD COLUMN IF NOT EXISTS ranged_product_id BIGINT;
+
+          ALTER TABLE orders
+            ALTER COLUMN product_id DROP NOT NULL;
+
+          DO $
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint
+              WHERE conrelid = 'orders'::regclass
+                AND conname = 'orders_fulfillment_type_check'
+            ) THEN
+              ALTER TABLE orders
+                ADD CONSTRAINT orders_fulfillment_type_check
+                CHECK (fulfillment_type IN ('FIXED', 'RANGED'));
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint
+              WHERE conrelid = 'orders'::regclass
+                AND conname = 'orders_fulfillment_identity_check'
+            ) THEN
+              ALTER TABLE orders
+                ADD CONSTRAINT orders_fulfillment_identity_check
+                CHECK (
+                  (fulfillment_type = 'FIXED'
+                    AND product_id IS NOT NULL
+                    AND ranged_product_id IS NULL)
+                  OR
+                  (fulfillment_type = 'RANGED'
+                    AND product_id IS NULL
+                    AND ranged_product_id IS NOT NULL)
+                );
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint
+              WHERE conrelid = 'orders'::regclass
+                AND conname = 'orders_ranged_product_fk'
+            ) THEN
+              ALTER TABLE orders
+                ADD CONSTRAINT orders_ranged_product_fk
+                FOREIGN KEY (ranged_product_id)
+                REFERENCES dtone_ranged_products(dtone_product_id)
+                ON DELETE RESTRICT;
+            END IF;
+          END;
+          $;
+
+          CREATE INDEX IF NOT EXISTS idx_orders_fulfillment_type_status
+            ON orders (fulfillment_type, status, created_at DESC);
+        `);
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [rangedOrderIdentityVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 019_ranged_order_identity completed; existing orders remain FIXED.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 019_ranged_order_identity is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
