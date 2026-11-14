@@ -236,7 +236,7 @@ test('ranged checkout cancels the unsubmitted DT One quote after a definitive St
   try {
     await assert.rejects(
       service({ country: 'AF', phone: '700100100', productId: '98765', amount: 150 }),
-      /Stripe unavailable/
+      /Stripe rejected the Checkout request/
     );
     assert.equal(requests.length, 2);
     assert.equal(requests[1].method, 'POST');
