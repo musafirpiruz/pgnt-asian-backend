@@ -4,7 +4,7 @@ Last updated: 2026-11-14
 Repository: musafirpiruz/pgnt-asian-backend
 Active PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
 Branch: feat/customer-ranged-catalog-2026-11-13
-Current head commit: 6e36aa5c7ae89b028527ef82cb442cbfc8449023
+Current head commit: 47589cbc4989896ed371825e02600be13cc89547
 
 ## Why this checkpoint exists
 Continue the existing PGNT ASIAN TOPUP project from its current implementation. Do not rebuild from scratch, repeat completed work, or change unrelated working features.
@@ -27,13 +27,13 @@ Customer-facing verified DT One ranged recharge catalog for Afghanistan, Pakista
 - Added PostgreSQL integration assertion for migration 019 in tests/ranged-order-identity-019.integration.sql.
 - Corrected that SQL test to inspect orders.product_id nullability separately from fulfillment_type default.
 
-## Latest CI for current head 6e36aa5c7ae89b028527ef82cb442cbfc8449023
+## Latest CI for current head 47589cbc4989896ed371825e02600be13cc89547
 - Backend Syntax Check: SUCCESS
-  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542492232
+  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542633316
 - Backend tests, including PostgreSQL migration 019 assertions: SUCCESS
-  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542492202
-- Android APK build: IN PROGRESS at last check
-  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542492445
+  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542633248
+- Android APK build: SUCCESS; Dart analysis, release APK build, APK verification, and artifact upload all passed.
+  https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43542633271
 
 ## Current implementation boundary
 - The separate ranged quote/checkout route and ranged branch in the Stripe paid-session webhook are NOT implemented yet.
@@ -52,10 +52,10 @@ Earlier failed run 43542061313 was on the prior commit and its test assertion bu
 - On canonical Stripe paid webhook, confirm DT One exactly once with database locking/idempotency; verify final identity/status. Ambiguous timeout/expiry goes to review; never blindly retry or recreate.
 - Require explicit provider wholesale EUR pricing evidence; fail closed if absent or currency is ambiguous.
 - No real payment, real top-up, production migration, product activation, deployment, or merge without explicit user approval.
-- PR #242 remains OPEN and DRAFT. Do not merge until current-head backend tests, Dart analysis, APK build, and design review are complete.
+- PR #242 remains OPEN and DRAFT. Current-head syntax, backend tests, Dart analysis, and APK build passed. Do not merge until ranged checkout/webhook implementation and review are complete.
 
 ## Next tasks (continue in this order)
-1. Poll APK build run 43542322021 and verify artifact only after successful completion.
+1. APK build on current head is now successful. Continue with the separate ranged quote/checkout and Stripe webhook implementation.
 2. Inspect server.js Stripe webhook and processPaidStripeSession, migration 018/019 schema, dtone-ranged-pricing.js, and dtone-ranged.js.
 3. Implement separate ranged quote/checkout endpoint without modifying /api/payments/checkout fixed flow.
 4. Persist ranged orders with fulfillment_type='RANGED', product_id=NULL, ranged_product_id set, and ledger state.
