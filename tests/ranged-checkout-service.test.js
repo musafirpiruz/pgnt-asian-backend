@@ -138,3 +138,19 @@ test('duplicate Stripe webhook never restarts ranged confirmation and fixed fulf
   assert.match(handler, /product_catalog/);
   assert.match(server, /RANGED_CHECKOUT_ENABLED !== 'true'/);
 });
+
+
+test('authenticated DT One callbacks verify ranged identity and reconcile ranged transaction status', () => {
+  const fs = require('node:fs');
+  const server = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+  const start = server.indexOf("app.post('/api/dtone/callback'");
+  const end = server.indexOf('// Mark a failed asynchronous Stripe payment', start);
+  assert.ok(start >= 0 && end > start, 'DT One callback route must exist');
+  const callback = server.slice(start, end);
+  assert.match(callback, /order\.fulfillment_type === 'RANGED'/);
+  assert.match(callback, /dtone_transaction_id/);
+  assert.match(callback, /ranged_product_id/);
+  assert.match(callback, /Ranged callback identity does not match/);
+  assert.match(callback, /UPDATE dtone_ranged_transactions/);
+  assert.match(callback, /'COMPLETED' : 'FAILED'/);
+});
