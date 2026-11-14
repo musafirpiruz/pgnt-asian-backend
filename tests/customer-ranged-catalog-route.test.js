@@ -98,6 +98,6 @@ test('ranged order identity migration is not automatically applied at server sta
 });
 
 test('country registry runtime is initialized from the database pool and fails closed without a pool', () => {
-  assert.match(server, /const countryRegistryRuntime = pool[\\s\\S]*createCountryRegistryRuntime\\(\\{ pool, maxAgeMs: 60_000 \\}\\)/);
-  assert.match(server, /countryRegistryRuntime\\.getFreshSnapshot\\(\\)/);
+  assert.match(server, /const countryRegistryRuntime = pool[\s\S]*createCountryRegistryRuntime\(\{ pool, maxAgeMs: 60_000 \}\)/);
+  assert.match(server, /countryRegistryRuntime\.getFreshSnapshot\(\)/);
 });
