@@ -1460,16 +1460,21 @@ app.post('/api/payments/checkout', async (req, res) => {
          order_id, country, operator, phone, product_id,
          amount, currency, product_price_cents, fee_cents,
          charge_cents, status, order_access_token_hash, referral_code,
-         referral_install_id, created_at, updated_at
+         referral_install_id, recipient_calling_code_snapshot,
+         recipient_currency_snapshot, country_configuration_version_snapshot,
+         created_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         'awaiting_payment', $11, $12, $13, NOW(), NOW()
+         'awaiting_payment', $11, $12, $13, $14, $15, $16, NOW(), NOW()
        )`,
       [
         orderId, input.country, product.name, input.phone,
         product.id, product.localAmount, product.currency,
         price.basePriceCents, price.feeCents, price.finalPriceCents,
         orderAccessTokenHash, referralCode || null, referralInstallHash,
+        activeCountryConfigs[input.country].callingCode,
+        activeCountryConfigs[input.country].currency,
+        activeCountryConfigs[input.country].configurationVersion,
       ]
     );
 
@@ -2204,7 +2209,7 @@ async function processPaidStripeSession(session) {
     product.rowCount !== 1 ||
     product.rows[0].country !== order.country ||
     product.rows[0].currency !==
-      countryCurrency(order.country) ||
+      (order.recipient_currency_snapshot || countryCurrency(order.country)) ||
     (isSandboxOrder && Number(product.rows[0].dtone_product_id) !== 7194)
   ) {
     await pool.query(
@@ -2227,8 +2232,13 @@ async function processPaidStripeSession(session) {
   // DT One expects the recipient number in international format.
   // Build it from the validated local number and this country's
   // configured calling code; never rely on an undeclared variable.
-  const countryConfig = SUPPORTED_COUNTRIES[order.country];
-  if (!countryConfig || !countryConfig.callingCode) {
+  // Prefer the immutable country settings captured when this order was
+  // created. Older orders have NULL snapshots and retain the legacy fallback.
+  const countryConfig = {
+    callingCode: order.recipient_calling_code_snapshot ||
+      SUPPORTED_COUNTRIES[order.country]?.callingCode,
+  };
+  if (!countryConfig.callingCode) {
     await pool.query(
       `UPDATE orders
        SET status = 'topup_review',
