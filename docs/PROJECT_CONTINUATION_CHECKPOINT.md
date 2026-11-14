@@ -4,7 +4,7 @@ Last updated: 2026-11-14
 Repository: musafirpiruz/pgnt-asian-backend
 Active PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
 Branch: feat/customer-ranged-catalog-2026-11-13
-Current head commit: 606639d2c0bd746debc7c7d64cfdf4efaea11523
+Current head commit: undefined
 
 ## Why this checkpoint exists
 Continue the existing PGNT ASIAN TOPUP project from its current implementation. Do not rebuild from scratch, repeat completed work, or change unrelated working features.
@@ -85,3 +85,28 @@ Earlier failed run 43542061313 was on the prior commit and its test assertion bu
 - PR #242 remains OPEN and DRAFT; no merge, production deploy, production migration, product activation, real payment, or real top-up has occurred.
 - The ranged checkout route and ranged Stripe webhook fulfillment branch are STILL NOT IMPLEMENTED. Do not claim customer ranged payments are working.
 - Continue from this branch and latest commit. Do not recreate the ranged catalog, migrations 018/019, migration 020, existing helper modules/tests, or Flutter ranged UI. Next implement the separate server-side RANGED checkout and exactly-once webhook lifecycle, then add regression tests and verify all CI on the exact final commit.
+
+
+## AUTHORITATIVE CONTINUATION STATE — verified 2026-11-14
+This section supersedes any older "latest head" or CI statements above. Always read this section first when continuing the project in a new chat.
+
+- Repository: https://github.com/musafirpiruz/pgnt-asian-backend
+- Active branch: `feat/customer-ranged-catalog-2026-11-13`
+- Active PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
+- Verified PR state before this checkpoint update: OPEN, DRAFT, not merged, mergeable.
+- Verified branch head before this checkpoint update: `undefined`.
+- Latest exact-head CI (commit `undefined`):
+  - Backend Tests: SUCCESS — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486326
+  - Backend Syntax Check: SUCCESS — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486234
+  - Android APK Build: SUCCESS, including Dart analysis, release APK build, APK verification and artifact upload — https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43543486204
+- The Android APK workflow is green on this exact head; do not repeat the APK setup/build work unless source changes require a new build.
+- Completed implementation to preserve: customer ranged catalog endpoint; disabled-only verified DT One ranged product import; Flutter ranged product selection and local amount validation; migrations 018, 019 and 020; helper module `dtone-ranged.js`; helper module `dtone-ranged-pricing.js`; existing pricing/identity/confirmation unit tests; PostgreSQL migration assertions; existing FIXED checkout and fulfillment flow.
+- Migration 020 permits the durable `CONFIRMING` state. It is defined in `migrate.js` and has been exercised by isolated PostgreSQL CI migrations; it has NOT been applied to production.
+- Still NOT implemented: separate server-authoritative RANGED quote/checkout endpoint; RANGED order/transaction persistence and Stripe session creation; RANGED branch in `processPaidStripeSession`; durable one-time DT One confirm request and verified response handling; RANGED duplicate-webhook/expiry/timeout/review regression tests. Ranged customer payment remains blocked.
+- The existing `/api/payments/checkout` and FIXED fulfillment must remain behaviorally unchanged.
+- Do not recreate completed files, migrations, helpers, Flutter ranged UI, or tests. Inspect them and extend them only where necessary.
+- No merge, production deployment, production migration, product activation, real Stripe payment, or real DT One top-up without the user's explicit approval.
+- Next work: implement and test the missing RANGED checkout and paid-webhook lifecycle in the existing branch, then rerun CI on the resulting exact head. Do not make another documentation-only commit unless the checkpoint materially changes.
+
+## New-chat handoff instruction
+Continue PGNT ASIAN TOPUP from this repository, branch, PR, and this checkpoint. First fetch the latest PR head and this checkpoint. Preserve every completed item above; do not rebuild or repeat them. Work only on the listed missing RANGED checkout/webhook lifecycle and its regression tests. Keep RANGED payment blocked until tests pass. Never merge, deploy, run production migrations, activate products, or perform real payments/top-ups without explicit user approval.
