@@ -5756,17 +5756,23 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
 
   const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
   const productId = String(req.body?.product_id || '').trim();
-  const countryCurrencyByIso = Object.freeze({
-    AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT',
-  });
-  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\d{0,17}$/.test(productId)) {
+  if (!/^[A-Z0-9_-]{2,8}$/.test(countryIsoCode) || !/^[1-9]\\d{0,17}$/.test(productId)) {
     return res.status(400).json({
       imported: false,
-      error: 'A supported country_iso_code and valid DT One product_id are required.',
+      error: 'A valid DT One provider country code and product_id are required.',
     });
   }
 
   try {
+    const countryMapping = await resolveDtOneCountryMapping(countryIsoCode);
+    if (!countryMapping) {
+      return res.status(422).json({
+        imported: false,
+        error: 'No unique DT One provider-country mapping exists in country_registry. Configure and verify the mapping before importing.',
+        transactionCreated: false,
+        paymentCreated: false,
+      });
+    }
     const detailResponse = await fetch(
       `${DTONE_API_BASE_URL}/v1/products/${encodeURIComponent(productId)}`,
       {
@@ -5791,7 +5797,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
     const destinationCurrency = String(product?.destination?.unit || '').trim().toUpperCase();
     const operatorName = String(product?.operator?.name || '').trim();
     if (!capability || providerCountry !== countryIsoCode ||
-        destinationCurrency !== countryCurrencyByIso[countryIsoCode] || !operatorName) {
+        destinationCurrency !== countryMapping.destinationCurrency || !operatorName) {
       return res.status(422).json({
         imported: false,
         error: 'The DT One product is not a verified ranged recharge for the selected country and local currency, or it lacks DESTINATION_AMOUNT support and complete integer bounds.',
