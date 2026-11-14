@@ -2,7 +2,7 @@
 
 const ISO_COUNTRY = /^[A-Z]{2}$/;
 const ISO_CURRENCY = /^[A-Z]{3}$/;
-const CALLING_CODE = /^\\+[1-9]\\d{0,3}$/;
+const CALLING_CODE = /^\+[1-9]\d{0,3}$/;
 const PROVIDER_CODE = /^[A-Z0-9_-]{2,8}$/;
 
 function positiveInteger(value, field) {
