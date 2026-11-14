@@ -228,3 +228,12 @@ test('confirmation response must match provider transaction, order and product i
     status: { message: 'CREATED' },
   }, expected), /identity/i);
 });
+
+
+test('accepts SUBMITTED as a provider state reached after successful asynchronous confirmation', () => {
+  const result = verifyRangedConfirmation({
+    id: 123456789, external_id: 'PGNT-ORDER-2', product: { id: 98765 },
+    status: { message: 'SUBMITTED' },
+  }, { transactionId: '123456789', externalId: 'PGNT-ORDER-2', productId: '98765' });
+  assert.equal(result.providerStatus, 'SUBMITTED');
+});
