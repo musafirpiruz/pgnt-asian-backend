@@ -37,20 +37,23 @@ function deps(overrides = {}) {
     } } },
   };
   const originalFetch = global.fetch;
-  global.fetch = async () => ({
+  global.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    return {
     ok: true,
     async text() {
       return JSON.stringify({
         id: 123456789,
-        external_id: 'ORDER_FROM_REQUEST',
-        product: { id: 98765 },
+        external_id: request.external_id,
+        product: { id: request.product_id },
         status: { message: 'CREATED' },
         confirmation_expiration_date: new Date(Date.now() + 600000).toISOString(),
         requested_values: { destination: { amount: 150, unit: 'AFN', unit_type: 'CURRENCY' } },
         prices: { wholesale: { amount: 1.89, fee: 0, unit: 'EUR', unit_type: 'CURRENCY' } },
       });
     },
-  });
+  };
+  };
   const service = createRangedCheckoutService({
     pool, stripe,
     dtoneBaseUrl: 'https://preprod-dvs-api.dtone.com',
