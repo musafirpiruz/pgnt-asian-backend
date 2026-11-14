@@ -127,6 +127,12 @@ const pool = DATABASE_URL
 const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config'); // Legacy fixed-flow compatibility only.
 const { createCountryRegistryRuntime } = require('./country-registry-runtime');
 
+// Keep the DB-backed registry available to customer routes. A missing DB or
+// registry table fails closed at request time; no hard-coded country fallback.
+const countryRegistryRuntime = pool
+  ? createCountryRegistryRuntime({ pool, maxAgeMs: 60_000 })
+  : null;
+
 // One standard customer payment currency.
 const PAYMENT_CURRENCY = 'eur';
 
