@@ -17,6 +17,7 @@ const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
 const { createRangedCheckoutService } = require('./ranged-checkout-service');
+const { getRangedConfirmationPath, verifyRangedConfirmation } = require('./dtone-ranged-pricing');
 const { classifyCatalogCandidates, denominationKey } = require('./catalog-natural-key');
 
 const app = express();
@@ -1784,6 +1785,117 @@ function getDtOneAuthHeader() {
 
 // Confirm the payment against the saved order.
 // Claim the order atomically before calling DT One.
+async function processPaidRangedOrder(order, orderId) {
+  const client = await pool.connect();
+  let rangedTransaction;
+  let confirmationPath;
+  try {
+    await client.query('BEGIN');
+    const claimed = await client.query(
+      `SELECT rt.*, rp.destination_currency AS product_currency
+       FROM dtone_ranged_transactions rt
+       JOIN dtone_ranged_products rp ON rp.dtone_product_id = rt.dtone_product_id
+       WHERE rt.order_id = $1 FOR UPDATE OF rt`,
+      [orderId]
+    );
+    if (claimed.rowCount !== 1) throw new Error('Ranged provider transaction was not found.');
+    rangedTransaction = claimed.rows[0];
+    if (rangedTransaction.provider_status !== 'CREATED' ||
+        String(rangedTransaction.external_id) !== orderId ||
+        String(rangedTransaction.dtone_product_id) !== String(order.ranged_product_id) ||
+        String(rangedTransaction.destination_currency).trim() !== String(order.currency).trim() ||
+        String(rangedTransaction.product_currency).trim() !== String(order.currency).trim() ||
+        Number(rangedTransaction.requested_amount) !== Number(order.amount)) {
+      throw new Error('Ranged provider transaction identity or state does not match the paid order.');
+    }
+    confirmationPath = getRangedConfirmationPath({
+      transactionId: String(rangedTransaction.dtone_transaction_id),
+      confirmationExpiresAt: rangedTransaction.confirm_by,
+      providerStatus: rangedTransaction.provider_status,
+      autoConfirmed: false,
+    });
+    const updated = await client.query(
+      `UPDATE dtone_ranged_transactions SET provider_status='CONFIRMING', updated_at=NOW()
+       WHERE order_id=$1 AND provider_status='CREATED' RETURNING id`,
+      [orderId]
+    );
+    if (updated.rowCount !== 1) throw new Error('Ranged confirmation was already claimed.');
+    await client.query('COMMIT');
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]).catch(() => {});
+    throw error;
+  } finally { client.release(); }
+
+  let providerResponse;
+  try {
+    providerResponse = await fetch(`${DTONE_API_BASE_URL}${confirmationPath}`, {
+      method: 'POST',
+      headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (_) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One ranged confirmation outcome is unknown; manual review is required and automatic retry is disabled.');
+  }
+  const responseText = await providerResponse.text();
+  let providerData = {};
+  try { providerData = responseText ? JSON.parse(responseText) : {}; } catch (_) {}
+  if (!providerResponse.ok) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One ranged confirmation was not accepted; manual review is required.');
+  }
+
+  let verified;
+  try {
+    verified = verifyRangedConfirmation(providerData, {
+      transactionId: String(rangedTransaction.dtone_transaction_id),
+      externalId: orderId,
+      productId: String(rangedTransaction.dtone_product_id),
+    });
+  } catch (_) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One ranged confirmation identity could not be verified; manual review is required.');
+  }
+
+  const finalClient = await pool.connect();
+  try {
+    await finalClient.query('BEGIN');
+    const txUpdate = await finalClient.query(
+      `UPDATE dtone_ranged_transactions SET provider_status='CONFIRMED',
+       confirmed_at=NOW(),updated_at=NOW()
+       WHERE order_id=$1 AND provider_status='CONFIRMING'
+         AND dtone_transaction_id=$2 AND external_id=$3`,
+      [orderId, verified.transactionId, verified.externalId]
+    );
+    if (txUpdate.rowCount !== 1) throw new Error('Ranged confirmation claim was lost before final persistence.');
+    await finalClient.query(
+      `UPDATE orders SET status='topup_submitted',dtone_transaction_id=$2,updated_at=NOW()
+       WHERE order_id=$1 AND status='processing_topup'`,
+      [orderId, verified.transactionId]
+    );
+    await finalClient.query('COMMIT');
+  } catch (error) {
+    try { await finalClient.query('ROLLBACK'); } catch (_) {}
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]).catch(() => {});
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]).catch(() => {});
+    throw error;
+  } finally { finalClient.release(); }
+  return { status: 'topup_submitted', orderId, providerReference: verified.transactionId };
+}
+
 async function processPaidStripeSession(session) {
   if (!pool || !stripe) {
     throw new Error('Payment services are not configured.');
@@ -1907,6 +2019,10 @@ async function processPaidStripeSession(session) {
     throw error;
   } finally {
     client.release();
+  }
+
+  if (order.fulfillment_type === 'RANGED') {
+    return processPaidRangedOrder(order, orderId);
   }
 
   // Sandbox Stripe orders may use the fixed pre-production product while
