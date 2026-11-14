@@ -265,3 +265,25 @@ test('ranged checkout leaves provider quote for review when DT One cancellation 
     assert.equal(queries.some((entry) => entry.sql.includes("provider_status='CANCELLED'")), false);
   } finally { restoreFetch(); }
 });
+
+
+test('final DT One callback wins a race with ranged confirmation persistence', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const callbackStart = server.indexOf("app.post('/api/dtone/callback'");
+  const callbackEnd = server.indexOf("async function markCheckoutPaymentFailed", callbackStart);
+  assert.ok(callbackStart >= 0 && callbackEnd > callbackStart);
+  const callback = server.slice(callbackStart, callbackEnd);
+  assert.match(callback, /provider_status IN \\('CONFIRMING','CONFIRMED','COMPLETED','FAILED','REVIEW'\\)/);
+
+  const confirmStart = server.indexOf('async function processPaidRangedOrder');
+  const confirmEnd = server.indexOf('async function processPaidStripeSession', confirmStart);
+  assert.ok(confirmStart >= 0 && confirmEnd > confirmStart);
+  const confirm = server.slice(confirmStart, confirmEnd);
+  assert.match(confirm, /WHEN provider_status = 'CONFIRMING' THEN 'CONFIRMED'[\\s\\S]*ELSE provider_status/);
+  assert.match(confirm, /provider_status IN \\('CONFIRMING','CONFIRMED','COMPLETED','FAILED','REVIEW'\\)/);
+  assert.match(confirm, /WHEN \$2 = 'CONFIRMED' AND status = 'processing_topup' THEN 'topup_submitted'/);
+  assert.match(confirm, /ELSE status/);
+  assert.match(confirm, /persistedOrderStatus/);
+});
