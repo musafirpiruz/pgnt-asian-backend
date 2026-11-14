@@ -28,6 +28,8 @@ test('admin country panel displays bounded audit history and handles stale versi
   assert.match(panel, /configuration version/);
   assert.match(server, /expectedConfigurationVersion/);
   assert.match(server, /Country configuration changed since it was loaded/);
+  assert.match(server, /c\.phone_min_digits, c\.phone_max_digits/);
+  assert.match(server, /c\.provider, c\.provider_country_code/);
   assert.match(server, /country_registry_audit/);
 });
 
