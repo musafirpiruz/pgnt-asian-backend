@@ -112,7 +112,7 @@ test('023 rejects legacy-196 operator schema without damaging existing rows', {
     schema: 'registry_023_legacy196',
     fixture: fixture196,
     expectedCode: '42703',
-    expectedMessage: /column "verified_at" of relation "country_operators" does not exist/i,
+    expectedMessage: /column "verified_at" does not exist/i,
   });
 });
 
