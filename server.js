@@ -339,18 +339,16 @@ function normalizeCountry(value) {
     .toUpperCase();
 }
 
-function isValidCountry(country) {
-  return Object.prototype.hasOwnProperty.call(
-    SUPPORTED_COUNTRIES,
+function isValidCountry(country, countryConfigs = SUPPORTED_COUNTRIES) {
+  return Boolean(countryConfigs && Object.prototype.hasOwnProperty.call(
+    countryConfigs,
     normalizeCountry(country)
-  );
+  ));
 }
 
 // Get the recipient's local currency.
-function countryCurrency(country) {
-  return getCountryCurrency(
-    normalizeCountry(country)
-  );
+function countryCurrency(country, countryConfigs = SUPPORTED_COUNTRIES) {
+  return countryConfigs?.[normalizeCountry(country)]?.currency || null;
 }
 
 // Customer payments always use EUR.
@@ -371,9 +369,9 @@ function normalizePaymentCurrency(value) {
 // Normalize phone input.
 // Accepts local digits or an international number
 // beginning with the country's calling code.
-function normalizePhone(value, country) {
+function normalizePhone(value, country, countryConfigs = SUPPORTED_COUNTRIES) {
   const code = normalizeCountry(country);
-  const config = SUPPORTED_COUNTRIES[code];
+  const config = countryConfigs?.[code];
 
   if (!config) {
     throw new Error('Unsupported country.');
@@ -411,9 +409,9 @@ function normalizePhone(value, country) {
   return phone;
 }
 
-function validatePhone(phone, country) {
+function validatePhone(phone, country, countryConfigs = SUPPORTED_COUNTRIES) {
   const code = normalizeCountry(country);
-  const config = SUPPORTED_COUNTRIES[code];
+  const config = countryConfigs?.[code];
 
   if (!config) {
     return {
@@ -422,7 +420,7 @@ function validatePhone(phone, country) {
     };
   }
 
-  const normalized = normalizePhone(phone, code);
+  const normalized = normalizePhone(phone, code, countryConfigs);
   const [minDigits, maxDigits] = config.phoneDigits;
 
   if (!/^\d+$/.test(normalized)) {
@@ -452,19 +450,19 @@ function validatePhone(phone, country) {
 }
 
 // Validate data received from the checkout request.
-function validateCheckoutInput(body) {
+function validateCheckoutInput(body, countryConfigs = SUPPORTED_COUNTRIES) {
   if (!body || typeof body !== 'object') {
     throw new Error('Invalid checkout request.');
   }
 
   const country = normalizeCountry(body.country);
-  if (!isValidCountry(country)) {
+  if (!isValidCountry(country, countryConfigs)) {
     throw new Error('Unsupported country.');
   }
 
   // Stripe customer payment remains EUR; recipient currency is country-specific.
   const paymentCurrency = normalizePaymentCurrency(body.paymentCurrency || 'EUR');
-  const phoneResult = validatePhone(body.phone || body.phoneNumber, country);
+  const phoneResult = validatePhone(body.phone || body.phoneNumber, country, countryConfigs);
   if (!phoneResult.valid) {
     throw new Error(phoneResult.error);
   }
@@ -482,7 +480,7 @@ function validateCheckoutInput(body) {
     operatorKey: null,
     amount: null,
     paymentCurrency,
-    recipientCurrency: countryCurrency(country),
+    recipientCurrency: countryCurrency(country, countryConfigs),
   };
 }
 // =====================================================
@@ -607,7 +605,8 @@ async function getProduct(client, productId, requestedCountry = null, options = 
 
   const result = await client.query(
     `SELECT
-       p.id, p.country, p.currency, p.product_id AS dtone_product_id,
+       p.id, p.country, p.currency, c.destination_currency AS registry_currency,
+       p.product_id AS dtone_product_id,
        p.operator AS name, NULL::text AS description,
        p.amount AS local_amount, p.price_eur_cents,
        p.wholesale_price_eur_cents, p.active AS enabled
@@ -653,7 +652,7 @@ async function getProduct(client, productId, requestedCountry = null, options = 
   if (!isValidCountry(country)) {
     throw new Error('Product country is not supported.');
   }
-  if (product.currency !== countryCurrency(country)) {
+  if (product.currency !== product.registry_currency) {
     throw new Error('Product currency does not match its country.');
   }
 
@@ -1298,12 +1297,16 @@ app.post('/api/payments/checkout', async (req, res) => {
   }
 
   let input;
+  let activeCountryConfigs;
 
   try {
-    input = validateCheckoutInput(req.body);
+    if (!countryRegistryRuntime) throw new Error('Country registry is unavailable.');
+    activeCountryConfigs = (await countryRegistryRuntime.getFreshSnapshot()).countries;
+    input = validateCheckoutInput(req.body, activeCountryConfigs);
   } catch (error) {
-    return res.status(400).json({
-      error: error.message,
+    const registryUnavailable = /registry is unavailable|country registry/i.test(String(error.message));
+    return res.status(registryUnavailable ? 503 : 400).json({
+      error: registryUnavailable ? 'Active country registry is unavailable. Checkout is temporarily blocked.' : error.message,
     });
   }
 
