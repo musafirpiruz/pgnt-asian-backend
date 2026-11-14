@@ -43,7 +43,6 @@ function createRangedCheckoutService(deps) {
     let orderAccessToken = crypto.randomBytes(32).toString('hex');
     let orderCreated = false;
     let providerCreated = false;
-    let stripeSessionCreated = false;
     let providerQuote;
 
     try {
@@ -186,7 +185,6 @@ function createRangedCheckoutService(deps) {
         success_url: urls.successUrl,
         cancel_url: urls.cancelUrl,
       }, { idempotencyKey: `ranged-checkout-${orderId}` });
-      stripeSessionCreated = true;
       const saved = await pool.query(
         `UPDATE orders SET stripe_session_id=$1, updated_at=NOW()
          WHERE order_id=$2 AND fulfillment_type='RANGED'
