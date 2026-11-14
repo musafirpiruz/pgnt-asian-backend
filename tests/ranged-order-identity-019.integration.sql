@@ -7,12 +7,20 @@ DECLARE
   fulfillment_check BOOLEAN;
   identity_check BOOLEAN;
   ranged_fk BOOLEAN;
+  confirming_check BOOLEAN;
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM schema_migrations
     WHERE version = '019_ranged_order_identity'
   ) THEN
     RAISE EXCEPTION 'Migration 019_ranged_order_identity was not applied';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM schema_migrations
+    WHERE version = '020_ranged_confirmation_claim'
+  ) THEN
+    RAISE EXCEPTION 'Migration 020_ranged_confirmation_claim was not applied';
   END IF;
 
   SELECT column_default
@@ -70,4 +78,16 @@ BEGIN
   IF NOT ranged_fk THEN
     RAISE EXCEPTION 'Ranged product FK with ON DELETE RESTRICT is missing';
   END IF;
-END $$;
+
+  SELECT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'dtone_ranged_transactions'::regclass
+      AND conname = 'dtone_ranged_transactions_provider_status_check'
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%CONFIRMING%'
+  ) INTO confirming_check;
+
+  IF NOT confirming_check THEN
+    RAISE EXCEPTION 'Ranged provider status must permit the durable CONFIRMING claim state';
+  END IF;
+END $;
