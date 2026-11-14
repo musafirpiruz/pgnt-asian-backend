@@ -351,6 +351,29 @@ function countryCurrency(country, countryConfigs = SUPPORTED_COUNTRIES) {
   return countryConfigs?.[normalizeCountry(country)]?.currency || null;
 }
 
+// Resolve DT One's provider ISO code only through an explicit, unambiguous
+// country_registry mapping. Inactive/unverified rows may be used by admin
+// catalog preparation, but they never become customer-sellable from this path.
+async function resolveDtOneCountryMapping(providerCountryCode) {
+  const code = String(providerCountryCode || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{2,8}$/.test(code) || !pool) return null;
+  const result = await pool.query(
+    `SELECT country_code, destination_currency, provider_country_code
+       FROM country_registry
+      WHERE provider = 'dtone'
+        AND provider_country_code = $1
+      ORDER BY country_code`,
+    [code]
+  );
+  if (result.rowCount !== 1) return null;
+  const row = result.rows[0];
+  const countryCode = String(row.country_code || '').trim().toUpperCase();
+  const destinationCurrency = String(row.destination_currency || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode) || !/^[A-Z]{3}$/.test(destinationCurrency) ||
+      String(row.provider_country_code || '').trim().toUpperCase() !== code) return null;
+  return Object.freeze({ countryCode, destinationCurrency, providerCountryCode: code });
+}
+
 // Customer payments always use EUR.
 function normalizePaymentCurrency(value) {
   const currency = String(value || '')
@@ -4809,8 +4832,8 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
     }
 
     const iso = String(providerProduct.operator?.country?.iso_code || '').toUpperCase();
-    const countryMap = { AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' };
-    const providerCountry = countryMap[iso];
+    const countryMapping = await resolveDtOneCountryMapping(iso);
+    const providerCountry = countryMapping?.countryCode || null;
     const providerOperator = String(providerProduct.operator?.name || '').trim();
     const providerCurrency = String(providerProduct.destination?.unit || providerProduct.benefits?.[0]?.amount?.unit || '').toUpperCase();
     const providerAmount = Number(providerProduct.destination?.amount ?? providerProduct.benefits?.[0]?.amount?.base);
@@ -4825,7 +4848,7 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
         productId,
       });
     }
-    if (providerCurrency !== countryCurrency(providerCountry)) {
+    if (!countryMapping || providerCurrency !== countryMapping.destinationCurrency) {
       await client.query('ROLLBACK');
       return res.status(422).json({ refreshed: false, error: 'DT One product currency does not match the supported country currency. No values were changed.', productId });
     }
@@ -4922,8 +4945,8 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
       });
     }
     const iso = String(providerProduct.operator?.country?.iso_code || '').toUpperCase();
-    const countryMap = { AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' };
-    const country = countryMap[iso];
+    const countryMapping = await resolveDtOneCountryMapping(iso);
+    const country = countryMapping?.countryCode || null;
     const operator = String(providerProduct.operator?.name || '').trim();
     const currency = String(providerProduct.destination?.unit || providerProduct.benefits?.[0]?.amount?.unit || '').toUpperCase();
     const amountValue = Number(providerProduct.destination?.amount ?? providerProduct.benefits?.[0]?.amount?.base);
@@ -4934,7 +4957,7 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
         !Number.isFinite(wholesaleEur) || wholesaleEur <= 0) {
       return res.status(422).json({ imported: false, error: 'Provider product is missing a supported country, denomination, currency, retail price, or wholesale price.', productId });
     }
-    if (currency !== countryCurrency(country)) {
+    if (!countryMapping || currency !== countryMapping.destinationCurrency) {
       return res.status(422).json({ imported: false, error: 'Product currency does not match the configured currency for this country.', productId, country, currency });
     }
     const retailCents = Math.round(retailEur * 100);
@@ -4997,11 +5020,21 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
   }
 
   const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
-  const countryMap = Object.freeze({ AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' });
-  const country = countryMap[countryIsoCode];
-  if (!country) {
-    return res.status(400).json({ verified: false, error: 'Choose AFG, PAK, IND, or BGD.' });
+  if (!/^[A-Z0-9_-]{2,8}$/.test(countryIsoCode)) {
+    return res.status(400).json({ verified: false, error: 'A valid DT One provider country code is required.' });
   }
+  let countryMapping;
+  try {
+    countryMapping = await resolveDtOneCountryMapping(countryIsoCode);
+  } catch (error) {
+    console.error('DT One country registry lookup failed:', error.message);
+    return res.status(503).json({ verified: false, error: 'Country registry mapping is unavailable. No catalog rows were changed.' });
+  }
+  if (!countryMapping) {
+    return res.status(422).json({ verified: false, error: 'No unique DT One provider-country mapping exists in country_registry. Configure and verify the mapping before catalog sync.' });
+  }
+  const country = countryMapping.countryCode;
+  const recipientCurrency = countryMapping.destinationCurrency;
   const confirmImport = req.body?.confirmImport === true;
 
   try {
@@ -5087,7 +5120,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
       const retailEur = Number(item?.prices?.retail?.amount);
       const wholesaleEur = Number(item?.prices?.wholesale?.amount);
-      if (!operator || currency !== countryCurrency(country) || !Number.isFinite(amount) || amount <= 0 ||
+      if (!operator || currency !== recipientCurrency || !Number.isFinite(amount) || amount <= 0 ||
           !Number.isFinite(retailEur) || retailEur <= 0 ||
           !Number.isFinite(wholesaleEur) || wholesaleEur <= 0 || retailEur < wholesaleEur) {
         rejected.push({ productId: String(item.id), reason: 'Missing or invalid operator, denomination, country currency, retail EUR price, or wholesale EUR price.' });
@@ -5198,7 +5231,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
         countryIsoCode,
         country,
-        recipientCurrency: countryCurrency(country),
+        recipientCurrency,
         pagesChecked,
         providerProductsSeen,
         uniqueProviderProducts: providerById.size,
