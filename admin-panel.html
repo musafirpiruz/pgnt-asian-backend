@@ -416,7 +416,7 @@ document.getElementById('loadCountryRegistry').addEventListener('click',async()=
    const editor=document.createElement('details');editor.className='detail';
    const editorTitle=document.createElement('summary');editorTitle.textContent='د هېواد تنظیمات سمول (له نسخه او Audit سره)';editor.append(editorTitle);
    const form=document.createElement('div');form.className='grid';
-   const fields=[
+   const countryEditorFields=[
     ['countryName','د هېواد نوم',country.country_name||'', 'text'],
     ['destinationCurrency','د ترلاسه کوونکي اسعار (ISO)',country.destination_currency||'', 'text'],
     ['callingCode','د ټیلیفون نړیوال کوډ',country.calling_code||'', 'text'],
@@ -426,7 +426,7 @@ document.getElementById('loadCountryRegistry').addEventListener('click',async()=
     ['providerCountryCode','د Provider د هېواد کوډ',country.provider_country_code||'', 'text']
    ];
    const controls={};
-   for(const [name,labelText,value,type] of fields){
+   for(const [name,labelText,value,type] of countryEditorFields){
     const wrap=document.createElement('div');const label=document.createElement('label');label.textContent=labelText;
     const input=document.createElement('input');input.type=type;input.value=String(value);input.autocomplete='off';
     if(type==='number'){input.min='1';input.max='15';input.step='1';}
