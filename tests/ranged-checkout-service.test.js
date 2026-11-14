@@ -185,6 +185,12 @@ test('ranged checkout fails closed when DT One quote identity is inconsistent', 
 test('ranged checkout marks provider quote for review when Stripe Checkout creation fails', async () => {
   const stripe = { checkout: { sessions: { async create() { throw new Error('Stripe unavailable'); } } } };
   const { service, queries, restoreFetch } = deps({ stripe });
+  const originalFetch = global.fetch;
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({ url, method: options.method });
+    return originalFetch(url, options);
+  };
   try {
     await assert.rejects(
       service({ country: 'AF', phone: '700100100', productId: '98765', amount: 150 }),
@@ -192,6 +198,7 @@ test('ranged checkout marks provider quote for review when Stripe Checkout creat
     );
     assert.ok(queries.some((entry) => entry.sql.includes("provider_status='REVIEW'")));
     assert.ok(queries.some((entry) => entry.sql.includes("status='payment_failed'")));
+    assert.equal(requests.length, 1, 'ambiguous Stripe failure must not send a DT One cancellation');
   } finally { restoreFetch(); }
 });
 
