@@ -4,7 +4,7 @@ Last updated: 2026-11-14
 Repository: musafirpiruz/pgnt-asian-backend
 Active PR: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
 Branch: feat/customer-ranged-catalog-2026-11-13
-Current head commit: 47589cbc4989896ed371825e02600be13cc89547
+Current head commit: 606639d2c0bd746debc7c7d64cfdf4efaea11523
 
 ## Why this checkpoint exists
 Continue the existing PGNT ASIAN TOPUP project from its current implementation. Do not rebuild from scratch, repeat completed work, or change unrelated working features.
@@ -73,3 +73,15 @@ Earlier failed run 43542061313 was on the prior commit and its test assertion bu
 - Referral system replaces general 2% bonus: admin-controlled referral code/link, fixed EUR 0.07 reward after referred customer's first successful payment, server verification, anti-abuse controls, reporting, and reward ledger.
 - Support system, refunds/review, wallet, history, and admin controls remain part of the wider roadmap.
 - Only display DT One-supported amount values/ranges and increments; do not invent unsupported amounts.
+
+
+## Continuation update — 2026-11-14 (latest verified repository state)
+- Latest branch head: 606639d2c0bd746debc7c7d64cfdf4efaea11523.
+- Added migration 020_ranged_confirmation_claim in migrate.js. It extends the ranged transaction provider status constraint with CONFIRMING, allowing a durable one-time claim before the DT One confirmation call. Migration remains explicit; it has NOT been applied to production.
+- Updated tests/ranged-order-identity-019.integration.sql to assert migration 020 and CONFIRMING status support.
+- Backend Syntax Check passed for commit 18a6864e317610bedd8fcd3393637ba50ba34606.
+- Backend tests on that commit failed because the integration SQL block terminator was accidentally written as END $; the file has now been corrected to END $$; in commit 606639d2c0bd746debc7c7d64cfdf4efaea11523. A new CI run for this exact latest commit is required before calling the test green.
+- Android APK build for commit 18a6864e317610bedd8fcd3393637ba50ba34606 was still in progress at the last check; verify its result and rerun on latest commit as required.
+- PR #242 remains OPEN and DRAFT; no merge, production deploy, production migration, product activation, real payment, or real top-up has occurred.
+- The ranged checkout route and ranged Stripe webhook fulfillment branch are STILL NOT IMPLEMENTED. Do not claim customer ranged payments are working.
+- Continue from this branch and latest commit. Do not recreate the ranged catalog, migrations 018/019, migration 020, existing helper modules/tests, or Flutter ranged UI. Next implement the separate server-side RANGED checkout and exactly-once webhook lifecycle, then add regression tests and verify all CI on the exact final commit.
