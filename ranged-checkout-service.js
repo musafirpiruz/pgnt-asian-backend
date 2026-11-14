@@ -168,23 +168,50 @@ function createRangedCheckoutService(deps) {
         successUrl: `${deps.appBaseUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${deps.appBaseUrl}/payment-cancelled`,
       };
-      const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        payment_method_types: ['card'],
-        client_reference_id: orderId,
-        line_items: [{
-          price_data: {
-            currency: 'eur',
-            product_data: { name: `PGNT ASIAN TOPUP - ${product.operator_name}`, description: `${amount} ${currency} mobile top-up for ${country}` },
-            unit_amount: price.finalPriceCents,
-          },
-          quantity: 1,
-        }],
-        metadata: { orderId, fulfillmentType: 'RANGED', country, rangedProductId: productId, dtoneTransactionId: providerQuote.transactionId },
-        payment_intent_data: { metadata: { orderId, fulfillmentType: 'RANGED' } },
-        success_url: urls.successUrl,
-        cancel_url: urls.cancelUrl,
-      }, { idempotencyKey: `ranged-checkout-${orderId}` });
+      let session;
+      try {
+        session = await stripe.checkout.sessions.create({
+          mode: 'payment',
+          payment_method_types: ['card'],
+          client_reference_id: orderId,
+          line_items: [{
+            price_data: {
+              currency: 'eur',
+              product_data: { name: `PGNT ASIAN TOPUP - ${product.operator_name}`, description: `${amount} ${currency} mobile top-up for ${country}` },
+              unit_amount: price.finalPriceCents,
+            },
+            quantity: 1,
+          }],
+          metadata: { orderId, fulfillmentType: 'RANGED', country, rangedProductId: productId, dtoneTransactionId: providerQuote.transactionId },
+          payment_intent_data: { metadata: { orderId, fulfillmentType: 'RANGED' } },
+          success_url: urls.successUrl,
+          cancel_url: urls.cancelUrl,
+        }, { idempotencyKey: `ranged-checkout-${orderId}` });
+      } catch (stripeError) {
+        // No Stripe Checkout session was created. Release the DT One CREATED
+        // quote when possible; otherwise the outer handler marks it REVIEW.
+        try {
+          const cancelResponse = await fetch(
+            `${dtoneBaseUrl}/v1/transactions/${encodeURIComponent(providerQuote.transactionId)}/cancel`,
+            {
+              method: 'POST',
+              headers: { Authorization: dtoneAuthHeader, Accept: 'application/json' },
+              signal: AbortSignal.timeout(10000),
+            }
+          );
+          if (cancelResponse.status === 202) {
+            await pool.query(
+              `UPDATE dtone_ranged_transactions
+               SET provider_status='CANCELLED', updated_at=NOW()
+               WHERE order_id=$1 AND dtone_transaction_id=$2 AND provider_status='CREATED'`,
+              [orderId, providerQuote.transactionId]
+            );
+          }
+        } catch (_) {
+          // Cancellation outcome is unknown; preserve REVIEW in the outer handler.
+        }
+        throw stripeError;
+      }
       const saved = await pool.query(
         `UPDATE orders SET stripe_session_id=$1, updated_at=NOW()
          WHERE order_id=$2 AND fulfillment_type='RANGED'
