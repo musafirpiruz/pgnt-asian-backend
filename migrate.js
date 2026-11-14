@@ -967,6 +967,44 @@ async function runMigration() {
       console.log("Migration 019_ranged_order_identity is already applied.");
     }
 
+    // Version 020 adds a durable confirmation claim state. The worker must
+    // commit CREATED -> CONFIRMING before calling DT One, so duplicate Stripe
+    // webhooks cannot confirm the same provider transaction concurrently.
+    // Ambiguous network outcomes are moved to REVIEW and are never retried
+    // automatically. This migration is additive and requires explicit migrate.js.
+    const rangedConfirmingVersion = "020_ranged_confirmation_claim";
+    const rangedConfirmingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedConfirmingVersion]
+    );
+    if (rangedConfirmingCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE dtone_ranged_transactions
+            DROP CONSTRAINT IF EXISTS dtone_ranged_transactions_provider_status_check;
+          ALTER TABLE dtone_ranged_transactions
+            ADD CONSTRAINT dtone_ranged_transactions_provider_status_check
+            CHECK (provider_status IN (
+              'CREATED','CONFIRMING','CONFIRMED','COMPLETED',
+              'FAILED','CANCELLED','REVIEW'
+            ));
+          CREATE INDEX IF NOT EXISTS idx_dtone_ranged_transactions_confirmation_claim
+            ON dtone_ranged_transactions(order_id, provider_status, confirm_by);
+          INSERT INTO schema_migrations (version)
+            VALUES ('020_ranged_confirmation_claim')
+            ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 020_ranged_confirmation_claim completed; no ranged transactions were confirmed or activated.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 020_ranged_confirmation_claim is already applied.");
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"
