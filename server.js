@@ -1844,15 +1844,45 @@ async function processPaidRangedOrder(order, orderId) {
       WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
     throw new Error('DT One ranged confirmation outcome is unknown; manual review is required and automatic retry is disabled.');
   }
-  const responseText = await providerResponse.text();
-  let providerData = {};
-  try { providerData = responseText ? JSON.parse(responseText) : {}; } catch (_) {}
-  if (!providerResponse.ok) {
+  if (providerResponse.status !== 202) {
     await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
       WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
     await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
       WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
     throw new Error('DT One ranged confirmation was not accepted; manual review is required.');
+  }
+
+  // DT One documents HTTP 202 for the confirm operation. Its body is not
+  // guaranteed to contain a transaction representation, so read the canonical
+  // transaction resource and verify its identities and post-confirm state.
+  let statusResponse;
+  try {
+    statusResponse = await fetch(
+      `${DTONE_API_BASE_URL}/v1/transactions/${encodeURIComponent(String(rangedTransaction.dtone_transaction_id))}`,
+      {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+  } catch (_) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One confirmation was accepted but its transaction status could not be verified; manual review is required.');
+  }
+  let providerData = {};
+  try {
+    const statusText = await statusResponse.text();
+    providerData = statusText ? JSON.parse(statusText) : {};
+  } catch (_) {}
+  if (!statusResponse.ok) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One transaction status could not be retrieved after confirmation; manual review is required.');
   }
 
   let verified;
