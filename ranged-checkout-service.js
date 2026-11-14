@@ -188,8 +188,17 @@ function createRangedCheckoutService(deps) {
           cancel_url: urls.cancelUrl,
         }, { idempotencyKey: `ranged-checkout-${orderId}` });
       } catch (stripeError) {
-        // No Stripe Checkout session was created. Release the DT One CREATED
-        // quote when possible; otherwise the outer handler marks it REVIEW.
+        // Only a definitive Stripe 4xx rejection proves Checkout creation
+        // failed. Network errors, timeouts, 5xx, conflicts and rate limits can
+        // be ambiguous: Stripe may have created a session before the response
+        // was lost. Keep the DT One quote in REVIEW for reconciliation instead
+        // of cancelling a transaction that a customer may already have paid.
+        const stripeStatus = Number(stripeError?.statusCode);
+        const definitiveRejection = Number.isInteger(stripeStatus) &&
+          stripeStatus >= 400 && stripeStatus < 500 &&
+          stripeStatus !== 409 && stripeStatus !== 429;
+        if (!definitiveRejection) throw stripeError;
+
         try {
           const cancelResponse = await fetch(
             `${dtoneBaseUrl}/v1/transactions/${encodeURIComponent(providerQuote.transactionId)}/cancel`,
