@@ -3441,7 +3441,7 @@ app.put('/api/admin/countries/:countryCode/configuration', express.json(), requi
     };
     if (!next.country_name || next.country_name.length > 120 ||
         !/^[A-Z]{3}$/.test(next.destination_currency) ||
-        !/^\\+[1-9]\\d{0,3}$/.test(next.calling_code) ||
+        !/^\+[1-9]\d{0,3}$/.test(next.calling_code) ||
         !Number.isSafeInteger(next.phone_min_digits) || next.phone_min_digits < 1 || next.phone_min_digits > 15 ||
         !Number.isSafeInteger(next.phone_max_digits) || next.phone_max_digits < next.phone_min_digits || next.phone_max_digits > 15 ||
         !/^[a-z][a-z0-9_-]{1,31}$/.test(next.provider) ||
