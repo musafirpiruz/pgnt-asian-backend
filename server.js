@@ -5762,7 +5762,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
 
   const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
   const productId = String(req.body?.product_id || '').trim();
-  if (!/^[A-Z0-9_-]{2,8}$/.test(countryIsoCode) || !/^[1-9]\\d{0,17}$/.test(productId)) {
+  if (!/^[A-Z0-9_-]{2,8}$/.test(countryIsoCode) || !/^[1-9]\d{0,17}$/.test(productId)) {
     return res.status(400).json({
       imported: false,
       error: 'A valid DT One provider country code and product_id are required.',
