@@ -3,7 +3,9 @@
 -- Run with: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-registry-fx-023-024.integration.sql
 
 CREATE SCHEMA country_registry_fx_023_024_test;
-SET search_path TO country_registry_fx_023_024_test, public;
+-- Keep this fixture fully isolated: falling back to public can make CREATE TABLE IF NOT EXISTS
+-- reuse unrelated legacy tables and invalidate the schema-shape assertions below.
+SET search_path TO country_registry_fx_023_024_test;
 
 CREATE TABLE schema_migrations (
   version TEXT PRIMARY KEY,
@@ -97,3 +99,53 @@ END $$;
 
 RESET search_path;
 DROP SCHEMA country_registry_fx_023_024_test CASCADE;
+
+-- Backward-compatibility fixture for the live PGNT pricing schema, whose
+-- destination FX column is still named afn_per_eur for all four countries.
+CREATE SCHEMA country_registry_fx_legacy_023_024_test;
+SET search_path TO country_registry_fx_legacy_023_024_test;
+
+CREATE TABLE schema_migrations (
+  version TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE pricing_settings (
+  country CHAR(2) PRIMARY KEY,
+  afn_per_eur NUMERIC(20,10) NOT NULL CHECK (afn_per_eur > 0)
+);
+CREATE TABLE product_catalog (
+  id BIGSERIAL PRIMARY KEY,
+  country CHAR(2) NOT NULL,
+  operator VARCHAR(100) NOT NULL,
+  amount NUMERIC(12,2) NOT NULL,
+  currency CHAR(3) NOT NULL,
+  product_id BIGINT NOT NULL UNIQUE,
+  active BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+INSERT INTO pricing_settings(country, afn_per_eur)
+VALUES ('AF', 60), ('PK', 300), ('IN', 90), ('BD', 130);
+INSERT INTO product_catalog(country,operator,amount,currency,product_id,active)
+VALUES
+ ('AF','Network A',100,'AFN',20001,FALSE),
+ ('PK','Network B',100,'PKR',20002,FALSE),
+ ('IN','Network C',100,'INR',20003,FALSE),
+ ('BD','Network D',100,'BDT',20004,FALSE);
+
+\ir ../migrations/023_current_catalog_country_registry_bootstrap.sql
+\ir ../migrations/024_country_fx_rates.sql
+
+DO $legacy$
+DECLARE country_count INTEGER; operator_count INTEGER; mapping_count INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO country_count FROM country_registry;
+  SELECT COUNT(*) INTO operator_count FROM country_operators;
+  SELECT COUNT(*) INTO mapping_count FROM country_operator_products;
+  IF country_count <> 4 OR operator_count <> 4 OR mapping_count <> 4 THEN
+    RAISE EXCEPTION 'Legacy FX schema bootstrap counts differ: countries %, operators %, mappings %',
+      country_count, operator_count, mapping_count;
+  END IF;
+END $legacy$;
+
+RESET search_path;
+DROP SCHEMA country_registry_fx_legacy_023_024_test CASCADE;

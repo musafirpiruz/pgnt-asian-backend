@@ -20,8 +20,8 @@ test('operator and product mappings default inactive and unverified', () => {
   assert.match(migration, /active BOOLEAN NOT NULL DEFAULT FALSE, verified_at TIMESTAMPTZ/i);
   assert.match(migration, /provider_operator_id,active,verified_at\)[\s\S]*?NULL,FALSE,NULL/i);
   assert.match(migration, /product_catalog_id,active,verified_at\)[\s\S]*?FALSE,NULL/i);
-  assert.match(migration, /Bootstrap invariant failed: operator activation\/verification found/i);
-  assert.match(migration, /Bootstrap invariant failed: product mapping activation\/verification found/i);
+  assert.match(migration, /Bootstrap changed operator activation or verification state/i);
+  assert.match(migration, /Bootstrap changed product-mapping activation or verification state/i);
 });
 
 test('migration never promotes a country, operator or product to active', () => {

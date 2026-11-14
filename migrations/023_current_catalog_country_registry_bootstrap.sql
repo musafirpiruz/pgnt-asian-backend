@@ -9,10 +9,37 @@ BEGIN
      OR to_regclass(current_schema() || '.product_catalog') IS NULL THEN
     RAISE EXCEPTION 'Current-schema bootstrap requires pricing_settings and product_catalog';
   END IF;
-  SELECT COUNT(*) INTO bad_count
-  FROM (VALUES ('AF','AFN'),('PK','PKR'),('IN','INR'),('BD','BDT')) expected(country_code,currency)
-  LEFT JOIN pricing_settings p ON p.country::text=expected.country_code
-  WHERE p.country IS NULL OR p.local_currency_per_eur IS NULL OR p.local_currency_per_eur <= 0;
+  -- Older PGNT databases call the destination FX column afn_per_eur even
+  -- though it stores the local-currency-per-EUR reference for all four markets.
+  -- Prefer the normalized column when present; otherwise validate the legacy
+  -- column dynamically so PostgreSQL never parses a reference to a missing field.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema()
+      AND table_name='pricing_settings'
+      AND column_name='local_currency_per_eur'
+  ) THEN
+    EXECUTE $q$
+      SELECT COUNT(*) FROM
+        (VALUES ('AF','AFN'),('PK','PKR'),('IN','INR'),('BD','BDT')) expected(country_code,currency)
+      LEFT JOIN pricing_settings p ON p.country::text=expected.country_code
+      WHERE p.country IS NULL OR p.local_currency_per_eur IS NULL OR p.local_currency_per_eur <= 0
+    $q$ INTO bad_count;
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema()
+      AND table_name='pricing_settings'
+      AND column_name='afn_per_eur'
+  ) THEN
+    EXECUTE $q$
+      SELECT COUNT(*) FROM
+        (VALUES ('AF','AFN'),('PK','PKR'),('IN','INR'),('BD','BDT')) expected(country_code,currency)
+      LEFT JOIN pricing_settings p ON p.country::text=expected.country_code
+      WHERE p.country IS NULL OR p.afn_per_eur IS NULL OR p.afn_per_eur <= 0
+    $q$ INTO bad_count;
+  ELSE
+    RAISE EXCEPTION 'Pricing settings has no supported local-currency-per-EUR rate column';
+  END IF;
   IF bad_count > 0 THEN RAISE EXCEPTION 'Missing pricing settings or valid local FX for % expected countries', bad_count; END IF;
   SELECT COUNT(*) INTO bad_count FROM product_catalog p
   WHERE (p.country='AF' AND p.currency <> 'AFN') OR (p.country='PK' AND p.currency <> 'PKR')
@@ -60,9 +87,14 @@ CREATE TABLE IF NOT EXISTS country_operator_products (
  FOREIGN KEY(country_code,operator_key) REFERENCES country_operators(country_code,operator_key) ON DELETE RESTRICT,
  UNIQUE(country_code,operator_key,product_catalog_id)
 );
-DO $$
-DECLARE item RECORD; expected RECORD; normalized_key TEXT; existing_row RECORD; bad_count BIGINT;
+DO $bootstrap$
+DECLARE
+ item RECORD; expected RECORD; normalized_key TEXT; existing_row RECORD;
+ bad_count BIGINT; active_operators_before BIGINT; active_mappings_before BIGINT; active_products_before BIGINT;
 BEGIN
+ SELECT COUNT(*) INTO active_operators_before FROM country_operators WHERE active OR verified_at IS NOT NULL;
+ SELECT COUNT(*) INTO active_mappings_before FROM country_operator_products WHERE active OR verified_at IS NOT NULL;
+ SELECT COUNT(*) INTO active_products_before FROM product_catalog WHERE active;
  FOR expected IN SELECT * FROM (VALUES
   ('AF','Afghanistan','AFN','+93',9,9),('PK','Pakistan','PKR','+92',10,10),
   ('IN','India','INR','+91',10,10),('BD','Bangladesh','BDT','+880',10,10)
@@ -99,11 +131,13 @@ BEGIN
   SELECT p.country,normalized_key,p.id,FALSE,NULL FROM product_catalog p WHERE p.country=item.country_code AND p.operator=item.operator
   ON CONFLICT(country_code,operator_key,product_catalog_id) DO NOTHING;
  END LOOP;
+ -- Existing verified rows may already be active in a legacy installation.
+ -- The bootstrap must preserve them exactly and must not increase any active count.
  SELECT COUNT(*) INTO bad_count FROM country_operators WHERE active OR verified_at IS NOT NULL;
- IF bad_count>0 THEN RAISE EXCEPTION 'Bootstrap invariant failed: operator activation/verification found'; END IF;
+ IF bad_count <> active_operators_before THEN RAISE EXCEPTION 'Bootstrap changed operator activation or verification state'; END IF;
  SELECT COUNT(*) INTO bad_count FROM country_operator_products WHERE active OR verified_at IS NOT NULL;
- IF bad_count>0 THEN RAISE EXCEPTION 'Bootstrap invariant failed: product mapping activation/verification found'; END IF;
+ IF bad_count <> active_mappings_before THEN RAISE EXCEPTION 'Bootstrap changed product-mapping activation or verification state'; END IF;
  SELECT COUNT(*) INTO bad_count FROM product_catalog WHERE active;
- IF bad_count>0 THEN RAISE EXCEPTION 'Bootstrap invariant failed: existing product catalog contains active products'; END IF;
-END $$;
+ IF bad_count <> active_products_before THEN RAISE EXCEPTION 'Bootstrap changed product catalog activation state'; END IF;
+END $bootstrap$;
 COMMIT;

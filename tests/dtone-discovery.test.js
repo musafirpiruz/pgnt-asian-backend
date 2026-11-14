@@ -86,8 +86,10 @@ test('automatic country catalog discovery supports only the four configured coun
   const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
   assert.ok(start >= 0 && end > start, 'automatic country catalog sync route should exist');
   const route = server.slice(start, end);
-  for (const code of ['AFG', 'PAK', 'IND', 'BGD']) assert.ok(route.includes(code));
-  assert.match(route, /countryCurrency\(country\)/);
+  assert.match(route, /resolveDtOneCountryMapping\(countryIsoCode\)/);
+  assert.match(route, /No unique DT One provider-country mapping/);
+  assert.match(route, /countryMapping\.destinationCurrency/);
+  assert.doesNotMatch(route, /AFG|PAK|IND|BGD/);
 });
 
 test('automatic country catalog sync previews before import and requires explicit confirmation', () => {
@@ -166,9 +168,9 @@ test('DT One operator discovery accepts only the four supported provider country
   const start = server.indexOf("app.get('/api/admin/dtone/operators', requireAdmin");
   const end = server.indexOf("app.get('/api/admin/dtone/products', requireAdmin", start);
   const route = server.slice(start, end);
-  assert.match(route, /new Set\(\['AFG', 'PAK', 'IND', 'BGD'\]\)/);
-  assert.match(route, /supportedOperatorCountries\.has\(countryIsoCode\)/);
-  assert.match(route, /one of AFG, PAK, IND, or BGD/);
+  assert.match(route, /resolveDtOneCountryMapping\(countryIsoCode\)/);
+  assert.match(route, /No unique DT One provider-country mapping exists in country_registry/);
+  assert.doesNotMatch(route, /supportedOperatorCountries|one of AFG, PAK, IND, or BGD/);
 });
 
 test('DT One operator discovery marks a page-limit result as partial', () => {

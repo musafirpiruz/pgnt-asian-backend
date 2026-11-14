@@ -40,6 +40,8 @@ jobs:
         run: node migrate.js
       - name: Verify safe payment currency defaults in PostgreSQL
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/payment-currency-settings.integration.sql
+      - name: Verify ranged order identity migration 019 in PostgreSQL
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/ranged-order-identity-019.integration.sql
       - name: Prepare legacy refunds table without migration 013 uniqueness
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/refund-migration-013-prepare.sql
       - name: Upgrade legacy refunds table with migration 013
@@ -68,6 +70,12 @@ jobs:
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/product-identity-027.integration.sql
       - name: Test independently reviewed country sandbox evidence migration 029
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-sandbox-evidence-029.integration.sql
+      - name: Verify country registry audit migration 030 in PostgreSQL
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/country-registry-audit-030.integration.sql
+      - name: Verify order country configuration snapshot migration 031 in PostgreSQL
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/order-country-configuration-snapshot-031.integration.sql
+      - name: Verify country registry admin lifecycle and audit routes
+        run: node --test tests/country-registry-admin-lifecycle.test.js
       - name: Verify country sandbox evidence preflight and reviewer gates
         run: node --test tests/country-sandbox-evidence-preflight.test.js
       - name: Run regression tests

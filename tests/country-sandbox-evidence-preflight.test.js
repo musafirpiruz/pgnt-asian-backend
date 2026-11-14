@@ -21,6 +21,14 @@ test('all four country activation evidence checks require approved recent non-fu
   const end = server.indexOf("app.get('/api/", start + 20);
   assert.ok(start >= 0 && end > start);
   const route = server.slice(start, end);
+  assert.match(route, /to_regclass\('country_sandbox_evidence'\)/);
+  assert.match(route, /status\(503\)/);
+  assert.match(route, /country_fx_rates fx/);
+  assert.match(route, /fx\.is_approved=TRUE/);
+  assert.match(route, /fx\.approved_at IS NOT NULL/);
+  assert.match(route, /fx\.observed_at <= NOW\(\)/);
+  assert.match(route, /fx\.expires_at > NOW\(\)/);
+  assert.match(route, /approvedFreshDestinationFx/);
   const queries = route.split('(SELECT COUNT(*) FROM country_sandbox_evidence e').slice(1);
   assert.equal(queries.length, 4);
   for (const name of ['providerConnectivity', 'sampleQuote', 'successCallback', 'failureCallback']) {

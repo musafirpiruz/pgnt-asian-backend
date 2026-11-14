@@ -889,6 +889,160 @@ async function runMigration() {
       console.log("Migration 018_dtone_ranged_value_foundation is already applied.");
     }
 
+    // Version 019 explicitly separates fixed catalog identity from DT One
+    // ranged-product identity. Existing orders remain FIXED. This migration
+    // is additive and is not run unless migrate.js is explicitly invoked.
+    const rangedOrderIdentityVersion = "019_ranged_order_identity";
+    const rangedOrderIdentityCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedOrderIdentityVersion]
+    );
+    if (rangedOrderIdentityCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE orders
+            ADD COLUMN IF NOT EXISTS fulfillment_type VARCHAR(20) NOT NULL DEFAULT 'FIXED';
+          ALTER TABLE orders
+            ADD COLUMN IF NOT EXISTS ranged_product_id BIGINT;
+          ALTER TABLE orders
+            ALTER COLUMN product_id DROP NOT NULL;
+          CREATE INDEX IF NOT EXISTS idx_orders_fulfillment_type_status
+            ON orders (fulfillment_type, status, created_at DESC);
+        `);
+
+        const fulfillmentTypeConstraint = await client.query(
+          "SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND conname = 'orders_fulfillment_type_check'"
+        );
+        if (fulfillmentTypeConstraint.rowCount === 0) {
+          await client.query(`
+            ALTER TABLE orders
+              ADD CONSTRAINT orders_fulfillment_type_check
+              CHECK (fulfillment_type IN ('FIXED', 'RANGED'))
+          `);
+        }
+
+        const fulfillmentIdentityConstraint = await client.query(
+          "SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND conname = 'orders_fulfillment_identity_check'"
+        );
+        if (fulfillmentIdentityConstraint.rowCount === 0) {
+          await client.query(`
+            ALTER TABLE orders
+              ADD CONSTRAINT orders_fulfillment_identity_check
+              CHECK (
+                (fulfillment_type = 'FIXED'
+                  AND product_id IS NOT NULL
+                  AND ranged_product_id IS NULL)
+                OR
+                (fulfillment_type = 'RANGED'
+                  AND product_id IS NULL
+                  AND ranged_product_id IS NOT NULL)
+              )
+          `);
+        }
+
+        const rangedProductForeignKey = await client.query(
+          "SELECT 1 FROM pg_constraint WHERE conrelid = 'orders'::regclass AND conname = 'orders_ranged_product_fk'"
+        );
+        if (rangedProductForeignKey.rowCount === 0) {
+          await client.query(`
+            ALTER TABLE orders
+              ADD CONSTRAINT orders_ranged_product_fk
+              FOREIGN KEY (ranged_product_id)
+              REFERENCES dtone_ranged_products(dtone_product_id)
+              ON DELETE RESTRICT
+          `);
+        }
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [rangedOrderIdentityVersion]
+        );
+        await client.query("COMMIT");
+        console.log("Migration 019_ranged_order_identity completed; existing orders remain FIXED.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 019_ranged_order_identity is already applied.");
+    }
+
+    // Version 020 adds a durable confirmation claim state. The worker must
+    // commit CREATED -> CONFIRMING before calling DT One, so duplicate Stripe
+    // webhooks cannot confirm the same provider transaction concurrently.
+    // Ambiguous network outcomes are moved to REVIEW and are never retried
+    // automatically. This migration is additive and requires explicit migrate.js.
+    const rangedConfirmingVersion = "020_ranged_confirmation_claim";
+    const rangedConfirmingCheck = await client.query(
+      "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [rangedConfirmingVersion]
+    );
+    if (rangedConfirmingCheck.rows.length === 0) {
+      await client.query("BEGIN");
+      try {
+        await client.query(`
+          ALTER TABLE dtone_ranged_transactions
+            DROP CONSTRAINT IF EXISTS dtone_ranged_transactions_provider_status_check;
+          ALTER TABLE dtone_ranged_transactions
+            ADD CONSTRAINT dtone_ranged_transactions_provider_status_check
+            CHECK (provider_status IN (
+              'CREATED','CONFIRMING','CONFIRMED','COMPLETED',
+              'FAILED','CANCELLED','REVIEW'
+            ));
+          CREATE INDEX IF NOT EXISTS idx_dtone_ranged_transactions_confirmation_claim
+            ON dtone_ranged_transactions(order_id, provider_status, confirm_by);
+          INSERT INTO schema_migrations (version)
+            VALUES ('020_ranged_confirmation_claim')
+            ON CONFLICT (version) DO NOTHING;
+        `);
+        await client.query("COMMIT");
+        console.log("Migration 020_ranged_confirmation_claim completed; no ranged transactions were confirmed or activated.");
+      } catch (migrationError) {
+        await client.query("ROLLBACK");
+        throw migrationError;
+      }
+    } else {
+      console.log("Migration 020_ranged_confirmation_claim is already applied.");
+    }
+
+    // Versions 022-024 install the canonical country registry and destination
+    // FX schema. They are forward-only, fail closed on conflicting legacy
+    // identities, and run only when migrate.js is explicitly invoked.
+    // Migration 029 remains a separately reviewed/manual rollout gate.
+    const countryRegistryMigrations = [
+      { version: "022_canonical_country_registry_reconciliation", file: "022_canonical_country_registry_reconciliation.sql" },
+      { version: "023_current_catalog_country_registry_bootstrap", file: "023_current_catalog_country_registry_bootstrap.sql" },
+      { version: "024_country_fx_rates", file: "024_country_fx_rates.sql" },
+      { version: "030_country_registry_audit_trail", file: "030_country_registry_audit_trail.sql" },
+      { version: "031_order_country_configuration_snapshot", file: "031_order_country_configuration_snapshot.sql" },
+    ];
+
+    for (const migration of countryRegistryMigrations) {
+      const applied = await client.query(
+        "SELECT 1 FROM schema_migrations WHERE version = $1 LIMIT 1",
+        [migration.version]
+      );
+      if (applied.rowCount > 0) {
+        console.log(`Migration ${migration.version} is already applied.`);
+        continue;
+      }
+
+      const sqlPath = path.join(__dirname, "migrations", migration.file);
+      if (!fs.existsSync(sqlPath)) {
+        throw new Error(`Required migration file is missing: ${migration.file}`);
+      }
+      const sql = fs.readFileSync(sqlPath, "utf8");
+      if (!sql.trim()) throw new Error(`Migration file is empty: ${migration.file}`);
+
+      console.log(`Applying ${migration.version} in the current database schema...`);
+      await client.query(sql);
+      await client.query(
+        "INSERT INTO schema_migrations(version) VALUES($1) ON CONFLICT(version) DO NOTHING",
+        [migration.version]
+      );
+      console.log(`Migration ${migration.version} completed successfully.`);
+    }
+
   } catch (error) {
     console.error(
       "DATABASE MIGRATION FAILED:"

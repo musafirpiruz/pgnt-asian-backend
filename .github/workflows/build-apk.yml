@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feat/multi-currency-checkout-foundation-2026-11-10
+      - feat/device-region-and-country-bootstrap-2026-11-10
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'

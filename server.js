@@ -16,6 +16,8 @@ const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
+const { createRangedCheckoutService } = require('./ranged-checkout-service');
+const { getRangedConfirmationPath, verifyRangedConfirmation } = require('./dtone-ranged-pricing');
 const { classifyCatalogCandidates, denominationKey } = require('./catalog-natural-key');
 
 const app = express();
@@ -122,7 +124,14 @@ const pool = DATABASE_URL
 
 // Country configuration is centralized so new markets can be added without
 // duplicating currency, phone and country identity definitions in server.js.
-const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config');
+const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config'); // Legacy fixed-flow compatibility only.
+const { createCountryRegistryRuntime } = require('./country-registry-runtime');
+
+// Keep the DB-backed registry available to customer routes. A missing DB or
+// registry table fails closed at request time; no hard-coded country fallback.
+const countryRegistryRuntime = pool
+  ? createCountryRegistryRuntime({ pool, maxAgeMs: 60_000 })
+  : null;
 
 // One standard customer payment currency.
 const PAYMENT_CURRENCY = 'eur';
@@ -330,18 +339,39 @@ function normalizeCountry(value) {
     .toUpperCase();
 }
 
-function isValidCountry(country) {
-  return Object.prototype.hasOwnProperty.call(
-    SUPPORTED_COUNTRIES,
+function isValidCountry(country, countryConfigs = SUPPORTED_COUNTRIES) {
+  return Boolean(countryConfigs && Object.prototype.hasOwnProperty.call(
+    countryConfigs,
     normalizeCountry(country)
-  );
+  ));
 }
 
 // Get the recipient's local currency.
-function countryCurrency(country) {
-  return getCountryCurrency(
-    normalizeCountry(country)
+function countryCurrency(country, countryConfigs = SUPPORTED_COUNTRIES) {
+  return countryConfigs?.[normalizeCountry(country)]?.currency || null;
+}
+
+// Resolve DT One's provider ISO code only through an explicit, unambiguous
+// country_registry mapping. Inactive/unverified rows may be used by admin
+// catalog preparation, but they never become customer-sellable from this path.
+async function resolveDtOneCountryMapping(providerCountryCode) {
+  const code = String(providerCountryCode || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{2,8}$/.test(code) || !pool) return null;
+  const result = await pool.query(
+    `SELECT country_code, destination_currency, provider_country_code
+       FROM country_registry
+      WHERE provider = 'dtone'
+        AND provider_country_code = $1
+      ORDER BY country_code`,
+    [code]
   );
+  if (result.rowCount !== 1) return null;
+  const row = result.rows[0];
+  const countryCode = String(row.country_code || '').trim().toUpperCase();
+  const destinationCurrency = String(row.destination_currency || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode) || !/^[A-Z]{3}$/.test(destinationCurrency) ||
+      String(row.provider_country_code || '').trim().toUpperCase() !== code) return null;
+  return Object.freeze({ countryCode, destinationCurrency, providerCountryCode: code });
 }
 
 // Customer payments always use EUR.
@@ -362,9 +392,9 @@ function normalizePaymentCurrency(value) {
 // Normalize phone input.
 // Accepts local digits or an international number
 // beginning with the country's calling code.
-function normalizePhone(value, country) {
+function normalizePhone(value, country, countryConfigs = SUPPORTED_COUNTRIES) {
   const code = normalizeCountry(country);
-  const config = SUPPORTED_COUNTRIES[code];
+  const config = countryConfigs?.[code];
 
   if (!config) {
     throw new Error('Unsupported country.');
@@ -402,9 +432,9 @@ function normalizePhone(value, country) {
   return phone;
 }
 
-function validatePhone(phone, country) {
+function validatePhone(phone, country, countryConfigs = SUPPORTED_COUNTRIES) {
   const code = normalizeCountry(country);
-  const config = SUPPORTED_COUNTRIES[code];
+  const config = countryConfigs?.[code];
 
   if (!config) {
     return {
@@ -413,7 +443,7 @@ function validatePhone(phone, country) {
     };
   }
 
-  const normalized = normalizePhone(phone, code);
+  const normalized = normalizePhone(phone, code, countryConfigs);
   const [minDigits, maxDigits] = config.phoneDigits;
 
   if (!/^\d+$/.test(normalized)) {
@@ -443,19 +473,19 @@ function validatePhone(phone, country) {
 }
 
 // Validate data received from the checkout request.
-function validateCheckoutInput(body) {
+function validateCheckoutInput(body, countryConfigs = SUPPORTED_COUNTRIES) {
   if (!body || typeof body !== 'object') {
     throw new Error('Invalid checkout request.');
   }
 
   const country = normalizeCountry(body.country);
-  if (!isValidCountry(country)) {
+  if (!isValidCountry(country, countryConfigs)) {
     throw new Error('Unsupported country.');
   }
 
   // Stripe customer payment remains EUR; recipient currency is country-specific.
   const paymentCurrency = normalizePaymentCurrency(body.paymentCurrency || 'EUR');
-  const phoneResult = validatePhone(body.phone || body.phoneNumber, country);
+  const phoneResult = validatePhone(body.phone || body.phoneNumber, country, countryConfigs);
   if (!phoneResult.valid) {
     throw new Error(phoneResult.error);
   }
@@ -473,7 +503,7 @@ function validateCheckoutInput(body) {
     operatorKey: null,
     amount: null,
     paymentCurrency,
-    recipientCurrency: countryCurrency(country),
+    recipientCurrency: countryCurrency(country, countryConfigs),
   };
 }
 // =====================================================
@@ -598,7 +628,8 @@ async function getProduct(client, productId, requestedCountry = null, options = 
 
   const result = await client.query(
     `SELECT
-       p.id, p.country, p.currency, p.product_id AS dtone_product_id,
+       p.id, p.country, p.currency, c.destination_currency AS registry_currency,
+       p.product_id AS dtone_product_id,
        p.operator AS name, NULL::text AS description,
        p.amount AS local_amount, p.price_eur_cents,
        p.wholesale_price_eur_cents, p.active AS enabled
@@ -641,10 +672,10 @@ async function getProduct(client, productId, requestedCountry = null, options = 
   }
 
   const country = normalizeCountry(product.country);
-  if (!isValidCountry(country)) {
-    throw new Error('Product country is not supported.');
+  if (!product.registry_currency) {
+    throw new Error('Product country is not present in the active country registry.');
   }
-  if (product.currency !== countryCurrency(country)) {
+  if (product.currency !== product.registry_currency) {
     throw new Error('Product currency does not match its country.');
   }
 
@@ -1123,12 +1154,33 @@ app.get('/api/pricing/quote', async (req, res) => {
   }
   const country = normalizeCountry(req.query.country);
   const productId = String(req.query.productId || '').trim();
-  if (!isValidCountry(country) || !/^[1-9]\d*$/.test(productId)) {
+  if (!/^[1-9]\d*$/.test(productId) || !/^[A-Z]{2}$/.test(country)) {
     return res.status(400).json({ error: 'Select a valid catalog product.' });
   }
+
+  // Customer pricing quotes must use the same fresh DB-backed registry as
+  // checkout. The legacy static bootstrap list is not an activation source.
+  if (!countryRegistryRuntime) {
+    return res.status(503).json({ error: 'Active country registry is unavailable.' });
+  }
+  let countryConfig;
+  try {
+    const snapshot = await countryRegistryRuntime.getFreshSnapshot();
+    countryConfig = snapshot.countries[country];
+  } catch (registryError) {
+    console.error('Pricing quote country registry unavailable:', registryError.message);
+    return res.status(503).json({ error: 'Active country registry is unavailable.' });
+  }
+  if (!countryConfig) {
+    return res.status(404).json({ error: 'Country is not active.' });
+  }
+
   const client = await pool.connect();
   try {
     const product = await getProduct(client, productId, country, { allowInactive: true });
+    if (product.country !== country || product.currency !== countryConfig.currency) {
+      return res.status(409).json({ error: 'Catalog product does not match the active country currency.' });
+    }
     const basePricing = await getPricingSettings(client, country);
     const pricing = await resolveProductPricing(client, country, product.name, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
@@ -1189,6 +1241,91 @@ function getCheckoutUrls() {
 
 // Create a checkout session and store its order.
 // IMPORTANT: register this route AFTER express.json().
+// Dedicated ranged checkout: provider quote and EUR wholesale evidence are
+// obtained server-side before Stripe is offered. Fixed checkout remains separate.
+app.post('/api/payments/ranged-checkout', async (req, res) => {
+  // Fail closed until the durable ranged Stripe-webhook confirmation path is complete.
+  if (process.env.RANGED_CHECKOUT_ENABLED !== 'true') {
+    return res.status(503).json({ error: 'Ranged checkout is not enabled yet. Please use an available fixed-value product.' });
+  }
+  if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
+    return res.status(503).json({ error: 'Payment and fulfillment environments are not safely matched.' });
+  }
+  if (!pool || !stripe || !DTONE_API_KEY || !DTONE_API_SECRET) {
+    return res.status(503).json({ error: 'Ranged payment service is not configured.' });
+  }
+  if (req.body?.referralCode || req.body?.referralInstallId) {
+    return res.status(503).json({
+      code: 'REFERRAL_IDENTITY_VERIFICATION_REQUIRED',
+      error: 'Referral rewards are unavailable until secure account verification is enabled.',
+    });
+  }
+  try {
+    if (!countryRegistryRuntime) {
+      return res.status(503).json({ error: 'Active country registry is unavailable.' });
+    }
+    const registrySnapshot = await countryRegistryRuntime.getFreshSnapshot();
+    const activeCountries = registrySnapshot.countries;
+    const normalizePhoneFromRegistry = (value, country) => {
+      const code = normalizeCountry(country);
+      const config = activeCountries[code];
+      if (!config) throw new Error('Unsupported country.');
+      let phone = String(value || '').trim().replace(/[\s().-]/g, '');
+      if (!/^\+?\d+$/.test(phone)) throw new Error('Phone number contains invalid characters.');
+      if (phone.startsWith(config.callingCode)) phone = phone.slice(config.callingCode.length);
+      else if (phone.startsWith('00') && phone.slice(2).startsWith(config.callingCode.slice(1))) {
+        phone = phone.slice(config.callingCode.length + 1);
+      }
+      if (phone.startsWith('0')) phone = phone.slice(1);
+      return phone;
+    };
+    const validatePhoneFromRegistry = (phone, country) => {
+      const code = normalizeCountry(country);
+      const config = activeCountries[code];
+      if (!config) return { valid: false, error: 'Unsupported country.' };
+      const normalized = normalizePhoneFromRegistry(phone, code);
+      const [minDigits, maxDigits] = config.phoneDigits;
+      if (!/^\d+$/.test(normalized)) return { valid: false, error: 'Phone number must contain digits only.' };
+      if (normalized.length < minDigits || normalized.length > maxDigits) {
+        return { valid: false, error: `Invalid phone number length for ${config.name}.` };
+      }
+      return { valid: true, country: code, phone: normalized, currency: config.currency };
+    };
+    const countryCurrencyFromRegistry = country => activeCountries[normalizeCountry(country)]?.currency || null;
+
+    const createRangedCheckout = createRangedCheckoutService({
+      pool,
+      stripe,
+      dtoneBaseUrl: DTONE_API_BASE_URL,
+      dtoneTransactionPath: DTONE_TRANSACTION_PATH,
+      dtoneAuthHeader: getDtOneAuthHeader(),
+      callbackUrl: DTONE_CALLBACK_URL,
+      appBaseUrl: APP_BASE_URL,
+      getPricingSettings,
+      validatePhone: validatePhoneFromRegistry,
+      countryCurrency: countryCurrencyFromRegistry,
+      normalizePhone: normalizePhoneFromRegistry,
+      supportedCountries: activeCountries,
+      formatEuro,
+    });
+    const result = await createRangedCheckout({
+      country: req.body?.country,
+      phone: req.body?.phone || req.body?.phoneNumber,
+      productId: req.body?.productId,
+      amount: req.body?.amount,
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 502;
+    console.error('Ranged checkout creation failed:', {
+      errorMessage: String(error?.message || 'Unknown ranged checkout error').slice(0, 240),
+    });
+    return res.status(statusCode).json({
+      error: statusCode < 500 ? error.message : 'Could not safely create ranged checkout. No customer payment was confirmed.',
+    });
+  }
+});
+
 app.post('/api/payments/checkout', async (req, res) => {
   if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
     console.error('Checkout blocked: Stripe mode and DT One environment do not match.');
@@ -1204,12 +1341,16 @@ app.post('/api/payments/checkout', async (req, res) => {
   }
 
   let input;
+  let activeCountryConfigs;
 
   try {
-    input = validateCheckoutInput(req.body);
+    if (!countryRegistryRuntime) throw new Error('Country registry is unavailable.');
+    activeCountryConfigs = (await countryRegistryRuntime.getFreshSnapshot()).countries;
+    input = validateCheckoutInput(req.body, activeCountryConfigs);
   } catch (error) {
-    return res.status(400).json({
-      error: error.message,
+    const registryUnavailable = /registry is unavailable|country registry/i.test(String(error.message));
+    return res.status(registryUnavailable ? 503 : 400).json({
+      error: registryUnavailable ? 'Active country registry is unavailable. Checkout is temporarily blocked.' : error.message,
     });
   }
 
@@ -1319,16 +1460,21 @@ app.post('/api/payments/checkout', async (req, res) => {
          order_id, country, operator, phone, product_id,
          amount, currency, product_price_cents, fee_cents,
          charge_cents, status, order_access_token_hash, referral_code,
-         referral_install_id, created_at, updated_at
+         referral_install_id, recipient_calling_code_snapshot,
+         recipient_currency_snapshot, country_configuration_version_snapshot,
+         created_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         'awaiting_payment', $11, $12, $13, NOW(), NOW()
+         'awaiting_payment', $11, $12, $13, $14, $15, $16, NOW(), NOW()
        )`,
       [
         orderId, input.country, product.name, input.phone,
         product.id, product.localAmount, product.currency,
         price.basePriceCents, price.feeCents, price.finalPriceCents,
         orderAccessTokenHash, referralCode || null, referralInstallHash,
+        activeCountryConfigs[input.country].callingCode,
+        activeCountryConfigs[input.country].currency,
+        activeCountryConfigs[input.country].configurationVersion,
       ]
     );
 
@@ -1501,9 +1647,11 @@ app.post('/api/admin/stripe-dtone/sandbox-checkout', express.json(), requireAdmi
     await client.query(
       `INSERT INTO orders (
          order_id, country, operator, phone, product_id, amount, currency,
-         product_price_cents, fee_cents, charge_cents, status, created_at, updated_at
+         product_price_cents, fee_cents, charge_cents, status,
+         recipient_calling_code_snapshot, recipient_currency_snapshot,
+         created_at, updated_at
        ) VALUES ($1, 'AF', 'ATOMA-SANDBOX-TEST', '+93700100100', $2, 115, 'AFN',
-                 $3, $4, $5, 'awaiting_payment', NOW(), NOW())`,
+                 $3, $4, $5, 'awaiting_payment', '+93', 'AFN', NOW(), NOW())`,
       [orderId, String(product.id), price.basePriceCents, price.feeCents, price.finalPriceCents]
     );
     await client.query('COMMIT');
@@ -1730,6 +1878,175 @@ function getDtOneAuthHeader() {
 
 // Confirm the payment against the saved order.
 // Claim the order atomically before calling DT One.
+async function processPaidRangedOrder(order, orderId) {
+  const client = await pool.connect();
+  let rangedTransaction;
+  let confirmationPath;
+  try {
+    await client.query('BEGIN');
+    const claimed = await client.query(
+      `SELECT rt.*, rp.destination_currency AS product_currency
+       FROM dtone_ranged_transactions rt
+       JOIN dtone_ranged_products rp ON rp.dtone_product_id = rt.dtone_product_id
+       WHERE rt.order_id = $1 FOR UPDATE OF rt`,
+      [orderId]
+    );
+    if (claimed.rowCount !== 1) throw new Error('Ranged provider transaction was not found.');
+    rangedTransaction = claimed.rows[0];
+    if (rangedTransaction.provider_status !== 'CREATED' ||
+        String(rangedTransaction.external_id) !== orderId ||
+        String(rangedTransaction.dtone_product_id) !== String(order.ranged_product_id) ||
+        String(rangedTransaction.destination_currency).trim() !== String(order.currency).trim() ||
+        String(rangedTransaction.product_currency).trim() !== String(order.currency).trim() ||
+        Number(rangedTransaction.requested_amount) !== Number(order.amount)) {
+      throw new Error('Ranged provider transaction identity or state does not match the paid order.');
+    }
+    confirmationPath = getRangedConfirmationPath({
+      transactionId: String(rangedTransaction.dtone_transaction_id),
+      confirmationExpiresAt: rangedTransaction.confirm_by,
+      providerStatus: rangedTransaction.provider_status,
+      autoConfirmed: false,
+    });
+    const updated = await client.query(
+      `UPDATE dtone_ranged_transactions SET provider_status='CONFIRMING', updated_at=NOW()
+       WHERE order_id=$1 AND provider_status='CREATED' RETURNING id`,
+      [orderId]
+    );
+    if (updated.rowCount !== 1) throw new Error('Ranged confirmation was already claimed.');
+    await client.query('COMMIT');
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status IN ('CREATED','CONFIRMING')`, [orderId]).catch(() => {});
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]).catch(() => {});
+    throw error;
+  } finally { client.release(); }
+
+  let providerResponse;
+  try {
+    providerResponse = await fetch(`${DTONE_API_BASE_URL}${confirmationPath}`, {
+      method: 'POST',
+      headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (_) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One ranged confirmation outcome is unknown; manual review is required and automatic retry is disabled.');
+  }
+  if (providerResponse.status !== 202) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One ranged confirmation was not accepted; manual review is required.');
+  }
+
+  // DT One documents HTTP 202 for the confirm operation. Its body is not
+  // guaranteed to contain a transaction representation, so read the canonical
+  // transaction resource and verify its identities and post-confirm state.
+  let statusResponse;
+  try {
+    statusResponse = await fetch(
+      `${DTONE_API_BASE_URL}/v1/transactions/${encodeURIComponent(String(rangedTransaction.dtone_transaction_id))}`,
+      {
+        method: 'GET',
+        headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+  } catch (_) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One confirmation was accepted but its transaction status could not be verified; manual review is required.');
+  }
+  let providerData = {};
+  try {
+    const statusText = await statusResponse.text();
+    providerData = statusText ? JSON.parse(statusText) : {};
+  } catch (_) {}
+  if (!statusResponse.ok) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One transaction status could not be retrieved after confirmation; manual review is required.');
+  }
+
+  let verified;
+  try {
+    verified = verifyRangedConfirmation(providerData, {
+      transactionId: String(rangedTransaction.dtone_transaction_id),
+      externalId: orderId,
+      productId: String(rangedTransaction.dtone_product_id),
+    });
+  } catch (_) {
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]);
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]);
+    throw new Error('DT One ranged confirmation identity could not be verified; manual review is required.');
+  }
+
+  const finalClient = await pool.connect();
+  let persistedOrderStatus = 'topup_review';
+  let persistedProviderStatus = 'REVIEW';
+  try {
+    await finalClient.query('BEGIN');
+    // A final DT One callback can win the race while the confirm request or
+    // canonical status lookup is in flight. Preserve that terminal evidence;
+    // never overwrite COMPLETED/FAILED with the intermediate CONFIRMED state.
+    const txUpdate = await finalClient.query(
+      `UPDATE dtone_ranged_transactions
+       SET provider_status = CASE
+             WHEN provider_status = 'CONFIRMING' THEN 'CONFIRMED'
+             ELSE provider_status
+           END,
+           confirmed_at = CASE
+             WHEN provider_status = 'CONFIRMING' THEN COALESCE(confirmed_at, NOW())
+             ELSE confirmed_at
+           END,
+           updated_at = NOW()
+       WHERE order_id=$1
+         AND provider_status IN ('CONFIRMING','CONFIRMED','COMPLETED','FAILED','REVIEW')
+         AND dtone_transaction_id=$2 AND external_id=$3
+       RETURNING provider_status`,
+      [orderId, verified.transactionId, verified.externalId]
+    );
+    if (txUpdate.rowCount !== 1) throw new Error('Ranged confirmation claim or callback identity was lost before final persistence.');
+    persistedProviderStatus = String(txUpdate.rows[0].provider_status || 'REVIEW');
+    const orderUpdate = await finalClient.query(
+      `UPDATE orders
+       SET status = CASE
+             WHEN $2 = 'CONFIRMED' AND status = 'processing_topup' THEN 'topup_submitted'
+             WHEN $2 IN ('FAILED','REVIEW') AND status IN ('processing_topup','topup_submitted') THEN 'topup_review'
+             ELSE status
+           END,
+           dtone_transaction_id=$3,
+           updated_at=NOW()
+       WHERE order_id=$1
+       RETURNING status`,
+      [orderId, persistedProviderStatus, verified.transactionId]
+    );
+    if (orderUpdate.rowCount !== 1) throw new Error('Ranged order disappeared before final persistence.');
+    persistedOrderStatus = String(orderUpdate.rows[0].status || 'topup_review');
+    await finalClient.query('COMMIT');
+  } catch (error) {
+    try { await finalClient.query('ROLLBACK'); } catch (_) {}
+    await pool.query(`UPDATE dtone_ranged_transactions SET provider_status='REVIEW',updated_at=NOW()
+      WHERE order_id=$1 AND provider_status='CONFIRMING'`, [orderId]).catch(() => {});
+    await pool.query(`UPDATE orders SET status='topup_review',updated_at=NOW()
+      WHERE order_id=$1 AND status='processing_topup'`, [orderId]).catch(() => {});
+    throw error;
+  } finally { finalClient.release(); }
+  return { status: persistedOrderStatus, orderId, providerReference: verified.transactionId, providerStatus: persistedProviderStatus };
+}
+
 async function processPaidStripeSession(session) {
   if (!pool || !stripe) {
     throw new Error('Payment services are not configured.');
@@ -1821,6 +2138,8 @@ async function processPaidStripeSession(session) {
       ].includes(order.status)
     ) {
       await client.query('COMMIT');
+      // Do not restart a ranged provider confirmation on a duplicate webhook.
+      // A worker interruption requires manual reconciliation, never a second POST.
       return { status: order.status, duplicate: true };
     }
 
@@ -1834,7 +2153,6 @@ async function processPaidStripeSession(session) {
       typeof session.payment_intent === 'string'
         ? session.payment_intent
         : session.payment_intent?.id || null;
-
     await client.query(
       `UPDATE orders
        SET status = 'processing_topup',
@@ -1844,7 +2162,6 @@ async function processPaidStripeSession(session) {
        WHERE order_id = $1`,
       [orderId, paymentIntentId]
     );
-
     await client.query('COMMIT');
   } catch (error) {
     try {
@@ -1853,6 +2170,10 @@ async function processPaidStripeSession(session) {
     throw error;
   } finally {
     client.release();
+  }
+
+  if (order.fulfillment_type === 'RANGED') {
+    return processPaidRangedOrder(order, orderId);
   }
 
   // Sandbox Stripe orders may use the fixed pre-production product while
@@ -1890,7 +2211,7 @@ async function processPaidStripeSession(session) {
     product.rowCount !== 1 ||
     product.rows[0].country !== order.country ||
     product.rows[0].currency !==
-      countryCurrency(order.country) ||
+      (order.recipient_currency_snapshot || countryCurrency(order.country)) ||
     (isSandboxOrder && Number(product.rows[0].dtone_product_id) !== 7194)
   ) {
     await pool.query(
@@ -1913,8 +2234,13 @@ async function processPaidStripeSession(session) {
   // DT One expects the recipient number in international format.
   // Build it from the validated local number and this country's
   // configured calling code; never rely on an undeclared variable.
-  const countryConfig = SUPPORTED_COUNTRIES[order.country];
-  if (!countryConfig || !countryConfig.callingCode) {
+  // Prefer the immutable country settings captured when this order was
+  // created. Older orders have NULL snapshots and retain the legacy fallback.
+  const countryConfig = {
+    callingCode: order.recipient_calling_code_snapshot ||
+      SUPPORTED_COUNTRIES[order.country]?.callingCode,
+  };
+  if (!countryConfig.callingCode) {
     await pool.query(
       `UPDATE orders
        SET status = 'topup_review',
@@ -2535,6 +2861,26 @@ app.post('/api/dtone/callback', async (req, res) => {
 
     const order = result.rows[0];
 
+    let rangedCallbackTransaction = null;
+    if (order.fulfillment_type === 'RANGED') {
+      const rangedResult = await client.query(
+        `SELECT * FROM dtone_ranged_transactions
+         WHERE order_id = $1 FOR UPDATE`,
+        [orderId]
+      );
+      if (rangedResult.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Ranged transaction record is missing.' });
+      }
+      rangedCallbackTransaction = rangedResult.rows[0];
+      if (String(rangedCallbackTransaction.dtone_transaction_id) !== providerTransactionId ||
+          String(rangedCallbackTransaction.external_id) !== orderId ||
+          String(rangedCallbackTransaction.dtone_product_id) !== String(order.ranged_product_id)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Ranged callback identity does not match the saved provider transaction.' });
+      }
+    }
+
     // A durable refund reservation wins over later provider callbacks. Once an
     // admin has reserved a refund, a delayed success callback must not race the
     // Stripe refund and turn the same order into a delivered top-up.
@@ -2786,6 +3132,20 @@ app.post('/api/dtone/callback', async (req, res) => {
         providerStatus,
       ]
     );
+
+    if (rangedCallbackTransaction) {
+      if (providerStatus === 'completed' || providerStatus === 'failed') {
+        const rangedProviderStatus = providerStatus === 'completed' ? 'COMPLETED' : 'FAILED';
+        await client.query(
+          `UPDATE dtone_ranged_transactions
+           SET provider_status = $1, updated_at = NOW()
+           WHERE order_id = $2
+             AND dtone_transaction_id = $3
+             AND provider_status IN ('CONFIRMING','CONFIRMED','COMPLETED','FAILED','REVIEW')`,
+          [rangedProviderStatus, orderId, providerTransactionId]
+        );
+      }
+    }
 
     // Record or reconcile the referral reward only after final DT One success.
     if (nextStatus === 'completed') {
@@ -3058,7 +3418,9 @@ app.get('/api/admin/countries/registry-summary', requireAdmin, async (req, res) 
   try {
     const result = await pool.query(`
       SELECT c.country_code, c.country_name, c.destination_currency,
-             c.calling_code, c.status, c.configuration_version, c.updated_at,
+             c.calling_code, c.phone_min_digits, c.phone_max_digits,
+             c.provider, c.provider_country_code,
+             c.status, c.configuration_version, c.updated_at,
              (SELECT COUNT(*) FROM country_localizations l
                WHERE l.country_code = c.country_code)::int AS localization_count,
              (SELECT COUNT(*) FROM country_operators o
@@ -3084,6 +3446,183 @@ app.get('/api/admin/countries/registry-summary', requireAdmin, async (req, res) 
   } catch (error) {
     console.error('Admin country registry summary failed:', error.message);
     return res.status(500).json({ error: 'Could not load country registry summary.' });
+  }
+});
+
+// Update non-active country configuration with optimistic concurrency and an audit row.
+// This endpoint cannot activate a country. Activation remains a separate evidence-gated process.
+app.put('/api/admin/countries/:countryCode/configuration', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const expectedVersion = Number(req.body?.expectedConfigurationVersion);
+  if (!/^[A-Z]{2}$/.test(countryCode) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+    return res.status(400).json({ error: 'A valid country code and expectedConfigurationVersion are required.' });
+  }
+
+  const allowedStatuses = new Set(['draft','configuring','testing','disabled','legacy']);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const currentResult = await client.query(
+      `SELECT country_code,country_name,destination_currency,calling_code,
+              phone_min_digits,phone_max_digits,provider,provider_country_code,
+              status,configuration_version
+         FROM country_registry WHERE country_code=$1 FOR UPDATE`,
+      [countryCode]
+    );
+    if (currentResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Country is not registered.' });
+    }
+    const current = currentResult.rows[0];
+    if (Number(current.configuration_version) !== expectedVersion) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Country configuration changed since it was loaded. Reload before editing.',
+        currentConfigurationVersion: Number(current.configuration_version),
+      });
+    }
+    if (String(current.status).toLowerCase() === 'active') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Active country configuration is immutable through this endpoint.' });
+    }
+
+    const body = req.body || {};
+    const next = {
+      country_name: body.countryName === undefined ? current.country_name : String(body.countryName).trim(),
+      destination_currency: body.destinationCurrency === undefined ? String(current.destination_currency).trim().toUpperCase() : String(body.destinationCurrency).trim().toUpperCase(),
+      calling_code: body.callingCode === undefined ? current.calling_code : String(body.callingCode).trim(),
+      phone_min_digits: body.phoneMinDigits === undefined ? Number(current.phone_min_digits) : Number(body.phoneMinDigits),
+      phone_max_digits: body.phoneMaxDigits === undefined ? Number(current.phone_max_digits) : Number(body.phoneMaxDigits),
+      provider: body.provider === undefined ? String(current.provider).trim().toLowerCase() : String(body.provider).trim().toLowerCase(),
+      provider_country_code: body.providerCountryCode === undefined
+        ? (current.provider_country_code == null ? null : String(current.provider_country_code).trim().toUpperCase())
+        : (body.providerCountryCode == null || String(body.providerCountryCode).trim() === '' ? null : String(body.providerCountryCode).trim().toUpperCase()),
+      status: body.status === undefined ? String(current.status).trim().toLowerCase() : String(body.status).trim().toLowerCase(),
+    };
+    if (!next.country_name || next.country_name.length > 120 ||
+        !/^[A-Z]{3}$/.test(next.destination_currency) ||
+        !/^\+[1-9]\d{0,3}$/.test(next.calling_code) ||
+        !Number.isSafeInteger(next.phone_min_digits) || next.phone_min_digits < 1 || next.phone_min_digits > 15 ||
+        !Number.isSafeInteger(next.phone_max_digits) || next.phone_max_digits < next.phone_min_digits || next.phone_max_digits > 15 ||
+        !/^[a-z][a-z0-9_-]{1,31}$/.test(next.provider) ||
+        (next.provider_country_code !== null && !/^[A-Z0-9_-]{2,8}$/.test(next.provider_country_code)) ||
+        !allowedStatuses.has(next.status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Country configuration contains an invalid name, currency, calling code, phone range, provider, mapping, or status.' });
+    }
+    const oldStatus = String(current.status).trim().toLowerCase();
+    const permittedTransitions = {
+      draft: new Set(['draft','configuring']),
+      legacy: new Set(['legacy','configuring']),
+      disabled: new Set(['disabled','configuring']),
+      configuring: new Set(['configuring','testing']),
+      testing: new Set(['testing','configuring']),
+    };
+    if (!permittedTransitions[oldStatus]?.has(next.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This country status transition is not permitted. Activation requires the separate reviewed process.' });
+    }
+    if (next.status === 'testing' && (!next.provider_country_code || !next.calling_code ||
+        !Number.isSafeInteger(next.phone_min_digits) || !Number.isSafeInteger(next.phone_max_digits))) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({ error: 'Provider mapping, calling code, and phone validation must be configured before sandbox testing.' });
+    }
+    if (next.provider_country_code) {
+      const duplicate = await client.query(
+        `SELECT country_code FROM country_registry
+          WHERE provider=$1 AND provider_country_code=$2 AND country_code<>$3 LIMIT 1`,
+        [next.provider,next.provider_country_code,countryCode]
+      );
+      if (duplicate.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'This provider country code is already assigned to another country.' });
+      }
+    }
+
+    const oldValues = {
+      countryName: current.country_name,
+      destinationCurrency: current.destination_currency,
+      callingCode: current.calling_code,
+      phoneMinDigits: Number(current.phone_min_digits),
+      phoneMaxDigits: Number(current.phone_max_digits),
+      provider: current.provider,
+      providerCountryCode: current.provider_country_code,
+      status: oldStatus,
+    };
+    const newValues = {
+      countryName: next.country_name,
+      destinationCurrency: next.destination_currency,
+      callingCode: next.calling_code,
+      phoneMinDigits: next.phone_min_digits,
+      phoneMaxDigits: next.phone_max_digits,
+      provider: next.provider,
+      providerCountryCode: next.provider_country_code,
+      status: next.status,
+    };
+    const updated = await client.query(
+      `UPDATE country_registry
+          SET country_name=$1,destination_currency=$2,calling_code=$3,
+              phone_min_digits=$4,phone_max_digits=$5,provider=$6,
+              provider_country_code=$7,status=$8,
+              configuration_version=configuration_version+1,updated_at=NOW()
+        WHERE country_code=$9 AND configuration_version=$10
+        RETURNING country_code,country_name,destination_currency,calling_code,
+                  phone_min_digits,phone_max_digits,provider,provider_country_code,
+                  status,configuration_version,updated_at`,
+      [next.country_name,next.destination_currency,next.calling_code,
+       next.phone_min_digits,next.phone_max_digits,next.provider,
+       next.provider_country_code,next.status,countryCode,expectedVersion]
+    );
+    if (updated.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Country configuration changed concurrently. Reload before editing.' });
+    }
+    await client.query(
+      `INSERT INTO country_registry_audit
+         (country_code,actor,action,previous_version,new_version,old_values,new_values)
+       VALUES ($1,'admin-api-key',$2,$3,$4,$5::jsonb,$6::jsonb)`,
+      [countryCode,oldStatus === next.status ? 'configuration_updated' : 'status_transition',
+       expectedVersion,Number(updated.rows[0].configuration_version),
+       JSON.stringify(oldValues),JSON.stringify(newValues)]
+    );
+    await client.query('COMMIT');
+    return res.set('Cache-Control','no-store').json({
+      updated: true,
+      country: updated.rows[0],
+      countryActivated: false,
+      auditRecorded: true,
+      note: 'Country configuration was saved and audited. This action cannot activate a country or enable products.',
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Country registry configuration update failed:', error.message);
+    return res.status(500).json({ error: 'Could not update country configuration. Confirm migration 030 is installed.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Read-only country configuration audit history. Secrets and credential values are never stored here.
+app.get('/api/admin/countries/:countryCode/audit', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const requestedLimit = Number(req.query.limit || 50);
+  const limit = Number.isSafeInteger(requestedLimit) ? Math.max(1,Math.min(100,requestedLimit)) : 50;
+  if (!/^[A-Z]{2}$/.test(countryCode)) return res.status(400).json({ error: 'A valid country code is required.' });
+  try {
+    const result = await pool.query(
+      `SELECT id,country_code,actor,action,previous_version,new_version,
+              old_values,new_values,created_at
+         FROM country_registry_audit
+        WHERE country_code=$1
+        ORDER BY id DESC LIMIT $2`,
+      [countryCode,limit]
+    );
+    return res.set('Cache-Control','no-store').json({ countryCode, entries: result.rows, count: result.rowCount });
+  } catch (error) {
+    console.error('Country registry audit lookup failed:', error.message);
+    return res.status(503).json({ error: 'Country audit history is unavailable. Confirm migration 030 is installed.' });
   }
 });
 
@@ -3174,12 +3713,28 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
     return res.status(400).json({ error: 'A valid two-letter country code is required.' });
   }
   try {
+    const evidenceSchema = await pool.query(
+      "SELECT to_regclass('country_sandbox_evidence') IS NOT NULL AS ready"
+    );
+    if (!evidenceSchema.rows[0]?.ready) {
+      return res.status(503).json({
+        error: 'Country sandbox evidence migration 029 is not installed. Activation preflight is unavailable.',
+        eligible: false,
+      });
+    }
     const result = await pool.query(`
       SELECT c.country_code, c.country_name, c.destination_currency,
              c.calling_code, c.phone_min_digits, c.phone_max_digits,
              c.provider, c.provider_country_code, c.status,
              p.active AS pricing_active, p.fee_eur_cents,
-             COALESCE(p.local_currency_per_eur, p.afn_per_eur) AS fx_rate,
+             (SELECT COUNT(*) FROM country_fx_rates fx
+               WHERE fx.country_code=c.country_code
+                 AND fx.base_currency='EUR'
+                 AND fx.quote_currency=c.destination_currency
+                 AND fx.is_approved=TRUE
+                 AND fx.approved_at IS NOT NULL
+                 AND fx.observed_at <= NOW()
+                 AND fx.expires_at > NOW())::int AS approved_fresh_fx_count,
              (SELECT COUNT(*) FROM country_localizations l
                WHERE l.country_code = c.country_code
                  AND l.language_code IN ('en','ps','fa','ur','hi','bn')
@@ -3236,7 +3791,7 @@ app.get('/api/admin/countries/:countryCode/activation-preflight', requireAdmin, 
       { key: 'verifiedActiveOperators', passed: Number(row.verified_operator_count) > 0 },
       { key: 'verifiedActiveProducts', passed: Number(row.verified_product_count) > 0 },
       { key: 'activeEurPricing', passed: row.pricing_active === true && Number.isInteger(Number(row.fee_eur_cents)) && Number(row.fee_eur_cents) >= 0 },
-      { key: 'positiveDestinationFx', passed: Number.isFinite(Number(row.fx_rate)) && Number(row.fx_rate) > 0 },
+      { key: 'approvedFreshDestinationFx', passed: Number(row.approved_fresh_fx_count) > 0 },
       { key: 'sandboxProviderConnectivity', passed: Number(row.sandbox_provider_connectivity) > 0 },
       { key: 'sandboxSampleQuote', passed: Number(row.sandbox_sample_quote) > 0 },
       { key: 'sandboxSuccessCallback', passed: Number(row.sandbox_success_callback) > 0 },
@@ -3948,7 +4503,6 @@ savePricing.addEventListener('click',async()=>{
 });
 const operatorPricingCountry=document.getElementById('operatorPricingCountry');
 const operatorPricingRows=document.getElementById('operatorPricingRows');
-const operatorNames={AF:['AWCC','Roshan','Etisalat','Salaam','ATOMA'],PK:['Jazz','Zong','Telenor','Ufone'],IN:['Airtel','Jio','Vi','BSNL'],BD:['Grameenphone','Robi','Banglalink','Teletalk']};
 document.getElementById('loadOperatorPricing').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
  operatorPricingRows.replaceChildren();
@@ -4355,9 +4909,11 @@ async function refreshReferralReport(){
     if(!ref.active){result.textContent='Activate this referral code before sharing its invite link.';return;}
     try{
      await navigator.clipboard.writeText(inviteUrl);
-     result.textContent='App invite link copied: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
+     result.textContent='App invite link copied: '+inviteUrl+'\
+This opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
     }catch(error){
-     result.textContent='Copy was unavailable. Copy this invite link manually: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
+     result.textContent='Copy was unavailable. Copy this invite link manually: '+inviteUrl+'\
+This opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
     }
    });
    card.append(copyInvite);
@@ -4520,8 +5076,8 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
     }
 
     const iso = String(providerProduct.operator?.country?.iso_code || '').toUpperCase();
-    const countryMap = { AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' };
-    const providerCountry = countryMap[iso];
+    const countryMapping = await resolveDtOneCountryMapping(iso);
+    const providerCountry = countryMapping?.countryCode || null;
     const providerOperator = String(providerProduct.operator?.name || '').trim();
     const providerCurrency = String(providerProduct.destination?.unit || providerProduct.benefits?.[0]?.amount?.unit || '').toUpperCase();
     const providerAmount = Number(providerProduct.destination?.amount ?? providerProduct.benefits?.[0]?.amount?.base);
@@ -4536,7 +5092,7 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
         productId,
       });
     }
-    if (providerCurrency !== countryCurrency(providerCountry)) {
+    if (!countryMapping || providerCurrency !== countryMapping.destinationCurrency) {
       await client.query('ROLLBACK');
       return res.status(422).json({ refreshed: false, error: 'DT One product currency does not match the supported country currency. No values were changed.', productId });
     }
@@ -4633,8 +5189,8 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
       });
     }
     const iso = String(providerProduct.operator?.country?.iso_code || '').toUpperCase();
-    const countryMap = { AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' };
-    const country = countryMap[iso];
+    const countryMapping = await resolveDtOneCountryMapping(iso);
+    const country = countryMapping?.countryCode || null;
     const operator = String(providerProduct.operator?.name || '').trim();
     const currency = String(providerProduct.destination?.unit || providerProduct.benefits?.[0]?.amount?.unit || '').toUpperCase();
     const amountValue = Number(providerProduct.destination?.amount ?? providerProduct.benefits?.[0]?.amount?.base);
@@ -4645,7 +5201,7 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
         !Number.isFinite(wholesaleEur) || wholesaleEur <= 0) {
       return res.status(422).json({ imported: false, error: 'Provider product is missing a supported country, denomination, currency, retail price, or wholesale price.', productId });
     }
-    if (currency !== countryCurrency(country)) {
+    if (!countryMapping || currency !== countryMapping.destinationCurrency) {
       return res.status(422).json({ imported: false, error: 'Product currency does not match the configured currency for this country.', productId, country, currency });
     }
     const retailCents = Math.round(retailEur * 100);
@@ -4708,11 +5264,21 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
   }
 
   const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
-  const countryMap = Object.freeze({ AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' });
-  const country = countryMap[countryIsoCode];
-  if (!country) {
-    return res.status(400).json({ verified: false, error: 'Choose AFG, PAK, IND, or BGD.' });
+  if (!/^[A-Z0-9_-]{2,8}$/.test(countryIsoCode)) {
+    return res.status(400).json({ verified: false, error: 'A valid DT One provider country code is required.' });
   }
+  let countryMapping;
+  try {
+    countryMapping = await resolveDtOneCountryMapping(countryIsoCode);
+  } catch (error) {
+    console.error('DT One country registry lookup failed:', error.message);
+    return res.status(503).json({ verified: false, error: 'Country registry mapping is unavailable. No catalog rows were changed.' });
+  }
+  if (!countryMapping) {
+    return res.status(422).json({ verified: false, error: 'No unique DT One provider-country mapping exists in country_registry. Configure and verify the mapping before catalog sync.' });
+  }
+  const country = countryMapping.countryCode;
+  const recipientCurrency = countryMapping.destinationCurrency;
   const confirmImport = req.body?.confirmImport === true;
 
   try {
@@ -4798,7 +5364,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
       const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
       const retailEur = Number(item?.prices?.retail?.amount);
       const wholesaleEur = Number(item?.prices?.wholesale?.amount);
-      if (!operator || currency !== countryCurrency(country) || !Number.isFinite(amount) || amount <= 0 ||
+      if (!operator || currency !== recipientCurrency || !Number.isFinite(amount) || amount <= 0 ||
           !Number.isFinite(retailEur) || retailEur <= 0 ||
           !Number.isFinite(wholesaleEur) || wholesaleEur <= 0 || retailEur < wholesaleEur) {
         rejected.push({ productId: String(item.id), reason: 'Missing or invalid operator, denomination, country currency, retail EUR price, or wholesale EUR price.' });
@@ -4909,7 +5475,7 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         environment: /preprod/i.test(DTONE_API_BASE_URL) ? 'pre-production' : 'configured',
         countryIsoCode,
         country,
-        recipientCurrency: countryCurrency(country),
+        recipientCurrency,
         pagesChecked,
         providerProductsSeen,
         uniqueProviderProducts: providerById.size,
@@ -4991,13 +5557,19 @@ app.get('/api/admin/dtone/operators', requireAdmin, async (req, res) => {
     return res.status(503).json({ verified: false, error: 'DT One credentials are not configured.' });
   }
 
-  const countryIsoCode = String(req.query.country_iso_code || 'AFG').trim().toUpperCase();
-  const supportedOperatorCountries = new Set(['AFG', 'PAK', 'IND', 'BGD']);
-  if (!supportedOperatorCountries.has(countryIsoCode)) {
-    return res.status(400).json({
-      verified: false,
-      error: 'country_iso_code must be one of AFG, PAK, IND, or BGD.',
-    });
+  const countryIsoCode = String(req.query.country_iso_code || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{2,8}$/.test(countryIsoCode)) {
+    return res.status(400).json({ verified: false, error: 'A valid DT One provider country code is required.' });
+  }
+  let countryMapping;
+  try {
+    countryMapping = await resolveDtOneCountryMapping(countryIsoCode);
+  } catch (error) {
+    console.error('DT One operator country registry lookup failed:', error.message);
+    return res.status(503).json({ verified: false, error: 'Country registry mapping is unavailable.' });
+  }
+  if (!countryMapping) {
+    return res.status(422).json({ verified: false, error: 'No unique DT One provider-country mapping exists in country_registry.' });
   }
 
   try {
@@ -5312,6 +5884,118 @@ app.get('/api/admin/dtone/products', requireAdmin, async (req, res) => {
 });
 
 
+// Customer-facing list of explicitly activated DT One ranged recharge capabilities.
+// Only verified active products are returned; provider costs and snapshots stay private.
+app.get('/api/countries/:countryCode/ranged-products', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ error: 'Database is not configured.' });
+  }
+
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorFilter = String(req.query.operator || '').trim();
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    return res.status(400).json({ error: 'Unsupported country.' });
+  }
+  if (operatorFilter.length > 160) {
+    return res.status(400).json({ error: 'Invalid operator filter.' });
+  }
+
+  try {
+    if (!countryRegistryRuntime) {
+      return res.status(503).json({ error: 'Active country registry is unavailable.', products: [] });
+    }
+    const registrySnapshot = await countryRegistryRuntime.getFreshSnapshot();
+    const countryConfig = registrySnapshot.countries[countryCode];
+    if (!countryConfig || countryConfig.provider !== 'dtone' || !countryConfig.providerCountryCode) {
+      return res.status(404).json({ error: 'Country is not active for this provider.', products: [] });
+    }
+    const providerCountryCode = countryConfig.providerCountryCode;
+
+    const schema = await pool.query(
+      "SELECT to_regclass('dtone_ranged_products') IS NOT NULL AS ranged_ready, to_regclass('country_registry') IS NOT NULL AS registry_ready"
+    );
+    if (!schema.rows[0]?.ranged_ready || !schema.rows[0]?.registry_ready) {
+      return res.status(503).json({
+        error: 'Verified ranged recharge catalog is not configured.',
+        products: [],
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         rp.dtone_product_id,
+         rp.operator_name,
+         rp.destination_currency,
+         (
+           rp.min_amount
+           + CEIL(
+               (GREATEST(rp.min_amount, 75) - rp.min_amount)
+               / rp.amount_increment
+             ) * rp.amount_increment
+         )::bigint AS selectable_min_amount,
+         LEAST(rp.max_amount::bigint, 3000::bigint) AS provider_max_amount,
+         rp.amount_increment::bigint AS amount_increment,
+         rp.capability_verified_at
+       FROM dtone_ranged_products rp
+       JOIN country_registry cr
+         ON cr.country_code = $2
+        AND cr.destination_currency = rp.destination_currency
+        AND cr.status = 'active'
+         AND cr.provider = 'dtone'
+         AND cr.provider_country_code = $1
+       WHERE rp.country_iso_code = $1
+         AND rp.active = TRUE
+         AND rp.capability_verified_at IS NOT NULL
+         AND rp.accepted_calculation_modes ? 'DESTINATION_AMOUNT'
+         AND rp.min_amount <= 3000
+         AND rp.max_amount >= 75
+         AND ($3 = '' OR LOWER(rp.operator_name) = LOWER($3))
+       ORDER BY rp.operator_name, rp.dtone_product_id`,
+      [providerCountryCode, countryCode, operatorFilter]
+    );
+
+    const products = result.rows
+      .map((row) => {
+        const min = Number(row.selectable_min_amount);
+        const max = Number(row.provider_max_amount);
+        const increment = Number(row.amount_increment);
+        if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) ||
+            !Number.isSafeInteger(increment) || increment <= 0 ||
+            min < 75 || max > 3000 || min > max) return null;
+        const lastValid = min + Math.floor((max - min) / increment) * increment;
+        if (lastValid < min) return null;
+        return {
+          productId: String(row.dtone_product_id),
+          operator: String(row.operator_name),
+          currency: String(row.destination_currency),
+          minAmount: min,
+          maxAmount: lastValid,
+          increment,
+          capabilityVerifiedAt: row.capability_verified_at,
+        };
+      })
+      .filter(Boolean);
+
+    return res.json({
+      country: countryCode,
+      amountPolicy: { min: 75, max: 3000 },
+      products,
+      count: products.length,
+      source: 'verified_active_dtone_capabilities',
+    });
+  } catch (error) {
+    console.error('Customer ranged product catalog lookup failed:', {
+      countryCode,
+      errorMessage: String(error?.message || 'Unknown catalog error').slice(0, 180),
+    });
+    return res.status(500).json({
+      error: 'Could not load verified ranged recharge products.',
+      products: [],
+    });
+  }
+});
+
+
 // Import one verified DT One ranged recharge capability as disabled metadata.
 // This endpoint never creates a provider transaction, Stripe session, or active product.
 app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, res) => {
@@ -5322,17 +6006,23 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
 
   const countryIsoCode = String(req.body?.country_iso_code || '').trim().toUpperCase();
   const productId = String(req.body?.product_id || '').trim();
-  const countryCurrencyByIso = Object.freeze({
-    AFG: 'AFN', PAK: 'PKR', IND: 'INR', BGD: 'BDT',
-  });
-  if (!countryCurrencyByIso[countryIsoCode] || !/^[1-9]\d{0,17}$/.test(productId)) {
+  if (!/^[A-Z0-9_-]{2,8}$/.test(countryIsoCode) || !/^[1-9]\d{0,17}$/.test(productId)) {
     return res.status(400).json({
       imported: false,
-      error: 'A supported country_iso_code and valid DT One product_id are required.',
+      error: 'A valid DT One provider country code and product_id are required.',
     });
   }
 
   try {
+    const countryMapping = await resolveDtOneCountryMapping(countryIsoCode);
+    if (!countryMapping) {
+      return res.status(422).json({
+        imported: false,
+        error: 'No unique DT One provider-country mapping exists in country_registry. Configure and verify the mapping before importing.',
+        transactionCreated: false,
+        paymentCreated: false,
+      });
+    }
     const detailResponse = await fetch(
       `${DTONE_API_BASE_URL}/v1/products/${encodeURIComponent(productId)}`,
       {
@@ -5357,7 +6047,7 @@ app.post('/api/admin/dtone/ranged-products/import', requireAdmin, async (req, re
     const destinationCurrency = String(product?.destination?.unit || '').trim().toUpperCase();
     const operatorName = String(product?.operator?.name || '').trim();
     if (!capability || providerCountry !== countryIsoCode ||
-        destinationCurrency !== countryCurrencyByIso[countryIsoCode] || !operatorName) {
+        destinationCurrency !== countryMapping.destinationCurrency || !operatorName) {
       return res.status(422).json({
         imported: false,
         error: 'The DT One product is not a verified ranged recharge for the selected country and local currency, or it lacks DESTINATION_AMOUNT support and complete integer bounds.',
@@ -5561,16 +6251,6 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
 });
 
 // Admin pricing overview.
-// Prices and fees are returned in EUR cents.
-// Known operators are seeded for convenience, then augmented from the real
-// local catalog so new networks in any supported country appear automatically.
-const SUPPORTED_OPERATOR_PRICING = {
-  AF: ['AWCC', 'Roshan', 'Etisalat', 'Salaam', 'ATOMA'],
-  PK: ['Jazz', 'Zong', 'Telenor', 'Ufone'],
-  IN: ['Airtel', 'Jio', 'Vi', 'BSNL'],
-  BD: ['Grameenphone', 'Robi', 'Banglalink', 'Teletalk'],
-};
-
 app.get('/api/admin/operator-pricing', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const country = normalizeCountry(req.query.country || 'AF');
@@ -5584,13 +6264,11 @@ app.get('/api/admin/operator-pricing', requireAdmin, async (req, res) => {
         ORDER BY operator`, [country]),
     ]);
     const saved = new Map(savedResult.rows.map(row => [String(row.operator).toLowerCase(), row]));
+    // Operator fee controls are derived only from names present in the local
+    // provider catalog. Static seed names and orphaned saved rows must never
+    // be presented as verified provider networks.
     const names = new Map();
-    for (const operator of SUPPORTED_OPERATOR_PRICING[country] || []) names.set(operator.toLowerCase(), operator);
     for (const row of catalogResult.rows) {
-      const operator = String(row.operator).trim();
-      if (operator) names.set(operator.toLowerCase(), operator);
-    }
-    for (const row of savedResult.rows) {
       const operator = String(row.operator).trim();
       if (operator) names.set(operator.toLowerCase(), operator);
     }
@@ -5618,11 +6296,8 @@ app.put('/api/admin/operator-pricing/:country/:operator', requireAdmin, async (r
   try {
     const known = await pool.query(`SELECT operator FROM product_catalog
       WHERE country = $1 AND LOWER(BTRIM(operator)) = LOWER($2) LIMIT 1`, [country, requested]);
-    const seeded = (SUPPORTED_OPERATOR_PRICING[country] || []).find(name => name.toLowerCase() === requested.toLowerCase());
-    const savedExisting = await pool.query(`SELECT operator FROM operator_pricing_settings
-      WHERE country = $1 AND LOWER(operator) = LOWER($2) LIMIT 1`, [country, requested]);
-    const operator = String(known.rows[0]?.operator || savedExisting.rows[0]?.operator || seeded || '').trim();
-    if (!operator) return res.status(400).json({ error: 'This operator is not known for the selected country. Import or map a verified catalog product first.' });
+    const operator = String(known.rows[0]?.operator || '').trim();
+    if (!operator) return res.status(400).json({ error: 'This operator is not present in the provider catalog for the selected country. Import a verified DT One product first.' });
     const result = await pool.query(`INSERT INTO operator_pricing_settings
       (country, operator, fee_eur_cents, fee_percent, active, updated_at) VALUES ($1,$2,$3,$4,$5,NOW())
       ON CONFLICT (country, operator) DO UPDATE SET fee_eur_cents=EXCLUDED.fee_eur_cents,

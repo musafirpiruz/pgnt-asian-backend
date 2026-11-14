@@ -16,7 +16,7 @@ function section(startToken, endToken) {
 }
 
 test('checkout validation requires an exact internal catalog product ID', () => {
-  const validator = section('function validateCheckoutInput(body)', '// =====================================================\n// PART 3/8');
+  const validator = section('function validateCheckoutInput(body', '// =====================================================\n// PART 3/8');
   assert.match(validator, /body\.productId/);
   assert.match(validator, /!\/\^\[1-9\]\\d\*\$\//);
   assert.match(validator, /Select a valid catalog product/);

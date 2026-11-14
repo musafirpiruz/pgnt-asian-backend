@@ -164,6 +164,15 @@ async function adminPost(url,body){
  if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
  return data;
 }
+async function adminPut(url,body){
+ const key=keyInput.value.trim();
+ if(!key)throw new Error('لومړی د اډمین API کیلي ولیکئ.');
+ const response=await fetch(url,{method:'PUT',headers:{'x-admin-api-key':key,'Accept':'application/json','Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});
+ const raw=await response.text();let data={};
+ try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('سرور د لوستلو وړ ځواب ورنه کړ (HTTP '+response.status+').');}
+ if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
+ return data;
+}
 function addField(dl,label,value){const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=escapeText(value);dl.append(dt,dd);}
 function showDetails(container,data){
  const wrap=document.createElement('div');wrap.className='detail';
@@ -404,6 +413,72 @@ document.getElementById('loadCountryRegistry').addEventListener('click',async()=
    ];
    for(const [label,value] of fields){const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=String(value??'—');dl.append(dt,dd);}
    card.append(dl);
+   const editor=document.createElement('details');editor.className='detail';
+   const editorTitle=document.createElement('summary');editorTitle.textContent='د هېواد تنظیمات سمول (له نسخه او Audit سره)';editor.append(editorTitle);
+   const form=document.createElement('div');form.className='grid';
+   const countryEditorFields=[
+    ['countryName','د هېواد نوم',country.country_name||'', 'text'],
+    ['destinationCurrency','د ترلاسه کوونکي اسعار (ISO)',country.destination_currency||'', 'text'],
+    ['callingCode','د ټیلیفون نړیوال کوډ',country.calling_code||'', 'text'],
+    ['phoneMinDigits','د ټیلیفون لږ تر لږه شمېرې',country.phone_min_digits??'', 'number'],
+    ['phoneMaxDigits','د ټیلیفون ډېرې شمېرې',country.phone_max_digits??'', 'number'],
+    ['provider','Provider نوم',country.provider||'dtone', 'text'],
+    ['providerCountryCode','د Provider د هېواد کوډ',country.provider_country_code||'', 'text']
+   ];
+   const controls={};
+   for(const [name,labelText,value,type] of countryEditorFields){
+    const wrap=document.createElement('div');const label=document.createElement('label');label.textContent=labelText;
+    const input=document.createElement('input');input.type=type;input.value=String(value);input.autocomplete='off';
+    if(type==='number'){input.min='1';input.max='15';input.step='1';}
+    label.append(input);wrap.append(label);form.append(wrap);controls[name]=input;
+   }
+   const statusWrap=document.createElement('div');const statusLabel=document.createElement('label');statusLabel.textContent='د هېواد حالت (فعالول دلته نشته)';
+   const statusSelect=document.createElement('select');
+   for(const value of ['legacy','draft','disabled','configuring','testing']){
+    const option=document.createElement('option');option.value=value;option.textContent=value;statusSelect.append(option);
+   }
+   statusSelect.value=String(country.status||'legacy').toLowerCase();statusLabel.append(statusSelect);statusWrap.append(statusLabel);form.append(statusWrap);
+   editor.append(form);
+   const editorActions=document.createElement('div');editorActions.className='actions';
+   const saveConfig=document.createElement('button');saveConfig.type='button';saveConfig.textContent='تنظیمات خوندي کړه';
+   const auditButton=document.createElement('button');auditButton.type='button';auditButton.className='secondary';auditButton.textContent='د بدلونونو Audit تاریخچه';
+   editorActions.append(saveConfig,auditButton);editor.append(editorActions);
+   const editorNotice=document.createElement('div');editorNotice.className='status';editorNotice.setAttribute('role','status');editorNotice.textContent='د خوندي کولو پر مهال د اوسني configuration version شرط کارېږي؛ فعال هېواد نه شي بدلولای.';editor.append(editorNotice);
+   saveConfig.addEventListener('click',async()=>{
+    saveConfig.disabled=true;editorNotice.className='status';editorNotice.textContent='د هېواد تنظیمات د نسخه‌یي قلف له لارې خوندي کېږي…';
+    const body={expectedConfigurationVersion:Number(country.configuration_version)};
+    for(const [name,input] of Object.entries(controls))body[name]=input.value.trim();
+    body.phoneMinDigits=Number(controls.phoneMinDigits.value);
+    body.phoneMaxDigits=Number(controls.phoneMaxDigits.value);
+    body.status=statusSelect.value;
+    try{
+     const result=await adminPut('/api/admin/countries/'+encodeURIComponent(country.country_code)+'/configuration',body);
+     editorNotice.className='status ok';
+     editorNotice.textContent='تنظیمات خوندي شول. نوې نسخه: '+result.country.configuration_version+'. هېواد فعال شوی نه دی.';
+     document.getElementById('loadCountryRegistry').click();
+    }catch(error){editorNotice.className='status error';editorNotice.textContent='تنظیمات خوندي نه شول: '+error.message+'؛ راپور بیا ولولئ او تازه نسخه وکاروئ.';}
+    finally{saveConfig.disabled=false;}
+   });
+   auditButton.addEventListener('click',async()=>{
+    auditButton.disabled=true;let auditHost=editor.querySelector('.country-audit');
+    if(!auditHost){auditHost=document.createElement('div');auditHost.className='detail country-audit';editor.append(auditHost);}
+    auditHost.textContent='د بدلونونو تاریخچه لوستل کېږي…';
+    try{
+     const result=await adminRequest('/api/admin/countries/'+encodeURIComponent(country.country_code)+'/audit?limit=50');
+     auditHost.replaceChildren();
+     if(!Array.isArray(result.entries)||!result.entries.length){auditHost.textContent='د بدلونونو تاریخچه نشته.';}
+     else for(const entry of result.entries){
+      const item=document.createElement('article');item.className='order';
+      const heading=document.createElement('strong');heading.textContent=entry.action+' · نسخه '+entry.previous_version+' → '+entry.new_version;
+      const time=document.createElement('p');time.className='muted';time.textContent=entry.created_at||'';
+      const before=document.createElement('pre');before.textContent='مخکیني ارزښتونه: '+JSON.stringify(entry.old_values||{},null,2);
+      const after=document.createElement('pre');after.textContent='نوي ارزښتونه: '+JSON.stringify(entry.new_values||{},null,2);
+      item.append(heading,time,before,after);auditHost.append(item);
+     }
+    }catch(error){auditHost.textContent='د Audit تاریخچه ونه لوستل شوه: '+error.message;}
+    finally{auditButton.disabled=false;}
+   });
+   card.append(editor);
    const preflightButton=document.createElement('button');
    preflightButton.type='button';preflightButton.className='secondary';
    preflightButton.textContent='د فعالولو شرطونه وڅېړه';

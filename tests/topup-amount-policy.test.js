@@ -10,7 +10,7 @@ const flutter = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8')
 
 test('fixed-value top-ups are selected from the verified DT One catalog, not a customer-entered amount range', () => {
   assert.doesNotMatch(server, /const PGNT_(?:MIN|MAX)_AMOUNT/);
-  const validatorStart = server.indexOf('function validateCheckoutInput(body)');
+  const validatorStart = server.indexOf('function validateCheckoutInput(body');
   const validatorEnd = server.indexOf('// =====================================================\n// PART 3/8', validatorStart);
   assert.ok(validatorStart >= 0 && validatorEnd > validatorStart);
   const validator = server.slice(validatorStart, validatorEnd);
