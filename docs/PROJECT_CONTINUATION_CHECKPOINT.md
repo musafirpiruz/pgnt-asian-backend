@@ -180,3 +180,45 @@ Continue PGNT ASIAN TOPUP from this repository, branch, PR, and this checkpoint.
 - Do not merge PR, apply production migrations, activate countries/products, enable ranged checkout, or perform real payments/top-ups. User has not authorized those actions.
 - Next action: poll CI for HEAD `4e447608919df61d7fb27814ad3e063ee5f79fa2`. If tests fail, inspect exact failing test names/logs and fix the underlying issue, not by weakening safety assertions. If CI passes, continue integrating country registry lifecycle/admin/audit into server routes while preserving fixed checkout.
 - User explicitly asked for a reliable handoff in case this chat ends. This section is the latest project continuation state.
+
+
+## AUTHORITATIVE HANDOFF — 2026-11-14 16:24 UTC (supersedes all older status sections above)
+
+### Live repository state
+- Repository: `musafirpiruz/pgnt-asian-backend`
+- PR #242: https://github.com/musafirpiruz/pgnt-asian-backend/pull/242
+- PR state: OPEN, not merged, not draft; base `feat/device-region-and-country-bootstrap-2026-11-10`.
+- Branch: `feat/customer-ranged-catalog-2026-11-13`
+- Exact verified HEAD: `13e2df50191ba81c85e9f826d2fb3cbab67e2922`
+- Latest commit changes the ranged checkout test fixture to include `provider: 'dtone'`, matching the service's active provider validation. It fixes the test fixture only; no payment logic was weakened.
+
+### CI verified on this exact HEAD
+- Backend Syntax Check: SUCCESS — run #1445, ID `43614858221`.
+- Backend Tests: SUCCESS — run #1724, ID `43614858207`.
+- Android APK Build: SUCCESS — run #867, ID `43614858277`.
+  - Flutter setup and Dart analysis passed.
+  - Release APK build, APK verification and artifact upload passed.
+  - Artifact: `pgnt-asian-topup-apk`, ID `14122156033`, ZIP size 25,291,111 bytes.
+  - SHA256: `041b7726609a29278d35673bd4930b36d07cc5287c57fed2b4a471c9889391f9`.
+  - Expires: 2026-11-28 16:23 UTC.
+  - Workflow: https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43614858277
+  - Artifact UI: https://github.com/musafirpiruz/pgnt-asian-backend/actions/runs/43614858277/artifacts/14122156033
+
+### Verified implementation/safety state
+- DB-backed country registry runtime is initialized from PostgreSQL with freshness handling; customer pricing quote, ranged checkout, and fixed checkout validation use fresh active registry snapshots and fail closed when unavailable.
+- Ranged checkout requires the selected active country config to explicitly use `provider: 'dtone'`, validates verified product country/currency and DT One destination amount bounds/increment, and remains gated by `RANGED_CHECKOUT_ENABLED`.
+- Fixed checkout remains a separate route; fixed orders store immutable recipient country snapshots for fulfillment.
+- Current PR body includes scope, exact CI outcomes, and remaining release gates.
+- No merge, production deployment, production migration, product/country activation, live Stripe payment, or live DT One top-up has occurred.
+- No real DT One pre-production end-to-end evidence has yet been recorded. Sandbox credential configuration, callback authentication, provider test numbers, and success/decline/cancellation lifecycle verification remain required before considering activation.
+
+### Next work — continue without repeating completed work
+1. Keep the exact PR #242 branch/head and read the live checkpoint before editing.
+2. Continue the country-registry integration audit across remaining admin/product/operator/FX flows; distinguish legacy fixed-order compatibility fallbacks from new customer activation/payment decisions. Do not silently use static country config as an activation source.
+3. Review Admin country lifecycle/audit and onboarding requirements against activation policy: provider country/operator/product identity, verified capabilities and pricing, fresh FX, six localizations (en, ps, fa, ur, hi, bn), and approved sandbox evidence. Imports remain disabled; never auto-activate.
+4. Run real DT One pre-production E2E only after approved credentials and test numbers are securely configured outside chat. Do not request secrets in chat.
+5. Preserve EUR as initial payment currency; USD/GBP remain later phases.
+6. Keep RANGED checkout disabled, and do not merge/deploy/run production migrations/activate products or perform real payments/top-ups without explicit user approval.
+
+### New-chat instruction
+The user explicitly requests that previous work be verified if this chat ends. Start by fetching live PR #242 HEAD and this checkpoint, then confirm the three successful CI runs above against the exact HEAD. Continue the existing project; do not rebuild, redo completed work, or rely on stale earlier sections.
