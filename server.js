@@ -6250,6 +6250,7 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
   }
 });
 
+// Admin pricing overview.
 app.get('/api/admin/operator-pricing', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const country = normalizeCountry(req.query.country || 'AF');
