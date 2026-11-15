@@ -3669,13 +3669,13 @@ app.get('/api/admin/countries/:countryCode/operators/:operatorKey/product-approv
     );
     if (operator.rowCount !== 1) return res.status(404).json({ error: 'The exact country/network mapping was not found.' });
     const network = operator.rows[0];
-    if (!network.provider_operator_id || !String(network.provider_operator_id).trim() || !network.verified_at) {
+    if (network.active !== true || network.country_status !== 'active' || !network.provider_operator_id || !String(network.provider_operator_id).trim() || !network.verified_at) {
       return res.status(409).json({ error: 'DT One operator identity is not independently verified yet.', networkVerified: false });
     }
     const rows = await pool.query(
       `SELECT cop.id AS mapping_id,cop.country_code,cop.operator_key,
-              cop.product_catalog_id,p.product_id AS provider_product_id,
-              p.currency,p.country AS product_country,p.operator,
+              cop.product_catalog_id,cop.active AS mapping_active,cop.verified_at AS mapping_verified_at,
+              p.product_id AS provider_product_id,p.currency,p.country AS product_country,p.operator,
               o.display_name AS operator_name,p.wholesale_price_eur_cents,
               p.amount,p.provider_price_verified_at,p.provider_price_source,
               p.provider_price_product_id
@@ -3689,7 +3689,8 @@ app.get('/api/admin/countries/:countryCode/operators/:operatorKey/product-approv
     );
     const selectionRows = rows.rows.filter(row => {
       const verifiedAt = Date.parse(row.provider_price_verified_at);
-      return row.provider_price_source === 'dtone_api' &&
+      return row.mapping_active === true && !!row.mapping_verified_at &&
+        row.provider_price_source === 'dtone_api' &&
         Number(row.provider_price_product_id) === Number(row.provider_product_id) &&
         Number.isFinite(verifiedAt) && verifiedAt <= Date.now() &&
         Date.now() - verifiedAt <= 24 * 60 * 60 * 1000 &&
@@ -3732,7 +3733,7 @@ app.post('/api/admin/countries/:countryCode/operators/:operatorKey/product-appro
         FOR UPDATE OF o`,
       [countryCode, operatorKey]
     );
-    if (operator.rowCount !== 1 || !operator.rows[0].provider_operator_id || !operator.rows[0].verified_at) {
+    if (operator.rowCount !== 1 || operator.rows[0].active !== true || operator.rows[0].country_status !== 'active' || !operator.rows[0].provider_operator_id || !operator.rows[0].verified_at) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'The exact DT One operator identity must be verified before product approval.' });
     }
@@ -3755,7 +3756,8 @@ app.post('/api/admin/countries/:countryCode/operators/:operatorKey/product-appro
     const now = Date.now();
     const eligibleRows = productRows.rows.filter(row => {
       const verifiedAt = Date.parse(row.provider_price_verified_at);
-      return row.provider_price_source === 'dtone_api' &&
+      return row.mapping_active === true && !!row.mapping_verified_at &&
+        row.provider_price_source === 'dtone_api' &&
         Number(row.provider_price_product_id) === Number(row.provider_product_id) &&
         Number.isSafeInteger(Number(row.amount)) && Number(row.amount) >= 75 && Number(row.amount) <= 3000 &&
         Number.isFinite(verifiedAt) && verifiedAt <= now && now - verifiedAt <= 24 * 60 * 60 * 1000;
