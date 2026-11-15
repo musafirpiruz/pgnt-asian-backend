@@ -3,6 +3,7 @@
 const SUPPORTED_COUNTRIES = Object.freeze({
   AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT',
 });
+const MAX_PROVIDER_PRICE_AGE_MS = 24 * 60 * 60 * 1000;
 
 function integer(value, field, min, max = Number.MAX_SAFE_INTEGER) {
   const number = Number(value);
@@ -98,8 +99,13 @@ function buildCountryPricingPreview({ policy, countries, products, fxRates, now 
     for (const product of countryProducts) {
       const id = Number(product.product_id);
       const wholesale = Number(product.wholesale_price_eur_cents);
-      if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(wholesale) || wholesale < 1) {
-        blockers.push(`Product ${String(product.product_id || 'unknown')} has no verified EUR wholesale price.`);
+      const verifiedAt = Date.parse(product.provider_price_verified_at);
+      const providerProductId = Number(product.provider_price_product_id);
+      const evidenceValid = product.provider_price_source === 'dtone_api' &&
+        providerProductId === id && Number.isFinite(verifiedAt) &&
+        verifiedAt <= now && (now - verifiedAt) <= MAX_PROVIDER_PRICE_AGE_MS;
+      if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(wholesale) || wholesale < 1 || !evidenceValid) {
+        blockers.push(`Product ${String(product.product_id || 'unknown')} has missing, mismatched, or stale DT One price evidence (maximum age 24 hours).`);
         continue;
       }
       rows.push(Object.freeze({
@@ -135,6 +141,7 @@ function buildCountryPricingPreview({ policy, countries, products, fxRates, now 
 
 module.exports = {
   SUPPORTED_COUNTRIES,
+  MAX_PROVIDER_PRICE_AGE_MS,
   validateMasterPricingPolicy,
   calculateCountryProductPrice,
   buildCountryPricingPreview,
