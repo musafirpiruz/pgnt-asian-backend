@@ -48,9 +48,9 @@ test('admin routes expose read-only preview and auditable approval without activ
   const preview = server.slice(previewStart, batchStart);
   const batchEnd = server.indexOf('// Read-only country onboarding overview', batchStart);
   const batch = server.slice(batchStart, batchEnd);
-  assert.match(preview, /provider_price_source === 'dtone_api'/);
+  assert.match(preview, /network\.active !== true \|\| network\.country_status !== 'active'/);\n  assert.match(preview, /mapping_active === true && !!row\.mapping_verified_at/);\n  assert.match(preview, /provider_price_source === 'dtone_api'/);
   assert.match(preview, /24 \* 60 \* 60 \* 1000/);
-  assert.match(batch, /confirmApprovalBatch !== true/);
+  assert.match(batch, /operator\.rows\[0\]\.active !== true \|\| operator\.rows\[0\]\.country_status !== 'active'/);\n  assert.match(batch, /mapping_active === true && !!row\.mapping_verified_at/);\n  assert.match(batch, /confirmApprovalBatch !== true/);
   assert.match(batch, /country_network_product_approval_batches/);
   assert.match(batch, /country_network_product_approval_items/);
   assert.match(batch, /customerProductsActivated:\s*false/);
