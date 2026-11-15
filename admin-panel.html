@@ -121,7 +121,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="fxObservations" class="detail" aria-live="polite">لومړی هېواد وټاکئ او د نرخونو تاریخچه ولولئ.</div>
 </section>
 <section class="card">
-<h2>۵. د محصول د قیمت تشخیص (یوازې لوستل)</h2> (یوازې لوستل)</h2>
+<h2>۵. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
 <p class="muted">د DT One د محصول ID ولیکئ. دا برخه د محصول، بیې، اسعارو او تادیې د چمتووالي ستونزې ښيي؛ هېڅ محصول نه فعالوي او هېڅ قیمت نه بدلوي.</p>
 <label for="diagnosticProductId">DT One Product ID</label>
 <input id="diagnosticProductId" inputmode="numeric" autocomplete="off" placeholder="د محصول ID، لکه 7194">
@@ -661,7 +661,7 @@ document.getElementById('loadFxObservations').addEventListener('click',loadFxObs
 document.getElementById('captureFxObservation').addEventListener('click',async()=>{
  const button=document.getElementById('captureFxObservation');
  const productId=String(document.getElementById('fxProductId').value||'').trim();
- if(!/^[1-9]\\d*$/.test(productId)){fxHost.textContent='د DT One معتبر Product ID ولیکئ.';return;}
+ if(!/^[1-9]\d*$/.test(productId)){fxHost.textContent='د DT One معتبر Product ID ولیکئ.';return;}
  const code=fxCountry.value;
  if(!confirm('له DT One څخه د '+code+' د ټاکلي محصول EUR → محلي اسعارو wholesale نرخ ثبت شي؟ نرخ به یوازې Pending وي او اتومات نه فعالېږي.'))return;
  button.disabled=true;fxHost.textContent='د DT One رسمي محصول او FX نرخ تاییدېږي…';
