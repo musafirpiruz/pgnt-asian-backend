@@ -95,7 +95,7 @@ test('DT One operator discovery is read-only and exposed in the admin panel for 
   assert.doesNotMatch(route, /INSERT INTO country_operators|UPDATE country_operators|INSERT INTO country_operator_products/);
 
   const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-panel.html'), 'utf8');
-  const scripts = [...admin.matchAll(/<script>([\s\S]*?)<\\/script>/gi)];
+  const scripts = admin.split('<script>').slice(1).map((part) => part.split('</script>')[0]);
   const script = scripts[scripts.length - 1][1];
   assert.doesNotThrow(() => new vm.Script(script));
   for (const [code, label] of [['AFG', 'افغانستان'], ['PAK', 'پاکستان'], ['IND', 'هند'], ['BGD', 'بنګله‌دېش']]) {
