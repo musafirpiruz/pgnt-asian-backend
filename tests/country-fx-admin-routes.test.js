@@ -105,5 +105,5 @@ test('DT One operator discovery is read-only and exposed in the admin panel for 
   assert.ok(admin.includes('id="discoverDtoneOperators"'));
   assert.ok(admin.includes('id="dtoneOperatorDiscovery"'));
   assert.match(script, /\/api\/admin\/dtone\/operators\?country_iso_code=/);
-  assert.match(script, /catalogActivation/);
+  assert.match(script, /یوازې د DT One د لوستلو پایله؛ ثبت او فعالول نه دي شوي/);
 });
