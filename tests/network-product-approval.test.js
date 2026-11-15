@@ -57,3 +57,21 @@ test('admin routes expose read-only preview and auditable approval without activ
   assert.match(batch, /catalogPricesWritten:\s*false/);
   assert.doesNotMatch(batch, /UPDATE product_catalog|UPDATE country_operator_products/);
 });
+
+
+test('admin panel network approval UI script parses and requires a fresh preview plus explicit confirmation', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const vm = require('node:vm');
+  const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-panel.html'), 'utf8');
+  const scripts = [...admin.matchAll(/<script>([\\s\\S]*?)<\\/script>/gi)];
+  assert.ok(scripts.length > 0, 'admin panel inline script must exist');
+  const script = scripts[scripts.length - 1][1];
+  assert.doesNotThrow(() => new vm.Script(script), 'admin panel inline JavaScript must parse');
+  assert.match(admin, /id="previewNetworkApproval"/);
+  assert.match(admin, /id="recordNetworkApproval"/);
+  assert.match(script, /product-approval-preview\\?sourceProductCatalogId=/);
+  assert.match(script, /confirmApprovalBatch:\s*true/);
+  assert.match(script, /latestNetworkApprovalPreview=null/);
+  assert.match(script, /customerProductsActivated=\'\+result\.customerProductsActivated/);
+});
