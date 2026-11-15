@@ -5131,10 +5131,13 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
     }
     const updated = await client.query(
       `UPDATE product_catalog
-       SET price_eur_cents = $1, wholesale_price_eur_cents = $2, updated_at = NOW()
+       SET price_eur_cents = $1, wholesale_price_eur_cents = $2,
+           provider_price_verified_at = NOW(), provider_price_source = 'dtone_api',
+           provider_price_product_id = product_id, updated_at = NOW()
        WHERE id = $3 AND active = FALSE
        RETURNING id, product_id, country, operator, amount, currency,
-                 price_eur_cents, wholesale_price_eur_cents, active`,
+                 price_eur_cents, wholesale_price_eur_cents, provider_price_verified_at,
+                 provider_price_source, provider_price_product_id, active`,
       [retailCents, wholesaleCents, current.id]
     );
     if (updated.rowCount !== 1) {
@@ -5232,10 +5235,12 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
       const inserted = await client.query(
         `INSERT INTO product_catalog
           (country, operator, amount, currency, product_id, price_eur_cents,
-           wholesale_price_eur_cents, bonus_amount, active, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 0, FALSE, NOW())
+           wholesale_price_eur_cents, provider_price_verified_at, provider_price_source,
+           provider_price_product_id, bonus_amount, active, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'dtone_api', $5, 0, FALSE, NOW())
          RETURNING id, country, operator, amount, currency, product_id,
-                   price_eur_cents, wholesale_price_eur_cents, active`,
+                   price_eur_cents, wholesale_price_eur_cents, provider_price_verified_at,
+                   provider_price_source, provider_price_product_id, active`,
         [country, operator, amountValue, currency, productId, retailCents, wholesaleCents]
       );
       await client.query('COMMIT');
@@ -6425,10 +6430,10 @@ app.post('/api/admin/master-pricing-policy/preview', express.json(), requireAdmi
     const [countriesResult, productsResult, fxResult] = await Promise.all([
       client.query(`SELECT country_code,destination_currency FROM country_registry
                      WHERE country_code IN ('AF','PK','IN','BD') ORDER BY country_code`),
-      client.query(`SELECT product_id,country,operator,amount,currency,wholesale_price_eur_cents
+      client.query(`SELECT product_id,country,operator,amount,currency,wholesale_price_eur_cents,
+                           provider_price_verified_at,provider_price_source,provider_price_product_id
                       FROM product_catalog
                      WHERE country IN ('AF','PK','IN','BD') AND product_id IS NOT NULL
-                       AND wholesale_price_eur_cents IS NOT NULL
                      ORDER BY country,operator,amount,product_id`),
       client.query(`SELECT id,country_code,base_currency,quote_currency,
                            quote_per_base,is_approved,approved_at,observed_at,expires_at
