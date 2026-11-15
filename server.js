@@ -1803,6 +1803,11 @@ app.post(
           break;
         }
 
+        case 'charge.updated': {
+          await reconcileStripeChargeFee(event.data.object);
+          break;
+        }
+
         case 'charge.refunded': {
           const charge = event.data.object;
 
@@ -2046,6 +2051,38 @@ async function processPaidRangedOrder(order, orderId) {
     throw error;
   } finally { finalClient.release(); }
   return { status: persistedOrderStatus, orderId, providerReference: verified.transactionId, providerStatus: persistedProviderStatus };
+}
+
+async function reconcileStripeChargeFee(chargeEvent) {
+  if (!pool || !stripe || !chargeEvent || typeof chargeEvent.id !== 'string') {
+    throw new Error('Stripe charge reconciliation input is invalid.');
+  }
+  // charge.updated may arrive before the BalanceTransaction is attached.
+  // Retrieve the canonical Charge with its BalanceTransaction expanded.
+  const charge = await stripe.charges.retrieve(chargeEvent.id, {
+    expand: ['balance_transaction'],
+  });
+  if (!charge || charge.status !== 'succeeded' || charge.currency !== 'eur') {
+    return { reconciled: false, reason: 'charge_not_succeeded_eur' };
+  }
+  const evidence = require('./stripe-fee-evidence').extractStripeChargeFeeEvidence(charge);
+  if (!evidence) return { reconciled: false, reason: 'balance_transaction_not_ready' };
+
+  const result = await pool.query(
+    `UPDATE orders
+     SET stripe_fee_eur_cents = $2,
+         stripe_fee_currency = $3,
+         stripe_balance_transaction_id = $4,
+         stripe_fee_reconciled_at = NOW(),
+         updated_at = NOW()
+     WHERE stripe_payment_intent_id = $1
+       AND currency = 'EUR'
+       AND (stripe_balance_transaction_id IS NULL OR stripe_balance_transaction_id = $4)
+     RETURNING order_id`,
+    [evidence.paymentIntentId, evidence.feeEurCents, evidence.currency, evidence.balanceTransactionId]
+  );
+  if (result.rowCount > 1) throw new Error('Stripe PaymentIntent matched multiple orders.');
+  return { reconciled: result.rowCount === 1, matchedOrders: result.rowCount };
 }
 
 async function processPaidStripeSession(session) {
