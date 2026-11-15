@@ -6246,15 +6246,19 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
       return res.status(404).json({ error: 'Product was not found in product_catalog.', productId });
     }
     const product = productResult.rows[0];
-    const pricingResult = await pool.query(
-      `SELECT country, fee_eur_cents, bonus_percent, stripe_fee_percent,
-              stripe_fixed_fee_cents, active
-       FROM pricing_settings
-       WHERE country = $1
-       LIMIT 1`,
-      [product.country]
-    );
-    const pricing = pricingResult.rows[0] || null;
+    // Use the same server-authoritative app-fee + automatic Stripe-fee
+    // resolver as customer quotes and checkout. Never preview from legacy
+    // manually editable Stripe fee columns.
+    let pricing = null;
+    try {
+      pricing = await getPricingSettings(pool, product.country);
+    } catch (pricingError) {
+      console.warn('Catalog pricing preview is unavailable:', {
+        country: product.country,
+        code: pricingError.code || null,
+        message: String(pricingError.message || '').slice(0, 180),
+      });
+    }
     let customerPricePreview = null;
     let priceCalculationValid = false;
     if (product.wholesale_price_eur_cents != null && pricing !== null) {
@@ -6264,10 +6268,10 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
             wholesalePriceCents: Number(product.wholesale_price_eur_cents),
           },
           {
-            feeCents: Number(pricing.fee_eur_cents),
-            bonusPercent: Number(pricing.bonus_percent),
-            stripeFeePercent: Number(pricing.stripe_fee_percent),
-            stripeFixedFeeCents: Number(pricing.stripe_fixed_fee_cents),
+            feeCents: pricing.feeCents,
+            bonusPercent: 0,
+            stripeFeePercent: pricing.stripeFeePercent,
+            stripeFixedFeeCents: pricing.stripeFixedFeeCents,
           }
         );
         priceCalculationValid = Number.isSafeInteger(preview.finalPriceCents) &&
