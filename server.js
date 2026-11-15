@@ -127,6 +127,7 @@ const pool = DATABASE_URL
 const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config'); // Legacy fixed-flow compatibility only.
 const { createCountryRegistryRuntime } = require('./country-registry-runtime');
 const { validateMasterPricingPolicy, buildCountryPricingPreview } = require('./master-country-pricing');
+const { selectEligibleNetworkProducts } = require('./network-product-approval');
 
 // Keep the DB-backed registry available to customer routes. A missing DB or
 // registry table fails closed at request time; no hard-coded country fallback.
@@ -3504,6 +3505,155 @@ function requireAdmin(req, res, next) {
 
   return next();
 }
+
+// Read-only, network-scoped DT One product approval preview.
+// Only exact provider-verified identities and fresh EUR wholesale evidence are eligible.
+app.get('/api/admin/countries/:countryCode/operators/:operatorKey/product-approval-preview', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorKey = String(req.params.operatorKey || '').trim();
+  const sourceProductCatalogId = Number(req.query.sourceProductCatalogId);
+  if (!/^[A-Z]{2}$/.test(countryCode) || !Number.isSafeInteger(sourceProductCatalogId) || sourceProductCatalogId < 1) {
+    return res.status(400).json({ error: 'A valid country and sourceProductCatalogId are required.' });
+  }
+  try {
+    const operator = await pool.query(
+      `SELECT o.country_code,o.operator_key,o.display_name,o.provider_operator_id,o.active,o.verified_at,
+              c.destination_currency,c.status AS country_status
+         FROM country_operators o
+         JOIN country_registry c ON c.country_code=o.country_code
+        WHERE o.country_code=$1 AND o.operator_key=$2 AND LOWER(o.provider)='dtone'
+        LIMIT 1`,
+      [countryCode, operatorKey]
+    );
+    if (operator.rowCount !== 1) return res.status(404).json({ error: 'The exact country/network mapping was not found.' });
+    const network = operator.rows[0];
+    if (!network.provider_operator_id || !String(network.provider_operator_id).trim() || !network.verified_at) {
+      return res.status(409).json({ error: 'DT One operator identity is not independently verified yet.', networkVerified: false });
+    }
+    const rows = await pool.query(
+      `SELECT cop.id AS mapping_id,cop.country_code,cop.operator_key,
+              cop.product_catalog_id,p.product_id AS provider_product_id,
+              p.currency,p.country AS product_country,p.operator,
+              o.display_name AS operator_name,p.wholesale_price_eur_cents,
+              p.amount,p.provider_price_verified_at,p.provider_price_source,
+              p.provider_price_product_id
+         FROM country_operator_products cop
+         JOIN country_operators o
+           ON o.country_code=cop.country_code AND o.operator_key=cop.operator_key
+         JOIN product_catalog p ON p.id=cop.product_catalog_id
+        WHERE cop.country_code=$1 AND cop.operator_key=$2
+        ORDER BY p.amount,p.product_id`,
+      [countryCode, operatorKey]
+    );
+    const selectionRows = rows.rows.filter(row => {
+      const verifiedAt = Date.parse(row.provider_price_verified_at);
+      return row.provider_price_source === 'dtone_api' &&
+        Number(row.provider_price_product_id) === Number(row.provider_product_id) &&
+        Number.isFinite(verifiedAt) && verifiedAt <= Date.now() &&
+        Date.now() - verifiedAt <= 24 * 60 * 60 * 1000 &&
+        Number.isSafeInteger(Number(row.amount)) && Number(row.amount) >= 75 && Number(row.amount) <= 3000;
+    });
+    const result = selectEligibleNetworkProducts(selectionRows, { countryCode, operatorKey, sourceCatalogId: sourceProductCatalogId });
+    return res.set('Cache-Control','no-store').json({
+      ...result,
+      network: { countryCode, operatorKey, displayName: network.display_name, providerOperatorId: network.provider_operator_id },
+      candidatesChecked: rows.rowCount,
+      staleOrUnverifiedExcluded: rows.rowCount - selectionRows.length,
+      note: 'Preview only. No mapping, product, price, or activation state was changed.',
+    });
+  } catch (error) {
+    return res.status(422).json({ error: error.message || 'Could not build the network product approval preview.' });
+  }
+});
+
+// Record an auditable approval batch for one exact network.
+// This records the reviewed product set only; it never activates customer products.
+app.post('/api/admin/countries/:countryCode/operators/:operatorKey/product-approval-batches', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorKey = String(req.params.operatorKey || '').trim();
+  const sourceProductCatalogId = Number(req.body?.sourceProductCatalogId);
+  if (!/^[A-Z]{2}$/.test(countryCode) || !Number.isSafeInteger(sourceProductCatalogId) || sourceProductCatalogId < 1) {
+    return res.status(400).json({ error: 'A valid country and sourceProductCatalogId are required.' });
+  }
+  if (req.body?.confirmApprovalBatch !== true) {
+    return res.status(400).json({ confirmationRequired: true, error: 'Explicit network product approval confirmation is required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const operator = await client.query(
+      `SELECT o.display_name,o.provider_operator_id,o.verified_at,c.destination_currency,c.status AS country_status
+         FROM country_operators o
+         JOIN country_registry c ON c.country_code=o.country_code
+        WHERE o.country_code=$1 AND o.operator_key=$2 AND LOWER(o.provider)='dtone'
+        FOR UPDATE OF o`,
+      [countryCode, operatorKey]
+    );
+    if (operator.rowCount !== 1 || !operator.rows[0].provider_operator_id || !operator.rows[0].verified_at) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'The exact DT One operator identity must be verified before product approval.' });
+    }
+    const productRows = await client.query(
+      `SELECT cop.id AS mapping_id,cop.country_code,cop.operator_key,
+              cop.product_catalog_id,p.product_id AS provider_product_id,
+              p.currency,p.country AS product_country,p.operator,
+              o.display_name AS operator_name,p.wholesale_price_eur_cents,
+              p.amount,p.provider_price_verified_at,p.provider_price_source,
+              p.provider_price_product_id
+         FROM country_operator_products cop
+         JOIN country_operators o
+           ON o.country_code=cop.country_code AND o.operator_key=cop.operator_key
+         JOIN product_catalog p ON p.id=cop.product_catalog_id
+        WHERE cop.country_code=$1 AND cop.operator_key=$2
+        ORDER BY p.amount,p.product_id
+        FOR UPDATE OF cop,p`,
+      [countryCode, operatorKey]
+    );
+    const now = Date.now();
+    const eligibleRows = productRows.rows.filter(row => {
+      const verifiedAt = Date.parse(row.provider_price_verified_at);
+      return row.provider_price_source === 'dtone_api' &&
+        Number(row.provider_price_product_id) === Number(row.provider_product_id) &&
+        Number.isSafeInteger(Number(row.amount)) && Number(row.amount) >= 75 && Number(row.amount) <= 3000 &&
+        Number.isFinite(verifiedAt) && verifiedAt <= now && now - verifiedAt <= 24 * 60 * 60 * 1000;
+    });
+    const selection = selectEligibleNetworkProducts(eligibleRows, { countryCode, operatorKey, sourceCatalogId: sourceProductCatalogId });
+    const policy = await client.query(
+      `SELECT version FROM master_pricing_policies
+        WHERE status='approved' AND payment_currency='EUR'
+        ORDER BY approved_at DESC,version DESC LIMIT 1`
+    );
+    const batch = await client.query(
+      `INSERT INTO country_network_product_approval_batches
+         (country_code,operator_key,source_product_catalog_id,approved_product_count,blocked_product_count,policy_version,actor)
+       VALUES($1,$2,$3,$4,$5,$6,'admin-session')
+       RETURNING id,country_code,operator_key,source_product_catalog_id,approved_product_count,blocked_product_count,policy_version,created_at`,
+      [countryCode,operatorKey,sourceProductCatalogId,selection.eligible.length,productRows.rowCount-selection.eligible.length,policy.rowCount ? Number(policy.rows[0].version) : null]
+    );
+    for (const item of selection.eligible) {
+      await client.query(
+        `INSERT INTO country_network_product_approval_items
+           (batch_id,country_operator_product_id,product_catalog_id,provider_product_id,wholesale_price_eur_cents)
+         VALUES($1,$2,$3,$4,$5)`,
+        [batch.rows[0].id,item.mappingId,item.productCatalogId,item.providerProductId,item.wholesalePriceEurCents]
+      );
+    }
+    await client.query('COMMIT');
+    return res.status(201).set('Cache-Control','no-store').json({
+      recorded: true,batch: batch.rows[0],eligibleProducts: selection.eligible,
+      customerProductsActivated: false,catalogPricesWritten: false,
+      note: 'Approval batch recorded for audit only. Separate activation remains disabled and requires its own release review.',
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Network product approval batch failed:', error.message);
+    return res.status(422).json({ error: error.message || 'Could not record network product approval batch.' });
+  } finally {
+    client.release();
+  }
+});
 
 // Read-only country onboarding overview for the admin panel.
 // It reports canonical registry state only; it never activates countries,
