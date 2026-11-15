@@ -70,7 +70,7 @@ test('FX admin panel script parses and offers capture, history, and explicit app
   const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-panel.html'), 'utf8');
   const scripts = admin.split('<script>').slice(1).map((part) => part.split('</script>')[0]);
   assert.ok(scripts.length > 0);
-  const script = scripts[scripts.length - 1][1];
+  const script = scripts[scripts.length - 1];
   assert.doesNotThrow(() => new vm.Script(script));
   for (const id of ['fxCountry', 'fxProductId', 'captureFxObservation', 'loadFxObservations', 'fxObservations']) {
     assert.ok(admin.includes('id="' + id + '"'), 'missing admin control ' + id);
