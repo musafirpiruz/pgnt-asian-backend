@@ -6387,40 +6387,71 @@ app.get('/api/admin/master-pricing-policy', requireAdmin, async (req, res) => {
 
 app.post('/api/admin/master-pricing-policy/draft', express.json(), requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
-  let policy;
+  let feeEurCents;
   try {
-    policy = validateMasterPricingPolicy({
-      feeEurCents: req.body?.feeEurCents,
-      stripeFeePercent: req.body?.stripeFeePercent,
-      stripeFixedFeeCents: req.body?.stripeFixedFeeCents,
-    });
+    feeEurCents = requireNonNegativeInteger(req.body?.feeEurCents, 'app fee in EUR cents');
+    if (feeEurCents > 100000) throw new Error('App fee exceeds the supported limit.');
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
   if (req.body?.confirmDraft !== true) {
     return res.status(400).json({ confirmationRequired: true, error: 'Explicit draft confirmation is required.' });
   }
-  const client = await pool.connect();
+  const estimator = require('./stripe-fee-estimator');
   try {
-    await client.query('BEGIN');
-    const next = await client.query('SELECT COALESCE(MAX(version),0)+1 AS version FROM master_pricing_policies');
-    const version = Number(next.rows[0].version);
-    const saved = await client.query(
-      `INSERT INTO master_pricing_policies
-         (version,payment_currency,fee_eur_cents,stripe_fee_percent,stripe_fixed_fee_cents,
-          bonus_percent,status,created_by)
-       VALUES($1,'EUR',$2,$3,$4,0,'draft','admin-session')
-       RETURNING id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
-                 stripe_fixed_fee_cents,bonus_percent,status,created_at`,
-      [version,policy.feeEurCents,policy.stripeFeePercent,policy.stripeFixedFeeCents]
+    const history = await pool.query(
+      `SELECT charge_cents, stripe_fee_eur_cents
+         FROM orders
+        WHERE paid_at IS NOT NULL
+          AND currency = 'EUR'
+          AND stripe_fee_currency = 'eur'
+          AND stripe_fee_eur_cents IS NOT NULL
+          AND stripe_balance_transaction_id IS NOT NULL
+          AND charge_cents > 0
+        ORDER BY stripe_fee_reconciled_at DESC
+        LIMIT 500`
     );
-    await client.query('COMMIT');
-    return res.status(201).json({ policy: saved.rows[0], livePricesChanged: false, approvalRequired: true });
+    const estimate = estimator.estimateStripeFeeSchedule(history.rows);
+    if (!estimate.ready) {
+      return res.status(409).json({
+        error: 'Automatic Stripe fee estimate is not ready; more settled Stripe fee evidence is required.',
+        stripeFeeEstimate: estimate,
+        appFeeAccepted: true,
+        draftCreated: false,
+      });
+    }
+    const policy = validateMasterPricingPolicy({
+      feeEurCents,
+      stripeFeePercent: estimate.stripeFeePercent,
+      stripeFixedFeeCents: estimate.stripeFixedFeeCents,
+    });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const next = await client.query('SELECT COALESCE(MAX(version),0)+1 AS version FROM master_pricing_policies');
+      const version = Number(next.rows[0].version);
+      const saved = await client.query(
+        `INSERT INTO master_pricing_policies
+           (version,payment_currency,fee_eur_cents,stripe_fee_percent,stripe_fixed_fee_cents,
+            bonus_percent,status,created_by)
+         VALUES($1,'EUR',$2,$3,$4,0,'draft','admin-session')
+         RETURNING id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
+                   stripe_fixed_fee_cents,bonus_percent,status,created_at`,
+        [version,policy.feeEurCents,policy.stripeFeePercent,policy.stripeFixedFeeCents]
+      );
+      await client.query('COMMIT');
+      return res.status(201).json({
+        policy: saved.rows[0], livePricesChanged: false, approvalRequired: true,
+        stripeFeeEstimate: { sampleCount: estimate.sampleCount, method: estimate.method, guaranteed: false },
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Master pricing draft creation failed:', error.message);
     return res.status(500).json({ error: 'Could not create master pricing draft.' });
-  } finally { client.release(); }
+  }
 });
 
 app.post('/api/admin/master-pricing-policy/:version/approve', express.json(), requireAdmin, async (req, res) => {
