@@ -96,7 +96,7 @@ test('DT One operator discovery is read-only and exposed in the admin panel for 
 
   const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-panel.html'), 'utf8');
   const scripts = admin.split('<script>').slice(1).map((part) => part.split('</script>')[0]);
-  const script = scripts[scripts.length - 1][1];
+  const script = scripts[scripts.length - 1];
   assert.doesNotThrow(() => new vm.Script(script));
   for (const [code, label] of [['AFG', 'افغانستان'], ['PAK', 'پاکستان'], ['IND', 'هند'], ['BGD', 'بنګله‌دېش']]) {
     assert.match(admin, new RegExp('value="' + code + '"'));
