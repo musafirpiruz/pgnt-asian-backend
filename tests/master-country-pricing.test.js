@@ -34,11 +34,22 @@ test('calculates using each product own DT One wholesale EUR cents', () => {
   assert.equal(af.wholesaleEurCents, 189);
 });
 
+test('preview blocks missing, mismatched, and stale DT One price evidence', () => {
+  const base = {product_id:11,country:'AF',currency:'AFN',operator:'A',amount:100,wholesale_price_eur_cents:189,provider_price_source:'dtone_api',provider_price_product_id:11};
+  const countries = [{country_code:'AF',destination_currency:'AFN'}];
+  const missing = buildCountryPricingPreview({policy,countries,products:[base],fxRates:[],now:Date.now()});
+  assert.ok(missing.countries[0].blockers.some(x=>x.includes('DT One price evidence')));
+  const stale = buildCountryPricingPreview({policy,countries,products:[{...base,provider_price_verified_at:new Date(Date.now()-25*60*60*1000).toISOString()}],fxRates:[],now:Date.now()});
+  assert.ok(stale.countries[0].blockers.some(x=>x.includes('DT One price evidence')));
+  const mismatched = buildCountryPricingPreview({policy,countries,products:[{...base,provider_price_product_id:99,provider_price_verified_at:new Date().toISOString()}],fxRates:[],now:Date.now()});
+  assert.ok(mismatched.countries[0].blockers.some(x=>x.includes('DT One price evidence')));
+});
+
 test('preview blocks missing FX and missing wholesale rather than reusing legacy country rates', () => {
   const result = buildCountryPricingPreview({
     policy,
     countries: [{country_code:'AF',destination_currency:'AFN'}],
-    products: [{product_id:11,country:'AF',currency:'AFN',operator:'A',amount:100,wholesale_price_eur_cents:189}],
+    products: [{product_id:11,country:'AF',currency:'AFN',operator:'A',amount:100,wholesale_price_eur_cents:189,provider_price_verified_at:new Date().toISOString(),provider_price_source:'dtone_api',provider_price_product_id:11}],
     fxRates: [],
   });
   assert.equal(result.countries[0].ready, false);
