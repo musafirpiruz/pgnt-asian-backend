@@ -65,8 +65,8 @@ test('each country uses only its own approved fresh FX and product wholesale', (
     {country_code:'PK',destination_currency:'PKR'},
   ];
   const products = [
-    {product_id:1,country:'AF',currency:'AFN',operator:'A',amount:100,wholesale_price_eur_cents:189},
-    {product_id:2,country:'PK',currency:'PKR',operator:'B',amount:100,wholesale_price_eur_cents:250},
+    {product_id:1,country:'AF',currency:'AFN',operator:'A',amount:100,wholesale_price_eur_cents:189,provider_price_verified_at:new Date(now-1000).toISOString(),provider_price_source:'dtone_api',provider_price_product_id:1},
+    {product_id:2,country:'PK',currency:'PKR',operator:'B',amount:100,wholesale_price_eur_cents:250,provider_price_verified_at:new Date(now-1000).toISOString(),provider_price_source:'dtone_api',provider_price_product_id:2},
   ];
   const fxRates = [
     {country_code:'AF',base_currency:'EUR',quote_currency:'AFN',quote_per_base:'70.1',is_approved:true,approved_at:'2026-11-14T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-16T00:00:00Z'},
