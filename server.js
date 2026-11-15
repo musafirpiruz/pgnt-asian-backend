@@ -2069,6 +2069,15 @@ async function processPaidStripeSession(session) {
     typeof session.payment_intent === 'object'
       ? session.payment_intent
       : null;
+  // Stripe's exact processing fee is recorded on the Charge's BalanceTransaction.
+  // It is not a universal pre-checkout quote; retrieve canonical evidence after payment.
+  let stripeFeeEvidence = null;
+  if (paymentIntent?.id) {
+    const canonicalIntent = await stripe.paymentIntents.retrieve(paymentIntent.id, {
+      expand: ['latest_charge.balance_transaction'],
+    });
+    stripeFeeEvidence = require('./stripe-fee-evidence').extractStripeFeeEvidence(canonicalIntent);
+  }
   const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
 
   if (
@@ -2158,10 +2167,15 @@ async function processPaidStripeSession(session) {
       `UPDATE orders
        SET status = 'processing_topup',
            stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+           stripe_fee_eur_cents = COALESCE($3, stripe_fee_eur_cents),
+           stripe_fee_currency = COALESCE($4, stripe_fee_currency),
+           stripe_balance_transaction_id = COALESCE($5, stripe_balance_transaction_id),
+           stripe_fee_reconciled_at = CASE WHEN $3::integer IS NOT NULL THEN NOW() ELSE stripe_fee_reconciled_at END,
            paid_at = COALESCE(paid_at, NOW()),
            updated_at = NOW()
        WHERE order_id = $1`,
-      [orderId, paymentIntentId]
+      [orderId, paymentIntentId, stripeFeeEvidence?.feeEurCents ?? null,
+        stripeFeeEvidence?.currency ?? null, stripeFeeEvidence?.balanceTransactionId ?? null]
     );
     await client.query('COMMIT');
   } catch (error) {
