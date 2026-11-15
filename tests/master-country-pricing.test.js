@@ -58,8 +58,8 @@ test('each country uses only its own approved fresh FX and product wholesale', (
     {product_id:2,country:'PK',currency:'PKR',operator:'B',amount:100,wholesale_price_eur_cents:250},
   ];
   const fxRates = [
-    {country_code:'AF',base_currency:'EUR',quote_currency:'AFN',rate:'70.1',is_approved:true,approved_at:'2026-11-14T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-16T00:00:00Z'},
-    {country_code:'PK',base_currency:'EUR',quote_currency:'PKR',rate:'300.2',is_approved:true,approved_at:'2026-11-14T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-16T00:00:00Z'},
+    {country_code:'AF',base_currency:'EUR',quote_currency:'AFN',quote_per_base:'70.1',is_approved:true,approved_at:'2026-11-14T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-16T00:00:00Z'},
+    {country_code:'PK',base_currency:'EUR',quote_currency:'PKR',quote_per_base:'300.2',is_approved:true,approved_at:'2026-11-14T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-16T00:00:00Z'},
   ];
   const result = buildCountryPricingPreview({policy,countries,products,fxRates,now});
   assert.equal(result.countries.length,2);
@@ -74,7 +74,7 @@ test('each country uses only its own approved fresh FX and product wholesale', (
 
 test('rejects expired, unapproved and cross-country FX evidence', () => {
   const now = Date.parse('2026-11-15T00:00:00Z');
-  const fxRates = [{country_code:'PK',base_currency:'EUR',quote_currency:'PKR',rate:'300',is_approved:true,approved_at:'2026-11-14T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-14T00:00:00Z'}];
+  const fxRates = [{country_code:'PK',base_currency:'EUR',quote_currency:'PKR',quote_per_base:'300',is_approved:true,approved_at:'2026-11-14T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-14T00:00:00Z'}];
   const result = buildCountryPricingPreview({
     policy,countries:[{country_code:'AF',destination_currency:'AFN'}],
     products:[{product_id:1,country:'AF',currency:'AFN',operator:'A',amount:100,wholesale_price_eur_cents:189}],
