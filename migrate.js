@@ -1015,6 +1015,7 @@ async function runMigration() {
       { version: "024_country_fx_rates", file: "024_country_fx_rates.sql" },
       { version: "030_country_registry_audit_trail", file: "030_country_registry_audit_trail.sql" },
       { version: "031_order_country_configuration_snapshot", file: "031_order_country_configuration_snapshot.sql" },
+      { version: "032_master_country_pricing_policy", file: "032_master_country_pricing_policy.sql" },
     ];
 
     for (const migration of countryRegistryMigrations) {
