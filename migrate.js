@@ -1014,6 +1014,7 @@ async function runMigration() {
       { version: "031_order_country_configuration_snapshot", file: "031_order_country_configuration_snapshot.sql" },
       { version: "032_master_country_pricing_policy", file: "032_master_country_pricing_policy.sql" },
       { version: "033_network_product_approval_batches", file: "033_network_product_approval_batches.sql" },
+      { version: "034_dtone_price_evidence_freshness", file: "034_dtone_price_evidence_freshness.sql" },
     ];
 
     for (const migration of countryRegistryMigrations) {
