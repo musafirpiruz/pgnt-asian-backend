@@ -6626,8 +6626,6 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
          COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
          afn_per_eur,
          bonus_percent,
-         stripe_fee_percent,
-         stripe_fixed_fee_cents,
          active
        FROM pricing_settings
        ORDER BY country`
@@ -6636,7 +6634,7 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
     return res.json({
       paymentCurrency: 'EUR',
       pricing: result.rows,
-      stripeFeeNote: 'Stripe fee is an estimate; actual fees vary by card and payment method.',
+      stripeFeeNote: 'Stripe fees are resolved automatically from an approved master policy or reconciled Stripe balance-transaction evidence; legacy country fee fields are not used.',
     });
   } catch (error) {
     console.error(
@@ -6677,8 +6675,6 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   );
   // Ignore legacy client bonus values. General bonus is always persisted as zero.
   const bonusPercent = 0;
-  const stripeFeePercent = Number(body.stripeFeePercent);
-  const stripeFixedFeeCents = Number(body.stripeFixedFeeCents);
 
   if (
     !Number.isSafeInteger(feeCents) ||
@@ -6694,13 +6690,6 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'localCurrencyPerEur must be a positive number no greater than 1000000.' });
   }
 
-  if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
-    return res.status(400).json({ error: 'stripeFeePercent must be from 0 up to (but not including) 100.' });
-  }
-  if (!Number.isSafeInteger(stripeFixedFeeCents) || stripeFixedFeeCents < 0 || stripeFixedFeeCents > 10000) {
-    return res.status(400).json({ error: 'stripeFixedFeeCents must be an integer from 0 to 10000.' });
-  }
-
   if (typeof body.active !== 'boolean') {
     return res.status(400).json({
       error: 'active must be true or false.',
@@ -6711,29 +6700,26 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
     const result = await pool.query(
       `INSERT INTO pricing_settings (
          country, fee_eur_cents, local_currency_per_eur, afn_per_eur, bonus_percent,
-         stripe_fee_percent, stripe_fixed_fee_cents, active, updated_at
+         active, updated_at
        )
-       VALUES ($1, $2, $3, $3, $4, $5, $6, $7, NOW())
+       VALUES ($1, $2, $3, $3, $4, $5, NOW())
        ON CONFLICT (country)
        DO UPDATE SET
          fee_eur_cents = EXCLUDED.fee_eur_cents,
          local_currency_per_eur = EXCLUDED.local_currency_per_eur,
          afn_per_eur = EXCLUDED.afn_per_eur,
          bonus_percent = EXCLUDED.bonus_percent,
-         stripe_fee_percent = EXCLUDED.stripe_fee_percent,
-         stripe_fixed_fee_cents = EXCLUDED.stripe_fixed_fee_cents,
          active = EXCLUDED.active,
          updated_at = NOW()
        RETURNING country, fee_eur_cents, local_currency_per_eur,
-                 afn_per_eur, bonus_percent, stripe_fee_percent,
-                 stripe_fixed_fee_cents, active, updated_at`,
-      [country, feeCents, localCurrencyPerEur, bonusPercent, stripeFeePercent, stripeFixedFeeCents, body.active]
+                 afn_per_eur, bonus_percent, active, updated_at`,
+      [country, feeCents, localCurrencyPerEur, bonusPercent, body.active]
     );
 
     return res.json({
       paymentCurrency: 'EUR',
       pricing: result.rows[0],
-      note: 'Bonus percentage is saved as a setting; bonus delivery is not enabled by this endpoint.',
+      note: 'App fee and FX settings were saved. Stripe processing fees are automatic and are not editable through country pricing. General bonus remains disabled.',
     });
   } catch (error) {
     console.error(
