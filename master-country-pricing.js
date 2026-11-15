@@ -114,7 +114,7 @@ function buildCountryPricingPreview({ policy, countries, products, fxRates, now 
     result.push(Object.freeze({
       countryCode: code,
       destinationCurrency: currency,
-      fxRate: fx ? String(fx.rate) : null,
+      fxRate: fx ? String(fx.quote_per_base) : null,
       fxObservedAt: fx ? fx.observed_at : null,
       fxExpiresAt: fx ? fx.expires_at : null,
       policyVersion: approvedPolicy.version,
