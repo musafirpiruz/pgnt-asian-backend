@@ -88,6 +88,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="sandboxEvidenceNotice" class="status" role="status" aria-live="polite">دا برخه ثبوت د بیاکتنې لپاره سپاري؛ په خپله یې نه تاییدوي.</div>
 <div id="countryRegistry"><div class="empty">د راپور لوستلو لپاره تڼۍ کېکاږئ.</div></div>
 </section>
+<section class="card"><h2>د ټولو هېوادونو ګډ Master Pricing Policy</h2><p class="muted">ګډ EUR فیس او Stripe فورمول؛ هر هېواد خپل جلا DT One wholesale EUR لګښت او خپل منظور شوی تازه FX کاروي. دا برخه یوازې Draft، Approval او Preview کوي؛ قیمتونه نه لیکي او محصولات نه فعالوي.</p><div class="grid"><div><label for="masterFee">د اپ ثابت فیس (EUR)</label><input id="masterFee" type="number" min="0" max="1000" step="0.01" placeholder="د منظور شوي فیس اندازه"></div><div><label for="masterStripePercent">د Stripe فیس (%)</label><input id="masterStripePercent" type="number" min="0" max="99.99" step="0.001" placeholder="د Stripe اوسنی نرخ"></div><div><label for="masterStripeFixed">د Stripe ثابت فیس (EUR)</label><input id="masterStripeFixed" type="number" min="0" max="100" step="0.01" placeholder="د Stripe ثابت فیس"></div></div><p class="safe">عمومي Bonus = 0. Referral انعام جلا دی. زاړه FX نرخونه نه کارېږي؛ د هر هېواد تازه، منظور شوی او لا نه‌منقضي FX ثبوت ضروري دی.</p><div class="actions"><button id="loadMasterPolicy" type="button" class="secondary">Policy راپور ولوله</button><button id="createMasterDraft" type="button">Draft جوړ کړه</button><button id="approveMasterPolicy" type="button" class="secondary">Draft منظوره کړه</button><button id="previewMasterPolicy" type="button" class="secondary">د ټولو هېوادونو Preview</button></div><label for="masterPolicyVersion">د منظورۍ لپاره Draft نسخه</label><select id="masterPolicyVersion"><option value="">لومړی راپور ولولئ</option></select><div id="masterPolicyReport" class="status" role="status" aria-live="polite">تر اوسه Policy نه ده لوستل شوې.</div><div id="masterPricingPreview"></div></section>
 <section class="card">
 <h2>۲. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
 <p class="muted">یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.</p>
@@ -383,6 +384,41 @@ document.getElementById('createReferralCode').addEventListener('click',async()=>
  }catch(error){result.className='status error';result.textContent=error.message;}
  finally{button.disabled=false;}
 });
+
+const masterPolicyReport=document.getElementById('masterPolicyReport');
+const masterPreviewHost=document.getElementById('masterPricingPreview');
+function renderMasterPolicyReport(data){
+ const policies=Array.isArray(data.policies)?data.policies:[];
+ const select=document.getElementById('masterPolicyVersion');
+ select.replaceChildren(new Option('Draft نسخه وټاکئ',''));
+ for(const p of policies){const o=new Option('v'+p.version+' · '+p.status+' · '+moneyEur(p.fee_eur_cents),String(p.version));if(p.status!=='draft')o.disabled=true;select.add(o);}
+ masterPolicyReport.replaceChildren();
+ if(!policies.length){masterPolicyReport.textContent='تر اوسه Master Policy نشته. د رسمي فیس او Stripe معلومات ولیکئ.';return;}
+ const grid=document.createElement('div');grid.className='grid';
+ for(const p of policies){const item=document.createElement('div');item.className='price';const h=document.createElement('strong');h.textContent='نسخه '+p.version+' · '+p.status;const t=document.createElement('p');t.textContent='EUR · App fee '+moneyEur(p.fee_eur_cents)+' · Stripe '+p.stripe_fee_percent+'% + '+moneyEur(p.stripe_fixed_fee_cents)+' · Bonus '+p.bonus_percent+'%';item.append(h,t);grid.append(item);}
+ masterPolicyReport.append(grid);
+}
+document.getElementById('loadMasterPolicy').addEventListener('click',async()=>{const b=document.getElementById('loadMasterPolicy');b.disabled=true;try{renderMasterPolicyReport(await adminRequest('/api/admin/master-pricing-policy'));}catch(e){masterPolicyReport.className='status error';masterPolicyReport.textContent=e.message;}finally{b.disabled=false;}});
+document.getElementById('createMasterDraft').addEventListener('click',async()=>{
+ const b=document.getElementById('createMasterDraft'),fee=Number(document.getElementById('masterFee').value),pct=Number(document.getElementById('masterStripePercent').value),fixed=Number(document.getElementById('masterStripeFixed').value);
+ if(!document.getElementById('masterFee').value||!document.getElementById('masterStripePercent').value||!document.getElementById('masterStripeFixed').value||!Number.isFinite(fee)||fee<0||fee>1000||!Number.isFinite(pct)||pct<0||pct>=100||!Number.isFinite(fixed)||fixed<0||fixed>100){masterPolicyReport.className='status warn';masterPolicyReport.textContent='درې واړه ارزښتونه د رسمي او تازه معلوماتو له مخې ډک کړئ؛ زاړه یا اټکلي نرخونه مه کاروئ.';return;}
+ if(!confirm('دا ارزښتونه د ټولو هېوادونو ګډ Master Policy Draft کړم؟ لا Approval نه دی او Live قیمتونه نه بدلوي؟'))return;
+ b.disabled=true;try{const d=await adminPost('/api/admin/master-pricing-policy/draft',{feeEurCents:Math.round(fee*100),stripeFeePercent:pct,stripeFixedFeeCents:Math.round(fixed*100),confirmDraft:true});masterPolicyReport.className='status ok';masterPolicyReport.textContent='Draft نسخه '+d.policy.version+' جوړه شوه؛ لا منظوره نه ده.';renderMasterPolicyReport(await adminRequest('/api/admin/master-pricing-policy'));}catch(e){masterPolicyReport.className='status error';masterPolicyReport.textContent=e.message;}finally{b.disabled=false;}
+});
+document.getElementById('approveMasterPolicy').addEventListener('click',async()=>{
+ const b=document.getElementById('approveMasterPolicy'),v=document.getElementById('masterPolicyVersion').value;
+ if(!/^[1-9][0-9]*$/.test(v)){masterPolicyReport.textContent='لومړی Draft نسخه وټاکئ.';return;}
+ if(!confirm('ایا نسخه '+v+' د ټولو هېوادونو لپاره منظوروئ؟ پخوانۍ Approved نسخه superseded کېږي؛ محصولات او نرخونه نه فعالېږي.'))return;
+ b.disabled=true;try{const d=await adminPost('/api/admin/master-pricing-policy/'+encodeURIComponent(v)+'/approve',{confirmApproval:true});masterPolicyReport.className='status ok';masterPolicyReport.textContent='نسخه '+d.policy.version+' منظوره شوه؛ Live قیمتونه او محصولات نه دي بدل شوي.';renderMasterPolicyReport(await adminRequest('/api/admin/master-pricing-policy'));}catch(e){masterPolicyReport.className='status error';masterPolicyReport.textContent=e.message;}finally{b.disabled=false;}
+});
+document.getElementById('previewMasterPolicy').addEventListener('click',async()=>{
+ const b=document.getElementById('previewMasterPolicy');if(!confirm('د AF، PK، IN او BD Preview جوړ کړم؟ هر هېواد خپل FX او DT One wholesale کاروي؛ هېڅ Live قیمت نه لیکل کېږي او محصول نه فعالېږي.'))return;
+ b.disabled=true;masterPreviewHost.replaceChildren();const status=document.createElement('div');status.className='status';status.textContent='Preview جوړېږي…';masterPreviewHost.append(status);
+ try{const d=await adminPost('/api/admin/master-pricing-policy/preview',{confirmPreview:true});status.className='status warn';status.textContent='Preview ثبت شو؛ catalogPricesChanged='+d.catalogPricesChanged+'، productsActivated='+d.productsActivated;
+ for(const country of (d.preview&&d.preview.countries)||[]){const card=document.createElement('article');card.className='order';const h=document.createElement('strong');h.textContent=country.countryCode+' · '+country.destinationCurrency+' · '+(country.ready?'چمتو':'خنډونه لري');card.append(h);const meta=document.createElement('p');meta.textContent='محصولات: '+(country.products||[]).length+' · FX: '+(country.fxRate??'نشته');card.append(meta);for(const blocker of country.blockers||[]){const p=document.createElement('p');p.className='status warn';p.textContent=String(blocker);card.append(p);}const details=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='د نرخونو مخکتنه';pre.textContent=JSON.stringify(country.products||[],null,2);details.append(summary,pre);card.append(details);masterPreviewHost.append(card);}
+ }catch(e){status.className='status error';status.textContent=e.message;}finally{b.disabled=false;}
+});
+
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
 
 // Read-only country registry overview. All values are rendered as text.
