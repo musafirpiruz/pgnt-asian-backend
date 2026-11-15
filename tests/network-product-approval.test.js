@@ -64,7 +64,7 @@ test('admin panel network approval UI script parses and requires a fresh preview
   const path = require('node:path');
   const vm = require('node:vm');
   const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-panel.html'), 'utf8');
-  const scripts = [...admin.matchAll(/<script>([\\s\\S]*?)<\\/script>/gi)];
+  const scripts = [...admin.matchAll(/<script>([\s\S]*?)<\/script>/gi)];
   assert.ok(scripts.length > 0, 'admin panel inline script must exist');
   const script = scripts[scripts.length - 1][1];
   assert.doesNotThrow(() => new vm.Script(script), 'admin panel inline JavaScript must parse');
