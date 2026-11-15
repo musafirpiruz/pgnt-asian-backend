@@ -111,6 +111,14 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="pricing"><div class="empty">د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.</div></div>
 </section>
 <section class="card">
+<h2>۴. د DT One د شبکو رسمي موندنه (یوازې لوستل)</h2>
+<p class="muted">د هر هېواد لپاره د DT One اصلي Operator لېست رااخلي. دا یوازې د Provider ځواب ښيي؛ هېڅ شبکه، محصول، نرخ یا هېواد نه ثبتوي او نه فعالوي. د هېواد ISO-3 کوډ باید د Country Registry له ثبت شوي Provider Country Code سره برابر وي.</p>
+<label for="dtoneOperatorCountry">هېواد</label>
+<select id="dtoneOperatorCountry"><option value="AFG">افغانستان — AFG</option><option value="PAK">پاکستان — PAK</option><option value="IND">هند — IND</option><option value="BGD">بنګله‌دېش — BGD</option></select>
+<div class="actions"><button id="discoverDtoneOperators" type="button">د DT One شبکې راواخله</button></div>
+<div id="dtoneOperatorDiscovery" class="detail" aria-live="polite">د شبکو رسمي لېست لا نه دی لوستل شوی.</div>
+</section>
+<section class="card">
 <h2>۴. د څلورو هېوادونو د DT One د اسعارو نرخونه</h2>
 <p class="muted">هر هېواد جلا EUR → محلي اسعارو نرخ لري. نرخ یوازې د هماغه هېواد د DT One محصول له wholesale FX څخه اخیستل کېږي. ثبت شوی نرخ لومړی Pending وي؛ تر اډمین تایید مخکې د بیو په محاسبه کې نه کارېږي. دا برخه هېڅ محصول نه فعالوي او هېڅ قیمت نه لیکي.</p>
 <label for="fxCountry">هېواد</label>
@@ -657,6 +665,29 @@ async function loadFxObservations(){
   }
  }catch(error){fxHost.textContent='د نرخونو تاریخچه ونه لوستل شوه: '+error.message;}
 }
+document.getElementById('discoverDtoneOperators').addEventListener('click',async()=>{
+ const button=document.getElementById('discoverDtoneOperators');
+ const countryIsoCode=document.getElementById('dtoneOperatorCountry').value;
+ const host=document.getElementById('dtoneOperatorDiscovery');
+ button.disabled=true;host.textContent='له DT One څخه د شبکو رسمي لېست لوستل کېږي…';
+ try{
+  const data=await adminRequest('/api/admin/dtone/operators?country_iso_code='+encodeURIComponent(countryIsoCode));
+  host.replaceChildren();
+  const summary=document.createElement('p');
+  summary.textContent='هېواد: '+data.countryIsoCode+' · چاپېریال: '+data.environment+' · شبکې: '+data.operatorCount+' · پاڼې: '+data.pagesChecked+' · بشپړ لېست: '+(data.complete?'هو':'نه');
+  host.append(summary);
+  const note=document.createElement('p');note.className='muted';note.textContent=data.note||'یوازې د DT One د لوستلو پایله؛ ثبت او فعالول نه دي شوي.';host.append(note);
+  const list=document.createElement('div');list.className='detail';
+  for(const operator of (data.operators||[])){
+   const row=document.createElement('p');
+   row.textContent=operator.name+' · Provider ID: '+operator.id+' · Country: '+operator.countryIsoCode;
+   list.append(row);
+  }
+  if(!data.operators||!data.operators.length){list.textContent='DT One د دې هېواد لپاره شبکې بېرته ورنه کړې.';}
+  host.append(list);
+ }catch(error){host.textContent='د DT One شبکې ونه لوستل شوې: '+error.message;}
+ finally{button.disabled=false;}
+});
 document.getElementById('loadFxObservations').addEventListener('click',loadFxObservations);
 document.getElementById('captureFxObservation').addEventListener('click',async()=>{
  const button=document.getElementById('captureFxObservation');
