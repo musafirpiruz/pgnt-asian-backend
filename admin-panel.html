@@ -111,7 +111,17 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="pricing"><div class="empty">د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.</div></div>
 </section>
 <section class="card">
-<h2>۴. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
+<h2>۴. د څلورو هېوادونو د DT One د اسعارو نرخونه</h2>
+<p class="muted">هر هېواد جلا EUR → محلي اسعارو نرخ لري. نرخ یوازې د هماغه هېواد د DT One محصول له wholesale FX څخه اخیستل کېږي. ثبت شوی نرخ لومړی Pending وي؛ تر اډمین تایید مخکې د بیو په محاسبه کې نه کارېږي. دا برخه هېڅ محصول نه فعالوي او هېڅ قیمت نه لیکي.</p>
+<label for="fxCountry">هېواد</label>
+<select id="fxCountry"><option value="AF">افغانستان — AFN</option><option value="PK">پاکستان — PKR</option><option value="IN">هند — INR</option><option value="BD">بنګله‌دېش — BDT</option></select>
+<label for="fxProductId">د همدغه هېواد د DT One محصول ID</label>
+<input id="fxProductId" inputmode="numeric" autocomplete="off" placeholder="د DT One تایید شوی Product ID">
+<div class="actions"><button id="captureFxObservation" type="button">د DT One نرخ راواخله</button><button id="loadFxObservations" class="secondary" type="button">د نرخونو تاریخچه ولوله</button></div>
+<div id="fxObservations" class="detail" aria-live="polite">لومړی هېواد وټاکئ او د نرخونو تاریخچه ولولئ.</div>
+</section>
+<section class="card">
+<h2>۵. د محصول د قیمت تشخیص (یوازې لوستل)</h2> (یوازې لوستل)</h2>
 <p class="muted">د DT One د محصول ID ولیکئ. دا برخه د محصول، بیې، اسعارو او تادیې د چمتووالي ستونزې ښيي؛ هېڅ محصول نه فعالوي او هېڅ قیمت نه بدلوي.</p>
 <label for="diagnosticProductId">DT One Product ID</label>
 <input id="diagnosticProductId" inputmode="numeric" autocomplete="off" placeholder="د محصول ID، لکه 7194">
@@ -617,6 +627,53 @@ document.getElementById('loadCountryRegistry').addEventListener('click',async()=
  }catch(error){const message=document.createElement('div');message.className='status error';message.textContent='د هېوادونو راپور ونه لوستل شو: '+error.message;host.append(message);}
  finally{button.disabled=false;}
 });
+
+const fxCountry=document.getElementById('fxCountry');
+const fxHost=document.getElementById('fxObservations');
+async function loadFxObservations(){
+ fxHost.textContent='د هېواد د نرخونو تاریخچه لوستل کېږي…';
+ try{
+  const code=fxCountry.value;
+  const data=await adminRequest('/api/admin/countries/'+encodeURIComponent(code)+'/fx/observations');
+  fxHost.replaceChildren();
+  const heading=document.createElement('strong');heading.textContent=code+' — '+data.destinationCurrency+' · د نرخونو شواهد';fxHost.append(heading);
+  if(!Array.isArray(data.observations)||!data.observations.length){const empty=document.createElement('p');empty.textContent='تر اوسه د دې هېواد لپاره د DT One نرخ نه دی ثبت شوی.';fxHost.append(empty);return;}
+  for(const observation of data.observations){
+   const item=document.createElement('article');item.className='order';
+   const title=document.createElement('strong');title.textContent='1 EUR = '+observation.quote_per_base+' '+observation.quote_currency+' · '+(observation.is_approved?'تایید شوی':'د تایید انتظار');
+   const meta=document.createElement('p');meta.className='muted';meta.textContent='سرچینه: '+observation.source+' · '+observation.source_reference+' · ثبت: '+observation.observed_at+' · پای: '+observation.expires_at;
+   item.append(title,meta);
+   if(!observation.is_approved && Date.parse(observation.expires_at)>Date.now()){
+    const approve=document.createElement('button');approve.type='button';approve.textContent='دا نرخ تایید کړه';
+    approve.addEventListener('click',async()=>{
+     if(!confirm('ایا د '+code+' لپاره د DT One دا EUR → '+data.destinationCurrency+' نرخ تاییدوئ؟ دا یوازې FX شواهد تاییدوي؛ قیمتونه او شبکې نه فعالوي.'))return;
+     approve.disabled=true;
+     try{await adminPost('/api/admin/countries/'+encodeURIComponent(code)+'/fx/observations/'+encodeURIComponent(observation.id)+'/approve',{confirmFxApproval:true});await loadFxObservations();}
+     catch(error){approve.disabled=false;alert('نرخ تایید نه شو: '+error.message);}
+    });
+    item.append(approve);
+   }
+   fxHost.append(item);
+  }
+ }catch(error){fxHost.textContent='د نرخونو تاریخچه ونه لوستل شوه: '+error.message;}
+}
+document.getElementById('loadFxObservations').addEventListener('click',loadFxObservations);
+document.getElementById('captureFxObservation').addEventListener('click',async()=>{
+ const button=document.getElementById('captureFxObservation');
+ const productId=String(document.getElementById('fxProductId').value||'').trim();
+ if(!/^[1-9]\\d*$/.test(productId)){fxHost.textContent='د DT One معتبر Product ID ولیکئ.';return;}
+ const code=fxCountry.value;
+ if(!confirm('له DT One څخه د '+code+' د ټاکلي محصول EUR → محلي اسعارو wholesale نرخ ثبت شي؟ نرخ به یوازې Pending وي او اتومات نه فعالېږي.'))return;
+ button.disabled=true;fxHost.textContent='د DT One رسمي محصول او FX نرخ تاییدېږي…';
+ try{
+  const data=await adminPost('/api/admin/countries/'+encodeURIComponent(code)+'/fx/observations',{productId:Number(productId),confirmFxObservation:true});
+  fxHost.textContent='د DT One نرخ ثبت شو او د اډمین تایید ته انتظار باسي. نرخ لا د بیو لپاره نه کارېږي.';
+  document.getElementById('fxProductId').value='';
+  await loadFxObservations();
+ }catch(error){fxHost.textContent='د DT One نرخ ثبت نه شو: '+error.message;}
+ finally{button.disabled=false;}
+});
+fxCountry.addEventListener('change',loadFxObservations);
 
 document.getElementById('saveSandboxEvidence').addEventListener('click',async()=>{
  const button=document.getElementById('saveSandboxEvidence');
