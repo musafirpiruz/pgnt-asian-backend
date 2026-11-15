@@ -27,9 +27,11 @@ function selectEligibleNetworkProducts(rows, { countryCode, operatorKey, sourceC
     const catalogId = Number(row.product_catalog_id);
     const providerProductId = Number(row.provider_product_id);
     const wholesale = Number(row.wholesale_price_eur_cents);
+    const amount = Number(row.amount);
     const valid = Number.isSafeInteger(catalogId) && catalogId > 0 &&
       Number.isSafeInteger(providerProductId) && providerProductId > 0 &&
       Number.isSafeInteger(wholesale) && wholesale > 0 &&
+      Number.isSafeInteger(amount) && amount >= 75 && amount <= 3000 &&
       String(row.currency || '').trim().toUpperCase() === currency &&
       String(row.product_country || '').trim().toUpperCase() === country &&
       String(row.operator || '') === String(row.operator_name || '');
