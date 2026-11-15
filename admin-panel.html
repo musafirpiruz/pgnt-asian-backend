@@ -87,6 +87,17 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <p class="muted">یوازې د واقعي DT One Sandbox ازموینې ثبوت وسپارئ. سپارل شوی ثبوت تر خپلواکې بیاکتنې او منظورۍ مخکې د فعالولو شرط نه پوره کوي.</p>
 <div id="sandboxEvidenceNotice" class="status" role="status" aria-live="polite">دا برخه ثبوت د بیاکتنې لپاره سپاري؛ په خپله یې نه تاییدوي.</div>
 <div id="countryRegistry"><div class="empty">د راپور لوستلو لپاره تڼۍ کېکاږئ.</div></div>
+<div class="detail">
+ <h3>د DT One شبکې د محصولاتو تایید (Audit only)</h3>
+ <p class="muted">د شبکې Operator Key او د سرچینې Catalog ID له ثبت شوو معلوماتو څخه واخلئ. یوازې تازه، د DT One له خوا تایید شوي EUR عمده نرخونه او ۷۵–۳۰۰۰ مقدارونه منل کېږي. دا بهیر محصولات نه فعالوي او قیمتونه نه بدلوي.</p>
+ <div class="grid">
+  <div><label for="networkApprovalCountry">هېواد</label><select id="networkApprovalCountry"><option value="AF">افغانستان (AF)</option><option value="PK">پاکستان (PK)</option><option value="IN">هند (IN)</option><option value="BD">بنګله‌دېش (BD)</option></select></div>
+  <div><label for="networkApprovalOperator">ثبت شوی Operator Key</label><input id="networkApprovalOperator" type="text" maxlength="100" autocomplete="off" placeholder="د DB دقیق operator_key"></div>
+  <div><label for="networkApprovalSource">Source Catalog Product ID</label><input id="networkApprovalSource" type="number" min="1" step="1" inputmode="numeric" placeholder="د سرچینې محصول ID"></div>
+ </div>
+ <div class="actions"><button class="secondary" id="previewNetworkApproval" type="button">لومړی Preview وګوره</button><button id="recordNetworkApproval" type="button" disabled>د شبکې تایید په Audit کې ثبت کړه</button></div>
+ <div id="networkApprovalResult" class="status" role="status" aria-live="polite">تر Preview مخکې هېڅ تایید نه ثبتېږي.</div>
+</div>
 </section>
 <section class="card"><h2>د ټولو هېوادونو ګډ Master Pricing Policy</h2><p class="muted">یوازې د اپ EUR فیس دلته ټاکئ؛ د Stripe فیس سیستم د ثبت شوو حقیقي BalanceTransaction معلوماتو څخه اټکلوي. هر هېواد خپل جلا DT One wholesale EUR لګښت او خپل منظور شوی تازه FX کاروي. دا برخه یوازې Draft، Approval او Preview کوي؛ قیمتونه نه لیکي او محصولات نه فعالوي.</p><div class="grid"><div><label for="masterFee">د اپ ثابت فیس (EUR)</label><input id="masterFee" type="number" min="0" max="1000" step="0.01" placeholder="د منظور شوي فیس اندازه"></div></div><p class="safe">عمومي Bonus = 0. Referral انعام جلا دی. زاړه FX نرخونه نه کارېږي؛ د هر هېواد تازه، منظور شوی او لا نه‌منقضي FX ثبوت ضروري دی.</p><div class="actions"><button id="loadMasterPolicy" type="button" class="secondary">Policy راپور ولوله</button><button id="createMasterDraft" type="button">Draft جوړ کړه</button><button id="approveMasterPolicy" type="button" class="secondary">Draft منظوره کړه</button><button id="previewMasterPolicy" type="button" class="secondary">د ټولو هېوادونو Preview</button></div><label for="masterPolicyVersion">د منظورۍ لپاره Draft نسخه</label><select id="masterPolicyVersion"><option value="">لومړی راپور ولولئ</option></select><div id="masterPolicyReport" class="status" role="status" aria-live="polite">تر اوسه Policy نه ده لوستل شوې.</div><div id="masterPricingPreview"></div></section>
 <section class="card">
@@ -419,6 +430,68 @@ document.getElementById('previewMasterPolicy').addEventListener('click',async()=
  }catch(e){status.className='status error';status.textContent=e.message;}finally{b.disabled=false;}
 });
 
+let latestNetworkApprovalPreview=null;
+function currentNetworkApprovalInput(){
+ const country=document.getElementById('networkApprovalCountry').value;
+ const operator=document.getElementById('networkApprovalOperator').value.trim();
+ const source=document.getElementById('networkApprovalSource').value.trim();
+ if(!/^(AF|PK|IN|BD)$/.test(country))throw new Error('هېواد سم وټاکئ.');
+ if(!/^[a-z0-9][a-z0-9_-]{0,99}$/.test(operator))throw new Error('د ثبت شوي Operator Key دقیق ارزښت ولیکئ.');
+ if(!/^[1-9][0-9]*$/.test(source))throw new Error('د Source Catalog Product ID سم ولیکئ.');
+ return {country,operator,source:Number(source)};
+}
+function networkApprovalPath(v){
+ return '/api/admin/countries/'+encodeURIComponent(v.country)+'/operators/'+encodeURIComponent(v.operator);
+}
+function renderNetworkApprovalPreview(data){
+ const host=document.getElementById('networkApprovalResult');host.replaceChildren();
+ const title=document.createElement('strong');
+ title.textContent='شبکه: '+data.network.displayName+' ('+data.network.countryCode+'/'+data.network.operatorKey+')';
+ host.append(title);
+ const summary=document.createElement('p');
+ summary.textContent='د کتنې وړ محصولات: '+data.eligible.length+' · بند/نامعتبر: '+data.blocked.length+' · زاړه یا بې‌ثبوته شواهد: '+data.staleOrUnverifiedExcluded;
+ host.append(summary);
+ for(const item of data.eligible){
+  const line=document.createElement('p');
+  line.textContent='✓ Catalog #'+item.productCatalogId+' · DT One #'+item.providerProductId+' · عمده EUR '+moneyEur(item.wholesalePriceEurCents);
+  host.append(line);
+ }
+ for(const item of data.blocked){
+  const line=document.createElement('p');line.className='muted';
+  line.textContent='نه منل کېږي · Catalog #'+(item.productCatalogId??'—')+' · '+item.reason;host.append(line);
+ }
+ const note=document.createElement('p');note.className='muted';note.textContent=data.note||'یوازې Preview؛ Live بدلون نشته.';host.append(note);
+ host.className='status '+(data.eligible.length?'warn':'error');
+}
+document.getElementById('previewNetworkApproval').addEventListener('click',async()=>{
+ const button=document.getElementById('previewNetworkApproval'),record=document.getElementById('recordNetworkApproval'),host=document.getElementById('networkApprovalResult');
+ button.disabled=true;record.disabled=true;latestNetworkApprovalPreview=null;host.className='status';host.textContent='د DT One د شبکې شواهد کتل کېږي…';
+ try{
+  const v=currentNetworkApprovalInput();
+  const data=await adminRequest(networkApprovalPath(v)+'/product-approval-preview?sourceProductCatalogId='+encodeURIComponent(v.source));
+  latestNetworkApprovalPreview={input:v,data};
+  renderNetworkApprovalPreview(data);
+  record.disabled=!Array.isArray(data.eligible)||data.eligible.length===0;
+ }catch(error){host.className='status error';host.textContent='Preview جوړ نه شو: '+error.message;}
+ finally{button.disabled=false;}
+});
+document.getElementById('recordNetworkApproval').addEventListener('click',async()=>{
+ const button=document.getElementById('recordNetworkApproval'),host=document.getElementById('networkApprovalResult');
+ if(!latestNetworkApprovalPreview){host.className='status error';host.textContent='لومړی نوی Preview جوړ کړئ.';return;}
+ let v;try{v=currentNetworkApprovalInput();}catch(error){host.className='status error';host.textContent=error.message;return;}
+ if(JSON.stringify(v)!==JSON.stringify(latestNetworkApprovalPreview.input)){latestNetworkApprovalPreview=null;button.disabled=true;host.className='status warn';host.textContent='د هېواد، شبکې یا سرچینې ID بدل شوی؛ لومړی نوی Preview جوړ کړئ.';return;}
+ if(!confirm('ایا د '+v.country+' / '+v.operator+' لپاره '+latestNetworkApprovalPreview.data.eligible.length+' DT One محصولات یوازې د Audit په ثبت کې منظور کړئ؟ دا کار محصولات نه فعالوي او قیمتونه نه بدلوي.'))return;
+ button.disabled=true;host.className='status';host.textContent='د تایید Audit ثبتېږي…';
+ try{
+  const result=await adminPost(networkApprovalPath(v)+'/product-approval-batches',{sourceProductCatalogId:v.source,confirmApprovalBatch:true});
+  host.className='status ok';host.textContent='د Audit ثبت بریالی شو · Batch #'+result.batch.id+' · ثبت شوي محصولات: '+result.batch.approved_product_count+' · customerProductsActivated='+result.customerProductsActivated+' · catalogPricesWritten='+result.catalogPricesWritten+'.';
+  latestNetworkApprovalPreview=null;button.disabled=true;
+ }catch(error){host.className='status error';host.textContent='Audit ثبت نه شو: '+error.message;button.disabled=false;}
+});
+for(const id of ['networkApprovalCountry','networkApprovalOperator','networkApprovalSource']){
+ document.getElementById(id).addEventListener('input',()=>{latestNetworkApprovalPreview=null;document.getElementById('recordNetworkApproval').disabled=true;});
+ document.getElementById(id).addEventListener('change',()=>{latestNetworkApprovalPreview=null;document.getElementById('recordNetworkApproval').disabled=true;});
+}
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
 
 // Read-only country registry overview. All values are rendered as text.
