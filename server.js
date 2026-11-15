@@ -126,6 +126,7 @@ const pool = DATABASE_URL
 // duplicating currency, phone and country identity definitions in server.js.
 const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config'); // Legacy fixed-flow compatibility only.
 const { createCountryRegistryRuntime } = require('./country-registry-runtime');
+const { validateMasterPricingPolicy, buildCountryPricingPreview } = require('./master-country-pricing');
 
 // Keep the DB-backed registry available to customer routes. A missing DB or
 // registry table fails closed at request time; no hard-coded country fallback.
@@ -6310,6 +6311,170 @@ app.put('/api/admin/operator-pricing/:country/:operator', requireAdmin, async (r
     console.error('Admin operator pricing update failed:', error.message);
     return res.status(500).json({ error: 'Could not save operator pricing settings.' });
   }
+});
+
+// Versioned country-neutral pricing policy. Creating a draft never changes live prices.
+app.get('/api/admin/master-pricing-policy', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(
+      `SELECT id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
+              stripe_fixed_fee_cents,bonus_percent,status,created_at,approved_at
+         FROM master_pricing_policies ORDER BY version DESC LIMIT 10`
+    );
+    return res.set('Cache-Control','no-store').json({ policies: result.rows, readOnly: true });
+  } catch (error) {
+    console.error('Master pricing policy lookup failed:', error.message);
+    return res.status(503).json({ error: 'Master pricing policy migration 032 is not installed or unavailable.' });
+  }
+});
+
+app.post('/api/admin/master-pricing-policy/draft', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  let policy;
+  try {
+    policy = validateMasterPricingPolicy({
+      feeEurCents: req.body?.feeEurCents,
+      stripeFeePercent: req.body?.stripeFeePercent,
+      stripeFixedFeeCents: req.body?.stripeFixedFeeCents,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  if (req.body?.confirmDraft !== true) {
+    return res.status(400).json({ confirmationRequired: true, error: 'Explicit draft confirmation is required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const next = await client.query('SELECT COALESCE(MAX(version),0)+1 AS version FROM master_pricing_policies');
+    const version = Number(next.rows[0].version);
+    const saved = await client.query(
+      `INSERT INTO master_pricing_policies
+         (version,payment_currency,fee_eur_cents,stripe_fee_percent,stripe_fixed_fee_cents,
+          bonus_percent,status,created_by)
+       VALUES($1,'EUR',$2,$3,$4,0,'draft','admin-session')
+       RETURNING id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
+                 stripe_fixed_fee_cents,bonus_percent,status,created_at`,
+      [version,policy.feeEurCents,policy.stripeFeePercent,policy.stripeFixedFeeCents]
+    );
+    await client.query('COMMIT');
+    return res.status(201).json({ policy: saved.rows[0], livePricesChanged: false, approvalRequired: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Master pricing draft creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create master pricing draft.' });
+  } finally { client.release(); }
+});
+
+app.post('/api/admin/master-pricing-policy/:version/approve', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const version = Number(req.params.version);
+  if (!Number.isSafeInteger(version) || version < 1 || req.body?.confirmApproval !== true) {
+    return res.status(400).json({ error: 'A valid policy version and explicit approval confirmation are required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const selected = await client.query(
+      'SELECT id,status FROM master_pricing_policies WHERE version=$1 FOR UPDATE', [version]
+    );
+    if (!selected.rowCount || selected.rows[0].status !== 'draft') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Only an existing draft policy can be approved.' });
+    }
+    await client.query(
+      "UPDATE master_pricing_policies SET status='superseded' WHERE status='approved'"
+    );
+    const approved = await client.query(
+      `UPDATE master_pricing_policies
+          SET status='approved',approved_by='admin-session',approved_at=NOW()
+        WHERE id=$1
+        RETURNING id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
+                  stripe_fixed_fee_cents,status,approved_at`,
+      [selected.rows[0].id]
+    );
+    await client.query('COMMIT');
+    return res.json({ policy: approved.rows[0], approvalRecorded: true, productsActivated: false, productPricesWritten: false });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Master pricing policy approval failed:', error.message);
+    return res.status(500).json({ error: 'Could not approve master pricing policy.' });
+  } finally { client.release(); }
+});
+
+// Generate a complete staging preview from each country's own verified DT One wholesale
+// EUR costs and its own independently approved, unexpired FX row. Does not write catalog prices.
+app.post('/api/admin/master-pricing-policy/preview', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  if (req.body?.confirmPreview !== true) {
+    return res.status(400).json({ confirmationRequired: true, error: 'Explicit preview confirmation is required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const policyResult = await client.query(
+      `SELECT id,version,fee_eur_cents,stripe_fee_percent,stripe_fixed_fee_cents
+         FROM master_pricing_policies WHERE status='approved' FOR SHARE`
+    );
+    if (policyResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Exactly one approved master pricing policy is required.' });
+    }
+    const saved = policyResult.rows[0];
+    const [countriesResult, productsResult, fxResult] = await Promise.all([
+      client.query(`SELECT country_code,destination_currency FROM country_registry
+                     WHERE country_code IN ('AF','PK','IN','BD') ORDER BY country_code`),
+      client.query(`SELECT product_id,country,operator,amount,currency,wholesale_price_eur_cents
+                      FROM product_catalog
+                     WHERE country IN ('AF','PK','IN','BD') AND product_id IS NOT NULL
+                       AND wholesale_price_eur_cents IS NOT NULL
+                     ORDER BY country,operator,amount,product_id`),
+      client.query(`SELECT id,country_code,base_currency,quote_currency,
+                           quote_per_base,is_approved,approved_at,observed_at,expires_at
+                      FROM country_fx_rates
+                     WHERE base_currency='EUR' AND is_approved=TRUE
+                       AND approved_at IS NOT NULL AND observed_at <= NOW()
+                       AND expires_at > NOW()
+                     ORDER BY country_code,observed_at DESC,id DESC`),
+    ]);
+    const latestFx = [];
+    for (const country of countriesResult.rows) {
+      const row = fxResult.rows.find(item => item.country_code === country.country_code &&
+        item.quote_currency === country.destination_currency);
+      if (row) latestFx.push({ ...row, rateId: Number(row.id) });
+    }
+    const preview = buildCountryPricingPreview({
+      policy: {
+        version: Number(saved.version),
+        feeEurCents: Number(saved.fee_eur_cents),
+        stripeFeePercent: Number(saved.stripe_fee_percent),
+        stripeFixedFeeCents: Number(saved.stripe_fixed_fee_cents),
+      },
+      countries: countriesResult.rows,
+      products: productsResult.rows,
+      fxRates: latestFx,
+    });
+    for (const country of preview.countries) {
+      const fx = latestFx.find(row => row.country_code === country.countryCode);
+      await client.query(
+        `INSERT INTO country_pricing_preview_runs
+          (policy_id,country_code,destination_currency,fx_rate_id,product_count,ready,blockers,preview,created_by)
+         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,'admin-session')`,
+        [saved.id,country.countryCode,country.destinationCurrency,fx?.id || null,
+         country.products.length,country.ready,JSON.stringify(country.blockers),JSON.stringify(country)]
+      );
+    }
+    await client.query('COMMIT');
+    return res.set('Cache-Control','no-store').json({
+      preview, persistedAsPreview: true, catalogPricesChanged: false,
+      productsActivated: false, paymentsCreated: false, topupsCreated: false,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Master country pricing preview failed:', error.message);
+    return res.status(503).json({ error: 'Could not build master country pricing preview. Confirm migrations 024 and 032 and verified provider catalog data.' });
+  } finally { client.release(); }
 });
 
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
