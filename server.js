@@ -595,13 +595,54 @@ async function getPricingSettings(client, country) {
   // through the referral ledger and never alter top-up pricing.
   const bonusPercent = 0;
 
-  const stripeFeePercent = Number(settings.stripe_fee_percent);
-  const stripeFixedFeeCents = requireNonNegativeInteger(
-    settings.stripe_fixed_fee_cents,
-    'Stripe fixed fee in EUR cents'
+  // Stripe processing fees are never read from manually editable country settings.
+  // Prefer the latest explicitly approved master policy; otherwise derive a
+  // conservative estimate from settled EUR BalanceTransaction evidence.
+  const approvedPolicyResult = await client.query(
+    `SELECT stripe_fee_percent, stripe_fixed_fee_cents, version
+       FROM master_pricing_policies
+      WHERE status = 'approved' AND payment_currency = 'EUR'
+      ORDER BY approved_at DESC, version DESC
+      LIMIT 1`
   );
+  let stripeFeePercent;
+  let stripeFixedFeeCents;
+  let stripeFeeSource;
+  let stripeFeeSampleCount = 0;
+  if (approvedPolicyResult.rowCount === 1) {
+    stripeFeePercent = Number(approvedPolicyResult.rows[0].stripe_fee_percent);
+    stripeFixedFeeCents = requireNonNegativeInteger(
+      approvedPolicyResult.rows[0].stripe_fixed_fee_cents,
+      'approved Stripe fixed fee in EUR cents'
+    );
+    stripeFeeSource = 'approved_master_policy';
+  } else {
+    const history = await client.query(
+      `SELECT charge_cents, stripe_fee_eur_cents
+         FROM orders
+        WHERE paid_at IS NOT NULL
+          AND currency = 'EUR'
+          AND stripe_fee_currency = 'eur'
+          AND stripe_fee_eur_cents IS NOT NULL
+          AND stripe_balance_transaction_id IS NOT NULL
+          AND charge_cents > 0
+        ORDER BY stripe_fee_reconciled_at DESC
+        LIMIT 500`
+    );
+    const estimate = require('./stripe-fee-estimator').estimateStripeFeeSchedule(history.rows);
+    if (!estimate.ready) {
+      const error = new Error('Automatic Stripe fee estimate is not ready; checkout pricing is safely paused until enough settled Stripe fee evidence exists or an approved master policy is available.');
+      error.code = 'STRIPE_FEE_ESTIMATE_NOT_READY';
+      error.details = estimate;
+      throw error;
+    }
+    stripeFeePercent = estimate.stripeFeePercent;
+    stripeFixedFeeCents = estimate.stripeFixedFeeCents;
+    stripeFeeSource = 'historical_balance_transaction_estimate';
+    stripeFeeSampleCount = estimate.sampleCount;
+  }
   if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
-    throw new Error('Invalid Stripe fee percentage.');
+    throw new Error('Invalid approved or estimated Stripe fee percentage.');
   }
 
   return {
@@ -614,6 +655,8 @@ async function getPricingSettings(client, country) {
     bonusPercent,
     stripeFeePercent,
     stripeFixedFeeCents,
+    stripeFeeSource,
+    stripeFeeSampleCount,
   };
 }
 
