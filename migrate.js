@@ -1015,6 +1015,7 @@ async function runMigration() {
       { version: "032_master_country_pricing_policy", file: "032_master_country_pricing_policy.sql" },
       { version: "033_network_product_approval_batches", file: "033_network_product_approval_batches.sql" },
       { version: "034_dtone_price_evidence_freshness", file: "034_dtone_price_evidence_freshness.sql" },
+      { version: "035_stripe_actual_fee_reconciliation", file: "035_stripe_actual_fee_reconciliation.sql" },
     ];
 
     for (const migration of countryRegistryMigrations) {
