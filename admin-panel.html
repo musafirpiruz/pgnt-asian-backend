@@ -249,7 +249,7 @@ loadPricingButton.addEventListener('click',async()=>{
     const h=document.createElement('h3');h.textContent=({AF:'افغانستان',PK:'پاکستان',IN:'هند',BD:'بنګله دېش'})[row.country]||row.country;
     const fee=document.createElement('strong');fee.textContent=moneyEur(row.fee_eur_cents)+' app fee';
     const rate=document.createElement('p');rate.textContent='د اسعارو مرجع: '+escapeText(row.local_currency_per_eur??row.afn_per_eur)+' '+(currencies[row.country]||'')+' / EUR';
-    const stripe=document.createElement('p');stripe.textContent='اټکلي Stripe فیس: '+escapeText(row.stripe_fee_percent)+'% + '+moneyEur(row.stripe_fixed_fee_cents);
+    const stripe=document.createElement('p');stripe.textContent='Stripe فیس: اتومات محاسبه کېږي؛ لاسي تنظیم نه لري.';
     const active=document.createElement('span');active.className='pill';active.textContent=row.active===true?'فعال':'غیرفعال';
     box.append(h,fee,rate,stripe,active);grid.append(box);});
    pricing.append(grid);
