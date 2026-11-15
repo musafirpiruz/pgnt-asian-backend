@@ -3506,6 +3506,147 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+// DT One FX observation capture and independent approval.
+// Captures one exact provider product's EUR -> destination wholesale rate.
+// Observation is pending by default; approval never activates products or writes prices.
+app.get('/api/admin/countries/:countryCode/fx/observations', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const expectedCurrency = ({ AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT' })[countryCode];
+  if (!expectedCurrency) return res.status(400).json({ error: 'Unsupported country.' });
+  try {
+    const result = await pool.query(
+      `SELECT id,country_code,base_currency,quote_currency,quote_per_base,source,
+              source_reference,observed_at,expires_at,is_approved,approved_at,approved_by,created_at
+         FROM country_fx_rates
+        WHERE country_code=$1
+        ORDER BY observed_at DESC,id DESC
+        LIMIT 50`,
+      [countryCode]
+    );
+    return res.json({ countryCode, destinationCurrency: expectedCurrency, observations: result.rows });
+  } catch (error) {
+    console.error('Country FX observation history failed:', error.message);
+    return res.status(503).json({ error: 'FX history is unavailable. Confirm migration 024 is applied.' });
+  }
+});
+
+app.post('/api/admin/countries/:countryCode/fx/observations', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ captured: false, error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const expectedCurrency = ({ AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT' })[countryCode];
+  const productId = Number(req.body?.productId);
+  if (!expectedCurrency) return res.status(400).json({ captured: false, error: 'Unsupported country.' });
+  if (!Number.isSafeInteger(productId) || productId < 1) return res.status(400).json({ captured: false, error: 'A valid DT One productId is required.' });
+  if (req.body?.confirmFxObservation !== true) {
+    return res.status(400).json({ captured: false, confirmationRequired: true, error: 'Explicit FX observation confirmation is required.' });
+  }
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) return res.status(503).json({ captured: false, error: 'DT One credentials are not configured.' });
+  try {
+    const country = await pool.query(
+      'SELECT country_code,destination_currency,provider,provider_country_code FROM country_registry WHERE country_code=$1',
+      [countryCode]
+    );
+    if (country.rowCount !== 1 || String(country.rows[0].destination_currency).toUpperCase() !== expectedCurrency ||
+        String(country.rows[0].provider).toLowerCase() !== 'dtone' || !country.rows[0].provider_country_code) {
+      return res.status(409).json({ captured: false, error: 'Country DT One mapping or destination currency is not verified.' });
+    }
+    const response = await fetch(`${DTONE_API_BASE_URL}/v1/products/${productId}`, {
+      method: 'GET',
+      headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+    const responseText = await response.text();
+    let product = null;
+    try { product = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+    if (!response.ok || !product || Number(product.id) !== productId) {
+      return res.status(response.status === 404 ? 404 : 502).json({
+        captured: false, error: 'DT One could not verify the exact product. No FX observation was saved.',
+        providerStatus: response.status,
+      });
+    }
+    const providerIso = String(product.operator?.country?.iso_code || '').trim().toUpperCase();
+    const mapping = await resolveDtOneCountryMapping(providerIso);
+    if (!mapping || mapping.countryCode !== countryCode || mapping.destinationCurrency !== expectedCurrency) {
+      return res.status(422).json({ captured: false, error: 'DT One product country does not match the requested country and currency.' });
+    }
+    const { buildDtOneFxObservation } = require('./dtone-fx');
+    const observation = buildDtOneFxObservation(product, expectedCurrency);
+    const saved = await pool.query(
+      `INSERT INTO country_fx_rates
+         (country_code,base_currency,quote_currency,quote_per_base,source,source_reference,observed_at,expires_at,is_approved)
+       VALUES ($1,'EUR',$2,$3,'DT_ONE',$4,$5,$6,FALSE)
+       RETURNING id,country_code,base_currency,quote_currency,quote_per_base,source,source_reference,
+                 observed_at,expires_at,is_approved,approved_at,approved_by`,
+      [countryCode, observation.quoteCurrency, observation.quotePerBase,
+       observation.sourceReference, observation.observedAt, observation.expiresAt]
+    );
+    return res.status(201).json({
+      captured: true, pendingApproval: true, observation: saved.rows[0],
+      pricesWritten: false, productsActivated: false,
+    });
+  } catch (error) {
+    console.error('DT One FX observation capture failed:', error.message);
+    return res.status(422).json({ captured: false, error: error.message || 'Could not capture DT One FX evidence.' });
+  }
+});
+
+app.post('/api/admin/countries/:countryCode/fx/observations/:observationId/approve', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ approved: false, error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const expectedCurrency = ({ AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT' })[countryCode];
+  const observationId = Number(req.params.observationId);
+  if (!expectedCurrency || !Number.isSafeInteger(observationId) || observationId < 1) {
+    return res.status(400).json({ approved: false, error: 'A valid country and observation ID are required.' });
+  }
+  if (req.body?.confirmFxApproval !== true) {
+    return res.status(400).json({ approved: false, confirmationRequired: true, error: 'Explicit FX approval confirmation is required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const selected = await client.query(
+      `SELECT id,country_code,base_currency,quote_currency,quote_per_base,source,
+              source_reference,observed_at,expires_at,is_approved
+         FROM country_fx_rates WHERE id=$1 AND country_code=$2 FOR UPDATE`,
+      [observationId, countryCode]
+    );
+    if (selected.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ approved: false, error: 'FX observation was not found for this country.' });
+    }
+    const row = selected.rows[0];
+    const now = Date.now();
+    const observedAt = Date.parse(row.observed_at);
+    const expiresAt = Date.parse(row.expires_at);
+    if (row.is_approved || row.base_currency !== 'EUR' || row.quote_currency !== expectedCurrency ||
+        row.source !== 'DT_ONE' || !String(row.source_reference || '').startsWith('product:') ||
+        !Number.isFinite(observedAt) || observedAt > now || !Number.isFinite(expiresAt) || expiresAt <= now) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ approved: false, error: 'FX evidence is already approved, expired, future-dated, or mismatched.' });
+    }
+    const updated = await client.query(
+      `UPDATE country_fx_rates SET is_approved=TRUE,approved_at=NOW(),approved_by='admin-session'
+        WHERE id=$1 AND country_code=$2 AND is_approved=FALSE
+        RETURNING id,country_code,base_currency,quote_currency,quote_per_base,source,
+                  source_reference,observed_at,expires_at,is_approved,approved_at,approved_by`,
+      [observationId, countryCode]
+    );
+    if (updated.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ approved: false, error: 'FX observation changed during approval.' });
+    }
+    await client.query('COMMIT');
+    return res.json({ approved: true, observation: updated.rows[0], pricesWritten: false, productsActivated: false });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Country FX approval failed:', error.message);
+    return res.status(500).json({ approved: false, error: 'Could not approve FX evidence.' });
+  } finally {
+    client.release();
+  }
+});
+
 // Read-only, network-scoped DT One product approval preview.
 // Only exact provider-verified identities and fresh EUR wholesale evidence are eligible.
 app.get('/api/admin/countries/:countryCode/operators/:operatorKey/product-approval-preview', requireAdmin, async (req, res) => {
