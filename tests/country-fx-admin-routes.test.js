@@ -79,3 +79,31 @@ test('FX admin panel script parses and offers capture, history, and explicit app
   assert.match(script, /confirmFxApproval:\s*true/);
   assert.match(script, /DT One نرخ ثبت شو او د اډمین تایید ته انتظار باسي/);
 });
+
+test('DT One operator discovery is read-only and exposed in the admin panel for all four markets', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const start = server.indexOf("app.get('/api/admin/dtone/operators'");
+  const end = server.indexOf("app.get('/api/admin/dtone/products'", start);
+  assert.notEqual(start, -1);
+  assert.ok(end > start);
+  const route = server.slice(start, end);
+  assert.match(route, /requireAdmin/);
+  assert.match(route, /resolveDtOneCountryMapping\(countryIsoCode\)/);
+  assert.match(route, /catalogActivation: 'unchanged'/);
+  assert.match(route, /transactionCreated: false/);
+  assert.match(route, /complete: !truncated/);
+  assert.doesNotMatch(route, /INSERT INTO country_operators|UPDATE country_operators|INSERT INTO country_operator_products/);
+
+  const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-panel.html'), 'utf8');
+  const scripts = [...admin.matchAll(/<script>([\s\S]*?)<\\/script>/gi)];
+  const script = scripts[scripts.length - 1][1];
+  assert.doesNotThrow(() => new vm.Script(script));
+  for (const [code, label] of [['AFG', 'افغانستان'], ['PAK', 'پاکستان'], ['IND', 'هند'], ['BGD', 'بنګله‌دېش']]) {
+    assert.match(admin, new RegExp('value="' + code + '"'));
+    assert.ok(admin.includes(label));
+  }
+  assert.ok(admin.includes('id="discoverDtoneOperators"'));
+  assert.ok(admin.includes('id="dtoneOperatorDiscovery"'));
+  assert.match(script, /\/api\/admin\/dtone\/operators\?country_iso_code=/);
+  assert.match(script, /catalogActivation/);
+});
