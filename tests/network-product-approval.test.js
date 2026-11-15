@@ -70,7 +70,7 @@ test('admin panel network approval UI script parses and requires a fresh preview
   assert.doesNotThrow(() => new vm.Script(script), 'admin panel inline JavaScript must parse');
   assert.match(admin, /id="previewNetworkApproval"/);
   assert.match(admin, /id="recordNetworkApproval"/);
-  assert.match(script, /product-approval-preview\\?sourceProductCatalogId=/);
+  assert.match(script, /product-approval-preview\?sourceProductCatalogId=/);
   assert.match(script, /confirmApprovalBatch:\s*true/);
   assert.match(script, /latestNetworkApprovalPreview=null/);
   assert.match(script, /customerProductsActivated=\'\+result\.customerProductsActivated/);
