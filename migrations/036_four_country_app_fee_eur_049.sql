@@ -1,25 +1,20 @@
--- Version 036: set the owner-approved application fee to EUR 0.49 in all four supported countries.
--- This changes only pricing_settings. Existing orders, order snapshots, catalog prices,
--- FX observations, product activation, payments and top-ups are not modified.
+-- Version 036: audited admin approval foundation for the four-country EUR 0.49 app fee.
+-- Live fees are NOT changed by deployment. An authenticated Admin Panel approval
+-- performs the four-row update atomically and records the acting admin.
 BEGIN;
 
-DO $migration$
-DECLARE
-  updated_count INTEGER;
-BEGIN
-  UPDATE pricing_settings
-     SET fee_eur_cents = 49,
-         updated_at = NOW()
-   WHERE country IN ('AF', 'PK', 'IN', 'BD');
+CREATE TABLE IF NOT EXISTS country_pricing_fee_audit (
+  id BIGSERIAL PRIMARY KEY,
+  country_code CHAR(2) NOT NULL CHECK (country_code IN ('AF','PK','IN','BD')),
+  previous_fee_eur_cents INTEGER NOT NULL CHECK (previous_fee_eur_cents >= 0),
+  new_fee_eur_cents INTEGER NOT NULL CHECK (new_fee_eur_cents >= 0),
+  changed_by VARCHAR(120) NOT NULL CHECK (BTRIM(changed_by) <> ''),
+  change_reason TEXT NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
-  GET DIAGNOSTICS updated_count = ROW_COUNT;
-  IF updated_count <> 4 THEN
-    RAISE EXCEPTION
-      'Migration 036 expected exactly four pricing_settings rows (AF, PK, IN, BD); updated %',
-      updated_count;
-  END IF;
-END
-$migration$;
+CREATE INDEX IF NOT EXISTS idx_country_pricing_fee_audit_country_time
+  ON country_pricing_fee_audit(country_code, changed_at DESC);
 
 INSERT INTO schema_migrations(version)
 VALUES ('036_four_country_app_fee_eur_049')
