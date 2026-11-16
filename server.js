@@ -128,6 +128,7 @@ const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config');
 const { createCountryRegistryRuntime } = require('./country-registry-runtime');
 const { validateMasterPricingPolicy, buildCountryPricingPreview } = require('./master-country-pricing');
 const { selectEligibleNetworkProducts } = require('./network-product-approval');
+const { inspectFixedRechargeProduct } = require('./dtone-fixed-recharge');
 
 // Keep the DB-backed registry available to customer routes. A missing DB or
 // registry table fails closed at request time; no hard-coded country fallback.
@@ -5753,27 +5754,23 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
     const candidates = [];
     const rejected = [];
     for (const item of detailedProducts) {
-      const operator = String(item?.operator?.name || '').trim();
-      const currency = String(item?.destination?.unit || item?.benefits?.[0]?.amount?.unit || '').trim().toUpperCase();
-      const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
-      const retailEur = Number(item?.prices?.retail?.amount);
-      const wholesaleEur = Number(item?.prices?.wholesale?.amount);
-      if (!operator || currency !== recipientCurrency || !Number.isFinite(amount) || amount <= 0 ||
-          !Number.isFinite(retailEur) || retailEur <= 0 ||
-          !Number.isFinite(wholesaleEur) || wholesaleEur <= 0 || retailEur < wholesaleEur) {
-        rejected.push({ productId: String(item.id), reason: 'Missing or invalid operator, denomination, country currency, retail EUR price, or wholesale EUR price.' });
-        continue;
-      }
-      const retailCents = Math.round(retailEur * 100);
-      const wholesaleCents = Math.round(wholesaleEur * 100);
-      if (!Number.isSafeInteger(retailCents) || retailCents <= 0 || !Number.isSafeInteger(wholesaleCents) || wholesaleCents <= 0) {
-        rejected.push({ productId: String(item.id), reason: 'EUR price cannot be safely represented in cents.' });
+      const inspected = inspectFixedRechargeProduct(item, recipientCurrency);
+      if (!inspected.eligible) {
+        rejected.push({
+          productId: String(item?.id ?? 'unknown'),
+          reason: inspected.reason,
+        });
         continue;
       }
       candidates.push({
-        productId: String(item.id), operator, amount, currency,
-        retailPriceEur: retailEur, wholesalePriceEur: wholesaleEur,
-        retailCents, wholesaleCents,
+        productId: String(item.id),
+        operator: inspected.operator,
+        amount: inspected.amount,
+        currency: inspected.currency,
+        retailPriceEur: inspected.retailPriceEur,
+        wholesalePriceEur: inspected.wholesalePriceEur,
+        retailCents: inspected.retailCents,
+        wholesaleCents: inspected.wholesaleCents,
       });
     }
 
