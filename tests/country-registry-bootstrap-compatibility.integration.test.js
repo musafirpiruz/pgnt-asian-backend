@@ -105,8 +105,8 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
       '023 must preserve existing localization rows');
     assert.equal(after.rows[0].operators, before.rows[0].operators + (expectSuccess ? 4 : 0),
       '023 may add exactly the four unverified operator candidates from the fixture, without deleting existing rows');
-    assert.equal(afterOperatorLocalizationCount, beforeOperatorLocalizationCount,
-      'failed 023 must preserve operator-localization rows');
+    assert.equal(afterOperatorLocalizationCount, beforeOperatorLocalizationCount + (expectSuccess ? 4 : 0),
+      '023 must preserve existing operator-localization rows and add only the four expected English labels for newly bootstrapped operators');
 
     const registryCount = await client.query(`
       SELECT COUNT(*)::int AS count
