@@ -29,16 +29,19 @@ on:
       - "fix/schema-server-compatibility"
       - "feat/device-region-and-country-bootstrap-2026-11-10"
     paths:
+      - "server.js"
+      - "migrate.js"
+      - "package.json"
+      - "firebase-auth.js"
+      - "firebase-admin-adapter.js"
+      - "phone-auth.js"
       - "master-country-pricing.js"
       - "network-product-approval.js"
       - "stripe-fee-estimator.js"
       - "stripe-fee-evidence.js"
-      - "tests/master-country-pricing.test.js"
-      - "tests/network-product-approval.test.js"
-      - "tests/stripe-fee-estimator.test.js"
-      - "tests/stripe-fee-evidence.test.js"
-      - "tests/stripe-fee-rounding.test.js"
-      - "tests/stripe-fee-settings-validation.test.js"
+      - "dtone-fixed-recharge.js"
+      - "tests/**"
+      - ".github/workflows/backend-check.yml"
 
 jobs:
   syntax:
