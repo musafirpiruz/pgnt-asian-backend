@@ -15,7 +15,7 @@ const migration023 = fs.readFileSync(
 const fixture196 = fs.readFileSync(path.join(__dirname, 'fixtures', 'country-registry-196.sql'), 'utf8');
 const fixture204 = fs.readFileSync(path.join(__dirname, 'fixtures', 'country-registry-204.sql'), 'utf8');
 
-async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode, expectedMessage }) {
+async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode, expectedMessage, expectSuccess = false }) {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
 
@@ -73,9 +73,20 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
       await client.query('ROLLBACK');
     }
 
-    assert.ok(migrationError, '023 must reject the incompatible pre-existing schema');
-    assert.equal(migrationError.code, expectedCode, migrationError.message);
-    assert.match(migrationError.message, expectedMessage);
+    if (expectSuccess) {
+      assert.equal(migrationError, undefined, migrationError?.message);
+      const nullable = await client.query(`
+        SELECT is_nullable FROM information_schema.columns
+        WHERE table_schema=$1 AND table_name='country_operators'
+          AND column_name='provider_operator_id'
+      `, [schema]);
+      assert.equal(nullable.rows[0]?.is_nullable, 'YES',
+        '023 must make the legacy provider operator identity nullable for unverified candidates');
+    } else {
+      assert.ok(migrationError, '023 must reject the incompatible pre-existing schema');
+      assert.equal(migrationError.code, expectedCode, migrationError.message);
+      assert.match(migrationError.message, expectedMessage);
+    }
 
     const after = await client.query(`
       SELECT
@@ -97,7 +108,8 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
       FROM information_schema.tables
       WHERE table_schema = $1 AND table_name = 'country_operator_products'
     `, [schema]);
-    assert.equal(registryCount.rows[0].count, 0, 'transactional failure must roll back 023-created tables');
+    assert.equal(registryCount.rows[0].count, expectSuccess ? 1 : 0,
+      expectSuccess ? 'successful bootstrap must create the product mapping table' : 'transactional failure must roll back 023-created tables');
   } finally {
     await client.query('RESET search_path').catch(() => {});
     await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => {});
@@ -116,13 +128,12 @@ test('023 rejects legacy-196 operator schema without damaging existing rows', {
   });
 });
 
-test('023 rejects newer-204 NOT NULL provider identity without damaging existing rows', {
+test('023 upgrades newer-204 NOT NULL provider identity without damaging existing rows', {
   skip: !databaseUrl,
 }, async () => {
   await assertBootstrapRejectsLegacyShape({
     schema: 'registry_023_newer204',
     fixture: fixture204,
-    expectedCode: '23502',
-    expectedMessage: /null value in column "provider_operator_id" of relation "country_operators"/i,
+    expectSuccess: true,
   });
 });
