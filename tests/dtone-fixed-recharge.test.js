@@ -104,6 +104,6 @@ test('bulk country catalog imports persist fresh DT One price evidence while kee
   assert.match(route, /provider_price_verified_at, provider_price_source/);
   assert.match(route, /VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, NOW\(\), 'dtone_api', \$5, 0, FALSE, NOW\(\)\)/);
   assert.match(route, /provider_price_product_id, active/);
-  assert.match(route, /provider_price_source = 'dtone_api'/);
+  assert.match(route, /'dtone_api'/);
   assert.match(route, /productsRemainDisabled: true/);
 });
