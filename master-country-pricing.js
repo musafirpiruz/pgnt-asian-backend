@@ -4,6 +4,7 @@ const SUPPORTED_COUNTRIES = Object.freeze({
   AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT',
 });
 const MAX_PROVIDER_PRICE_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_FX_RATE_AGE_MS = 24 * 60 * 60 * 1000;
 
 function integer(value, field, min, max = Number.MAX_SAFE_INTEGER) {
   const number = Number(value);
@@ -87,7 +88,8 @@ function buildCountryPricingPreview({ policy, countries, products, fxRates, now 
       row.is_approved === true && row.approved_at &&
       Number.isFinite(Date.parse(row.expires_at)) &&
       Date.parse(row.expires_at) > now &&
-      Date.parse(row.observed_at) <= now
+      Number.isFinite(Date.parse(row.observed_at)) &&
+      Date.parse(row.observed_at) <= now && (now - Date.parse(row.observed_at)) <= MAX_FX_RATE_AGE_MS
     );
     const countryProducts = products.filter(p =>
       String(p.country || '').trim().toUpperCase() === code &&
@@ -102,17 +104,24 @@ function buildCountryPricingPreview({ policy, countries, products, fxRates, now 
       const wholesale = Number(product.wholesale_price_eur_cents);
       const verifiedAt = Date.parse(product.provider_price_verified_at);
       const providerProductId = Number(product.provider_price_product_id);
+      const destinationAmount = Number(product.amount);
+      const operator = String(product.operator || '').trim();
+      const denominationValid = Number.isSafeInteger(destinationAmount) &&
+        destinationAmount >= 75 && destinationAmount <= 3000 && operator.length > 0;
       const evidenceValid = product.provider_price_source === 'dtone_api' &&
         providerProductId === id && Number.isFinite(verifiedAt) &&
         verifiedAt <= now && (now - verifiedAt) <= MAX_PROVIDER_PRICE_AGE_MS;
-      if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(wholesale) || wholesale < 1 || !evidenceValid) {
-        blockers.push(`Product ${String(product.product_id || 'unknown')} has missing, mismatched, or stale DT One price evidence (maximum age 24 hours).`);
+      if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(wholesale) || wholesale < 1 || !evidenceValid || !denominationValid) {
+        const reason = !denominationValid
+          ? 'an invalid operator or destination amount outside the integer 75–3000 range'
+          : 'missing, mismatched, or stale DT One price evidence (maximum age 24 hours)';
+        blockers.push(`Product ${String(product.product_id || 'unknown')} has ${reason}.`);
         continue;
       }
       rows.push(Object.freeze({
         productId: id,
-        operator: String(product.operator || ''),
-        destinationAmount: Number(product.amount),
+        operator,
+        destinationAmount,
         destinationCurrency: currency,
         ...calculateCountryProductPrice(wholesale, approvedPolicy),
         stagedActive: false,
@@ -143,6 +152,7 @@ function buildCountryPricingPreview({ policy, countries, products, fxRates, now 
 module.exports = {
   SUPPORTED_COUNTRIES,
   MAX_PROVIDER_PRICE_AGE_MS,
+  MAX_FX_RATE_AGE_MS,
   validateMasterPricingPolicy,
   calculateCountryProductPrice,
   buildCountryPricingPreview,
