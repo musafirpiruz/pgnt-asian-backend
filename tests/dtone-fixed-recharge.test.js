@@ -74,3 +74,20 @@ test('rejects missing or inconsistent EUR prices and missing operator identity',
     operator: { id: 100, name: ' ' },
   }), 'AFN').eligible, false);
 });
+
+test('all admin catalog import and price-refresh paths enforce the same fixed Airtime validator', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const refreshStart = server.indexOf("app.post('/api/admin/catalog/:productId/refresh-prices'");
+  const importStart = server.indexOf("app.post('/api/admin/catalog/:productId/import'");
+  const syncStart = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country'");
+  assert.ok(refreshStart >= 0 && importStart > refreshStart && syncStart > importStart);
+  const refreshRoute = server.slice(refreshStart, importStart);
+  const importRoute = server.slice(importStart, syncStart);
+  const syncRoute = server.slice(syncStart, server.indexOf("// Read-only product discovery in the configured DT One environment.", syncStart));
+  for (const route of [refreshRoute, importRoute, syncRoute]) {
+    assert.match(route, /inspectFixedRechargeProduct\(providerProduct|inspectFixedRechargeProduct\(item/);
+    assert.match(route, /fixedRechargeEligibility\.eligible|inspected\.eligible/);
+  }
+});
