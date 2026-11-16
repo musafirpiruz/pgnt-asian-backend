@@ -5505,6 +5505,15 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
       await client.query('ROLLBACK');
       return res.status(422).json({ refreshed: false, error: 'DT One product currency does not match the supported country currency. No values were changed.', productId });
     }
+    const fixedRechargeEligibility = inspectFixedRechargeProduct(providerProduct, countryMapping.destinationCurrency);
+    if (!fixedRechargeEligibility.eligible) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({
+        refreshed: false,
+        error: fixedRechargeEligibility.reason + ' No catalog values were changed.',
+        productId,
+      });
+    }
     // DT One labels this Afghanistan operator "ATOMA Afghanistan", while
     // the existing catalog uses the canonical short label "ATOMA". Allow only
     // this explicit, country-scoped alias; never strip arbitrary country/network
@@ -5615,6 +5624,14 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
     }
     if (!countryMapping || currency !== countryMapping.destinationCurrency) {
       return res.status(422).json({ imported: false, error: 'Product currency does not match the configured currency for this country.', productId, country, currency });
+    }
+    const fixedRechargeEligibility = inspectFixedRechargeProduct(providerProduct, countryMapping.destinationCurrency);
+    if (!fixedRechargeEligibility.eligible) {
+      return res.status(422).json({
+        imported: false,
+        error: fixedRechargeEligibility.reason,
+        productId,
+      });
     }
     const retailCents = Math.round(retailEur * 100);
     const wholesaleCents = Math.round(wholesaleEur * 100);
