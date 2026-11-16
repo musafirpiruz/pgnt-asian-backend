@@ -2366,7 +2366,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildWallet(),
           buildSupport(),
           buildProfile(),
-          const PgntContactsPage(),
+          PgntContactsPage(onBack: () => setState(() => selectedTab = 4)),
+          PgntCallPage(onBack: () => setState(() => selectedTab = 4)),
         ],
       ),
       bottomNavigationBar: Container(
@@ -4098,6 +4099,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
         ),
         Card(
           child: ListTile(
+            leading: const Icon(Icons.call_outlined, color: primaryRed),
+            title: const Text('ارزانه نړیوال زنګونه / Calls'),
+            subtitle: const Text('Paid calls to mobile and landline numbers'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => setState(() => selectedTab = 6),
+          ),
+        ),
+        Card(
+          child: ListTile(
             leading: const Icon(Icons.contacts_outlined, color: primaryRed),
             title: const Text('زما اړیکې / My contacts'),
             subtitle: const Text('Save contacts privately on this device'),
@@ -4237,9 +4247,108 @@ class _PgntHomePageState extends State<PgntHomePage> {
   
 }
 
+// Paid outbound calling UI. Carrier connection and billing remain disabled
+// until provider, compliance and security gates are explicitly approved.
+class PgntCallPage extends StatefulWidget {
+  final VoidCallback onBack;
+  const PgntCallPage({super.key, required this.onBack});
+  @override
+  State<PgntCallPage> createState() => _PgntCallPageState();
+}
+class _PgntCallPageState extends State<PgntCallPage> {
+  static const _destinations = <(String, String, String)>[
+    ('🇦🇫', 'Afghanistan', '+93'), ('🇵🇰', 'Pakistan', '+92'),
+    ('🇧🇩', 'Bangladesh', '+880'), ('🇮🇳', 'India', '+91'),
+  ];
+  String _callingCode = '+93';
+  String _number = '';
+  void _append(String digit) {
+    if (_number.length < 18) setState(() => _number += digit);
+  }
+  @override
+  Widget build(BuildContext context) {
+    final selected = _destinations.firstWhere((item) => item.$3 == _callingCode);
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Row(children: [
+            IconButton(onPressed: widget.onBack, icon: const Icon(Icons.arrow_back_rounded, color: primaryRed)),
+            const Expanded(child: PgntBrandHeader(subtitle: 'International calling')),
+          ]),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [primaryRed, darkRed], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [BoxShadow(color: primaryRed.withValues(alpha: .18), blurRadius: 18, offset: const Offset(0, 8))],
+            ),
+            child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.call_rounded, color: brightGold, size: 34),
+              SizedBox(height: 10),
+              Text('International Calls', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+              SizedBox(height: 6),
+              Text('له اپلېکېشن څخه عادي موبایل او کورني نمبرونو ته زنګونه', style: TextStyle(color: Colors.white70, height: 1.4)),
+              SizedBox(height: 8),
+              Text('د زنګ بیه به په یورو کې ښکاره کېږي؛ د دقیقې/ثانیې حساب به د شبکې له تایید شوي نرخ سره سم وي.', style: TextStyle(color: gold, height: 1.4)),
+            ]),
+          ),
+          const SizedBox(height: 18),
+          pgntSectionTitle('هېواد انتخاب کړئ', Icons.public_rounded),
+          DropdownButtonFormField<String>(
+            value: _callingCode,
+            decoration: const InputDecoration(prefixIcon: Icon(Icons.flag_outlined), border: OutlineInputBorder(), filled: true, fillColor: Colors.white),
+            items: _destinations.map((item) => DropdownMenuItem(value: item.$3, child: Text('${item.$1}  ${item.$2} (${item.$3})'))).toList(),
+            onChanged: (value) => setState(() { _callingCode = value ?? '+93'; _number = ''; }),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: gold)),
+            child: Column(children: [
+              Text('${selected.$1}  ${selected.$2}', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text('$_callingCode$_number', style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800, color: primaryRed, letterSpacing: 1.2)),
+              Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: _number.isEmpty ? null : () => setState(() => _number = _number.substring(0, _number.length - 1)), icon: const Icon(Icons.backspace_outlined), label: const Text('وروستی عدد پاک کړئ'))),
+            ]),
+          ),
+          const SizedBox(height: 14),
+          GridView.count(
+            crossAxisCount: 3, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.55,
+            children: ['1','2','3','4','5','6','7','8','9','*','0','#'].map((digit) => Material(
+              color: Colors.white, borderRadius: BorderRadius.circular(16),
+              child: InkWell(borderRadius: BorderRadius.circular(16), onTap: () => _append(digit),
+                child: Center(child: Text(digit, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: primaryRed))),
+              ),
+            )).toList(),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(height: 54, child: FilledButton.icon(
+            onPressed: null, icon: const Icon(Icons.call_rounded),
+            label: const Text('زنګ ووهئ — خدمت لا نه دی فعال'),
+            style: FilledButton.styleFrom(backgroundColor: successGreen, disabledBackgroundColor: successGreen.withValues(alpha: .45), foregroundColor: Colors.white),
+          )),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: cream, borderRadius: BorderRadius.circular(14), border: Border.all(color: gold)),
+            child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.info_outline, color: primaryRed), SizedBox(width: 9),
+              Expanded(child: Text('د زنګ خدمت لا د مخابراتي شرکت له خوا نه دی فعال شوی. دا ډایل‌پډ اوس یوازې د چمتووالي لپاره دی؛ هېڅ زنګ نه وهي او له والټ څخه پیسې نه کموي.', style: TextStyle(height: 1.45))),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // Private, device-only contacts. No address-book permission and no cloud sync.
 class PgntContactsPage extends StatefulWidget {
-  const PgntContactsPage({super.key});
+  final VoidCallback onBack;
+  const PgntContactsPage({super.key, required this.onBack});
 
   @override
   State<PgntContactsPage> createState() => _PgntContactsPageState();
@@ -4397,7 +4506,16 @@ class _PgntContactsPageState extends State<PgntContactsPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const PgntBrandHeader(),
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'بېرته پروفایل ته',
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back_rounded, color: primaryRed),
+              ),
+              const Expanded(child: PgntBrandHeader()),
+            ],
+          ),
           const SizedBox(height: 18),
           pgntSectionTitle('زما اړیکې', Icons.contacts_outlined),
           const Text(
