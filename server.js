@@ -5687,6 +5687,9 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
     for (let page = 1; page <= maxPages; page += 1) {
       const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
       url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('type', 'FIXED_VALUE_RECHARGE');
+      url.searchParams.set('service_id', '1');
+      url.searchParams.set('subservice_id', '11');
       url.searchParams.set('per_page', String(pageSize));
       url.searchParams.set('page', String(page));
       const response = await fetch(url, {
