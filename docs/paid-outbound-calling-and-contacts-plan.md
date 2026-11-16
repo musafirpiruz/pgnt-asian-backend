@@ -87,3 +87,49 @@ Choose the lowest total-cost provider only among routes that pass quality, compl
 ## Current decision
 
 This document records the requested feature only. It does not select a carrier, assert that any public tariff is contractually available, create a provider account, spend money, change the database, enable wallet debits, or deploy anything.
+
+
+## Public rate snapshot checked 2026-11-16
+
+The following are public list prices displayed by the providers at the time of review. They are wholesale reference rates, not a binding quote, not a customer retail tariff, and not evidence that every number range or route will connect. Values are EUR per minute.
+
+| Destination | SIPTraffic public list | MyVoipTraffic public list | Lower displayed list |
+|---|---:|---:|---|
+| Afghanistan AWCC | €0.1076 | €0.1122 | SIPTraffic |
+| Afghanistan Etisalat | €0.1205 | €0.1242 | SIPTraffic |
+| Afghanistan MTN | €0.1038 | €0.1071 | SIPTraffic |
+| Afghanistan Roshan | €0.1200 | €0.1103 | MyVoipTraffic |
+| Pakistan Jazz | €0.0389 | €0.0389 | Tie |
+| Pakistan Telenor | €0.0489 | €0.0389 | MyVoipTraffic |
+| Pakistan Ufone | €0.0519 | €0.0389 | MyVoipTraffic |
+| Pakistan Zong | €0.0389 | €0.0389 | Tie |
+| Bangladesh Grameenphone | €0.0108 | €0.0098 | MyVoipTraffic |
+| Bangladesh Robi Axiata | €0.0109 | €0.0100 | MyVoipTraffic |
+| Bangladesh Banglalink | €0.0170 | €0.0170 | Tie |
+| India Airtel | €0.0215 | €0.0215 | Tie |
+| India BSNL | €0.0190 | €0.0190 | Tie |
+| India Reliance Jio | €0.0215 | €0.0215 | Tie |
+| India Vodafone / Vodafone Idea | €0.0215 | €0.0215 | Tie |
+
+Sources checked:
+- SIPTraffic rates page, displayed download date 2026-11-03: https://www.siptraffic.com/calling-rates/
+- MyVoipTraffic rates page, displayed download date 2026-09-29: https://www.myvoiptraffic.com/calling-rates
+- SIPTraffic product/connectivity information: https://www.siptraffic.com/product.html
+- MyVoipTraffic getting-started/connectivity information: https://www.myvoiptraffic.com/getting-started
+- MyVoipTraffic signup requires business/registered-organization details and company registration evidence: https://www.myvoiptraffic.com/signup
+- MyVoipTraffic about page states a €300/USD 300 minimum top-up, SIP protocol and real-time CDRs: https://www.myvoiptraffic.com/about
+
+Important interpretation:
+- SIPTraffic advertises Bronze (lowest rate, no guaranteed quality), Silver (high quality) and Gold (very good quality) routes; its published page says per-second billing, prepaid service and a few test calls before prepayment.
+- MyVoipTraffic advertises Grey (lowest rate, no guaranteed quality), Standard (high quality) and Premium (best quality) routes; its public getting-started page says per-second billing for destinations except Mexico.
+- The two displayed rate pages are not from the same date, and the listed routes/quality tiers are not proven equivalent. Do not declare a winner based on the table alone.
+- MyVoipTraffic's €300 minimum top-up is a significant barrier for an initial small-scale test. SIPTraffic publicly says a few test calls are possible before prepayment, but the exact deposit/KYC terms still need written confirmation.
+- No provider account has been created, no calls have been placed, and no money has been spent.
+
+## Updated provider decision
+
+Do not yet choose a single production carrier. Shortlist:
+1. SIPTraffic Silver for a quality-oriented test, with Bronze only as a separately measured low-cost comparison.
+2. MyVoipTraffic Standard for a quality-oriented test, with its Grey route only as a separately measured low-cost comparison.
+
+Ask both providers for a written, date-stamped quote for the exact mobile operators above, route class, caller-ID policy, test-call conditions, KYC eligibility for the PGNT legal entity, minimum deposit, API/SIP integration details, CDR delivery, concurrency limits and support/SLA. Select by total verified cost plus measured call quality and compliance, not by cheapest Grey/Bronze rate alone.
