@@ -3726,7 +3726,7 @@ app.post('/api/admin/countries/:countryCode/operators/:operatorKey/product-appro
   try {
     await client.query('BEGIN');
     const operator = await client.query(
-      `SELECT o.display_name,o.provider_operator_id,o.verified_at,c.destination_currency,c.status AS country_status
+      `SELECT o.display_name,o.provider_operator_id,o.verified_at,o.active,c.destination_currency,c.status AS country_status
          FROM country_operators o
          JOIN country_registry c ON c.country_code=o.country_code
         WHERE o.country_code=$1 AND o.operator_key=$2 AND LOWER(o.provider)='dtone'
@@ -3739,6 +3739,7 @@ app.post('/api/admin/countries/:countryCode/operators/:operatorKey/product-appro
     }
     const productRows = await client.query(
       `SELECT cop.id AS mapping_id,cop.country_code,cop.operator_key,
+              cop.active AS mapping_active,cop.verified_at AS mapping_verified_at,
               cop.product_catalog_id,p.product_id AS provider_product_id,
               p.currency,p.country AS product_country,p.operator,
               o.display_name AS operator_name,p.wholesale_price_eur_cents,
