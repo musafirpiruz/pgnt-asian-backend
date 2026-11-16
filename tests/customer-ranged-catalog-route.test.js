@@ -157,3 +157,25 @@ test('DT One operator discovery accepts only provider countries explicitly mappe
   assert.match(route, /No unique DT One provider-country mapping/);
   assert.doesNotMatch(route, /supportedOperatorCountries|AFG, PAK, IND, or BGD/);
 });
+
+test('fixed customer catalog requires fresh DT One EUR price evidence and integer 75–3000 denominations', () => {
+  const routes = [
+    ["app.get('/api/countries',", "app.get('/api/countries/:countryCode/operators',"],
+    ["app.get('/api/countries/:countryCode/operators',", "app.get('/api/countries/:countryCode/operators/:operatorKey/products',"],
+    ["app.get('/api/countries/:countryCode/operators/:operatorKey/products',", "app.get('/api/payment-currencies',"],
+  ];
+  for (const [startMarker, endMarker] of routes) {
+    const start = server.indexOf(startMarker);
+    const end = server.indexOf(endMarker, start + startMarker.length);
+    assert.ok(start >= 0 && end > start, 'customer route must exist: ' + startMarker);
+    const route = server.slice(start, end);
+    assert.match(route, /p\.amount >= 75/);
+    assert.match(route, /p\.amount <= 3000/);
+    assert.match(route, /p\.amount = TRUNC\(p\.amount\)/);
+    assert.match(route, /p\.provider_price_source = 'dtone_api'/);
+    assert.match(route, /p\.provider_price_product_id = p\.product_id/);
+    assert.match(route, /p\.provider_price_verified_at IS NOT NULL/);
+    assert.match(route, /p\.provider_price_verified_at <= NOW\(\)/);
+    assert.match(route, /p\.provider_price_verified_at >= NOW\(\) - INTERVAL '24 hours'/);
+  }
+});
