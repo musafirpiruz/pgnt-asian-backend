@@ -59,10 +59,11 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
         (SELECT COUNT(*)::int FROM country_operators) AS operators
     `);
     const beforeOperatorLocalizations = await client.query(
-      "SELECT to_regclass('country_operator_localizations') IS NOT NULL AS present"
+      "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema=$1 AND table_name='country_operator_localizations') AS present",
+      [schema],
     );
     const beforeOperatorLocalizationCount = beforeOperatorLocalizations.rows[0].present
-      ? (await client.query('SELECT COUNT(*)::int AS count FROM country_operator_localizations')).rows[0].count
+      ? (await client.query(`SELECT COUNT(*)::int AS count FROM "${schema}".country_operator_localizations`)).rows[0].count
       : 0;
 
     let migrationError;
@@ -94,10 +95,11 @@ async function assertBootstrapRejectsLegacyShape({ schema, fixture, expectedCode
         (SELECT COUNT(*)::int FROM country_operators) AS operators
     `);
     const afterOperatorLocalizations = await client.query(
-      "SELECT to_regclass('country_operator_localizations') IS NOT NULL AS present"
+      "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema=$1 AND table_name='country_operator_localizations') AS present",
+      [schema],
     );
     const afterOperatorLocalizationCount = afterOperatorLocalizations.rows[0].present
-      ? (await client.query('SELECT COUNT(*)::int AS count FROM country_operator_localizations')).rows[0].count
+      ? (await client.query(`SELECT COUNT(*)::int AS count FROM "${schema}".country_operator_localizations`)).rows[0].count
       : 0;
     assert.equal(after.rows[0].country_localizations, before.rows[0].country_localizations,
       '023 must preserve existing localization rows');
