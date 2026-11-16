@@ -8,8 +8,8 @@ function product(overrides = {}) {
   return {
     id: 7194,
     type: 'FIXED_VALUE_RECHARGE',
-    service: { id: 1, name: 'Mobile' },
-    subservice: { id: 11, name: 'Airtime' },
+    service: { id: 1, name: 'Mobile', subservice: { id: 11, name: 'Airtime' } },
+    tags: ['AIRTIME'],
     operator: { id: 100, name: 'ATOMA', country: { iso_code: 'AFG' } },
     destination: { unit: 'AFN', amount: 115 },
     prices: {
@@ -39,7 +39,9 @@ test('rejects PIN, ranged and payment product types from the fixed recharge cata
 
 test('rejects non-Mobile products and explicitly non-Airtime Mobile subservices', () => {
   assert.equal(inspectFixedRechargeProduct(product({ service: { id: 3, name: 'Utilities' } }), 'AFN').eligible, false);
-  assert.equal(inspectFixedRechargeProduct(product({ subservice: { id: 12, name: 'Data' } }), 'AFN').eligible, false);
+  assert.equal(inspectFixedRechargeProduct(product({ service: { id: 1, name: 'Mobile', subservice: { id: 12, name: 'Bundle' } }, tags: ['BUNDLE'] }), 'AFN').eligible, false);
+  assert.equal(inspectFixedRechargeProduct(product({ service: { id: 1, name: 'Mobile', subservice: { id: 13, name: 'Data' } }, tags: ['DATA'] }), 'AFN').eligible, false);
+  assert.equal(inspectFixedRechargeProduct(product({ tags: [] }), 'AFN').eligible, false);
 });
 
 test('rejects amounts below 75, above 3000, fractional and missing', () => {
