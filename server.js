@@ -5948,11 +5948,13 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         const result = await client.query(
           `INSERT INTO product_catalog
             (country, operator, amount, currency, product_id, price_eur_cents,
-             wholesale_price_eur_cents, bonus_amount, active, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 0, FALSE, NOW())
+             wholesale_price_eur_cents, provider_price_verified_at, provider_price_source,
+             provider_price_product_id, bonus_amount, active, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'dtone_api', $5, 0, FALSE, NOW())
            ON CONFLICT DO NOTHING
            RETURNING id, country, operator, amount, currency, product_id,
-                     price_eur_cents, wholesale_price_eur_cents, active`,
+                     price_eur_cents, wholesale_price_eur_cents, provider_price_verified_at,
+                     provider_price_source, provider_price_product_id, active`,
           [country, product.operator, product.amount, product.currency, product.productId,
             product.retailCents, product.wholesaleCents]
         );
