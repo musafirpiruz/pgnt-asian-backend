@@ -3497,32 +3497,27 @@ function requireCountryEvidenceReviewer(req, res, next) {
   return next();
 }
 
-// Admin authentication.
-// Set a long, random ADMIN_API_KEY in Render.
+// Admin authentication supports one distinct API key per named admin.
+// Prefer ADMIN_API_KEYS_JSON={"admin-id":"long-random-secret"}.
+// Legacy single-key deployments must also configure ADMIN_ACTOR_ID.
+const { createAdminAuthenticator } = require('./admin-auth');
+const adminAuthenticator = createAdminAuthenticator({
+  adminApiKeysJson: process.env.ADMIN_API_KEYS_JSON || '',
+  legacyApiKey: ADMIN_API_KEY,
+  legacyActorId: process.env.ADMIN_ACTOR_ID || '',
+});
+
 function requireAdmin(req, res, next) {
-  if (!ADMIN_API_KEY) {
+  const result = adminAuthenticator.authenticate(String(req.headers['x-admin-api-key'] || ''));
+  if (!result.configured) {
     return res.status(503).json({
-      error: 'Admin authentication is not configured.',
+      error: 'Admin authentication is not configured. Configure ADMIN_API_KEYS_JSON or ADMIN_API_KEY with ADMIN_ACTOR_ID.',
     });
   }
-
-  const suppliedKey = String(
-    req.headers['x-admin-api-key'] || ''
-  );
-
-  const expected = Buffer.from(ADMIN_API_KEY);
-  const supplied = Buffer.from(suppliedKey);
-
-  const valid =
-    expected.length === supplied.length &&
-    crypto.timingSafeEqual(expected, supplied);
-
-  if (!valid) {
-    return res.status(401).json({
-      error: 'Unauthorized.',
-    });
+  if (!result.authenticated) {
+    return res.status(401).json({ error: 'Unauthorized.' });
   }
-
+  req.adminActorId = result.actorId;
   return next();
 }
 
@@ -3646,11 +3641,11 @@ app.post('/api/admin/countries/:countryCode/fx/observations/:observationId/appro
       return res.status(409).json({ approved: false, error: 'FX evidence is already approved, expired, future-dated, or mismatched.' });
     }
     const updated = await client.query(
-      `UPDATE country_fx_rates SET is_approved=TRUE,approved_at=NOW(),approved_by='admin-session'
+      `UPDATE country_fx_rates SET is_approved=TRUE,approved_at=NOW(),approved_by=$3
         WHERE id=$1 AND country_code=$2 AND is_approved=FALSE
         RETURNING id,country_code,base_currency,quote_currency,quote_per_base,source,
                   source_reference,observed_at,expires_at,is_approved,approved_at,approved_by`,
-      [observationId, countryCode]
+      [observationId, countryCode, req.adminActorId]
     );
     if (updated.rowCount !== 1) {
       await client.query('ROLLBACK');
@@ -3792,9 +3787,9 @@ app.post('/api/admin/countries/:countryCode/operators/:operatorKey/product-appro
     const batch = await client.query(
       `INSERT INTO country_network_product_approval_batches
          (country_code,operator_key,source_product_catalog_id,approved_product_count,blocked_product_count,policy_version,actor)
-       VALUES($1,$2,$3,$4,$5,$6,'admin-session')
+       VALUES($1,$2,$3,$4,$5,$6,$7)
        RETURNING id,country_code,operator_key,source_product_catalog_id,approved_product_count,blocked_product_count,policy_version,created_at`,
-      [countryCode,operatorKey,sourceProductCatalogId,selection.eligible.length,productRows.rowCount-selection.eligible.length,policy.rowCount ? Number(policy.rows[0].version) : null]
+      [countryCode,operatorKey,sourceProductCatalogId,selection.eligible.length,productRows.rowCount-selection.eligible.length,policy.rowCount ? Number(policy.rows[0].version) : null,req.adminActorId]
     );
     for (const item of selection.eligible) {
       await client.query(
@@ -6819,10 +6814,10 @@ app.post('/api/admin/master-pricing-policy/draft', express.json(), requireAdmin,
         `INSERT INTO master_pricing_policies
            (version,payment_currency,fee_eur_cents,stripe_fee_percent,stripe_fixed_fee_cents,
             bonus_percent,status,created_by)
-         VALUES($1,'EUR',$2,$3,$4,0,'draft','admin-session')
+         VALUES($1,'EUR',$2,$3,$4,0,'draft',$5)
          RETURNING id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
                    stripe_fixed_fee_cents,bonus_percent,status,created_at`,
-        [version,policy.feeEurCents,policy.stripeFeePercent,policy.stripeFixedFeeCents]
+        [version,policy.feeEurCents,policy.stripeFeePercent,policy.stripeFixedFeeCents,req.adminActorId]
       );
       await client.query('COMMIT');
       return res.status(201).json({
@@ -6860,11 +6855,11 @@ app.post('/api/admin/master-pricing-policy/:version/approve', express.json(), re
     );
     const approved = await client.query(
       `UPDATE master_pricing_policies
-          SET status='approved',approved_by='admin-session',approved_at=NOW()
+          SET status='approved',approved_by=$2,approved_at=NOW()
         WHERE id=$1
         RETURNING id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
                   stripe_fixed_fee_cents,status,approved_at`,
-      [selected.rows[0].id]
+      [selected.rows[0].id,req.adminActorId]
     );
     await client.query('COMMIT');
     return res.json({ policy: approved.rows[0], approvalRecorded: true, productsActivated: false, productPricesWritten: false });
@@ -6932,9 +6927,9 @@ app.post('/api/admin/master-pricing-policy/preview', express.json(), requireAdmi
       await client.query(
         `INSERT INTO country_pricing_preview_runs
           (policy_id,country_code,destination_currency,fx_rate_id,product_count,ready,blockers,preview,created_by)
-         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,'admin-session')`,
+         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`,
         [saved.id,country.countryCode,country.destinationCurrency,fx?.id || null,
-         country.products.length,country.ready,JSON.stringify(country.blockers),JSON.stringify(country)]
+         country.products.length,country.ready,JSON.stringify(country.blockers),JSON.stringify(country),req.adminActorId]
       );
     }
     await client.query('COMMIT');
