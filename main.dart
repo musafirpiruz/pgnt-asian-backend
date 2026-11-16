@@ -2420,6 +2420,65 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
 
+  Widget _homeQuickAction({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: gold.withValues(alpha: 0.8)),
+            boxShadow: [
+              BoxShadow(
+                color: darkRed.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: primaryRed, size: 25),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: primaryRed,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.black54, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: gold, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget buildHome() {
     return SafeArea(
       child: ListView(
@@ -2476,6 +2535,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       ],
                     ),
                   ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _homeQuickAction(
+                  icon: Icons.call_rounded,
+                  title: 'ارزانه نړیوال زنګونه',
+                  subtitle: 'International calls',
+                  onTap: () => setState(() => selectedTab = 6),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _homeQuickAction(
+                  icon: Icons.contacts_rounded,
+                  title: 'زما اړیکې',
+                  subtitle: 'My contacts',
+                  onTap: () => setState(() => selectedTab = 5),
                 ),
               ),
             ],
