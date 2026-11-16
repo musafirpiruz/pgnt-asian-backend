@@ -39,6 +39,7 @@ on:
       - feature/firebase-id-token-verification-core
       - feat/first-launch-language-welcome
       - feat/device-region-and-country-bootstrap-2026-11-10
+      - feat/approved-master-country-pricing-2026-11-15
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
