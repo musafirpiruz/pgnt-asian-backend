@@ -94,3 +94,18 @@ test('rejects expired, unapproved and cross-country FX evidence', () => {
   assert.equal(result.countries[0].ready,false);
   assert.equal(result.countries[0].fxRate,null);
 });
+
+test('preview rejects non-positive or non-numeric approved FX quotes', () => {
+  const now = Date.parse('2026-11-15T00:00:00Z');
+  const country = [{country_code:'AF',destination_currency:'AFN'}];
+  const product = [{product_id:1,country:'AF',currency:'AFN',operator:'A',amount:100,wholesale_price_eur_cents:189,provider_price_verified_at:new Date(now-1000).toISOString(),provider_price_source:'dtone_api',provider_price_product_id:1}];
+  for (const quote of ['0','-1','not-a-rate']) {
+    const result = buildCountryPricingPreview({
+      policy, countries:country, products:product,
+      fxRates:[{country_code:'AF',base_currency:'EUR',quote_currency:'AFN',quote_per_base:quote,is_approved:true,approved_at:'2026-11-14T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-16T00:00:00Z'}],
+      now,
+    });
+    assert.equal(result.countries[0].ready,false);
+    assert.equal(result.countries[0].fxRate,null);
+  }
+});
