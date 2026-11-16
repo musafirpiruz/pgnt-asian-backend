@@ -91,3 +91,19 @@ test('all admin catalog import and price-refresh paths enforce the same fixed Ai
     assert.match(route, /fixedRechargeEligibility\.eligible|inspected\.eligible/);
   }
 });
+
+
+test('bulk country catalog imports persist fresh DT One price evidence while keeping products disabled', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const start = server.indexOf("app.post('/api/admin/dtone/catalog/sync-country'");
+  const end = server.indexOf("// Read-only product discovery in the configured DT One environment.", start);
+  assert.ok(start >= 0 && end > start, 'bulk country catalog route must exist');
+  const route = server.slice(start, end);
+  assert.match(route, /provider_price_verified_at, provider_price_source/);
+  assert.match(route, /VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, NOW\(\), 'dtone_api', \$5, 0, FALSE, NOW\(\)\)/);
+  assert.match(route, /provider_price_product_id, active/);
+  assert.match(route, /provider_price_source = 'dtone_api'/);
+  assert.match(route, /productsRemainDisabled: true/);
+});
