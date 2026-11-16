@@ -48,3 +48,15 @@ test('a configured multi-admin key set takes precedence over legacy credentials'
   assert.equal(auth.authenticate(KEY_A).authenticated, false);
   assert.equal(auth.authenticate(KEY_B).actorId, 'only-admin');
 });
+
+test('sensitive audit routes store the authenticated admin identity, never a generic session label', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(server, /req\.adminActorId\s*=\s*result\.actorId/);
+  assert.match(server, /approved_by=\$3/);
+  assert.match(server, /policy_version,actor\)\s*\n\s*VALUES\(\$1,\$2,\$3,\$4,\$5,\$6,\$7\)/);
+  assert.match(server, /created_by\)\s*\n\s*VALUES\(\$1,'EUR',\$2,\$3,\$4,0,'draft',\$5\)/);
+  assert.match(server, /submitted_by,review_status,submitted_at\)\s*\n\s*VALUES\(\$1,\$2,TRUE,\$3,\$4,'submitted'/);
+  assert.doesNotMatch(server, /admin-session/);
+});
