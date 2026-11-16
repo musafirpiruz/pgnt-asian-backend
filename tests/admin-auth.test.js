@@ -34,6 +34,7 @@ test('malformed or weak multi-admin credentials fail closed', () => {
   assert.throws(() => parseAdminApiKeys('{bad json'));
   assert.throws(() => parseAdminApiKeys(JSON.stringify({ 'bad id': KEY_A })));
   assert.throws(() => parseAdminApiKeys(JSON.stringify({ admin: 'short' })));
+  assert.throws(() => parseAdminApiKeys(JSON.stringify({ first: KEY_A, second: KEY_A })), /unique API key/);
   const invalid = createAdminAuthenticator({ adminApiKeysJson: '{bad json', legacyApiKey: KEY_A, legacyActorId: 'fallback' });
   assert.equal(invalid.configured, false);
   assert.equal(invalid.authenticate(KEY_A).authenticated, false);
