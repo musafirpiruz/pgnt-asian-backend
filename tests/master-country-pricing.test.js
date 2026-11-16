@@ -109,3 +109,37 @@ test('preview rejects non-positive or non-numeric approved FX quotes', () => {
     assert.equal(result.countries[0].fxRate,null);
   }
 });
+
+
+test('preview rejects fractional, missing and out-of-range destination denominations before pricing', () => {
+  const now = Date.parse('2026-11-15T12:00:00Z');
+  const country = [{country_code:'AF',destination_currency:'AFN'}];
+  const fx = [{country_code:'AF',base_currency:'EUR',quote_currency:'AFN',quote_per_base:'70',is_approved:true,approved_at:'2026-11-15T00:00:00Z',observed_at:'2026-11-15T00:00:00Z',expires_at:'2026-11-16T00:00:00Z'}];
+  for (const amount of [74, 3001, 75.5, null, undefined]) {
+    const result = buildCountryPricingPreview({
+      policy, countries:country,
+      products:[{product_id:1,country:'AF',currency:'AFN',operator:'A',amount,wholesale_price_eur_cents:189,provider_price_verified_at:new Date(now-1000).toISOString(),provider_price_source:'dtone_api',provider_price_product_id:1}],
+      fxRates:fx, now,
+    });
+    assert.equal(result.countries[0].ready,false,String(amount));
+    assert.equal(result.countries[0].products.length,0,String(amount));
+    assert.match(result.countries[0].blockers.join(' '), /75–3000/);
+  }
+});
+
+test('preview blocks missing operator identity and stale FX observations', () => {
+  const now = Date.parse('2026-11-15T12:00:00Z');
+  const country = [{country_code:'AF',destination_currency:'AFN'}];
+  const product = {product_id:1,country:'AF',currency:'AFN',operator:'',amount:100,wholesale_price_eur_cents:189,provider_price_verified_at:new Date(now-1000).toISOString(),provider_price_source:'dtone_api',provider_price_product_id:1};
+  const staleFx = [{country_code:'AF',base_currency:'EUR',quote_currency:'AFN',quote_per_base:'70',is_approved:true,approved_at:'2026-11-10T00:00:00Z',observed_at:'2026-11-14T00:00:00Z',expires_at:'2026-11-20T00:00:00Z'}];
+  const missingOperator = buildCountryPricingPreview({policy,countries:country,products:[{...product,operator:'A'}],fxRates:staleFx,now});
+  assert.equal(missingOperator.countries[0].ready,false);
+  assert.equal(missingOperator.countries[0].fxRate,null);
+  const badOperator = buildCountryPricingPreview({
+    policy,countries:country,products:[product],
+    fxRates:[{...staleFx[0],observed_at:'2026-11-15T00:00:00Z'}],now,
+  });
+  assert.equal(badOperator.countries[0].ready,false);
+  assert.equal(badOperator.countries[0].products.length,0);
+  assert.match(badOperator.countries[0].blockers.join(' '), /operator/);
+});
