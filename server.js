@@ -5754,6 +5754,14 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
     const candidates = [];
     const rejected = [];
     for (const item of detailedProducts) {
+      const currency = String(item?.destination?.unit || '').trim().toUpperCase();
+      if (currency !== recipientCurrency) {
+        rejected.push({
+          productId: String(item?.id ?? 'unknown'),
+          reason: 'DT One destination currency does not match the selected country.',
+        });
+        continue;
+      }
       const inspected = inspectFixedRechargeProduct(item, recipientCurrency);
       if (!inspected.eligible) {
         rejected.push({
