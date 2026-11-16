@@ -4055,12 +4055,12 @@ app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), r
     if (!country.rowCount) return res.status(409).json({ error: 'Country must be in testing or configuring status.' });
     const saved = await pool.query(`
       INSERT INTO country_sandbox_evidence(country_code,test_name,passed,evidence_ref,submitted_by,review_status,submitted_at)
-      VALUES($1,$2,TRUE,$3,'admin-session','submitted',NOW())
+      VALUES($1,$2,TRUE,$3,$4,'submitted',NOW())
       ON CONFLICT(country_code,test_name) DO UPDATE SET
         passed=TRUE,evidence_ref=EXCLUDED.evidence_ref,
         submitted_by=EXCLUDED.submitted_by,review_status='submitted',submitted_at=NOW()
       RETURNING country_code,test_name,passed,evidence_ref,review_status,submitted_at
-    `, [countryCode,testName,evidenceRef]);
+    `, [countryCode,testName,evidenceRef,req.adminActorId]);
     return res.status(201).set('Cache-Control','no-store').json({
       recorded: true, evidence: saved.rows[0],
       note: 'Evidence recorded only; this does not activate the country.',
