@@ -53,6 +53,8 @@ test('admin routes expose read-only preview and auditable approval without activ
   assert.match(preview, /provider_price_source === 'dtone_api'/);
   assert.match(preview, /24 \* 60 \* 60 \* 1000/);
   assert.match(batch, /operator\.rows\[0\]\.active !== true \|\| operator\.rows\[0\]\.country_status !== 'active'/);
+  assert.match(batch, /SELECT o\.display_name,o\.provider_operator_id,o\.verified_at,o\.active/);
+  assert.match(batch, /cop\.active AS mapping_active,cop\.verified_at AS mapping_verified_at/);
   assert.match(batch, /mapping_active === true && !!row\.mapping_verified_at/);
   assert.match(batch, /confirmApprovalBatch !== true/);
   assert.match(batch, /country_network_product_approval_batches/);
