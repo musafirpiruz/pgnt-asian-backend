@@ -946,8 +946,15 @@ app.get('/api/countries', async (req, res) => {
              AND p.country = c.country_code
              AND p.currency = c.destination_currency
              AND p.active = TRUE
+             AND p.amount >= 75 AND p.amount <= 3000
+             AND p.amount = TRUNC(p.amount)
              AND p.wholesale_price_eur_cents IS NOT NULL
              AND p.wholesale_price_eur_cents > 0
+             AND p.provider_price_source = 'dtone_api'
+             AND p.provider_price_product_id = p.product_id
+             AND p.provider_price_verified_at IS NOT NULL
+             AND p.provider_price_verified_at <= NOW()
+             AND p.provider_price_verified_at >= NOW() - INTERVAL '24 hours'
          )
        ORDER BY COALESCE(localized.display_name, c.country_name), c.country_code`,
       [language]
@@ -1019,9 +1026,15 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              AND p.active = TRUE
              AND p.amount >= 75
              AND p.amount <= 3000
+             AND p.amount = TRUNC(p.amount)
              AND p.product_id IS NOT NULL
              AND p.wholesale_price_eur_cents IS NOT NULL
              AND p.wholesale_price_eur_cents > 0
+             AND p.provider_price_source = 'dtone_api'
+             AND p.provider_price_product_id = p.product_id
+             AND p.provider_price_verified_at IS NOT NULL
+             AND p.provider_price_verified_at <= NOW()
+             AND p.provider_price_verified_at >= NOW() - INTERVAL '24 hours'
          )
        ORDER BY COALESCE(localized.display_name, o.display_name), o.operator_key`,
       [countryCode, language]
@@ -1104,9 +1117,15 @@ app.get('/api/countries/:countryCode/operators/:operatorKey/products', async (re
          AND p.active = TRUE
          AND p.amount >= 75
          AND p.amount <= 3000
+         AND p.amount = TRUNC(p.amount)
          AND p.product_id IS NOT NULL
          AND p.wholesale_price_eur_cents IS NOT NULL
          AND p.wholesale_price_eur_cents > 0
+         AND p.provider_price_source = 'dtone_api'
+         AND p.provider_price_product_id = p.product_id
+         AND p.provider_price_verified_at IS NOT NULL
+         AND p.provider_price_verified_at <= NOW()
+         AND p.provider_price_verified_at >= NOW() - INTERVAL '24 hours'
        ORDER BY p.amount, p.id`,
       [countryCode, operatorKey, REGISTRY_LANGUAGES.has(String(req.query.language || 'en').toLowerCase())
         ? String(req.query.language || 'en').toLowerCase() : 'en']
