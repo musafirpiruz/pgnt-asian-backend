@@ -129,7 +129,13 @@ test('admin DT One catalog country resolution uses only unique explicit country_
   assert.match(refresh, /countryMapping\.destinationCurrency/);
   assert.match(importRoute, /countryMapping\.destinationCurrency/);
   assert.match(sync, /recipientCurrency = countryMapping\.destinationCurrency/);
-  assert.match(sync, /currency !== recipientCurrency/);
+  assert.match(sync, /inspectFixedRechargeProduct\(item, recipientCurrency\)/);
+  const fixedRechargeValidator = fs.readFileSync(path.join(__dirname, '..', 'dtone-fixed-recharge.js'), 'utf8');
+  assert.match(fixedRechargeValidator, /productType !== FIXED_RECHARGE_TYPE/);
+  assert.match(fixedRechargeValidator, /currency !== expected/);
+  assert.match(fixedRechargeValidator, /amount < MIN_CUSTOMER_AMOUNT/);
+  assert.match(fixedRechargeValidator, /amount > MAX_CUSTOMER_AMOUNT/);
+  assert.match(fixedRechargeValidator, /wholesaleUnit !== 'EUR' \|\| retailUnit !== 'EUR'/);
 });
 
 test('ranged DT One capability import resolves destination currency from country_registry', () => {
