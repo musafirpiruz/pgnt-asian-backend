@@ -4247,6 +4247,7 @@ class PgntContactsPage extends StatefulWidget {
 
 class _PgntContactsPageState extends State<PgntContactsPage> {
   static const String _storageKey = 'pgnt_private_contacts_v1';
+  final FlutterSecureStorage _contactsStorage = const FlutterSecureStorage();
   final List<Map<String, String>> _contacts = [];
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -4268,8 +4269,7 @@ class _PgntContactsPageState extends State<PgntContactsPage> {
 
   Future<void> _loadContacts() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_storageKey);
+      final raw = await _contactsStorage.read(key: _storageKey);
       if (raw != null) {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
@@ -4293,8 +4293,7 @@ class _PgntContactsPageState extends State<PgntContactsPage> {
   Future<void> _persistContacts() async {
     setState(() => _saving = true);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_storageKey, jsonEncode(_contacts));
+      await _contactsStorage.write(key: _storageKey, value: jsonEncode(_contacts));
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
