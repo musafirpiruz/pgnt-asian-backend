@@ -83,6 +83,7 @@ function buildCountryPricingPreview({ policy, countries, products, fxRates, now 
       String(row.country_code || '').trim().toUpperCase() === code &&
       String(row.base_currency || '').toUpperCase() === 'EUR' &&
       String(row.quote_currency || '').toUpperCase() === currency &&
+      Number.isFinite(Number(row.quote_per_base)) && Number(row.quote_per_base) > 0 &&
       row.is_approved === true && row.approved_at &&
       Number.isFinite(Date.parse(row.expires_at)) &&
       Date.parse(row.expires_at) > now &&
