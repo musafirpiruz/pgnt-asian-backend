@@ -2366,6 +2366,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildWallet(),
           buildSupport(),
           buildProfile(),
+          const PgntContactsPage(),
         ],
       ),
       bottomNavigationBar: Container(
@@ -4095,6 +4096,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
             },
           ),
         ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.contacts_outlined, color: primaryRed),
+            title: const Text('زما اړیکې / My contacts'),
+            subtitle: const Text('Save contacts privately on this device'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => setState(() => selectedTab = 5),
+          ),
+        ),
         const SizedBox(height: 18),
         pgntSectionTitle(
           t('settings'),
@@ -4226,3 +4236,230 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
   
 }
+
+// Private, device-only contacts. No address-book permission and no cloud sync.
+class PgntContactsPage extends StatefulWidget {
+  const PgntContactsPage({super.key});
+
+  @override
+  State<PgntContactsPage> createState() => _PgntContactsPageState();
+}
+
+class _PgntContactsPageState extends State<PgntContactsPage> {
+  static const String _storageKey = 'pgnt_private_contacts_v1';
+  final List<Map<String, String>> _contacts = [];
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadContacts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_storageKey);
+      if (raw != null) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map && item['name'] is String && item['phone'] is String) {
+              final name = (item['name'] as String).trim();
+              final phone = (item['phone'] as String).trim();
+              if (name.isNotEmpty && phone.isNotEmpty) {
+                _contacts.add({'name': name, 'phone': phone});
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Keep the page usable if local storage contains invalid data.
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _persistContacts() async {
+    setState(() => _saving = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_storageKey, jsonEncode(_contacts));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('اړیکې خوندي نه شوې. بیا هڅه وکړئ.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _editContact({int? index}) async {
+    final editing = index != null;
+    _nameController.text = editing ? _contacts[index]['name']! : '';
+    _phoneController.text = editing ? _contacts[index]['phone']! : '';
+    final formKey = GlobalKey<FormState>();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(editing ? 'اړیکه بدله کړئ' : 'نوې اړیکه'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'نوم'),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'نوم ولیکئ' : null,
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'د موبایل شمېره (+93...)'),
+                validator: (value) => value == null ||
+                        !RegExp(r'^\+?[0-9][0-9 ()-]{5,19}$').hasMatch(value.trim())
+                    ? 'سمه شمېره ولیکئ' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('لغوه'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, true);
+              }
+            },
+            child: const Text('خوندي کول'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    final contact = {
+      'name': _nameController.text.trim(),
+      'phone': _phoneController.text.trim(),
+    };
+    setState(() {
+      if (editing) {
+        _contacts[index] = contact;
+      } else {
+        _contacts.add(contact);
+      }
+      _contacts.sort((a, b) => a['name']!.toLowerCase().compareTo(b['name']!.toLowerCase()));
+    });
+    await _persistContacts();
+  }
+
+  Future<void> _deleteContact(int index) async {
+    final contactName = _contacts[index]['name']!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('اړیکه ړنګه کړئ؟'),
+        content: Text('ایا "$contactName" ړنګول غواړئ؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('نه')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('هو، ړنګ یې کړه'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _contacts.removeAt(index));
+    await _persistContacts();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const PgntBrandHeader(),
+          const SizedBox(height: 18),
+          pgntSectionTitle('زما اړیکې', Icons.contacts_outlined),
+          const Text(
+            'دا اړیکې یوازې په همدې موبایل کې ساتل کېږي. اپلېکېشن ستاسو د موبایل ټول contacts نه لولي او هېڅ اړیکه سرور ته نه لېږي.',
+            style: TextStyle(color: Colors.black54, height: 1.45),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _saving ? null : () => _editContact(),
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('نوې اړیکه اضافه کړئ'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_loading)
+            const Center(child: CircularProgressIndicator())
+          else if (_contacts.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Center(child: Text('تر اوسه اړیکه نه ده اضافه شوې.')),
+              ),
+            )
+          else
+            ..._contacts.asMap().entries.map((entry) {
+              final index = entry.key;
+              final contact = entry.value;
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0x147A0C10),
+                    child: Text(
+                      contact['name']!.isEmpty ? '?' : contact['name']![0].toUpperCase(),
+                      style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  title: Text(contact['name']!, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(contact['phone']!),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') _editContact(index: index);
+                      if (value == 'delete') _deleteContact(index);
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text('بدلول')),
+                      PopupMenuItem(value: 'delete', child: Text('ړنګول')),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          if (_saving)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
