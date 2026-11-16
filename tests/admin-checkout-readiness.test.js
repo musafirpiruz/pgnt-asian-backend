@@ -97,9 +97,9 @@ test('verified DT One import keeps provider wholesale and retail prices in separ
 
   assert.match(route, /providerProduct\.prices\?\.retail\?\.amount/);
   assert.match(route, /providerProduct\.prices\?\.wholesale\?\.amount/);
-  assert.match(route, /price_eur_cents,\s*wholesale_price_eur_cents/);
+  assert.match(route, /price_eur_cents,\s*wholesale_price_eur_cents,\s*provider_price_verified_at/);
   assert.match(route, /\[country, operator, amountValue, currency, productId, retailCents, wholesaleCents\]/);
-  assert.match(route, /VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, 0, FALSE, NOW\(\)\)/);
+  assert.match(route, /VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, NOW\(\), 'dtone_api', \$5, 0, FALSE, NOW\(\)\)/);
   assert.match(route, /activationChanged:\s*false/);
   assert.match(route, /transactionCreated:\s*false/);
   assert.match(route, /alreadyRegistered:\s*true/);
@@ -133,7 +133,7 @@ test('explicit catalog price refresh is admin-only, confirmed, provider-verified
   assert.match(route, /'ATOMA AFGHANISTAN': 'ATOMA'/);
   assert.ok(route.includes('canonicalOperator(providerCountry, providerOperator)'));
   assert.ok(route.includes('never strip arbitrary country/network'));
-  assert.match(route, /SET price_eur_cents = \$1, wholesale_price_eur_cents = \$2, updated_at = NOW\(\)/);
+  assert.match(route, /SET price_eur_cents = \$1, wholesale_price_eur_cents = \$2,[\s\S]*provider_price_verified_at = NOW\(\), provider_price_source = 'dtone_api'/);
   assert.match(route, /WHERE id = \$3 AND active = FALSE/);
   assert.match(route, /activationChanged: false/);
   assert.match(route, /pricingSettingsChanged: false/);

@@ -10,6 +10,16 @@ on:
       - "firebase-admin-adapter.js"
       - "tests/firebase-admin-adapter.test.js"
       - "phone-auth.js"
+      - "master-country-pricing.js"
+      - "network-product-approval.js"
+      - "stripe-fee-estimator.js"
+      - "stripe-fee-evidence.js"
+      - "tests/master-country-pricing.test.js"
+      - "tests/network-product-approval.test.js"
+      - "tests/stripe-fee-estimator.test.js"
+      - "tests/stripe-fee-evidence.test.js"
+      - "tests/stripe-fee-rounding.test.js"
+      - "tests/stripe-fee-settings-validation.test.js"
       - "tests/firebase-auth.test.js"
       - "tests/phone-auth.test.js"
       - ".github/workflows/backend-check.yml"
@@ -25,9 +35,12 @@ on:
       - "firebase-auth.js"
       - "firebase-admin-adapter.js"
       - "phone-auth.js"
-      - "tests/firebase-auth.test.js"
-      - "tests/firebase-admin-adapter.test.js"
-      - "tests/phone-auth.test.js"
+      - "master-country-pricing.js"
+      - "network-product-approval.js"
+      - "stripe-fee-estimator.js"
+      - "stripe-fee-evidence.js"
+      - "dtone-fixed-recharge.js"
+      - "tests/**"
       - ".github/workflows/backend-check.yml"
 
 jobs:
@@ -47,3 +60,7 @@ jobs:
           node --check firebase-auth.js
           node --check firebase-admin-adapter.js
           node --check phone-auth.js
+          node --check master-country-pricing.js
+          node --check network-product-approval.js
+          node --check stripe-fee-estimator.js
+          node --check stripe-fee-evidence.js

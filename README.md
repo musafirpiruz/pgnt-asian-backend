@@ -65,6 +65,18 @@ The application must use the backend to retrieve products and create payment req
 5. Wait for the build to finish.
 6. Download the APK artifact if the build succeeds.
 
+## Database Migration and Render Deployment Safety
+
+The application startup command is intentionally separate from database migrations:
+
+- `npm start` starts only the API server.
+- `npm run migrate` explicitly runs the database migration runner.
+- CI runs migrations against its isolated PostgreSQL test database before integration tests.
+
+**Production rollout gate:** before deploying a release that requires new schema, review the exact pending migration files and the production schema/data backup. Configure Render's Pre-Deploy Command to `npm run migrate` only after that review and explicit production approval. Do not run migrations from the web-service startup command: a restart or automatic deploy must not silently apply schema or data changes. If the pre-deploy migration fails, stop the rollout and investigate; do not bypass the failure.
+
+Changing the start command alone does not apply pending production migrations. A release that requires unapplied migrations must not be deployed until the separately approved migration step has completed successfully.
+
 ## Security Requirements
 
 - Keep Stripe and DT One secrets on the backend.

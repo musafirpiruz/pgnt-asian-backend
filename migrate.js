@@ -297,8 +297,7 @@ async function runMigration() {
         // Confirmed DT One pre-production values for product 7194:
         // retail €2.10, wholesale €1.89. Never enable it automatically.
         await client.query(`
-          INSERT INTO product_catalog
-            (country, operator, amount, currency, product_id,
+          INSERT INTO product_catalog            (country, operator, amount, currency, product_id,
              price_eur_cents, wholesale_price_eur_cents, bonus_amount, active, updated_at)
           VALUES ('AF', 'ATOMA', 115, 'AFN', 7194, 210, 189, 0, FALSE, NOW())
           ON CONFLICT (product_id)
@@ -597,8 +596,7 @@ async function runMigration() {
         VALUES ('014_declined_sandbox_order_archive')
         ON CONFLICT (version) DO NOTHING;
       `);
-      console.log("Migration 014_declined_sandbox_order_archive completed successfully.");
-    }
+      console.log("Migration 014_declined_sandbox_order_archive completed successfully.");    }
 
 
 
@@ -897,8 +895,7 @@ async function runMigration() {
       "SELECT version FROM schema_migrations WHERE version = $1 LIMIT 1",
       [rangedOrderIdentityVersion]
     );
-    if (rangedOrderIdentityCheck.rows.length === 0) {
-      await client.query("BEGIN");
+    if (rangedOrderIdentityCheck.rows.length === 0) {      await client.query("BEGIN");
       try {
         await client.query(`
           ALTER TABLE orders
@@ -1015,6 +1012,11 @@ async function runMigration() {
       { version: "024_country_fx_rates", file: "024_country_fx_rates.sql" },
       { version: "030_country_registry_audit_trail", file: "030_country_registry_audit_trail.sql" },
       { version: "031_order_country_configuration_snapshot", file: "031_order_country_configuration_snapshot.sql" },
+      { version: "032_master_country_pricing_policy", file: "032_master_country_pricing_policy.sql" },
+      { version: "033_network_product_approval_batches", file: "033_network_product_approval_batches.sql" },
+      { version: "034_dtone_price_evidence_freshness", file: "034_dtone_price_evidence_freshness.sql" },
+      { version: "035_stripe_actual_fee_reconciliation", file: "035_stripe_actual_fee_reconciliation.sql" },
+      { version: "036_four_country_app_fee_eur_049", file: "036_four_country_app_fee_eur_049.sql" },
     ];
 
     for (const migration of countryRegistryMigrations) {

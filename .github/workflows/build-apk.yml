@@ -7,6 +7,7 @@ on:
       - main
       - feat/multi-currency-checkout-foundation-2026-11-10
       - feat/device-region-and-country-bootstrap-2026-11-10
+      - feat/customer-ranged-catalog-2026-11-13
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -14,6 +15,7 @@ on:
       - 'global_phone_auth_gate.dart'
       - 'lib/**'
       - 'pubspec.yaml'
+      - 'tests/flutter-network-registry-contract.test.js'
       - '.github/workflows/build-apk.yml'
   push:
     branches:
@@ -37,6 +39,7 @@ on:
       - feature/firebase-id-token-verification-core
       - feat/first-launch-language-welcome
       - feat/device-region-and-country-bootstrap-2026-11-10
+      - feat/approved-master-country-pricing-2026-11-15
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'

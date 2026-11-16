@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS country_operators (
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  UNIQUE(country_code,operator_key)
 );
+-- Earlier schemas may have created this column as NOT NULL. DT One operator
+-- candidates remain unverified until provider discovery, so NULL is required.
+ALTER TABLE country_operators ALTER COLUMN provider_operator_id DROP NOT NULL;
 CREATE TABLE IF NOT EXISTS country_operator_localizations (
  operator_id BIGINT NOT NULL REFERENCES country_operators(id) ON DELETE CASCADE,
  language_code VARCHAR(8) NOT NULL, display_name VARCHAR(120) NOT NULL,

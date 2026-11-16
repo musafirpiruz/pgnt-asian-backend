@@ -129,7 +129,13 @@ test('admin DT One catalog country resolution uses only unique explicit country_
   assert.match(refresh, /countryMapping\.destinationCurrency/);
   assert.match(importRoute, /countryMapping\.destinationCurrency/);
   assert.match(sync, /recipientCurrency = countryMapping\.destinationCurrency/);
-  assert.match(sync, /currency !== recipientCurrency/);
+  assert.match(sync, /inspectFixedRechargeProduct\(item, recipientCurrency\)/);
+  const fixedRechargeValidator = fs.readFileSync(path.join(__dirname, '..', 'dtone-fixed-recharge.js'), 'utf8');
+  assert.match(fixedRechargeValidator, /productType !== FIXED_RECHARGE_TYPE/);
+  assert.match(fixedRechargeValidator, /currency !== expected/);
+  assert.match(fixedRechargeValidator, /amount < MIN_CUSTOMER_AMOUNT/);
+  assert.match(fixedRechargeValidator, /amount > MAX_CUSTOMER_AMOUNT/);
+  assert.match(fixedRechargeValidator, /wholesaleUnit !== 'EUR' \|\| retailUnit !== 'EUR'/);
 });
 
 test('ranged DT One capability import resolves destination currency from country_registry', () => {
@@ -150,4 +156,26 @@ test('DT One operator discovery accepts only provider countries explicitly mappe
   assert.match(route, /resolveDtOneCountryMapping\(countryIsoCode\)/);
   assert.match(route, /No unique DT One provider-country mapping/);
   assert.doesNotMatch(route, /supportedOperatorCountries|AFG, PAK, IND, or BGD/);
+});
+
+test('fixed customer catalog requires fresh DT One EUR price evidence and integer 75–3000 denominations', () => {
+  const routes = [
+    ["app.get('/api/countries',", "app.get('/api/countries/:countryCode/operators',"],
+    ["app.get('/api/countries/:countryCode/operators',", "app.get('/api/countries/:countryCode/operators/:operatorKey/products',"],
+    ["app.get('/api/countries/:countryCode/operators/:operatorKey/products',", "app.get('/api/payment-currencies',"],
+  ];
+  for (const [startMarker, endMarker] of routes) {
+    const start = server.indexOf(startMarker);
+    const end = server.indexOf(endMarker, start + startMarker.length);
+    assert.ok(start >= 0 && end > start, 'customer route must exist: ' + startMarker);
+    const route = server.slice(start, end);
+    assert.match(route, /p\.amount >= 75/);
+    assert.match(route, /p\.amount <= 3000/);
+    assert.match(route, /p\.amount = TRUNC\(p\.amount\)/);
+    assert.match(route, /p\.provider_price_source = 'dtone_api'/);
+    assert.match(route, /p\.provider_price_product_id = p\.product_id/);
+    assert.match(route, /p\.provider_price_verified_at IS NOT NULL/);
+    assert.match(route, /p\.provider_price_verified_at <= NOW\(\)/);
+    assert.match(route, /p\.provider_price_verified_at >= NOW\(\) - INTERVAL '24 hours'/);
+  }
 });
