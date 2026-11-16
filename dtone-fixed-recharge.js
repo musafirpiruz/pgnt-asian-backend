@@ -26,11 +26,13 @@ function inspectFixedRechargeProduct(product, expectedCurrency) {
     return reject('DT One product is not in the Mobile service.');
   }
 
-  const subserviceName = String(
-    product.subservice?.name ?? product.sub_service?.name ?? ''
-  ).trim();
-  if (subserviceName && !/airtime/i.test(subserviceName)) {
-    return reject('DT One product is not an Airtime subservice.');
+  const subserviceId = Number(product.service?.subservice?.id);
+  const subserviceName = String(product.service?.subservice?.name || '').trim();
+  const tags = Array.isArray(product.tags)
+    ? product.tags.map((tag) => String(tag).trim().toUpperCase())
+    : [];
+  if (subserviceId !== 11 || !/airtime/i.test(subserviceName) || !tags.includes('AIRTIME')) {
+    return reject('DT One product is not explicitly classified as Mobile Airtime.');
   }
 
   const currency = String(product.destination?.unit || '').trim().toUpperCase();
