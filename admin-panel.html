@@ -99,7 +99,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
  <div id="networkApprovalResult" class="status" role="status" aria-live="polite">تر Preview مخکې هېڅ تایید نه ثبتېږي.</div>
 </div>
 </section>
-<section class="card"><h2>د ټولو هېوادونو ګډ Master Pricing Policy</h2><p class="muted">یوازې د اپ EUR فیس دلته ټاکئ؛ د Stripe فیس سیستم د ثبت شوو حقیقي BalanceTransaction معلوماتو څخه اټکلوي. هر هېواد خپل جلا DT One wholesale EUR لګښت او خپل منظور شوی تازه FX کاروي. دا برخه یوازې Draft، Approval او Preview کوي؛ قیمتونه نه لیکي او محصولات نه فعالوي.</p><div class="grid"><div><label for="masterFee">د اپ ثابت فیس (EUR)</label><input id="masterFee" type="number" min="0" max="1000" step="0.01" placeholder="د منظور شوي فیس اندازه"></div></div><p class="safe">عمومي Bonus = 0. Referral انعام جلا دی. زاړه FX نرخونه نه کارېږي؛ د هر هېواد تازه، منظور شوی او لا نه‌منقضي FX ثبوت ضروري دی.</p><div class="actions"><button id="loadMasterPolicy" type="button" class="secondary">Policy راپور ولوله</button><button id="createMasterDraft" type="button">Draft جوړ کړه</button><button id="approveMasterPolicy" type="button" class="secondary">Draft منظوره کړه</button><button id="previewMasterPolicy" type="button" class="secondary">د ټولو هېوادونو Preview</button></div><label for="masterPolicyVersion">د منظورۍ لپاره Draft نسخه</label><select id="masterPolicyVersion"><option value="">لومړی راپور ولولئ</option></select><div id="masterPolicyReport" class="status" role="status" aria-live="polite">تر اوسه Policy نه ده لوستل شوې.</div><div id="masterPricingPreview"></div></section>
+<section class="card"><h2>د ټولو هېوادونو ګډ Master Pricing Policy</h2><div class="detail"><h3>د څلورو هېوادونو د اپ فیس منظوري</h3><p class="muted">دا اقدام د اډمین په ښکاره تایید سره د افغانستان، پاکستان، هند او بنګله‌دېش App Fee په یو ځل €0.49 کوي. د اسعارو نرخونه، Stripe تنظیمات، محصولات او پخواني فرمایشونه نه بدلوي؛ د هر هېواد پخوانی او نوی فیس د Audit په تاریخچه کې ثبتېږي.</p><div class="actions"><button id="approveFourCountryFee" type="button">د څلورو هېوادونو فیس €0.49 منظور کړه</button></div><div id="fourCountryFeeApprovalStatus" class="status" role="status" aria-live="polite">تر اډمین تایید مخکې هېڅ فیس نه بدلېږي.</div></div><p class="muted">یوازې د اپ EUR فیس دلته ټاکئ؛ د Stripe فیس سیستم د ثبت شوو حقیقي BalanceTransaction معلوماتو څخه اټکلوي. هر هېواد خپل جلا DT One wholesale EUR لګښت او خپل منظور شوی تازه FX کاروي. دا برخه یوازې Draft، Approval او Preview کوي؛ قیمتونه نه لیکي او محصولات نه فعالوي.</p><div class="grid"><div><label for="masterFee">د اپ ثابت فیس (EUR)</label><input id="masterFee" type="number" min="0" max="1000" step="0.01" placeholder="د منظور شوي فیس اندازه"></div></div><p class="safe">عمومي Bonus = 0. Referral انعام جلا دی. زاړه FX نرخونه نه کارېږي؛ د هر هېواد تازه، منظور شوی او لا نه‌منقضي FX ثبوت ضروري دی.</p><div class="actions"><button id="loadMasterPolicy" type="button" class="secondary">Policy راپور ولوله</button><button id="createMasterDraft" type="button">Draft جوړ کړه</button><button id="approveMasterPolicy" type="button" class="secondary">Draft منظوره کړه</button><button id="previewMasterPolicy" type="button" class="secondary">د ټولو هېوادونو Preview</button></div><label for="masterPolicyVersion">د منظورۍ لپاره Draft نسخه</label><select id="masterPolicyVersion"><option value="">لومړی راپور ولولئ</option></select><div id="masterPolicyReport" class="status" role="status" aria-live="polite">تر اوسه Policy نه ده لوستل شوې.</div><div id="masterPricingPreview"></div></section>
 <section class="card">
 <h2>۲. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
 <p class="muted">یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.</p>
@@ -411,6 +411,20 @@ document.getElementById('createReferralCode').addEventListener('click',async()=>
   document.getElementById('newReferralContact').value='';
   document.getElementById('loadReferralReport').click();
  }catch(error){result.className='status error';result.textContent=error.message;}
+ finally{button.disabled=false;}
+});
+
+document.getElementById('approveFourCountryFee').addEventListener('click',async()=>{
+ const button=document.getElementById('approveFourCountryFee');
+ const status=document.getElementById('fourCountryFeeApprovalStatus');
+ if(!confirm('وروستی تایید: د AF، PK، IN او BD د اپ فیس €0.49 ته بدل شي؟ یوازې نوي نرخ‌محاسبات اغېزمنېږي؛ پخواني فرمایشونه، FX، Stripe تنظیمات او محصولات نه بدلېږي. د اډمین نوم او بدلون به Audit کې ثبت شي.'))return;
+ button.disabled=true;status.className='status';status.textContent='د اډمین منظوري ثبتېږي…';
+ try{
+  const data=await adminPost('/api/admin/pricing/fee/approve-four-countries',{feeEurCents:49,confirmApproval:true});
+  status.className='status ok';
+  status.textContent='منظوري ثبت شوه: AF، PK، IN، BD — App Fee €0.49. اډمین: '+data.changedBy+'. پخواني فرمایشونه او FX نه دي بدل شوي.';
+  document.getElementById('loadPricing').click();
+ }catch(error){status.className='status error';status.textContent='منظوري ثبت نه شوه: '+error.message;}
  finally{button.disabled=false;}
 });
 
