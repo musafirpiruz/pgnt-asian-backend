@@ -7,6 +7,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { buildDtOneFxObservation } = require('../dtone-fx');
 
+test('country registry bootstrap permits unverified DT One operator candidates', () => {
+  const migration = fs.readFileSync(path.join(__dirname, '..', 'migrations', '023_current_catalog_country_registry_bootstrap.sql'), 'utf8');
+  assert.match(migration, /ALTER TABLE country_operators ALTER COLUMN provider_operator_id DROP NOT NULL/);
+  assert.match(migration, /provider_operator_id,active,verified_at/);
+  assert.match(migration, /VALUES\\(item.country_code,normalized_key,item.operator,NULL,FALSE,NULL\\)/);
+});
+
 test('DT One FX observations are independently scoped to all four destination currencies', () => {
   const currencies = { AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT' };
   for (const [country, currency] of Object.entries(currencies)) {
