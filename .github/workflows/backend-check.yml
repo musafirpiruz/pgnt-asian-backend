@@ -20,6 +20,15 @@ on:
       - "tests/stripe-fee-evidence.test.js"
       - "tests/stripe-fee-rounding.test.js"
       - "tests/stripe-fee-settings-validation.test.js"
+      - "tests/firebase-auth.test.js"
+      - "tests/phone-auth.test.js"
+      - ".github/workflows/backend-check.yml"
+  push:
+    branches:
+      - main
+      - "fix/schema-server-compatibility"
+      - "feat/device-region-and-country-bootstrap-2026-11-10"
+    paths:
       - "master-country-pricing.js"
       - "network-product-approval.js"
       - "stripe-fee-estimator.js"
@@ -30,25 +39,6 @@ on:
       - "tests/stripe-fee-evidence.test.js"
       - "tests/stripe-fee-rounding.test.js"
       - "tests/stripe-fee-settings-validation.test.js"
-      - "tests/firebase-auth.test.js"
-      - "tests/phone-auth.test.js"
-      - ".github/workflows/backend-check.yml"
-  push:
-    branches:
-      - main
-      - "fix/schema-server-compatibility"
-      - "feat/device-region-and-country-bootstrap-2026-11-10"
-    paths:
-      - "server.js"
-      - "migrate.js"
-      - "package.json"
-      - "firebase-auth.js"
-      - "firebase-admin-adapter.js"
-      - "phone-auth.js"
-      - "tests/firebase-auth.test.js"
-      - "tests/firebase-admin-adapter.test.js"
-      - "tests/phone-auth.test.js"
-      - ".github/workflows/backend-check.yml"
 
 jobs:
   syntax:
