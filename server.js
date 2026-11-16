@@ -6983,6 +6983,73 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
   }
 });
 
+// Explicit Admin Panel approval for the owner-requested EUR 0.49 app fee.
+// This updates only the four app-fee fields; FX, Stripe settings, products and orders are untouched.
+app.post('/api/admin/pricing/fee/approve-four-countries', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  if (req.body?.confirmApproval !== true || Number(req.body?.feeEurCents) !== 49) {
+    return res.status(400).json({
+      confirmationRequired: true,
+      error: 'Explicit Admin approval of the fixed EUR 0.49 app fee is required.',
+    });
+  }
+
+  const countries = ['AF', 'BD', 'IN', 'PK'];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(
+      `SELECT country, fee_eur_cents
+         FROM pricing_settings
+        WHERE country = ANY($1::text[])
+        ORDER BY country
+        FOR UPDATE`,
+      [countries]
+    );
+    if (current.rowCount !== 4 || countries.some(code => !current.rows.some(row => row.country === code))) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Approval blocked: exactly four existing country pricing rows (AF, PK, IN, BD) are required.',
+        updated: false,
+      });
+    }
+
+    const updated = await client.query(
+      `UPDATE pricing_settings
+          SET fee_eur_cents = 49, updated_at = NOW()
+        WHERE country = ANY($1::text[])
+        RETURNING country, fee_eur_cents, updated_at`,
+      [countries]
+    );
+    for (const row of current.rows) {
+      await client.query(
+        `INSERT INTO country_pricing_fee_audit
+           (country_code, previous_fee_eur_cents, new_fee_eur_cents, changed_by, change_reason)
+         VALUES ($1, $2, 49, $3, 'Admin-approved four-country application fee: EUR 0.49')`,
+        [row.country, Number(row.fee_eur_cents), req.adminActorId]
+      );
+    }
+    await client.query('COMMIT');
+    return res.json({
+      approvalRecorded: true,
+      paymentCurrency: 'EUR',
+      appFeeEur: 0.49,
+      pricing: updated.rows,
+      changedBy: req.adminActorId,
+      ordersChanged: false,
+      fxRatesChanged: false,
+      stripeSettingsChanged: false,
+      productsActivated: false,
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Four-country app fee approval failed:', error.message);
+    return res.status(500).json({ error: 'Could not approve the four-country app fee.' });
+  } finally {
+    client.release();
+  }
+});
+
 // Update country pricing controls from a trusted admin client.
 // Prices are stored in integer EUR cents; bonus is informational
 // until country/operator bonus fulfillment rules are verified.
