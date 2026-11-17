@@ -14,8 +14,31 @@ function text(value) {
 }
 function numericParts(value, field) {
   const raw = text(value).replace(/,/g, '.').replace(/\s+/g, ' ').trim();
-  const numeric = '[0-9]+(?:\\.[0-9]+)?';
-  const range = new RegExp('^(' + numeric + ')\\s*(?:-|–|—|to)\\s*(' + numeric + ')
+  const rangeText = raw.replace(/\s+to\s+/i, '|').replace(/\s*[-–—]\s*/, '|');
+  const parts = rangeText.split('|');
+  if (parts.length < 1 || parts.length > 2 ||
+      parts.some((part) => !/^[0-9]+(?:\.[0-9]+)?$/.test(part))) {
+    throw new Error(field + ' must be a positive number or numeric range');
+  }
+  const values = parts.map(Number);
+  if (values.some((number) => !Number.isFinite(number) || number <= 0)) {
+    throw new Error(field + ' values must be positive finite numbers');
+  }
+  if (values.length === 2 && values[0] > values[1]) {
+    throw new Error(field + ' range minimum must not exceed its maximum');
+  }
+  return values;
+}
+function canonicalNumeric(value, field) {
+  return numericParts(value, field)
+    .map((number) => Number(number.toFixed(8)).toString())
+    .join('-');
+}
+function moneyCents(value, field) {
+  return numericParts(value, field)
+    .map((number) => Math.round((number + Number.EPSILON) * 100))
+    .join('-');
+}
 function normalizeWorkbookRow(row) {
   if (!row || typeof row !== 'object') throw new Error('Workbook row must be an object');
   const countryRaw = text(row.country || row.operatorCountry || row['OPERATOR COUNTRY']);
