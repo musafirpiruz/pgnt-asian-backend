@@ -91,6 +91,7 @@ function registerDtOneMasterWorkbookRoutes({
       })
       .finally(async () => {
         workerPromise = null;
+        await delay(5000);
         try {
           const pending = await pool.query("SELECT 1 FROM dtone_master_reconciliation_runs WHERE status IN ('queued', 'running') LIMIT 1");
           if (pending.rowCount) startWorker();
