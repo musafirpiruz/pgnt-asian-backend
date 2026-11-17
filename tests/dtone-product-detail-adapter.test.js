@@ -91,6 +91,8 @@ test('preserves USD destination currency for fixed PIN/eSIM products while price
   };
   const row = normalizeDtOneProductDetail(esim, '66482', { PAK: 'PK' });
   assert.equal(row.country, 'PK');
+  assert.equal(row.service, 'eSIM');
+  assert.equal(row.subservice, '');
   assert.equal(row.destinationCurrency, 'USD');
   assert.equal(row.destinationAmount, '1.69');
   assert.equal(row.wholesalePriceCurrency, 'EUR');
