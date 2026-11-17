@@ -14,7 +14,8 @@ const provider = {
   id: 12345, country: 'AF', operator: 'ATOMA Afghanistan',
   service: 'Airtime', subservice: '', productType: 'FIXED_VALUE_RECHARGE',
   destinationCurrency: 'AFN', destinationAmount: 250,
-  wholesalePriceEur: 4.170, retailPriceEur: 4.640,
+  wholesalePriceEur: 4.170, wholesalePriceCurrency: 'EUR',
+  retailPriceEur: 4.640, retailPriceCurrency: 'EUR',
 };
 
 test('normalizes the official workbook column names and preserves empty subservice', () => {
