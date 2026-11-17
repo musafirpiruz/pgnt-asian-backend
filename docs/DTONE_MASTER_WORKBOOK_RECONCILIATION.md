@@ -38,7 +38,7 @@ The runner does not scan the entire provider catalog for IDs absent from the wor
 - No SQL statement in the runner inserts, updates, deletes, or activates `product_catalog` rows.
 - No Stripe API, DT One transaction endpoint, payment, refund, order, or top-up path is called.
 - `safeToImport` remains false. No import or activation endpoint is exposed by this feature.
-- All four DT One country mappings must already exist and be unambiguous. Missing mappings pause/reject the run instead of guessing.
+- The runner uses the explicit ISO 3166-1 alpha-3 mapping `AFG→AF`, `PAK→PK`, `IND→IN`, `BGD→BD`, matching DT One's documented country-code format. It does not depend on an unpopulated `country_registry.provider_country_code` field or infer codes from database content.
 
 ## Remaining before live verification
 
