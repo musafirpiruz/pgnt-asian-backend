@@ -1,15 +1,23 @@
 # DT One product detail adapter
 
-The existing backend's read-only catalog routes use these DT One detail fields:
+The adapter follows the official DT One DVS product-detail schema:
 
 - `id`
-- `operator.name`
-- `operator.country.iso_code`
-- `destination.amount` and `destination.unit`, with the existing `benefits[0].amount.base/unit` fallback
-- `prices.wholesale.amount` and `prices.retail.amount`
+- `operator.name` and `operator.country.iso_code`
+- `service.name` and nested `service.subservice.name`
+- `type` for the product type
+- `destination.amount` and `destination.unit`, with the backend's existing `benefits[0].amount.base/unit` fallback
+- `prices.wholesale.amount/unit` and `prices.retail.amount/unit`
 
-`dtone-product-detail-adapter.js` maps those fields into the normalized reconciliation shape and verifies that the returned product ID exactly matches the requested workbook ID. Provider country codes must be mapped explicitly (for example, the caller supplies `{ AFG: 'AF' }`); no country mapping is guessed.
+The provider country code must be mapped explicitly (for example, the caller supplies `{ AFG: 'AF' }`); no country mapping is guessed.
 
-Service, subservice, and product type are copied only when a recognized response field is present. Missing values remain blank and therefore cannot create a false `MATCHED` result. The actual detail schema for those classification fields still needs confirmation against DT One's account/API documentation before a full 1,960-product reconciliation is enabled.
+The workbook's wholesale and retail price columns are EUR. Therefore the adapter exposes each provider price currency separately and the reconciliation core requires both to be EUR before a product can match. A USD (or other currency) provider price is a mismatch, not a value to convert silently.
 
-This adapter is pure and offline. It does not make HTTP requests, write to PostgreSQL, create transactions, charge Stripe, or activate products.
+Service and subservice come from the nested `service` object; product type comes from `type`. Missing values remain blank and therefore cannot create a false `MATCHED` result.
+
+This adapter is pure. It does not make HTTP requests, write to PostgreSQL, create transactions, charge Stripe, or activate products.
+
+Official references:
+- DT One product detail example and field structure: https://developers.dtone.com/docs/best-practices-for-filtering-and-categorizing-products
+- DT One service/subservice definitions: https://developers.dtone.com/reference/services-and-subservices
+- Product discovery is paginated and supports country, service, subservice and product-type filters: https://developers.dtone.com/reference/getproducts
