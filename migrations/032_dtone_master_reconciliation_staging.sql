@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS dtone_master_reconciliation_runs (
   id UUID PRIMARY KEY,
   source_file_name TEXT NOT NULL,
@@ -10,11 +12,14 @@ CREATE TABLE IF NOT EXISTS dtone_master_reconciliation_runs (
   status TEXT NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued', 'running', 'paused', 'completed', 'failed')),
   resume_after TIMESTAMPTZ,
+  last_error_code TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE dtone_master_reconciliation_runs ADD COLUMN IF NOT EXISTS last_error_code TEXT;
 
 CREATE TABLE IF NOT EXISTS dtone_master_reconciliation_items (
   run_id UUID NOT NULL
@@ -45,3 +50,5 @@ COMMENT ON TABLE dtone_master_reconciliation_runs IS
 
 COMMENT ON TABLE dtone_master_reconciliation_items IS
   'Expected workbook snapshots and read-only DT One verification outcomes only. These staging rows are not customer catalog products and are never used for checkout.';
+
+COMMIT;
