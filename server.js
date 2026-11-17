@@ -4001,7 +4001,7 @@ require('./dtone-master-workbook-reconciliation-routes').registerDtOneMasterWork
   pool,
   requireAdmin,
   dtoneApiBaseUrl: DTONE_API_BASE_URL,
-  dtoneApiBaseUrlExplicit: Boolean(process.env.DTONE_API_BASE_URL || process.env.DTONE_BASE_URL),
+  dtoneApiBaseUrlExplicit: Boolean(process.env.DTONE_API_BASE_URL),
   getDtOneAuthHeader,
 });
 
