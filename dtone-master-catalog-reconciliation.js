@@ -25,7 +25,7 @@ function moneyCents(value, field) {
 }
 function normalizeWorkbookRow(row) {
   if (!row || typeof row !== 'object') throw new Error('Workbook row must be an object');
-  const countryRaw = text(row.country || row.operatorCountry);
+  const countryRaw = text(row.country || row.operatorCountry || row['OPERATOR COUNTRY']);
   const country = COUNTRY_CODES[countryRaw] || countryRaw.toUpperCase();
   const normalized = {
     productId: text(row.productId || row['PRODUCT ID']),
