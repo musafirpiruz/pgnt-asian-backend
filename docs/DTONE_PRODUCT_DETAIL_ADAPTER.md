@@ -20,5 +20,7 @@ This adapter is pure. It does not make HTTP requests, write to PostgreSQL, creat
 
 Official references:
 - DT One product detail example and field structure: https://developers.dtone.com/docs/best-practices-for-filtering-and-categorizing-products
+- DT One ranged product detail example (`min`/`max` amount objects): https://developers.dtone.com/docs/new-mobile-template
+- DT One product type definitions: https://developers.dtone.com/docs/product-type
 - DT One service/subservice definitions: https://developers.dtone.com/reference/services-and-subservices
 - Product discovery is paginated and supports country, service, subservice and product-type filters: https://developers.dtone.com/reference/getproducts
