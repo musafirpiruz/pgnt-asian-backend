@@ -3995,7 +3995,7 @@ require('./support-routes')({
 });
 
 // Authenticated, rate-limited, read-only DT One master workbook reconciliation.
-require('./dtone-master-workbook-reconciliation-routes')({
+require('./dtone-master-workbook-reconciliation-routes').registerDtOneMasterWorkbookRoutes({
   app,
   express,
   pool,
