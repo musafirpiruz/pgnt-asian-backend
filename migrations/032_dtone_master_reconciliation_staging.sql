@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS dtone_master_reconciliation_runs (
   id UUID PRIMARY KEY,
   source_file_name TEXT NOT NULL,
   source_sha256 CHAR(64) NOT NULL,
+  api_origin TEXT NOT NULL,
   sheet_name TEXT NOT NULL,
   report_version INTEGER NOT NULL DEFAULT 1 CHECK (report_version = 1),
   total_products INTEGER NOT NULL CHECK (total_products = 1960),
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS dtone_master_reconciliation_runs (
 );
 
 ALTER TABLE dtone_master_reconciliation_runs ADD COLUMN IF NOT EXISTS last_error_code TEXT;
+ALTER TABLE dtone_master_reconciliation_runs ADD COLUMN IF NOT EXISTS api_origin TEXT;
 
 CREATE TABLE IF NOT EXISTS dtone_master_reconciliation_items (
   run_id UUID NOT NULL
