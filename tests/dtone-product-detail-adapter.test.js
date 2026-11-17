@@ -54,6 +54,7 @@ test('does not invent unavailable provider classification fields', () => {
   assert.equal(row.productType, '');
   assert.deepEqual(row.rawFieldAvailability, {
     service: false, subservice: false, productType: false,
+    destinationAmount: true, wholesalePrice: true, retailPrice: true,
     wholesalePriceCurrency: true, retailPriceCurrency: true,
   });
 });
