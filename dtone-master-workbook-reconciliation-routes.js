@@ -16,11 +16,19 @@ function validRunId(value) {
 }
 
 function registerDtOneMasterWorkbookRoutes({
-  app, express, pool, requireAdmin, dtoneApiBaseUrl, getDtOneAuthHeader,
+  app, express, pool, requireAdmin, dtoneApiBaseUrl, dtoneApiBaseUrlExplicit, getDtOneAuthHeader,
 }) {
   if (!app || !express || typeof requireAdmin !== 'function') {
     throw new Error('DT One master reconciliation routes require app, express, and admin authentication.');
   }
+
+  let apiOrigin = null;
+  try {
+    const parsedApiUrl = new URL(dtoneApiBaseUrl);
+    if (parsedApiUrl.protocol === 'https:' && (parsedApiUrl.hostname === 'dtone.com' || parsedApiUrl.hostname.endsWith('.dtone.com'))) {
+      apiOrigin = parsedApiUrl.origin;
+    }
+  } catch (_) {}
 
   async function loadCountryCodeMap() {
     if (!pool) throw new Error('Database is not configured.');
@@ -49,7 +57,7 @@ function registerDtOneMasterWorkbookRoutes({
   async function getSummary(runId) {
     const runResult = await pool.query(
       "SELECT id, source_file_name, source_sha256, sheet_name, report_version, " +
-      "total_products, country_counts, product_type_counts, status, resume_after, last_error_code, "
+      "total_products, country_counts, product_type_counts, status, resume_after, last_error_code, api_origin, " +
       "created_at, started_at, completed_at, updated_at " +
       "FROM dtone_master_reconciliation_runs WHERE id = $1",
       [runId]
@@ -296,6 +304,9 @@ function registerDtOneMasterWorkbookRoutes({
     express.raw({ type: XLSX_MIME, limit: '2mb' }),
     async (req, res) => {
       if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+      if (!dtoneApiBaseUrlExplicit || !apiOrigin) {
+        return res.status(503).json({ error: 'Set an explicit HTTPS DTONE_API_BASE_URL on a *.dtone.com host before starting master-catalog verification. The default pre-production fallback is not accepted.' });
+      }
       if (req.headers['x-read-only-confirmation'] !== 'true') {
         return res.status(400).json({ confirmationRequired: true, error: 'Explicit read-only reconciliation confirmation is required.' });
       }
@@ -319,11 +330,11 @@ function registerDtOneMasterWorkbookRoutes({
           await client.query('BEGIN');
           await client.query(
             "INSERT INTO dtone_master_reconciliation_runs " +
-            "(id, source_file_name, source_sha256, sheet_name, report_version, total_products, " +
+            "(id, source_file_name, source_sha256, api_origin, sheet_name, report_version, total_products, " +
             "country_counts, product_type_counts, status) " +
-            "VALUES ($1, $2, $3, $4, 1, $5, $6::jsonb, $7::jsonb, 'queued')",
+            "VALUES ($1, $2, $3, $4, $5, 1, $6, $7::jsonb, $8::jsonb, 'queued')",
             [
-              runId, parsed.sourceFileName, parsed.sourceSha256, parsed.sheetName,
+              runId, parsed.sourceFileName, parsed.sourceSha256, apiOrigin, parsed.sheetName,
               parsed.rowCount, JSON.stringify(parsed.countryCounts), JSON.stringify(parsed.productTypeCounts),
             ]
           );
@@ -350,6 +361,7 @@ function registerDtOneMasterWorkbookRoutes({
           status: 'queued',
           sourceFileName: parsed.sourceFileName,
           sourceSha256: parsed.sourceSha256,
+          apiOrigin,
           totalProducts: parsed.rowCount,
           countryCounts: parsed.countryCounts,
           productTypeCounts: parsed.productTypeCounts,
