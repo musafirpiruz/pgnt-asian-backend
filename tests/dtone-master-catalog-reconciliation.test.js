@@ -54,3 +54,11 @@ test('flags duplicated provider IDs rather than choosing one', () => {
   assert.equal(result.counts.PROVIDER_DUPLICATE_ID, 1);
   assert.deepEqual(result.importEligibleProductIds, []);
 });
+
+test('rejects provider prices returned in a currency other than EUR', () => {
+  const result = compareWorkbookProduct(workbook, {
+    ...provider, wholesalePriceCurrency: 'USD',
+  });
+  assert.equal(result.status, 'MISMATCH');
+  assert.deepEqual(result.differences, ['wholesalePriceCurrency']);
+});
