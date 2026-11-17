@@ -27,6 +27,14 @@ test('refuses the implicit pre-production fallback and records the explicit DT O
   assert.match(source, /api_origin/);
 });
 
+test('uses explicit DT One ISO alpha-3 mappings for all four workbook countries', () => {
+  assert.match(source, /AFG: 'AF'/);
+  assert.match(source, /PAK: 'PK'/);
+  assert.match(source, /IND: 'IN'/);
+  assert.match(source, /BGD: 'BD'/);
+  assert.match(source, /DTONE_COUNTRY_CODE_MAP/);
+});
+
 test('provider verification uses GET product-detail requests with a global rate lock', () => {
   assert.match(source, /pg_try_advisory_lock/);
   assert.match(source, /method: 'GET'/);
