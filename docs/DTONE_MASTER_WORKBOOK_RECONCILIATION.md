@@ -8,7 +8,7 @@ The user-confirmed official workbook is the expected catalog baseline. This reco
 
 Workbook rows may use the literal exported column names or normalized camelCase keys. Provider detail responses must be mapped by a separate DT One adapter into the normalized fields accepted by `compareWorkbookProduct`. Do not infer a missing provider field from the workbook.
 
-The comparison checks product ID, ISO country code, operator, service, subservice, product type, destination currency, destination amount, and wholesale/retail EUR prices. EUR prices compare at cent precision. Blank workbook subservice remains blank and must match a blank provider subservice.
+The comparison checks product ID, ISO country code, operator, service, subservice, product type, destination currency/amount, and wholesale/retail EUR prices. Numeric values and ascending ranges (for example, `30 - 4000` and `0.50 - 66.33`) are normalized before comparison; EUR price ranges compare endpoint-by-endpoint at cent precision. Fixed PIN/eSIM products may legitimately have a USD destination currency while their provider wholesale and retail prices remain EUR; destination currency is compared exactly as supplied, never inferred from the country. Blank workbook subservice remains blank and must match a blank provider subservice.
 
 ## Outcomes
 
