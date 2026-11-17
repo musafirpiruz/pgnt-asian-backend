@@ -89,7 +89,13 @@ function registerDtOneMasterWorkbookRoutes({
           errorName: error?.name || 'Error',
         });
       })
-      .finally(() => { workerPromise = null; });
+      .finally(async () => {
+        workerPromise = null;
+        try {
+          const pending = await pool.query("SELECT 1 FROM dtone_master_reconciliation_runs WHERE status IN ('queued', 'running') LIMIT 1");
+          if (pending.rowCount) startWorker();
+        } catch (_) {}
+      });
   }
 
   async function runWorker() {
