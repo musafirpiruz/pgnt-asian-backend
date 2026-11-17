@@ -81,7 +81,7 @@ test('preserves USD destination currency for fixed PIN/eSIM products while price
     ...detail,
     id: 66482,
     operator: { name: 'eSIM Pakistan', country: { iso_code: 'PAK' } },
-    service: { name: 'Data', subservice: { name: 'eSIM' } },
+    service: { name: 'eSIM' },
     type: 'FIXED_VALUE_PIN_PURCHASE',
     destination: { amount: 1.69, unit: 'USD' },
     prices: {
