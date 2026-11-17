@@ -1,10 +1,7 @@
 'use strict';
 
 // Strict adapter for the DT One GET /v1/products/{id} detail response.
-// It uses only fields already consumed by the existing read-only catalog sync.
-// Unknown service/subservice/product-type fields stay blank so reconciliation
-// reports a mismatch instead of inventing a value and producing a false match.
-
+// Missing or unrecognized fields remain blank so the comparison cannot guess.
 function text(value) {
   return value == null ? '' : String(value).trim();
 }
@@ -12,6 +9,18 @@ function text(value) {
 function namedValue(value) {
   if (typeof value === 'string' || typeof value === 'number') return text(value);
   if (value && typeof value === 'object') return text(value.name || value.message || value.code);
+  return '';
+}
+
+function amountValue(value) {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number') return text(value);
+  if (typeof value === 'object') {
+    if (value.min != null && value.max != null) {
+      return text(value.min) + ' - ' + text(value.max);
+    }
+    if (value.value != null) return amountValue(value.value);
+  }
   return '';
 }
 
@@ -38,33 +47,34 @@ function normalizeDtOneProductDetail(product, requestedProductId, countryCodeMap
   );
   const destinationCurrency = text(firstNonNull(
     product.destination?.unit,
-    product.benefits?.[0]?.amount?.unit
+    product.benefits?.[0]?.unit
   )).toUpperCase();
 
   return Object.freeze({
     productId,
     country,
     operator: text(product.operator?.name),
-    // These fields are intentionally strict. They remain blank when the
-    // provider response does not expose a recognized value.
     service: namedValue(product.service?.name),
     subservice: namedValue(product.service?.subservice?.name),
     productType: namedValue(product.type).toUpperCase(),
     destinationCurrency,
-    destinationAmount: text(destinationAmount),
-    wholesalePriceEur: text(product.prices?.wholesale?.amount),
+    destinationAmount: amountValue(destinationAmount),
+    wholesalePriceEur: amountValue(product.prices?.wholesale?.amount),
     wholesalePriceCurrency: text(product.prices?.wholesale?.unit).toUpperCase(),
-    retailPriceEur: text(product.prices?.retail?.amount),
+    retailPriceEur: amountValue(product.prices?.retail?.amount),
     retailPriceCurrency: text(product.prices?.retail?.unit).toUpperCase(),
     providerCountryCode,
     rawFieldAvailability: Object.freeze({
       service: Boolean(product.service?.name),
       subservice: Boolean(product.service?.subservice?.name),
       productType: Boolean(product.type),
+      destinationAmount: Boolean(destinationAmount),
+      wholesalePrice: Boolean(product.prices?.wholesale?.amount),
+      retailPrice: Boolean(product.prices?.retail?.amount),
       wholesalePriceCurrency: Boolean(product.prices?.wholesale?.unit),
       retailPriceCurrency: Boolean(product.prices?.retail?.unit),
     }),
   });
 }
 
-module.exports = { normalizeDtOneProductDetail };
+module.exports = { normalizeDtOneProductDetail, amountValue };
