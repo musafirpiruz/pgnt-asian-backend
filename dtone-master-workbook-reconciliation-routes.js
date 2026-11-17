@@ -108,6 +108,7 @@ function registerDtOneMasterWorkbookRoutes({
   }
 
   async function runWorker() {
+    if (!dtoneApiBaseUrlExplicit || !apiOrigin) return;
     const lockClient = await pool.connect();
     let locked = false;
     try {
