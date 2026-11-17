@@ -21,13 +21,13 @@ Provider-only products are reported but never imported because the workbook Prod
 
 ## Authenticated live reconciliation runner
 
-The admin-only runner is available at \`/admin-dtone-master-reconciliation\`.
+The admin-only runner is available at `/admin-dtone-master-reconciliation`.
 
 1. Upload the official XLSX workbook and explicitly confirm the read-only run.
-2. The server validates the \`All_Products\` sheet, required headers, exact 1,960 rows, unique Product IDs, the four country totals, and the supported product types.
-3. The workbook rows are written only to the isolated \`dtone_master_reconciliation_runs\` and \`dtone_master_reconciliation_items\` staging tables. They are not inserted into \`product_catalog\` and are not eligible for checkout.
-4. A background worker calls only \`GET /v1/products/{id}\` for Product IDs in the uploaded workbook. A PostgreSQL advisory lock serializes the worker across app instances, with at least one second between provider requests.
-5. HTTP 404 is reported as \`MISSING_AT_PROVIDER\`. Field differences are \`MISMATCH\`; exact matches are \`MATCHED\`; provider/network failures are \`LOOKUP_ERROR\`. HTTP 429 pauses the run and observes \`Retry-After\`; resuming always requires a separate admin confirmation.
+2. The server validates the `All_Products` sheet, required headers, exact 1,960 rows, unique Product IDs, the four country totals, and the supported product types.
+3. The workbook rows are written only to the isolated `dtone_master_reconciliation_runs` and `dtone_master_reconciliation_items` staging tables. They are not inserted into `product_catalog` and are not eligible for checkout.
+4. A background worker calls only `GET /v1/products/{id}` for Product IDs in the uploaded workbook. It requires an explicitly configured HTTPS `DTONE_API_BASE_URL` on a `*.dtone.com` host (the code's default pre-production fallback is deliberately rejected), records the exact API origin in the run, and uses a PostgreSQL advisory lock to serialize requests across app instances with at least one second between provider requests.
+5. HTTP 404 is reported as `MISSING_AT_PROVIDER`. Field differences are `MISMATCH`; exact matches are `MATCHED`; provider/network failures are `LOOKUP_ERROR`. HTTP 429 pauses the run and observes `Retry-After`; resuming always requires a separate admin confirmation.
 6. Each run stores the workbook SHA-256, source filename, report version, per-product expected/provider values, differences, and lookup outcomes. Download the JSON report for review.
 
 The runner does not scan the entire provider catalog for IDs absent from the workbook; it checks only the 1,960 workbook IDs. Provider-only discovery, if required later, must be a separately reviewed read-only pass.
@@ -35,9 +35,9 @@ The runner does not scan the entire provider catalog for IDs absent from the wor
 ## Safety boundary for this runner
 
 - The staging tables are reconciliation evidence only; they are not customer catalog tables.
-- No SQL statement in the runner inserts, updates, deletes, or activates \`product_catalog\` rows.
+- No SQL statement in the runner inserts, updates, deletes, or activates `product_catalog` rows.
 - No Stripe API, DT One transaction endpoint, payment, refund, order, or top-up path is called.
-- \`safeToImport\` remains false. No import or activation endpoint is exposed by this feature.
+- `safeToImport` remains false. No import or activation endpoint is exposed by this feature.
 - All four DT One country mappings must already exist and be unambiguous. Missing mappings pause/reject the run instead of guessing.
 
 ## Remaining before live verification
