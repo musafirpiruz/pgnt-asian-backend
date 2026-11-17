@@ -14,7 +14,7 @@ function text(value) {
 }
 function decimal(value, field) {
   const raw = text(value).replace(',', '.');
-  if (!/^-?\\d+(?:\\.\\d+)?$/.test(raw)) throw new Error(field + ' must be a decimal number');
+  if (!/^-?[0-9]+(?:[.][0-9]+)?$/.test(raw)) throw new Error(field + ' must be a decimal number');
   const n = Number(raw);
   if (!Number.isFinite(n)) throw new Error(field + ' must be finite');
   return n;
@@ -42,7 +42,7 @@ function normalizeWorkbookRow(row) {
   };
   const missing = REQUIRED_FIELDS.filter((field) => !normalized[field]);
   if (missing.length) throw new Error('Missing required workbook fields: ' + missing.join(', '));
-  if (!/^\\d+$/.test(normalized.productId)) throw new Error('productId must contain digits only');
+  if (!/^[0-9]+$/.test(normalized.productId)) throw new Error('productId must contain digits only');
   decimal(normalized.destinationAmount, 'destinationAmount');
   moneyCents(normalized.wholesalePriceEur, 'wholesalePriceEur');
   moneyCents(normalized.retailPriceEur, 'retailPriceEur');
