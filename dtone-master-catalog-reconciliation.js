@@ -38,7 +38,9 @@ function normalizeWorkbookRow(row) {
     destinationCurrency: text(row.destinationCurrency || row['DESTINATION CURRENCY']).toUpperCase(),
     destinationAmount: text(row.destinationAmount || row['DESTINATION AMOUNT']),
     wholesalePriceEur: text(row.wholesalePriceEur || row['WHOLESALE PRICE (EUR)']),
+    wholesalePriceCurrency: 'EUR',
     retailPriceEur: text(row.retailPriceEur || row['RETAIL PRICE (EUR)']),
+    retailPriceCurrency: 'EUR',
   };
   const missing = REQUIRED_FIELDS.filter((field) => !normalized[field]);
   if (missing.length) throw new Error('Missing required workbook fields: ' + missing.join(', '));
@@ -61,10 +63,12 @@ function compareWorkbookProduct(expectedInput, providerInput) {
     destinationCurrency: text(providerInput.destinationCurrency).toUpperCase(),
     destinationAmount: text(providerInput.destinationAmount),
     wholesalePriceEur: text(providerInput.wholesalePriceEur),
+    wholesalePriceCurrency: text(providerInput.wholesalePriceCurrency).toUpperCase(),
     retailPriceEur: text(providerInput.retailPriceEur),
+    retailPriceCurrency: text(providerInput.retailPriceCurrency).toUpperCase(),
   };
   const differences = [];
-  const compareText = ['productId','country','operator','service','subservice','productType','destinationCurrency'];
+  const compareText = ['productId','country','operator','service','subservice','productType','destinationCurrency','wholesalePriceCurrency','retailPriceCurrency'];
   for (const field of compareText) {
     if (expected[field] !== provider[field]) differences.push(field);
   }
