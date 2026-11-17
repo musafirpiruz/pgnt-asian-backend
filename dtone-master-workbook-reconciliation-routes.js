@@ -26,7 +26,7 @@ function registerDtOneMasterWorkbookRoutes({
     if (!pool) throw new Error('Database is not configured.');
     const result = await pool.query(
       "SELECT country_code, provider_country_code FROM country_registry " +
-      "WHERE LOWER(provider) = 'dtone' AND country_code = ANY($1::text[]) " +
+      "WHERE LOWER(provider) = 'dtone' AND country_code::text = ANY($1::text[]) " +
       "AND provider_country_code IS NOT NULL AND BTRIM(provider_country_code) <> ''",
       [COUNTRY_CODES]
     );
@@ -49,7 +49,7 @@ function registerDtOneMasterWorkbookRoutes({
   async function getSummary(runId) {
     const runResult = await pool.query(
       "SELECT id, source_file_name, source_sha256, sheet_name, report_version, " +
-      "total_products, country_counts, product_type_counts, status, resume_after, " +
+      "total_products, country_counts, product_type_counts, status, resume_after, last_error_code, "
       "created_at, started_at, completed_at, updated_at " +
       "FROM dtone_master_reconciliation_runs WHERE id = $1",
       [runId]
@@ -132,7 +132,7 @@ function registerDtOneMasterWorkbookRoutes({
           countryCodeMap = await loadCountryCodeMap();
         } catch (_) {
           await pool.query(
-            "UPDATE dtone_master_reconciliation_runs SET status = 'paused', updated_at = NOW() WHERE id = $1",
+            "UPDATE dtone_master_reconciliation_runs SET status = 'paused', last_error_code = 'COUNTRY_MAPPING_INCOMPLETE', updated_at = NOW() WHERE id = $1",
             [runId]
           );
           break;
@@ -211,7 +211,7 @@ function registerDtOneMasterWorkbookRoutes({
               [runId, item.product_id]
             );
             await pool.query(
-              "UPDATE dtone_master_reconciliation_runs SET status = 'paused', " +
+              "UPDATE dtone_master_reconciliation_runs SET status = 'paused', last_error_code = 'HTTP_429', " +
               "resume_after = NOW() + ($2::int * INTERVAL '1 second'), updated_at = NOW() WHERE id = $1",
               [runId, retrySeconds]
             );
@@ -225,8 +225,8 @@ function registerDtOneMasterWorkbookRoutes({
                 JSON.stringify(['DT One detail lookup returned HTTP ' + response.status])]
             );
             await pool.query(
-              "UPDATE dtone_master_reconciliation_runs SET status = 'paused', updated_at = NOW() WHERE id = $1",
-              [runId]
+              "UPDATE dtone_master_reconciliation_runs SET status = 'paused', last_error_code = $2, updated_at = NOW() WHERE id = $1",
+              [runId, 'HTTP_' + response.status]
             );
             pauseRun = true;
           } else {
@@ -257,7 +257,7 @@ function registerDtOneMasterWorkbookRoutes({
             ]
           );
           await pool.query(
-            "UPDATE dtone_master_reconciliation_runs SET status = 'paused', updated_at = NOW() WHERE id = $1",
+            "UPDATE dtone_master_reconciliation_runs SET status = 'paused', last_error_code = 'DETAIL_LOOKUP_FAILED', updated_at = NOW() WHERE id = $1",
             [runId]
           );
           pauseRun = true;
@@ -365,7 +365,7 @@ function registerDtOneMasterWorkbookRoutes({
           errorName: error?.name || 'Error',
           errorMessage: String(error?.message || '').slice(0, 180),
         });
-        const clientError = /workbook|sheet|column|product|country|range|currency|filename|header|mapping|duplicate|unsupported/i.test(String(error?.message || ''));
+        const clientError = /workbook|sheet|column|product|country|range|currency|filename|header|duplicate|unsupported/i.test(String(error?.message || ''));
         return res.status(clientError ? 400 : 503).json({
           error: clientError ? error.message : 'Could not safely stage the DT One master workbook.',
           productCatalogChanged: false,
@@ -421,7 +421,7 @@ function registerDtOneMasterWorkbookRoutes({
       [req.params.runId]
     );
     await pool.query(
-      "UPDATE dtone_master_reconciliation_runs SET status = 'queued', resume_after = NULL, updated_at = NOW() WHERE id = $1",
+      "UPDATE dtone_master_reconciliation_runs SET status = 'queued', resume_after = NULL, last_error_code = NULL, updated_at = NOW() WHERE id = $1",
       [req.params.runId]
     );
     startWorker();
