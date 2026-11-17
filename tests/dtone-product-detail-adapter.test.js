@@ -32,7 +32,7 @@ test('supports the existing benefits amount fallback used by catalog sync', () =
   const product = {
     ...detail,
     destination: undefined,
-    benefits: [{ amount: { base: 100, unit: 'PKR' } }],
+    benefits: [{ amount: { base: 100 }, unit: 'PKR' }],
   };
   const row = normalizeDtOneProductDetail(product, 12345, { AFG: 'AF' });
   assert.equal(row.destinationAmount, '100');
@@ -97,4 +97,21 @@ test('preserves USD destination currency for fixed PIN/eSIM products while price
   assert.equal(row.destinationAmount, '1.69');
   assert.equal(row.wholesalePriceCurrency, 'EUR');
   assert.equal(row.retailPriceCurrency, 'EUR');
+});
+
+
+test('normalizes DT One ranged amount objects using their min and max values', () => {
+  const ranged = {
+    ...detail,
+    type: 'RANGED_VALUE_RECHARGE',
+    destination: { amount: { min: 30, max: 4000, increment: 0.01 }, unit: 'AFN' },
+    prices: {
+      wholesale: { amount: { min: 0.5, max: 66.33 }, unit: 'EUR' },
+      retail: { amount: { min: 0.56, max: 73.7 }, unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(ranged, '12345', { AFG: 'AF' });
+  assert.equal(row.destinationAmount, '30 - 4000');
+  assert.equal(row.wholesalePriceEur, '0.5 - 66.33');
+  assert.equal(row.retailPriceEur, '0.56 - 73.7');
 });
