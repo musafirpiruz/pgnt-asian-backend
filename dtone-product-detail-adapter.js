@@ -47,18 +47,22 @@ function normalizeDtOneProductDetail(product, requestedProductId, countryCodeMap
     operator: text(product.operator?.name),
     // These fields are intentionally strict. They remain blank when the
     // provider response does not expose a recognized value.
-    service: namedValue(firstNonNull(product.service?.name, product.service)),
-    subservice: namedValue(firstNonNull(product.subservice?.name, product.subservice)),
-    productType: namedValue(firstNonNull(product.product_type, product.productType, product.type)).toUpperCase(),
+    service: namedValue(product.service?.name),
+    subservice: namedValue(product.service?.subservice?.name),
+    productType: namedValue(product.type).toUpperCase(),
     destinationCurrency,
     destinationAmount: text(destinationAmount),
     wholesalePriceEur: text(product.prices?.wholesale?.amount),
+    wholesalePriceCurrency: text(product.prices?.wholesale?.unit).toUpperCase(),
     retailPriceEur: text(product.prices?.retail?.amount),
+    retailPriceCurrency: text(product.prices?.retail?.unit).toUpperCase(),
     providerCountryCode,
     rawFieldAvailability: Object.freeze({
-      service: Boolean(product.service),
-      subservice: Boolean(product.subservice),
-      productType: Boolean(product.product_type || product.productType || product.type),
+      service: Boolean(product.service?.name),
+      subservice: Boolean(product.service?.subservice?.name),
+      productType: Boolean(product.type),
+      wholesalePriceCurrency: Boolean(product.prices?.wholesale?.unit),
+      retailPriceCurrency: Boolean(product.prices?.retail?.unit),
     }),
   });
 }
