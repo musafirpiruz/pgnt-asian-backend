@@ -57,3 +57,42 @@ test('does not invent unavailable provider classification fields', () => {
     wholesalePriceCurrency: true, retailPriceCurrency: true,
   });
 });
+
+
+test('preserves ranged destination and EUR price values from DT One detail responses', () => {
+  const ranged = {
+    ...detail,
+    type: 'RANGED_VALUE_RECHARGE',
+    destination: { amount: '30 - 4000', unit: 'AFN' },
+    prices: {
+      wholesale: { amount: '0.5 - 66.33', unit: 'EUR' },
+      retail: { amount: '0.56 - 73.7', unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(ranged, '12345', { AFG: 'AF' });
+  assert.equal(row.destinationAmount, '30 - 4000');
+  assert.equal(row.wholesalePriceEur, '0.5 - 66.33');
+  assert.equal(row.retailPriceEur, '0.56 - 73.7');
+  assert.equal(row.destinationCurrency, 'AFN');
+});
+
+test('preserves USD destination currency for fixed PIN/eSIM products while prices remain EUR', () => {
+  const esim = {
+    ...detail,
+    id: 66482,
+    operator: { name: 'eSIM Pakistan', country: { iso_code: 'PAK' } },
+    service: { name: 'Data', subservice: { name: 'eSIM' } },
+    type: 'FIXED_VALUE_PIN_PURCHASE',
+    destination: { amount: 1.69, unit: 'USD' },
+    prices: {
+      wholesale: { amount: 1.29, unit: 'EUR' },
+      retail: { amount: 1.44, unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(esim, '66482', { PAK: 'PK' });
+  assert.equal(row.country, 'PK');
+  assert.equal(row.destinationCurrency, 'USD');
+  assert.equal(row.destinationAmount, '1.69');
+  assert.equal(row.wholesalePriceCurrency, 'EUR');
+  assert.equal(row.retailPriceCurrency, 'EUR');
+});
