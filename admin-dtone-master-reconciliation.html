@@ -61,6 +61,7 @@ function show(data){
  progress.value=checked;
  statusBox.textContent=[
   'حالت: '+data.status,
+  'د ځنډ لامل: '+(data.last_error_code||'—'),
   'Run ID: '+data.id,
   'ټول محصولات: '+data.total_products,
   'تصدیق شوي: '+checked+' / '+data.total_products,
