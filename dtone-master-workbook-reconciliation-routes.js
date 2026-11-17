@@ -9,6 +9,9 @@ const { compareWorkbookProduct } = require('./dtone-master-catalog-reconciliatio
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const RATE_LOCK_ID = 71230941;
 const COUNTRY_CODES = Object.freeze(['AF', 'PK', 'IN', 'BD']);
+// DT One DVS uses ISO 3166-1 alpha-3 country codes in its discovery/detail API.
+// These are explicit reviewed mappings, not values inferred from local database rows.
+const DTONE_COUNTRY_CODE_MAP = Object.freeze({ AFG: 'AF', PAK: 'PK', IND: 'IN', BGD: 'BD' });
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function validRunId(value) {
@@ -31,27 +34,12 @@ function registerDtOneMasterWorkbookRoutes({
   } catch (_) {}
 
   async function loadCountryCodeMap() {
-    if (!pool) throw new Error('Database is not configured.');
-    const result = await pool.query(
-      "SELECT country_code, provider_country_code FROM country_registry " +
-      "WHERE LOWER(provider) = 'dtone' AND country_code::text = ANY($1::text[]) " +
-      "AND provider_country_code IS NOT NULL AND BTRIM(provider_country_code) <> ''",
-      [COUNTRY_CODES]
-    );
-    const map = {};
-    const seenCountries = new Set();
-    for (const row of result.rows) {
-      const country = String(row.country_code || '').trim().toUpperCase();
-      const providerCode = String(row.provider_country_code || '').trim().toUpperCase();
-      if (!COUNTRY_CODES.includes(country) || !providerCode || map[providerCode] || seenCountries.has(country)) {
-        throw new Error('DT One provider-country mapping is ambiguous.');
-      }
-      map[providerCode] = country;
-      seenCountries.add(country);
+    const mappedCountries = Object.values(DTONE_COUNTRY_CODE_MAP);
+    if (COUNTRY_CODES.some((country) => !mappedCountries.includes(country)) ||
+        new Set(mappedCountries).size !== COUNTRY_CODES.length) {
+      throw new Error('DT One provider-country mapping is incomplete or ambiguous.');
     }
-    const missing = COUNTRY_CODES.filter((country) => !seenCountries.has(country));
-    if (missing.length) throw new Error('DT One provider-country mappings are missing for: ' + missing.join(', '));
-    return map;
+    return DTONE_COUNTRY_CODE_MAP;
   }
 
   async function getSummary(runId) {
