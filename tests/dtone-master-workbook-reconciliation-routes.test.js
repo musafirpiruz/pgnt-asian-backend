@@ -21,6 +21,12 @@ test('workbook upload requires an explicit read-only confirmation and strict XLS
   assert.match(source, /parseOfficialMasterWorkbook/);
 });
 
+test('refuses the implicit pre-production fallback and records the explicit DT One API origin', () => {
+  assert.match(source, /dtoneApiBaseUrlExplicit/);
+  assert.match(source, /default pre-production fallback is not accepted/);
+  assert.match(source, /api_origin/);
+});
+
 test('provider verification uses GET product-detail requests with a global rate lock', () => {
   assert.match(source, /pg_try_advisory_lock/);
   assert.match(source, /method: 'GET'/);
