@@ -1,13 +1,12 @@
 'use strict';
 
-// Runtime regression test with injected app/database and a mocked fetch.
-// This never contacts DT One, Stripe, or a real database.
+// Runtime regression test for the disabled legacy sandbox route.
+// It uses injected stubs and must never contact DT One or a real database.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-
 const registerDtOneSandboxTest = require('../dtone-sandbox-test');
 
-test('sandbox route reports unknown outcome when provider accepted but local result update affects zero rows', async () => {
+test('legacy sandbox POST returns HTTP 410 without querying the database or contacting DT One', async () => {
   let postHandler;
   const app = {
     post(route, ...handlers) {
@@ -16,22 +15,11 @@ test('sandbox route reports unknown outcome when provider accepted but local res
     get() {},
   };
 
-  const updates = [];
   let queryCount = 0;
   const pool = {
-    async query(sql, params) {
-      queryCount++;
-      const normalized = sql.replace(/\s+/g, ' ').trim();
-      if (normalized.startsWith('SELECT id, product_id, price_eur_cents FROM product_catalog')) {
-        return { rowCount: 1, rows: [{ id: 123, product_id: 7194, price_eur_cents: 210 }] };
-      }
-      if (normalized.startsWith('INSERT INTO orders')) return { rowCount: 1, rows: [] };
-      if (normalized.startsWith('UPDATE orders')) {
-        updates.push({ sql: normalized, params });
-        if (normalized.includes('SET dtone_transaction_id = COALESCE')) return { rowCount: 0, rows: [] };
-        return { rowCount: 1, rows: [] };
-      }
-      throw new Error('Unexpected SQL in test: ' + normalized);
+    async query() {
+      queryCount += 1;
+      throw new Error('Disabled legacy POST must not query the database');
     },
   };
 
@@ -46,11 +34,15 @@ test('sandbox route reports unknown outcome when provider accepted but local res
     getDtOneAuthHeader: () => 'Basic fake',
   });
 
-  assert.equal(typeof postHandler, 'function', 'sandbox route handler should be registered');
+  assert.equal(typeof postHandler, 'function', 'sandbox POST route should remain registered');
 
   const originalFetch = global.fetch;
-  const originalWarn = console.warn;
-  const originalError = console.error;
+  let fetchCount = 0;
+  global.fetch = async () => {
+    fetchCount += 1;
+    throw new Error('Disabled legacy POST must not contact DT One');
+  };
+
   let responsePayload;
   let responseStatus;
   const res = {
@@ -58,26 +50,16 @@ test('sandbox route reports unknown outcome when provider accepted but local res
     json(payload) { responsePayload = payload; return this; },
   };
 
-  global.fetch = async () => ({
-    ok: true,
-    status: 202,
-    async text() { return JSON.stringify({ id: 'dtone-fake-123', status: 'COMPLETED' }); },
-  });
-  console.warn = () => {};
-  console.error = () => {};
-
   try {
     await postHandler({ body: { confirmSandbox: true, scenario: 'completed' } }, res);
   } finally {
     global.fetch = originalFetch;
-    console.warn = originalWarn;
-    console.error = originalError;
   }
 
-  assert.equal(responseStatus, 502);
+  assert.equal(responseStatus, 410);
   assert.equal(responsePayload.created, false);
-  assert.match(responsePayload.error, /outcome is unknown/i);
-  assert.ok(updates.some(update => update.sql.includes("dtone_status = 'sandbox_test_outcome_unknown'")),
-    'route should mark the test order for reconciliation');
-  assert.ok(queryCount >= 4);
+  assert.equal(responsePayload.sandboxOnly, true);
+  assert.equal(responsePayload.legacyRouteDisabled, true);
+  assert.equal(queryCount, 0);
+  assert.equal(fetchCount, 0);
 });
