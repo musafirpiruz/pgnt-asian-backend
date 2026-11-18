@@ -294,6 +294,14 @@ test('real Express/PostgreSQL route stages 1,960 rows and worker handles GET, 40
     assert.equal(calls.length, 1, 'HTTP 500 must pause instead of automatically retrying');
     assert.equal(calls[0].method, 'GET');
   } finally {
+    if (testPool) {
+      try {
+        await testPool.query(
+          "UPDATE dtone_master_reconciliation_runs SET status = 'paused' WHERE status IN ('queued', 'running')"
+        );
+        await waitForAdvisoryLockRelease(testPool);
+      } catch (_) {}
+    }
     global.fetch = originalFetch;
     if (server) await new Promise(resolve => server.close(resolve));
     if (testPool) await testPool.end();
