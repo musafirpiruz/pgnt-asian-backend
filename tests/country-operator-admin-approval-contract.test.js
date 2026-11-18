@@ -12,6 +12,10 @@ const migration = fs.readFileSync(
   path.join(__dirname, '..', 'migrations', '024_country_provider_approval_audit.sql'),
   'utf8'
 );
+const progressMigration = fs.readFileSync(
+  path.join(__dirname, '..', 'migrations', '025_country_operator_catalog_progress.sql'),
+  'utf8'
+);
 
 function routeBetween(startMarker, endMarker) {
   const start = server.indexOf(startMarker);
@@ -109,8 +113,8 @@ test('durable catalog cursor and explicit reviewed-product retry are server-side
   assert.match(server, /catalog-retry-reviewed/);
   assert.match(server, /confirmRetry!==true/);
   assert.match(server, /verificationStarted:false/);
-  assert.match(migration, /country_operator_catalog_progress/);
-  assert.match(migration, /last_processed_product_catalog_id/);
+  assert.match(progressMigration, /country_operator_catalog_progress/);
+  assert.match(progressMigration, /last_processed_product_catalog_id/);
 });
 
 
