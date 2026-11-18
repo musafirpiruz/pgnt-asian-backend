@@ -314,6 +314,18 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.ok(autoBody.items.some(item => item.productCatalogId === autoTimeout.productCatalogId && item.reasons.includes('provider_timeout_or_network_error')));
     assert.equal(autoBody.activationChanged, false);
     assert.equal(autoBody.transactionCreated, false);
+
+    const savedProgress=await db.query(
+      'SELECT last_processed_product_catalog_id,pages_completed FROM country_operator_catalog_verification_progress WHERE operator_id=$1',
+      [good.operatorId]);
+    assert.equal(Number(savedProgress.rows[0].last_processed_product_catalog_id),Number(autoBody.nextAfterProductCatalogId));
+    assert.equal(Number(savedProgress.rows[0].pages_completed),1);
+    const staleCursor=await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify',{
+      method:'POST',headers:{'content-type':'application/json','x-admin-api-key':adminKey},
+      body:JSON.stringify({limit:25,afterProductCatalogId:0}),
+    });
+    assert.equal(staleCursor.status,409);
+    assert.equal((await staleCursor.json()).nextAfterProductCatalogId,autoBody.nextAfterProductCatalogId);
     const autoState = await db.query(
       "SELECT m.verified_at,p.price_eur_cents,p.wholesale_price_eur_cents,p.active,m.active AS mapping_active,(SELECT COUNT(*)::int FROM catalog_verification_audit a WHERE a.operator_id=$1 AND a.product_catalog_id=$2 AND a.event_type='product_verified') AS verified_audits FROM country_operator_products m JOIN product_catalog p ON p.id=m.product_catalog_id WHERE m.product_catalog_id=$2",
       [good.operatorId, autoCandidate.productCatalogId],
