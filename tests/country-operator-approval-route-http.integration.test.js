@@ -135,6 +135,19 @@ test('country operator approval HTTP routes persist samples safely and roll back
     }
     assert.ok(ready, 'Test server did not become healthy. Logs: ' + logs);
 
+    const overviewUnauth = await fetch(baseUrl + '/api/admin/country-operators');
+    assert.equal(overviewUnauth.status, 401);
+    const overviewBefore = await fetch(baseUrl + '/api/admin/country-operators', {
+      headers: { 'x-admin-api-key': adminKey },
+    });
+    assert.equal(overviewBefore.status, 200);
+    const overviewBeforeBody = await overviewBefore.json();
+    const overviewGoodBefore = overviewBeforeBody.operators.find(item => String(item.id) === String(good.operatorId));
+    assert.ok(overviewGoodBefore);
+    assert.equal(overviewGoodBefore.approval, null);
+    assert.equal(overviewGoodBefore.counts.total, 1);
+    assert.equal(overviewGoodBefore.counts.pending, 1);
+
     const unauth = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-candidates');
     assert.equal(unauth.status, 401);
 
@@ -179,6 +192,15 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(body.productActive, false);
     assert.equal(body.activationChanged, false);
     assert.equal(body.transactionCreated, false);
+    const overviewAfter = await fetch(baseUrl + '/api/admin/country-operators', {
+      headers: { 'x-admin-api-key': adminKey },
+    });
+    assert.equal(overviewAfter.status, 200);
+    const overviewAfterBody = await overviewAfter.json();
+    const overviewGoodAfter = overviewAfterBody.operators.find(item => String(item.id) === String(good.operatorId));
+    assert.equal(String(overviewGoodAfter.approval.sampleProductCatalogId), String(good.productCatalogId));
+    assert.equal(overviewGoodAfter.counts.verified, 1);
+    assert.equal(overviewGoodAfter.counts.pending, 0);
 
     const saved = await db.query(
       "SELECT a.provider_product_id,a.provider_operator_id,a.destination_currency,a.retail_price_eur_cents,a.wholesale_price_eur_cents,o.provider_operator_id AS operator_provider_id,o.active AS operator_active,m.active AS mapping_active,m.verified_at AS mapping_verified_at,p.active AS product_active,p.price_eur_cents,p.wholesale_price_eur_cents AS product_wholesale FROM country_operator_approvals a JOIN country_operators o ON o.id=a.operator_id JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key JOIN product_catalog p ON p.id=m.product_catalog_id WHERE a.operator_id=$1 AND a.sample_product_catalog_id=$2 AND a.status='approved'",
