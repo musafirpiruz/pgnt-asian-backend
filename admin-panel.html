@@ -241,6 +241,7 @@ function makeCatalogOperatorCard(operator){
    try{
     const after=catalogCursors.get(String(operator.id))||0;
     const result=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-auto-verify',{limit:25,afterProductCatalogId:after});
+    if(result.activationChanged!==false||result.transactionCreated!==false)throw new Error('خوندیتوب: سرور د نه فعالولو تمه شوې پایله تایید نه کړه؛ پروسه ودرول شوه.');
     catalogCursors.set(String(operator.id),Number(result.nextAfterProductCatalogId)||after);
     progress.className='status '+(result.reviewCount?'warn':'ok');
     progress.textContent='په دې پړاو کې: '+result.requestedCount+' · تایید شوي: '+result.verifiedCount+' · بیاکتنې ته: '+result.reviewCount+' · نور پاتې: '+(result.hasMore?'هو':'دا پاڼه بشپړه شوه')+'. فعالول نه دي شوي.';
