@@ -116,3 +116,30 @@ test('normalizes DT One ranged amount objects using their min and max values', (
   assert.equal(row.wholesalePriceEur, '0.5 - 66.33');
   assert.equal(row.retailPriceEur, '0.56 - 73.7');
 });
+
+ 
+test('preserves ranged PIN purchase type, destination range, service and nullable subservice', () => {
+  const rangedPin = {
+    ...detail,
+    id: 66483,
+    operator: { name: 'eSIM Pakistan', country: { iso_code: 'PAK' } },
+    service: { id: 13, name: 'eSIM', subservice: null },
+    type: 'RANGED_VALUE_PIN_PURCHASE',
+    destination: { amount: { min: 1, max: 20, increment: 1 }, unit: 'USD' },
+    prices: {
+      wholesale: { amount: { min: 0.8, max: 16 }, unit: 'EUR' },
+      retail: null,
+    },
+  };
+  const row = normalizeDtOneProductDetail(rangedPin, '66483', { PAK: 'PK' });
+  assert.equal(row.productType, 'RANGED_VALUE_PIN_PURCHASE');
+  assert.equal(row.country, 'PK');
+  assert.equal(row.service, 'eSIM');
+  assert.equal(row.subservice, '');
+  assert.equal(row.destinationAmount, '1 - 20');
+  assert.equal(row.destinationCurrency, 'USD');
+  assert.equal(row.wholesalePriceEur, '0.8 - 16');
+  assert.equal(row.wholesalePriceCurrency, 'EUR');
+  assert.equal(row.retailPriceEur, '');
+  assert.equal(row.retailPriceCurrency, '');
+});
