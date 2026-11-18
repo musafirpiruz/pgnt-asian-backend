@@ -3371,11 +3371,11 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
 app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', requireAdmin, async (req,res)=>{
   if(!pool) return res.status(503).json({error:'Database is not configured.'});
   const operatorId=Number(req.params.operatorId);
-  const afterProductCatalogId=req.body?.afterProductCatalogId===undefined||req.body?.afterProductCatalogId===null
-    ? 0 : Number(req.body.afterProductCatalogId);
+  const requestedAfterProductCatalogId=req.body?.afterProductCatalogId===undefined||req.body?.afterProductCatalogId===null
+    ? null : Number(req.body.afterProductCatalogId);
   const limit=req.body?.limit===undefined ? 25 : Number(req.body.limit);
   if(!Number.isSafeInteger(operatorId)||operatorId<1||
-     !Number.isSafeInteger(afterProductCatalogId)||afterProductCatalogId<0||
+     (requestedAfterProductCatalogId!==null&&(!Number.isSafeInteger(requestedAfterProductCatalogId)||requestedAfterProductCatalogId<0))||
      !Number.isSafeInteger(limit)||limit<1||limit>25)
     return res.status(400).json({error:'Valid operatorId, non-negative afterProductCatalogId, and limit 1-25 are required.'});
   if(!DTONE_API_KEY||!DTONE_API_SECRET)
@@ -3389,6 +3389,15 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
     if(approvalResult.rowCount!==1)
       return res.status(409).json({error:'Exactly one current owner-approved sample is required before automatic verification.'});
     const approval=approvalResult.rows[0];
+    const progressResult=await pool.query(
+      'SELECT last_processed_product_catalog_id FROM country_operator_catalog_verification_progress WHERE operator_id=$1 AND approval_id=$2',
+      [operatorId,approval.id]);
+    const afterProductCatalogId=progressResult.rowCount
+      ? Number(progressResult.rows[0].last_processed_product_catalog_id)
+      : 0;
+    if(requestedAfterProductCatalogId!==null&&requestedAfterProductCatalogId!==afterProductCatalogId)
+      return res.status(409).json({error:'The saved verification cursor has changed. Reload the operator overview and continue from the server cursor.',nextAfterProductCatalogId:afterProductCatalogId});
+
     const operatorResult=await pool.query(
       'SELECT id,country_code,operator_key,display_name,provider,provider_operator_id,active FROM country_operators WHERE id=$1',
       [operatorId]);
@@ -3484,9 +3493,17 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
            approvedProviderOperatorId:approval.provider_operator_id,providerProductId:item.providerProductId||null,
            providerStatus:item.providerStatus||null,providerEvidence:item.evidence||null})]);
     }
+    const nextAfter= candidates.rows.length ? candidates.rows[candidates.rows.length-1].product_catalog_id : afterProductCatalogId;
+    await client.query(
+      `INSERT INTO country_operator_catalog_verification_progress(operator_id,approval_id,last_processed_product_catalog_id,pages_completed)
+       VALUES($1,$2,$3,1)
+       ON CONFLICT(operator_id) DO UPDATE SET approval_id=EXCLUDED.approval_id,
+         last_processed_product_catalog_id=EXCLUDED.last_processed_product_catalog_id,
+         pages_completed=country_operator_catalog_verification_progress.pages_completed+1,
+         updated_at=NOW()`,
+      [operatorId,approval.id,nextAfter]);
     await client.query('COMMIT');
     const verifiedCount=items.filter(item=>item.verified).length;
-    const nextAfter= candidates.rows.length ? candidates.rows[candidates.rows.length-1].product_catalog_id : afterProductCatalogId;
     return res.json({operatorId,approvalId:approval.id,requestedCount:items.length,verifiedCount,
       reviewCount:items.length-verifiedCount,items,nextAfterProductCatalogId:nextAfter,
       hasMore:items.length===limit,activationChanged:false,transactionCreated:false});
@@ -3495,6 +3512,40 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
     console.error('Country operator automatic catalog verification failed:',error.message);
     return res.status(500).json({error:'Could not safely complete automatic catalog verification.'});
   }finally{if(client) client.release();}
+});
+
+
+app.post('/api/admin/country-operators/:operatorId/catalog-retry-reviewed', requireAdmin, async (req,res)=>{
+  if(!pool) return res.status(503).json({error:'Database is not configured.'});
+  const operatorId=Number(req.params.operatorId);
+  if(!Number.isSafeInteger(operatorId)||operatorId<1||req.body?.confirmRetry!==true)
+    return res.status(400).json({error:'A valid operatorId and confirmRetry:true are required.'});
+  try{
+    const result=await pool.query(
+      `SELECT a.id AS approval_id,MIN(v.product_catalog_id)::bigint AS first_reviewed
+       FROM country_operator_approvals a
+       JOIN catalog_verification_audit v ON v.operator_id=a.operator_id
+       JOIN country_operator_products m ON m.product_catalog_id=v.product_catalog_id
+       JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE a.operator_id=$1 AND a.status='approved' AND v.event_type='product_rejected'
+         AND m.verified_at IS NULL AND m.active=FALSE AND p.active=FALSE
+       GROUP BY a.id`,[operatorId]);
+    if(!result.rowCount||result.rows[0].first_reviewed===null)
+      return res.status(404).json({error:'No rejected inactive products are available for an explicit retry.'});
+    const firstReviewed=Number(result.rows[0].first_reviewed),cursor=Math.max(0,firstReviewed-1);
+    await pool.query(
+      `INSERT INTO country_operator_catalog_verification_progress(operator_id,approval_id,last_processed_product_catalog_id,pages_completed)
+       VALUES($1,$2,$3,0)
+       ON CONFLICT(operator_id) DO UPDATE SET approval_id=EXCLUDED.approval_id,
+         last_processed_product_catalog_id=EXCLUDED.last_processed_product_catalog_id,
+         pages_completed=0,updated_at=NOW()`,
+      [operatorId,result.rows[0].approval_id,cursor]);
+    return res.json({retryQueued:true,firstReviewedProductCatalogId:firstReviewed,
+      nextAfterProductCatalogId:cursor,verificationStarted:false,activationChanged:false,transactionCreated:false});
+  }catch(error){
+    console.error('Catalog reviewed-product retry preparation failed:',error.message);
+    return res.status(500).json({error:'Could not safely prepare reviewed-product retry.'});
+  }
 });
 
 // Operator-scoped catalog batch preview. This is a dry-run only:
