@@ -1015,7 +1015,6 @@ async function runMigration() {
       { version: "024_country_fx_rates", file: "024_country_fx_rates.sql" },
       { version: "030_country_registry_audit_trail", file: "030_country_registry_audit_trail.sql" },
       { version: "031_order_country_configuration_snapshot", file: "031_order_country_configuration_snapshot.sql" },
-      { version: "037_dtone_master_reconciliation_staging", file: "037_dtone_master_reconciliation_staging.sql" },
     ];
 
     for (const migration of countryRegistryMigrations) {
@@ -1042,6 +1041,34 @@ async function runMigration() {
         [migration.version]
       );
       console.log(`Migration ${migration.version} completed successfully.`);
+    }
+
+    // Keep reconciliation staging after the optional 032-036 pricing/audit
+    // migrations so sibling feature PRs can add their versions independently.
+    const dtoneMasterReconciliationMigration = {
+      version: "037_dtone_master_reconciliation_staging",
+      file: "037_dtone_master_reconciliation_staging.sql",
+    };
+    const reconciliationApplied = await client.query(
+      "SELECT 1 FROM schema_migrations WHERE version = $1 LIMIT 1",
+      [dtoneMasterReconciliationMigration.version]
+    );
+    if (reconciliationApplied.rowCount === 0) {
+      const reconciliationPath = path.join(__dirname, "migrations", dtoneMasterReconciliationMigration.file);
+      if (!fs.existsSync(reconciliationPath)) {
+        throw new Error(`Required migration file is missing: ${dtoneMasterReconciliationMigration.file}`);
+      }
+      const reconciliationSql = fs.readFileSync(reconciliationPath, "utf8");
+      if (!reconciliationSql.trim()) throw new Error("DT One reconciliation staging migration is empty.");
+      console.log(`Applying ${dtoneMasterReconciliationMigration.version} in the current database schema...`);
+      await client.query(reconciliationSql);
+      await client.query(
+        "INSERT INTO schema_migrations(version) VALUES($1) ON CONFLICT(version) DO NOTHING",
+        [dtoneMasterReconciliationMigration.version]
+      );
+      console.log(`Migration ${dtoneMasterReconciliationMigration.version} completed successfully.`);
+    } else {
+      console.log(`Migration ${dtoneMasterReconciliationMigration.version} is already applied.`);
     }
 
   } catch (error) {
