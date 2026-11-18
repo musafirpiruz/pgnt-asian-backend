@@ -204,6 +204,26 @@ test('country operator approval HTTP routes persist samples safely and roll back
     providerProducts.set(String(autoCandidate.productId),
       providerProduct(autoCandidate.productId, 'provider-operator-good', good.operatorName, autoCandidate.amount));
 
+    const autoMismatchProduct = await db.query(
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,112.12,'AFN',2147483007,350,300,FALSE,NOW()) RETURNING id",
+      [good.operatorName],
+    );
+    const autoMismatch = {
+      operatorId: good.operatorId,
+      productCatalogId: autoMismatchProduct.rows[0].id,
+      productId: 2147483007,
+      operatorName: good.operatorName,
+      amount: 112.12,
+    };
+    fixtures.push(autoMismatch);
+    await db.query(
+      'INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
+      [autoMismatch.productCatalogId, good.operatorId],
+    );
+    // Same display name but a different provider operator ID must be sent to review.
+    providerProducts.set(String(autoMismatch.productId),
+      providerProduct(autoMismatch.productId, 'different-provider-operator-id', good.operatorName, autoMismatch.amount));
+
     const autoResponse = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
@@ -211,9 +231,9 @@ test('country operator approval HTTP routes persist samples safely and roll back
     });
     assert.equal(autoResponse.status, 200);
     const autoBody = await autoResponse.json();
-    assert.equal(autoBody.requestedCount, 1);
+    assert.equal(autoBody.requestedCount, 2);
     assert.equal(autoBody.verifiedCount, 1);
-    assert.equal(autoBody.reviewCount, 0);
+    assert.equal(autoBody.reviewCount, 1);
     assert.equal(autoBody.activationChanged, false);
     assert.equal(autoBody.transactionCreated, false);
     const autoState = await db.query(
@@ -226,6 +246,12 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(autoState.rows[0].wholesale_price_eur_cents, 300);
     assert.equal(autoState.rows[0].active, false);
     assert.equal(autoState.rows[0].mapping_active, false);
+    const autoMismatchState = await db.query(
+      "SELECT m.verified_at,(SELECT COUNT(*)::int FROM catalog_verification_audit a WHERE a.operator_id=$1 AND a.product_catalog_id=$2 AND a.event_type='product_rejected') AS rejected_audits FROM country_operator_products m WHERE m.product_catalog_id=$2",
+      [good.operatorId, autoMismatch.productCatalogId],
+    );
+    assert.equal(autoMismatchState.rows[0].verified_at, null);
+    assert.equal(autoMismatchState.rows[0].rejected_audits, 1);
 
     const duplicate = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/approve-sample', {
       method: 'POST',
