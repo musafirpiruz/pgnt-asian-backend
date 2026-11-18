@@ -162,7 +162,7 @@ function setAuthenticatedView(role){
   if(card.id==='loginCard'||card.id==='supportCard')return;
   card.hidden=role!=='owner';
  });
- document.getElementById('supportCard').hidden=role!=='support';
+ document.getElementById('supportCard').hidden=false;
 }
 function adminHeaders(json=false){
  const headers={Accept:'application/json'};
