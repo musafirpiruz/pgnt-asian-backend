@@ -112,3 +112,10 @@ test('durable catalog cursor and explicit reviewed-product retry are server-side
   assert.match(migration, /country_operator_catalog_progress/);
   assert.match(migration, /last_processed_product_catalog_id/);
 });
+
+
+test('automatic verification serializes concurrent pages against the durable cursor', () => {
+  assert.match(server, /SELECT last_processed_product_catalog_id FROM country_operator_catalog_verification_progress WHERE operator_id=\$1 AND approval_id=\$2 FOR UPDATE/);
+  assert.match(server, /persistedCursor!==afterProductCatalogId/);
+  assert.match(server, /v\.evidence->>'approvalId'=a\.id::text/);
+});
