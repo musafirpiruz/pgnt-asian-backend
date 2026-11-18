@@ -22,8 +22,9 @@ async function makeWorkbook({ duplicateId = false } = {}) {
   sheet.addRow(REQUIRED_HEADERS);
   for (let index = 0; index < 1960; index += 1) {
     let productType = 'FIXED_VALUE_RECHARGE';
-    if (index >= 1929 && index < 1943) productType = 'RANGED_VALUE_RECHARGE';
-    else if (index >= 1943 && index < 1957) productType = 'FIXED_VALUE_PIN_PURCHASE';
+    if (index >= 1926 && index < 1940) productType = 'RANGED_VALUE_RECHARGE';
+    else if (index >= 1940 && index < 1954) productType = 'FIXED_VALUE_PIN_PURCHASE';
+    else if (index >= 1954 && index < 1957) productType = 'RANGED_VALUE_PIN_PURCHASE';
     else if (index >= 1957) productType = 'RANGED_VALUE_PAYMENT';
 
     const country = countryRows[index];
@@ -67,13 +68,16 @@ test('parses the 1,960-row workbook with all four country counts and all product
     Bangladesh: 488,
   });
   assert.deepEqual(parsed.productTypeCounts, {
-    FIXED_VALUE_RECHARGE: 1929,
+    FIXED_VALUE_RECHARGE: 1926,
     RANGED_VALUE_RECHARGE: 14,
     FIXED_VALUE_PIN_PURCHASE: 14,
+    RANGED_VALUE_PIN_PURCHASE: 3,
     RANGED_VALUE_PAYMENT: 3,
   });
-  assert.equal(parsed.rows[1929].destinationAmount, '30 - 4000');
-  assert.equal(parsed.rows[1943].destinationCurrency, 'USD');
+  assert.equal(parsed.rows[1926].destinationAmount, '30 - 4000');
+  assert.equal(parsed.rows[1940].destinationCurrency, 'USD');
+  assert.equal(parsed.rows[1954].productType, 'RANGED_VALUE_PIN_PURCHASE');
+  assert.equal(parsed.rows[1954].destinationCurrency, 'USD');
   assert.match(parsed.sourceSha256, /^[a-f0-9]{64}$/);
 });
 
