@@ -87,7 +87,19 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <p class="muted">یوازې د واقعي DT One Sandbox ازموینې ثبوت وسپارئ. سپارل شوی ثبوت تر خپلواکې بیاکتنې او منظورۍ مخکې د فعالولو شرط نه پوره کوي.</p>
 <div id="sandboxEvidenceNotice" class="status" role="status" aria-live="polite">دا برخه ثبوت د بیاکتنې لپاره سپاري؛ په خپله یې نه تاییدوي.</div>
 <div id="countryRegistry"><div class="empty">د راپور لوستلو لپاره تڼۍ کېکاږئ.</div></div>
+<div class="detail">
+ <h3>د DT One شبکې د محصولاتو تایید (Audit only)</h3>
+ <p class="muted">د شبکې Operator Key او د سرچینې Catalog ID له ثبت شوو معلوماتو څخه واخلئ. یوازې تازه، د DT One له خوا تایید شوي EUR عمده نرخونه او ۷۵–۳۰۰۰ مقدارونه منل کېږي. دا بهیر محصولات نه فعالوي او قیمتونه نه بدلوي.</p>
+ <div class="grid">
+  <div><label for="networkApprovalCountry">هېواد</label><select id="networkApprovalCountry"><option value="AF">افغانستان (AF)</option><option value="PK">پاکستان (PK)</option><option value="IN">هند (IN)</option><option value="BD">بنګله‌دېش (BD)</option></select></div>
+  <div><label for="networkApprovalOperator">ثبت شوی Operator Key</label><input id="networkApprovalOperator" type="text" maxlength="100" autocomplete="off" placeholder="د DB دقیق operator_key"></div>
+  <div><label for="networkApprovalSource">Source Catalog Product ID</label><input id="networkApprovalSource" type="number" min="1" step="1" inputmode="numeric" placeholder="د سرچینې محصول ID"></div>
+ </div>
+ <div class="actions"><button class="secondary" id="previewNetworkApproval" type="button">لومړی Preview وګوره</button><button id="recordNetworkApproval" type="button" disabled>د شبکې تایید په Audit کې ثبت کړه</button></div>
+ <div id="networkApprovalResult" class="status" role="status" aria-live="polite">تر Preview مخکې هېڅ تایید نه ثبتېږي.</div>
+</div>
 </section>
+<section class="card"><h2>د ټولو هېوادونو ګډ Master Pricing Policy</h2><div class="detail"><h3>د څلورو هېوادونو د اپ فیس منظوري</h3><p class="muted">دا اقدام د اډمین په ښکاره تایید سره د افغانستان، پاکستان، هند او بنګله‌دېش App Fee په یو ځل €0.49 کوي. د اسعارو نرخونه، Stripe تنظیمات، محصولات او پخواني فرمایشونه نه بدلوي؛ د هر هېواد پخوانی او نوی فیس د Audit په تاریخچه کې ثبتېږي.</p><div class="actions"><button id="approveFourCountryFee" type="button">د څلورو هېوادونو فیس €0.49 منظور کړه</button></div><div id="fourCountryFeeApprovalStatus" class="status" role="status" aria-live="polite">تر اډمین تایید مخکې هېڅ فیس نه بدلېږي.</div></div><p class="muted">یوازې د اپ EUR فیس دلته ټاکئ؛ د Stripe فیس سیستم د ثبت شوو حقیقي BalanceTransaction معلوماتو څخه اټکلوي. هر هېواد خپل جلا DT One wholesale EUR لګښت او خپل منظور شوی تازه FX کاروي. دا برخه یوازې Draft، Approval او Preview کوي؛ قیمتونه نه لیکي او محصولات نه فعالوي.</p><div class="grid"><div><label for="masterFee">د اپ ثابت فیس (EUR)</label><input id="masterFee" type="number" min="0" max="1000" step="0.01" placeholder="د منظور شوي فیس اندازه"></div></div><p class="safe">عمومي Bonus = 0. Referral انعام جلا دی. زاړه FX نرخونه نه کارېږي؛ د هر هېواد تازه، منظور شوی او لا نه‌منقضي FX ثبوت ضروري دی.</p><div class="actions"><button id="loadMasterPolicy" type="button" class="secondary">Policy راپور ولوله</button><button id="createMasterDraft" type="button">Draft جوړ کړه</button><button id="approveMasterPolicy" type="button" class="secondary">Draft منظوره کړه</button><button id="previewMasterPolicy" type="button" class="secondary">د ټولو هېوادونو Preview</button></div><label for="masterPolicyVersion">د منظورۍ لپاره Draft نسخه</label><select id="masterPolicyVersion"><option value="">لومړی راپور ولولئ</option></select><div id="masterPolicyReport" class="status" role="status" aria-live="polite">تر اوسه Policy نه ده لوستل شوې.</div><div id="masterPricingPreview"></div></section>
 <section class="card">
 <h2>۲. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
 <p class="muted">یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.</p>
@@ -99,7 +111,25 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="pricing"><div class="empty">د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.</div></div>
 </section>
 <section class="card">
-<h2>۴. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
+<h2>۴. د DT One د شبکو رسمي موندنه (یوازې لوستل)</h2>
+<p class="muted">د هر هېواد لپاره د DT One اصلي Operator لېست رااخلي. دا یوازې د Provider ځواب ښيي؛ هېڅ شبکه، محصول، نرخ یا هېواد نه ثبتوي او نه فعالوي. د هېواد ISO-3 کوډ باید د Country Registry له ثبت شوي Provider Country Code سره برابر وي.</p>
+<label for="dtoneOperatorCountry">هېواد</label>
+<select id="dtoneOperatorCountry"><option value="AFG">افغانستان — AFG</option><option value="PAK">پاکستان — PAK</option><option value="IND">هند — IND</option><option value="BGD">بنګله‌دېش — BGD</option></select>
+<div class="actions"><button id="discoverDtoneOperators" type="button">د DT One شبکې راواخله</button></div>
+<div id="dtoneOperatorDiscovery" class="detail" aria-live="polite">د شبکو رسمي لېست لا نه دی لوستل شوی.</div>
+</section>
+<section class="card">
+<h2>۴. د څلورو هېوادونو د DT One د اسعارو نرخونه</h2>
+<p class="muted">هر هېواد جلا EUR → محلي اسعارو نرخ لري. نرخ یوازې د هماغه هېواد د DT One محصول له wholesale FX څخه اخیستل کېږي. ثبت شوی نرخ لومړی Pending وي؛ تر اډمین تایید مخکې د بیو په محاسبه کې نه کارېږي. دا برخه هېڅ محصول نه فعالوي او هېڅ قیمت نه لیکي.</p>
+<label for="fxCountry">هېواد</label>
+<select id="fxCountry"><option value="AF">افغانستان — AFN</option><option value="PK">پاکستان — PKR</option><option value="IN">هند — INR</option><option value="BD">بنګله‌دېش — BDT</option></select>
+<label for="fxProductId">د همدغه هېواد د DT One محصول ID</label>
+<input id="fxProductId" inputmode="numeric" autocomplete="off" placeholder="د DT One تایید شوی Product ID">
+<div class="actions"><button id="captureFxObservation" type="button">د DT One نرخ راواخله</button><button id="loadFxObservations" class="secondary" type="button">د نرخونو تاریخچه ولوله</button></div>
+<div id="fxObservations" class="detail" aria-live="polite">لومړی هېواد وټاکئ او د نرخونو تاریخچه ولولئ.</div>
+</section>
+<section class="card">
+<h2>۵. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
 <p class="muted">د DT One د محصول ID ولیکئ. دا برخه د محصول، بیې، اسعارو او تادیې د چمتووالي ستونزې ښيي؛ هېڅ محصول نه فعالوي او هېڅ قیمت نه بدلوي.</p>
 <label for="diagnosticProductId">DT One Product ID</label>
 <input id="diagnosticProductId" inputmode="numeric" autocomplete="off" placeholder="د محصول ID، لکه 7194">
@@ -248,7 +278,7 @@ loadPricingButton.addEventListener('click',async()=>{
     const h=document.createElement('h3');h.textContent=({AF:'افغانستان',PK:'پاکستان',IN:'هند',BD:'بنګله دېش'})[row.country]||row.country;
     const fee=document.createElement('strong');fee.textContent=moneyEur(row.fee_eur_cents)+' app fee';
     const rate=document.createElement('p');rate.textContent='د اسعارو مرجع: '+escapeText(row.local_currency_per_eur??row.afn_per_eur)+' '+(currencies[row.country]||'')+' / EUR';
-    const stripe=document.createElement('p');stripe.textContent='اټکلي Stripe فیس: '+escapeText(row.stripe_fee_percent)+'% + '+moneyEur(row.stripe_fixed_fee_cents);
+    const stripe=document.createElement('p');stripe.textContent='Stripe فیس: اتومات محاسبه کېږي؛ لاسي تنظیم نه لري.';
     const active=document.createElement('span');active.className='pill';active.textContent=row.active===true?'فعال':'غیرفعال';
     box.append(h,fee,rate,stripe,active);grid.append(box);});
    pricing.append(grid);
@@ -383,6 +413,117 @@ document.getElementById('createReferralCode').addEventListener('click',async()=>
  }catch(error){result.className='status error';result.textContent=error.message;}
  finally{button.disabled=false;}
 });
+
+document.getElementById('approveFourCountryFee').addEventListener('click',async()=>{
+ const button=document.getElementById('approveFourCountryFee');
+ const status=document.getElementById('fourCountryFeeApprovalStatus');
+ if(!confirm('وروستی تایید: د AF، PK، IN او BD د اپ فیس €0.49 ته بدل شي؟ یوازې نوي نرخ‌محاسبات اغېزمنېږي؛ پخواني فرمایشونه، FX، Stripe تنظیمات او محصولات نه بدلېږي. د اډمین نوم او بدلون به Audit کې ثبت شي.'))return;
+ button.disabled=true;status.className='status';status.textContent='د اډمین منظوري ثبتېږي…';
+ try{
+  const data=await adminPost('/api/admin/pricing/fee/approve-four-countries',{feeEurCents:49,confirmApproval:true});
+  status.className='status ok';
+  status.textContent='منظوري ثبت شوه: AF، PK، IN، BD — App Fee €0.49. اډمین: '+data.changedBy+'. پخواني فرمایشونه او FX نه دي بدل شوي.';
+  document.getElementById('loadPricing').click();
+ }catch(error){status.className='status error';status.textContent='منظوري ثبت نه شوه: '+error.message;}
+ finally{button.disabled=false;}
+});
+
+const masterPolicyReport=document.getElementById('masterPolicyReport');
+const masterPreviewHost=document.getElementById('masterPricingPreview');
+function renderMasterPolicyReport(data){
+ const policies=Array.isArray(data.policies)?data.policies:[];
+ const select=document.getElementById('masterPolicyVersion');
+ select.replaceChildren(new Option('Draft نسخه وټاکئ',''));
+ for(const p of policies){const o=new Option('v'+p.version+' · '+p.status+' · '+moneyEur(p.fee_eur_cents),String(p.version));if(p.status!=='draft')o.disabled=true;select.add(o);}
+ masterPolicyReport.replaceChildren();
+ if(!policies.length){masterPolicyReport.textContent='تر اوسه Master Policy نشته. یوازې د اپ فیس وټاکئ؛ Stripe فیس سیستم په اتومات ډول اټکلوي.';return;}
+ const grid=document.createElement('div');grid.className='grid';
+ for(const p of policies){const item=document.createElement('div');item.className='price';const h=document.createElement('strong');h.textContent='نسخه '+p.version+' · '+p.status;const t=document.createElement('p');t.textContent='EUR · App fee '+moneyEur(p.fee_eur_cents)+' · Stripe اتومات اټکل: '+p.stripe_fee_percent+'% + '+moneyEur(p.stripe_fixed_fee_cents)+' · Bonus '+p.bonus_percent+'%';item.append(h,t);grid.append(item);}
+ masterPolicyReport.append(grid);
+}
+document.getElementById('loadMasterPolicy').addEventListener('click',async()=>{const b=document.getElementById('loadMasterPolicy');b.disabled=true;try{renderMasterPolicyReport(await adminRequest('/api/admin/master-pricing-policy'));}catch(e){masterPolicyReport.className='status error';masterPolicyReport.textContent=e.message;}finally{b.disabled=false;}});
+document.getElementById('createMasterDraft').addEventListener('click',async()=>{
+ const b=document.getElementById('createMasterDraft'),fee=Number(document.getElementById('masterFee').value);
+ if(!document.getElementById('masterFee').value||!Number.isFinite(fee)||fee<0||fee>1000){masterPolicyReport.className='status warn';masterPolicyReport.textContent='د اپ فیس په EUR کې په سمه توګه ولیکئ.';return;}
+ if(!confirm('دا ارزښتونه د ټولو هېوادونو ګډ Master Policy Draft کړم؟ لا Approval نه دی او Live قیمتونه نه بدلوي؟'))return;
+ b.disabled=true;try{const d=await adminPost('/api/admin/master-pricing-policy/draft',{feeEurCents:Math.round(fee*100),confirmDraft:true});masterPolicyReport.className='status ok';masterPolicyReport.textContent='Draft نسخه '+d.policy.version+' جوړه شوه؛ Stripe اټکل د '+(d.stripeFeeEstimate?.sampleCount||0)+' حقیقي تادیاتو له معلوماتو جوړ شوی. لا منظوره نه ده.';renderMasterPolicyReport(await adminRequest('/api/admin/master-pricing-policy'));}catch(e){masterPolicyReport.className='status error';masterPolicyReport.textContent=e.message;}finally{b.disabled=false;}
+});
+document.getElementById('approveMasterPolicy').addEventListener('click',async()=>{
+ const b=document.getElementById('approveMasterPolicy'),v=document.getElementById('masterPolicyVersion').value;
+ if(!/^[1-9][0-9]*$/.test(v)){masterPolicyReport.textContent='لومړی Draft نسخه وټاکئ.';return;}
+ if(!confirm('ایا نسخه '+v+' د ټولو هېوادونو لپاره منظوروئ؟ پخوانۍ Approved نسخه superseded کېږي؛ محصولات او نرخونه نه فعالېږي.'))return;
+ b.disabled=true;try{const d=await adminPost('/api/admin/master-pricing-policy/'+encodeURIComponent(v)+'/approve',{confirmApproval:true});masterPolicyReport.className='status ok';masterPolicyReport.textContent='نسخه '+d.policy.version+' منظوره شوه؛ Live قیمتونه او محصولات نه دي بدل شوي.';renderMasterPolicyReport(await adminRequest('/api/admin/master-pricing-policy'));}catch(e){masterPolicyReport.className='status error';masterPolicyReport.textContent=e.message;}finally{b.disabled=false;}
+});
+document.getElementById('previewMasterPolicy').addEventListener('click',async()=>{
+ const b=document.getElementById('previewMasterPolicy');if(!confirm('د AF، PK، IN او BD Preview جوړ کړم؟ هر هېواد خپل FX او DT One wholesale کاروي؛ هېڅ Live قیمت نه لیکل کېږي او محصول نه فعالېږي.'))return;
+ b.disabled=true;masterPreviewHost.replaceChildren();const status=document.createElement('div');status.className='status';status.textContent='Preview جوړېږي…';masterPreviewHost.append(status);
+ try{const d=await adminPost('/api/admin/master-pricing-policy/preview',{confirmPreview:true});status.className='status warn';status.textContent='Preview ثبت شو؛ catalogPricesChanged='+d.catalogPricesChanged+'، productsActivated='+d.productsActivated;
+ for(const country of (d.preview&&d.preview.countries)||[]){const card=document.createElement('article');card.className='order';const h=document.createElement('strong');h.textContent=country.countryCode+' · '+country.destinationCurrency+' · '+(country.ready?'چمتو':'خنډونه لري');card.append(h);const meta=document.createElement('p');meta.textContent='محصولات: '+(country.products||[]).length+' · FX: '+(country.fxRate??'نشته');card.append(meta);for(const blocker of country.blockers||[]){const p=document.createElement('p');p.className='status warn';p.textContent=String(blocker);card.append(p);}const details=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='د نرخونو مخکتنه';pre.textContent=JSON.stringify(country.products||[],null,2);details.append(summary,pre);card.append(details);masterPreviewHost.append(card);}
+ }catch(e){status.className='status error';status.textContent=e.message;}finally{b.disabled=false;}
+});
+
+let latestNetworkApprovalPreview=null;
+function currentNetworkApprovalInput(){
+ const country=document.getElementById('networkApprovalCountry').value;
+ const operator=document.getElementById('networkApprovalOperator').value.trim();
+ const source=document.getElementById('networkApprovalSource').value.trim();
+ if(!/^(AF|PK|IN|BD)$/.test(country))throw new Error('هېواد سم وټاکئ.');
+ if(!/^[a-z0-9][a-z0-9_-]{0,99}$/.test(operator))throw new Error('د ثبت شوي Operator Key دقیق ارزښت ولیکئ.');
+ if(!/^[1-9][0-9]*$/.test(source))throw new Error('د Source Catalog Product ID سم ولیکئ.');
+ return {country,operator,source:Number(source)};
+}
+function networkApprovalPath(v){
+ return '/api/admin/countries/'+encodeURIComponent(v.country)+'/operators/'+encodeURIComponent(v.operator);
+}
+function renderNetworkApprovalPreview(data){
+ const host=document.getElementById('networkApprovalResult');host.replaceChildren();
+ const title=document.createElement('strong');
+ title.textContent='شبکه: '+data.network.displayName+' ('+data.network.countryCode+'/'+data.network.operatorKey+')';
+ host.append(title);
+ const summary=document.createElement('p');
+ summary.textContent='د کتنې وړ محصولات: '+data.eligible.length+' · بند/نامعتبر: '+data.blocked.length+' · زاړه یا بې‌ثبوته شواهد: '+data.staleOrUnverifiedExcluded;
+ host.append(summary);
+ for(const item of data.eligible){
+  const line=document.createElement('p');
+  line.textContent='✓ Catalog #'+item.productCatalogId+' · DT One #'+item.providerProductId+' · عمده EUR '+moneyEur(item.wholesalePriceEurCents);
+  host.append(line);
+ }
+ for(const item of data.blocked){
+  const line=document.createElement('p');line.className='muted';
+  line.textContent='نه منل کېږي · Catalog #'+(item.productCatalogId??'—')+' · '+item.reason;host.append(line);
+ }
+ const note=document.createElement('p');note.className='muted';note.textContent=data.note||'یوازې Preview؛ Live بدلون نشته.';host.append(note);
+ host.className='status '+(data.eligible.length?'warn':'error');
+}
+document.getElementById('previewNetworkApproval').addEventListener('click',async()=>{
+ const button=document.getElementById('previewNetworkApproval'),record=document.getElementById('recordNetworkApproval'),host=document.getElementById('networkApprovalResult');
+ button.disabled=true;record.disabled=true;latestNetworkApprovalPreview=null;host.className='status';host.textContent='د DT One د شبکې شواهد کتل کېږي…';
+ try{
+  const v=currentNetworkApprovalInput();
+  const data=await adminRequest(networkApprovalPath(v)+'/product-approval-preview?sourceProductCatalogId='+encodeURIComponent(v.source));
+  latestNetworkApprovalPreview={input:v,data};
+  renderNetworkApprovalPreview(data);
+  record.disabled=!Array.isArray(data.eligible)||data.eligible.length===0;
+ }catch(error){host.className='status error';host.textContent='Preview جوړ نه شو: '+error.message;}
+ finally{button.disabled=false;}
+});
+document.getElementById('recordNetworkApproval').addEventListener('click',async()=>{
+ const button=document.getElementById('recordNetworkApproval'),host=document.getElementById('networkApprovalResult');
+ if(!latestNetworkApprovalPreview){host.className='status error';host.textContent='لومړی نوی Preview جوړ کړئ.';return;}
+ let v;try{v=currentNetworkApprovalInput();}catch(error){host.className='status error';host.textContent=error.message;return;}
+ if(JSON.stringify(v)!==JSON.stringify(latestNetworkApprovalPreview.input)){latestNetworkApprovalPreview=null;button.disabled=true;host.className='status warn';host.textContent='د هېواد، شبکې یا سرچینې ID بدل شوی؛ لومړی نوی Preview جوړ کړئ.';return;}
+ if(!confirm('ایا د '+v.country+' / '+v.operator+' لپاره '+latestNetworkApprovalPreview.data.eligible.length+' DT One محصولات یوازې د Audit په ثبت کې منظور کړئ؟ دا کار محصولات نه فعالوي او قیمتونه نه بدلوي.'))return;
+ button.disabled=true;host.className='status';host.textContent='د تایید Audit ثبتېږي…';
+ try{
+  const result=await adminPost(networkApprovalPath(v)+'/product-approval-batches',{sourceProductCatalogId:v.source,confirmApprovalBatch:true});
+  host.className='status ok';host.textContent='د Audit ثبت بریالی شو · Batch #'+result.batch.id+' · ثبت شوي محصولات: '+result.batch.approved_product_count+' · customerProductsActivated='+result.customerProductsActivated+' · catalogPricesWritten='+result.catalogPricesWritten+'.';
+  latestNetworkApprovalPreview=null;button.disabled=true;
+ }catch(error){host.className='status error';host.textContent='Audit ثبت نه شو: '+error.message;button.disabled=false;}
+});
+for(const id of ['networkApprovalCountry','networkApprovalOperator','networkApprovalSource']){
+ document.getElementById(id).addEventListener('input',()=>{latestNetworkApprovalPreview=null;document.getElementById('recordNetworkApproval').disabled=true;});
+ document.getElementById(id).addEventListener('change',()=>{latestNetworkApprovalPreview=null;document.getElementById('recordNetworkApproval').disabled=true;});
+}
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
 
 // Read-only country registry overview. All values are rendered as text.
@@ -508,6 +649,76 @@ document.getElementById('loadCountryRegistry').addEventListener('click',async()=
  }catch(error){const message=document.createElement('div');message.className='status error';message.textContent='د هېوادونو راپور ونه لوستل شو: '+error.message;host.append(message);}
  finally{button.disabled=false;}
 });
+
+const fxCountry=document.getElementById('fxCountry');
+const fxHost=document.getElementById('fxObservations');
+async function loadFxObservations(){
+ fxHost.textContent='د هېواد د نرخونو تاریخچه لوستل کېږي…';
+ try{
+  const code=fxCountry.value;
+  const data=await adminRequest('/api/admin/countries/'+encodeURIComponent(code)+'/fx/observations');
+  fxHost.replaceChildren();
+  const heading=document.createElement('strong');heading.textContent=code+' — '+data.destinationCurrency+' · د نرخونو شواهد';fxHost.append(heading);
+  if(!Array.isArray(data.observations)||!data.observations.length){const empty=document.createElement('p');empty.textContent='تر اوسه د دې هېواد لپاره د DT One نرخ نه دی ثبت شوی.';fxHost.append(empty);return;}
+  for(const observation of data.observations){
+   const item=document.createElement('article');item.className='order';
+   const title=document.createElement('strong');title.textContent='1 EUR = '+observation.quote_per_base+' '+observation.quote_currency+' · '+(observation.is_approved?'تایید شوی':'د تایید انتظار');
+   const meta=document.createElement('p');meta.className='muted';meta.textContent='سرچینه: '+observation.source+' · '+observation.source_reference+' · ثبت: '+observation.observed_at+' · پای: '+observation.expires_at;
+   item.append(title,meta);
+   if(!observation.is_approved && Date.parse(observation.expires_at)>Date.now()){
+    const approve=document.createElement('button');approve.type='button';approve.textContent='دا نرخ تایید کړه';
+    approve.addEventListener('click',async()=>{
+     if(!confirm('ایا د '+code+' لپاره د DT One دا EUR → '+data.destinationCurrency+' نرخ تاییدوئ؟ دا یوازې FX شواهد تاییدوي؛ قیمتونه او شبکې نه فعالوي.'))return;
+     approve.disabled=true;
+     try{await adminPost('/api/admin/countries/'+encodeURIComponent(code)+'/fx/observations/'+encodeURIComponent(observation.id)+'/approve',{confirmFxApproval:true});await loadFxObservations();}
+     catch(error){approve.disabled=false;alert('نرخ تایید نه شو: '+error.message);}
+    });
+    item.append(approve);
+   }
+   fxHost.append(item);
+  }
+ }catch(error){fxHost.textContent='د نرخونو تاریخچه ونه لوستل شوه: '+error.message;}
+}
+document.getElementById('discoverDtoneOperators').addEventListener('click',async()=>{
+ const button=document.getElementById('discoverDtoneOperators');
+ const countryIsoCode=document.getElementById('dtoneOperatorCountry').value;
+ const host=document.getElementById('dtoneOperatorDiscovery');
+ button.disabled=true;host.textContent='له DT One څخه د شبکو رسمي لېست لوستل کېږي…';
+ try{
+  const data=await adminRequest('/api/admin/dtone/operators?country_iso_code='+encodeURIComponent(countryIsoCode));
+  host.replaceChildren();
+  const summary=document.createElement('p');
+  summary.textContent='هېواد: '+data.countryIsoCode+' · چاپېریال: '+data.environment+' · شبکې: '+data.operatorCount+' · پاڼې: '+data.pagesChecked+' · بشپړ لېست: '+(data.complete?'هو':'نه');
+  host.append(summary);
+  const note=document.createElement('p');note.className='muted';note.textContent=data.note||'یوازې د DT One د لوستلو پایله؛ ثبت او فعالول نه دي شوي.';host.append(note);
+  const list=document.createElement('div');list.className='detail';
+  for(const operator of (data.operators||[])){
+   const row=document.createElement('p');
+   row.textContent=operator.name+' · Provider ID: '+operator.id+' · Country: '+operator.countryIsoCode;
+   list.append(row);
+  }
+  if(!data.operators||!data.operators.length){list.textContent='DT One د دې هېواد لپاره شبکې بېرته ورنه کړې.';}
+  host.append(list);
+ }catch(error){host.textContent='د DT One شبکې ونه لوستل شوې: '+error.message;}
+ finally{button.disabled=false;}
+});
+document.getElementById('loadFxObservations').addEventListener('click',loadFxObservations);
+document.getElementById('captureFxObservation').addEventListener('click',async()=>{
+ const button=document.getElementById('captureFxObservation');
+ const productId=String(document.getElementById('fxProductId').value||'').trim();
+ if(!/^[1-9]\d*$/.test(productId)){fxHost.textContent='د DT One معتبر Product ID ولیکئ.';return;}
+ const code=fxCountry.value;
+ if(!confirm('له DT One څخه د '+code+' د ټاکلي محصول EUR → محلي اسعارو wholesale نرخ ثبت شي؟ نرخ به یوازې Pending وي او اتومات نه فعالېږي.'))return;
+ button.disabled=true;fxHost.textContent='د DT One رسمي محصول او FX نرخ تاییدېږي…';
+ try{
+  const data=await adminPost('/api/admin/countries/'+encodeURIComponent(code)+'/fx/observations',{productId:Number(productId),confirmFxObservation:true});
+  fxHost.textContent='د DT One نرخ ثبت شو او د اډمین تایید ته انتظار باسي. نرخ لا د بیو لپاره نه کارېږي.';
+  document.getElementById('fxProductId').value='';
+  await loadFxObservations();
+ }catch(error){fxHost.textContent='د DT One نرخ ثبت نه شو: '+error.message;}
+ finally{button.disabled=false;}
+});
+fxCountry.addEventListener('change',loadFxObservations);
 
 document.getElementById('saveSandboxEvidence').addEventListener('click',async()=>{
  const button=document.getElementById('saveSandboxEvidence');

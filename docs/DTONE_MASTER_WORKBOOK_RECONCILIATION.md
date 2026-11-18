@@ -1,0 +1,87 @@
+# Official DT One master workbook reconciliation
+
+## Safety boundary
+
+The user-confirmed official workbook is the expected catalog baseline. This reconciliation core compares that baseline with normalized per-product DT One detail responses. It does not discover arbitrary provider products, make API calls, write PostgreSQL, create orders, charge Stripe, create DT One transactions, or activate products.
+
+## Input contract
+
+Workbook rows may use the literal exported column names or normalized camelCase keys. Provider detail responses must be mapped by a separate DT One adapter into the normalized fields accepted by `compareWorkbookProduct`. Do not infer a missing provider field from the workbook.
+
+The comparison checks product ID, ISO country code, operator, service, subservice, product type, destination currency/amount, and wholesale/retail EUR prices. Numeric values and ascending ranges (for example, `30 - 4000` and `0.50 - 66.33`) are normalized before comparison; EUR price ranges compare endpoint-by-endpoint at cent precision. DT One's ranged detail schema returns `min`/`max` objects for destination and wholesale amounts, which the adapter converts to the same endpoint representation; a null retail price remains missing and is not guessed. Fixed PIN/eSIM products may legitimately have a USD destination currency while their provider wholesale and retail prices remain EUR; destination currency is compared exactly as supplied, never inferred from the country. Blank workbook subservice remains blank and must match a blank provider subservice.
+
+## Verified source workbook composition
+
+The Library copy of `PGNT_ASIAN_TOPUP_MASTER_CATALOG_ALL_COUNTRIES-1.xlsx` was independently read and checked. It contains 1,960 rows and 1,960 unique nonblank Product IDs, with no duplicate IDs. Required comparison fields (Product ID, product name, operator country/name, service, product type, destination currency/amount, wholesale EUR and retail EUR) are populated on every row.
+
+Country totals in the workbook:
+
+| Country | Products | Distinct operators |
+| --- | ---: | ---: |
+| Afghanistan | 542 | 5 |
+| Pakistan | 783 | 8 |
+| India | 147 | 9 |
+| Bangladesh | 488 | 6 |
+
+Observed service/subservice totals in the workbook (these are source values, not yet independently verified against live DT One responses):
+
+| Country | Service | Subservice | Products |
+| --- | --- | --- | ---: |
+| Afghanistan | Mobile | Airtime | 496 |
+| Afghanistan | Mobile | Bundle | 20 |
+| Afghanistan | Mobile | Data | 26 |
+| Pakistan | Mobile | Airtime | 598 |
+| Pakistan | Mobile | Bundle | 118 |
+| Pakistan | Mobile | Data | 63 |
+| Pakistan | eSIM | blank | 4 |
+| India | Mobile | Airtime | 16 |
+| India | Mobile | Bundle | 77 |
+| India | Mobile | Data | 27 |
+| India | Utilities | Television | 20 |
+| India | eSIM | blank | 7 |
+| Bangladesh | Mobile | Airtime | 308 |
+| Bangladesh | Mobile | Bundle | 104 |
+| Bangladesh | Mobile | Data | 73 |
+| Bangladesh | eSIM | blank | 3 |
+
+The workbook's `Service_Summary` tab totals 1,960 products and reports zero missing wholesale EUR prices and zero missing retail EUR prices. The `Duplicate_ID_Audit` tab contains four cross-source overlap records for Pakistan eSIM products; these are repeated appearances in source CSV files, not duplicate rows in the final `All_Products` sheet. The final sheet remains the authoritative, deduplicated 1,960-row baseline.
+
+Observed product type totals are `FIXED_VALUE_RECHARGE=1929`, `RANGED_VALUE_RECHARGE=14`, `FIXED_VALUE_PIN_PURCHASE=14`, and `RANGED_VALUE_PAYMENT=3`. The current workbook contains no `RANGED_VALUE_PIN_PURCHASE` rows. The parser accepts all five official DT One enum values so a future valid workbook is not rejected, but the fifth type must not be added to current workbook counts or treated as present.
+
+## Outcomes
+
+- `MATCHED`: every compared field agrees; candidate only, not approval.
+- `MISMATCH`: one or more compared fields differ or provider fields are absent/invalid.
+- `MISSING_AT_PROVIDER`: workbook product ID was not returned by the per-ID provider lookup.
+- `PROVIDER_DUPLICATE_ID`: provider returned the same product ID more than once.
+
+Provider-only products are reported but never imported because the workbook Product ID list is the allowlist. `safeToImport` is deliberately always false; a later admin-only workflow must independently require review and explicit confirmation, and insert all products inactive.
+
+## Authenticated live reconciliation runner
+
+The admin-only runner is available at `/admin-dtone-master-reconciliation`.
+
+1. Upload the official XLSX workbook and explicitly confirm the read-only run.
+2. The server validates the `All_Products` sheet, required headers, exact 1,960 rows, unique Product IDs, the four country totals, and the supported product types.
+3. The workbook rows are written only to the isolated `dtone_master_reconciliation_runs` and `dtone_master_reconciliation_items` staging tables. They are not inserted into `product_catalog` and are not eligible for checkout.
+4. A background worker calls only `GET /v1/products/{id}` for Product IDs in the uploaded workbook. It requires an explicitly configured HTTPS `DTONE_API_BASE_URL` on a `*.dtone.com` host (the code's default pre-production fallback is deliberately rejected), records the exact API origin in the run, and uses a PostgreSQL advisory lock to serialize requests across app instances with at least one second between provider requests.
+5. HTTP 404 is reported as `MISSING_AT_PROVIDER`. Field differences are `MISMATCH`; exact matches are `MATCHED`; provider/network failures are `LOOKUP_ERROR`. HTTP 429 pauses the run and observes `Retry-After`; resuming always requires a separate admin confirmation.
+6. Each run stores the workbook SHA-256, source filename, report version, per-product expected/provider values, differences, and lookup outcomes. Download the JSON report for review.
+
+The runner does not scan the entire provider catalog for IDs absent from the workbook; it checks only the 1,960 workbook IDs. Provider-only discovery, if required later, must be a separately reviewed read-only pass.
+
+## Safety boundary for this runner
+
+- The staging tables are reconciliation evidence only; they are not customer catalog tables.
+- No SQL statement in the runner inserts, updates, deletes, or activates `product_catalog` rows.
+- No Stripe API, DT One transaction endpoint, payment, refund, order, or top-up path is called.
+- `safeToImport` remains false. No import or activation endpoint is exposed by this feature.
+- The runner uses the explicit ISO 3166-1 alpha-3 mapping `AFG→AF`, `PAK→PK`, `IND→IN`, `BGD→BD`, matching DT One's documented country-code format. It does not depend on an unpopulated `country_registry.provider_country_code` field or infer codes from database content.
+
+## Remaining before live verification
+
+1. Run the complete backend test suite and dependency security audit on the updated PR head.
+2. Review the new migration and confirm the four provider-country mappings and DT One credentials in the deployment environment.
+3. Do not merge or deploy until the PR review and CI are successful.
+4. After a separately approved merge/deploy, an admin can upload the official workbook and start the read-only run. Review all 1,960 outcomes before considering any later catalog-import proposal.
+5. Keep all products disabled. No sandbox order or payment is part of catalog reconciliation.

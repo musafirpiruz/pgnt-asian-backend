@@ -1,0 +1,233 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { normalizeDtOneProductDetail } = require('../dtone-product-detail-adapter');
+
+const detail = {
+  id: 12345,
+  operator: { name: 'ATOMA Afghanistan', country: { iso_code: 'AFG' } },
+  service: { name: 'Mobile', subservice: { id: 11, name: 'Airtime' } },
+  type: 'FIXED_VALUE_RECHARGE',
+  destination: { amount: 250, unit: 'AFN' },
+  prices: { wholesale: { amount: 4.17, unit: 'EUR' }, retail: { amount: 4.64, unit: 'EUR' } },
+};
+
+test('maps known DT One detail fields without changing EUR or destination amounts', () => {
+  const row = normalizeDtOneProductDetail(detail, '12345', { AFG: 'AF' });
+  assert.equal(row.productId, '12345');
+  assert.equal(row.country, 'AF');
+  assert.equal(row.operator, 'ATOMA Afghanistan');
+  assert.equal(row.service, 'Mobile');
+  assert.equal(row.subservice, 'Airtime');
+  assert.equal(row.productType, 'FIXED_VALUE_RECHARGE');
+  assert.equal(row.destinationCurrency, 'AFN');
+  assert.equal(row.destinationAmount, '250');
+  assert.equal(row.wholesalePriceEur, '4.17');
+  assert.equal(row.wholesalePriceCurrency, 'EUR');
+  assert.equal(row.retailPriceEur, '4.64');
+  assert.equal(row.retailPriceCurrency, 'EUR');
+});
+
+test('supports the existing benefits amount fallback used by catalog sync', () => {
+  const product = {
+    ...detail,
+    destination: undefined,
+    benefits: [{ amount: { base: 100 }, unit: 'PKR' }],
+  };
+  const row = normalizeDtOneProductDetail(product, 12345, { AFG: 'AF' });
+  assert.equal(row.destinationAmount, '100');
+  assert.equal(row.destinationCurrency, 'PKR');
+});
+
+test('rejects a detail response whose ID differs from the requested workbook ID', () => {
+  assert.throws(
+    () => normalizeDtOneProductDetail(detail, '7194', { AFG: 'AF' }),
+    /does not match/
+  );
+});
+
+test('does not invent unavailable provider classification fields', () => {
+  const product = { ...detail, service: undefined, type: undefined };
+  const row = normalizeDtOneProductDetail(product, 12345, { AFG: 'AF' });
+  assert.equal(row.service, '');
+  assert.equal(row.subservice, '');
+  assert.equal(row.productType, '');
+  assert.deepEqual(row.rawFieldAvailability, {
+    service: false, subservice: false, productType: false,
+    destinationAmount: true, wholesalePrice: true, retailPrice: true,
+    wholesalePriceCurrency: true, retailPriceCurrency: true,
+  });
+});
+
+
+test('preserves ranged destination and EUR price values from DT One detail responses', () => {
+  const ranged = {
+    ...detail,
+    type: 'RANGED_VALUE_RECHARGE',
+    destination: { amount: '30 - 4000', unit: 'AFN' },
+    prices: {
+      wholesale: { amount: '0.5 - 66.33', unit: 'EUR' },
+      retail: { amount: '0.56 - 73.7', unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(ranged, '12345', { AFG: 'AF' });
+  assert.equal(row.destinationAmount, '30 - 4000');
+  assert.equal(row.wholesalePriceEur, '0.5 - 66.33');
+  assert.equal(row.retailPriceEur, '0.56 - 73.7');
+  assert.equal(row.destinationCurrency, 'AFN');
+});
+
+test('preserves USD destination currency for fixed PIN/eSIM products while prices remain EUR', () => {
+  const esim = {
+    ...detail,
+    id: 66482,
+    operator: { name: 'eSIM Pakistan', country: { iso_code: 'PAK' } },
+    service: { name: 'eSIM' },
+    type: 'FIXED_VALUE_PIN_PURCHASE',
+    destination: { amount: 1.69, unit: 'USD' },
+    prices: {
+      wholesale: { amount: 1.29, unit: 'EUR' },
+      retail: { amount: 1.44, unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(esim, '66482', { PAK: 'PK' });
+  assert.equal(row.country, 'PK');
+  assert.equal(row.service, 'eSIM');
+  assert.equal(row.subservice, '');
+  assert.equal(row.destinationCurrency, 'USD');
+  assert.equal(row.destinationAmount, '1.69');
+  assert.equal(row.wholesalePriceCurrency, 'EUR');
+  assert.equal(row.retailPriceCurrency, 'EUR');
+});
+
+
+test('normalizes DT One ranged amount objects using their min and max values', () => {
+  const ranged = {
+    ...detail,
+    type: 'RANGED_VALUE_RECHARGE',
+    destination: { amount: { min: 30, max: 4000, increment: 0.01 }, unit: 'AFN' },
+    prices: {
+      wholesale: { amount: { min: 0.5, max: 66.33 }, unit: 'EUR' },
+      retail: { amount: { min: 0.56, max: 73.7 }, unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(ranged, '12345', { AFG: 'AF' });
+  assert.equal(row.destinationAmount, '30 - 4000');
+  assert.equal(row.wholesalePriceEur, '0.5 - 66.33');
+  assert.equal(row.retailPriceEur, '0.56 - 73.7');
+});
+
+ 
+test('preserves ranged PIN purchase type, destination range, service and nullable subservice', () => {
+  const rangedPin = {
+    ...detail,
+    id: 66483,
+    operator: { name: 'Test gift-card operator', country: { iso_code: 'PAK' } },
+    service: { id: 4, name: 'Gift Cards', subservice: { id: 41, name: 'Retail' } },
+    type: 'RANGED_VALUE_PIN_PURCHASE',
+    destination: { amount: { min: 1, max: 20, increment: 1 }, unit: 'USD' },
+    prices: {
+      wholesale: { amount: { min: 0.8, max: 16 }, unit: 'EUR' },
+      retail: null,
+    },
+  };
+  const row = normalizeDtOneProductDetail(rangedPin, '66483', { PAK: 'PK' });
+  assert.equal(row.productType, 'RANGED_VALUE_PIN_PURCHASE');
+  assert.equal(row.country, 'PK');
+  assert.equal(row.service, 'Gift Cards');
+  assert.equal(row.subservice, 'Retail');
+  assert.equal(row.destinationAmount, '1 - 20');
+  assert.equal(row.destinationCurrency, 'USD');
+  assert.equal(row.wholesalePriceEur, '0.8 - 16');
+  assert.equal(row.wholesalePriceCurrency, 'EUR');
+  assert.equal(row.retailPriceEur, '');
+  assert.equal(row.retailPriceCurrency, '');
+});
+
+ 
+test('normalizes ranged payment products with Pakistan mobile Airtime service metadata', () => {
+  const rangedPayment = {
+    ...detail,
+    id: 50460,
+    operator: { name: 'Jazz Pakistan Postpaid', country: { iso_code: 'PAK' } },
+    service: { id: 1, name: 'Mobile', subservice: { id: 11, name: 'Airtime' } },
+    type: 'RANGED_VALUE_PAYMENT',
+    destination: { amount: { min: 100, max: 5000, increment: 1 }, unit: 'PKR' },
+    prices: {
+      wholesale: { amount: { min: 0.43, max: 21.1 }, unit: 'EUR' },
+      retail: { amount: { min: 0.48, max: 23.45 }, unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(rangedPayment, '50460', { PAK: 'PK' });
+  assert.equal(row.productId, '50460');
+  assert.equal(row.country, 'PK');
+  assert.equal(row.operator, 'Jazz Pakistan Postpaid');
+  assert.equal(row.service, 'Mobile');
+  assert.equal(row.subservice, 'Airtime');
+  assert.equal(row.productType, 'RANGED_VALUE_PAYMENT');
+  assert.equal(row.destinationCurrency, 'PKR');
+  assert.equal(row.destinationAmount, '100 - 5000');
+  assert.equal(row.wholesalePriceEur, '0.43 - 21.1');
+  assert.equal(row.retailPriceEur, '0.48 - 23.45');
+});
+
+
+test('covers the documented DT One ranged response with benefits min/max, USD wholesale and null retail', () => {
+  // This is a schema fixture based on DT One's published example, not live product data.
+  const documented = {
+    id: 11874,
+    operator: { name: 'Vodafone Ghana', country: { iso_code: 'GHA' } },
+    service: { name: 'Mobile', subservice: { name: 'Airtime' } },
+    type: 'RANGED_VALUE_RECHARGE',
+    benefits: [{
+      amount: { base: { min: 0.5, max: 1000 } },
+      unit: 'GHS',
+    }],
+    destination: {
+      amount: { increment: 0.01, max: 1000, min: 0.5 },
+      unit: 'GHS',
+    },
+    prices: {
+      retail: null,
+      wholesale: { amount: { max: 65.1759, min: 0.0325 }, unit: 'USD' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(documented, '11874', { GHA: 'GH' });
+  assert.equal(row.country, 'GH');
+  assert.equal(row.service, 'Mobile');
+  assert.equal(row.subservice, 'Airtime');
+  assert.equal(row.productType, 'RANGED_VALUE_RECHARGE');
+  assert.equal(row.destinationAmount, '0.5 - 1000');
+  assert.equal(row.destinationCurrency, 'GHS');
+  assert.equal(row.wholesalePriceEur, '0.0325 - 65.1759');
+  assert.equal(row.wholesalePriceCurrency, 'USD');
+  assert.equal(row.retailPriceEur, '');
+  assert.equal(row.retailPriceCurrency, '');
+  assert.equal(row.rawFieldAvailability.retailPrice, false);
+});
+
+test('supports the documented benefits fallback when destination is absent and keeps object ranges', () => {
+  const documented = {
+    id: 11874,
+    operator: { name: 'Vodafone Ghana', country: { iso_code: 'GHA' } },
+    service: { name: 'Mobile', subservice: { name: 'Airtime' } },
+    type: 'RANGED_VALUE_RECHARGE',
+    benefits: [{
+      amount: { base: { min: 0.5, max: 1000 } },
+      unit: 'GHS',
+    }],
+    prices: {
+      wholesale: { amount: { min: 0.0325, max: 65.1759 }, unit: 'EUR' },
+      retail: { amount: { min: 0.04, max: 70 }, unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(
+    { ...documented, destination: undefined },
+    '11874',
+    { GHA: 'GH' }
+  );
+  assert.equal(row.destinationAmount, '0.5 - 1000');
+  assert.equal(row.destinationCurrency, 'GHS');
+  assert.equal(row.wholesalePriceEur, '0.0325 - 65.1759');
+  assert.equal(row.retailPriceEur, '0.04 - 70');
+});

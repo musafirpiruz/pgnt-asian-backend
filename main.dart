@@ -2366,6 +2366,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildWallet(),
           buildSupport(),
           buildProfile(),
+          PgntContactsPage(onBack: () => setState(() => selectedTab = 4)),
+          PgntCallPage(onBack: () => setState(() => selectedTab = 4)),
         ],
       ),
       bottomNavigationBar: Container(
@@ -2413,6 +2415,65 @@ class _PgntHomePageState extends State<PgntHomePage> {
               label: t('support'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _homeQuickAction({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: gold.withValues(alpha: 0.8)),
+            boxShadow: [
+              BoxShadow(
+                color: darkRed.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: primaryRed, size: 25),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: primaryRed,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.black54, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: gold, size: 18),
+            ],
+          ),
         ),
       ),
     );
@@ -2474,6 +2535,28 @@ class _PgntHomePageState extends State<PgntHomePage> {
                       ],
                     ),
                   ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _homeQuickAction(
+                  icon: Icons.call_rounded,
+                  title: 'ارزانه نړیوال زنګونه',
+                  subtitle: 'International calls',
+                  onTap: () => setState(() => selectedTab = 6),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _homeQuickAction(
+                  icon: Icons.contacts_rounded,
+                  title: 'زما اړیکې',
+                  subtitle: 'My contacts',
+                  onTap: () => setState(() => selectedTab = 5),
                 ),
               ),
             ],
@@ -4095,6 +4178,24 @@ class _PgntHomePageState extends State<PgntHomePage> {
             },
           ),
         ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.call_outlined, color: primaryRed),
+            title: const Text('ارزانه نړیوال زنګونه / Calls'),
+            subtitle: const Text('Paid calls to mobile and landline numbers'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => setState(() => selectedTab = 6),
+          ),
+        ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.contacts_outlined, color: primaryRed),
+            title: const Text('زما اړیکې / My contacts'),
+            subtitle: const Text('Save contacts privately on this device'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => setState(() => selectedTab = 5),
+          ),
+        ),
         const SizedBox(height: 18),
         pgntSectionTitle(
           t('settings'),
@@ -4226,3 +4327,337 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
   
 }
+
+// Paid outbound calling UI. Carrier connection and billing remain disabled
+// until provider, compliance and security gates are explicitly approved.
+class PgntCallPage extends StatefulWidget {
+  final VoidCallback onBack;
+  const PgntCallPage({super.key, required this.onBack});
+  @override
+  State<PgntCallPage> createState() => _PgntCallPageState();
+}
+class _PgntCallPageState extends State<PgntCallPage> {
+  static const _destinations = <(String, String, String)>[
+    ('🇦🇫', 'Afghanistan', '+93'), ('🇵🇰', 'Pakistan', '+92'),
+    ('🇧🇩', 'Bangladesh', '+880'), ('🇮🇳', 'India', '+91'),
+  ];
+  String _callingCode = '+93';
+  String _number = '';
+  void _append(String digit) {
+    if (_number.length < 18) setState(() => _number += digit);
+  }
+  @override
+  Widget build(BuildContext context) {
+    final selected = _destinations.firstWhere((item) => item.$3 == _callingCode);
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Row(children: [
+            IconButton(onPressed: widget.onBack, icon: const Icon(Icons.arrow_back_rounded, color: primaryRed)),
+            const Expanded(child: PgntBrandHeader(subtitle: 'International calling')),
+          ]),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [primaryRed, darkRed], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [BoxShadow(color: primaryRed.withValues(alpha: .18), blurRadius: 18, offset: const Offset(0, 8))],
+            ),
+            child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.call_rounded, color: brightGold, size: 34),
+              SizedBox(height: 10),
+              Text('International Calls', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+              SizedBox(height: 6),
+              Text('له اپلېکېشن څخه عادي موبایل او کورني نمبرونو ته زنګونه', style: TextStyle(color: Colors.white70, height: 1.4)),
+              SizedBox(height: 8),
+              Text('د زنګ بیه به په یورو کې ښکاره کېږي؛ د دقیقې/ثانیې حساب به د شبکې له تایید شوي نرخ سره سم وي.', style: TextStyle(color: gold, height: 1.4)),
+            ]),
+          ),
+          const SizedBox(height: 18),
+          pgntSectionTitle('هېواد انتخاب کړئ', Icons.public_rounded),
+          DropdownButtonFormField<String>(
+            value: _callingCode,
+            decoration: const InputDecoration(prefixIcon: Icon(Icons.flag_outlined), border: OutlineInputBorder(), filled: true, fillColor: Colors.white),
+            items: _destinations.map((item) => DropdownMenuItem(value: item.$3, child: Text('${item.$1}  ${item.$2} (${item.$3})'))).toList(),
+            onChanged: (value) => setState(() { _callingCode = value ?? '+93'; _number = ''; }),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: gold)),
+            child: Column(children: [
+              Text('${selected.$1}  ${selected.$2}', style: const TextStyle(color: Colors.black54, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text('$_callingCode$_number', style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800, color: primaryRed, letterSpacing: 1.2)),
+              Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: _number.isEmpty ? null : () => setState(() => _number = _number.substring(0, _number.length - 1)), icon: const Icon(Icons.backspace_outlined), label: const Text('وروستی عدد پاک کړئ'))),
+            ]),
+          ),
+          const SizedBox(height: 14),
+          GridView.count(
+            crossAxisCount: 3, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.55,
+            children: ['1','2','3','4','5','6','7','8','9','*','0','#'].map((digit) => Material(
+              color: Colors.white, borderRadius: BorderRadius.circular(16),
+              child: InkWell(borderRadius: BorderRadius.circular(16), onTap: () => _append(digit),
+                child: Center(child: Text(digit, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: primaryRed))),
+              ),
+            )).toList(),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(height: 54, child: FilledButton.icon(
+            onPressed: null, icon: const Icon(Icons.call_rounded),
+            label: const Text('زنګ ووهئ — خدمت لا نه دی فعال'),
+            style: FilledButton.styleFrom(backgroundColor: successGreen, disabledBackgroundColor: successGreen.withValues(alpha: .45), foregroundColor: Colors.white),
+          )),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: cream, borderRadius: BorderRadius.circular(14), border: Border.all(color: gold)),
+            child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.info_outline, color: primaryRed), SizedBox(width: 9),
+              Expanded(child: Text('د زنګ خدمت لا د مخابراتي شرکت له خوا نه دی فعال شوی. دا ډایل‌پډ اوس یوازې د چمتووالي لپاره دی؛ هېڅ زنګ نه وهي او له والټ څخه پیسې نه کموي.', style: TextStyle(height: 1.45))),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Private, device-only contacts. No address-book permission and no cloud sync.
+class PgntContactsPage extends StatefulWidget {
+  final VoidCallback onBack;
+  const PgntContactsPage({super.key, required this.onBack});
+
+  @override
+  State<PgntContactsPage> createState() => _PgntContactsPageState();
+}
+
+class _PgntContactsPageState extends State<PgntContactsPage> {
+  static const String _storageKey = 'pgnt_private_contacts_v1';
+  final FlutterSecureStorage _contactsStorage = const FlutterSecureStorage();
+  final List<Map<String, String>> _contacts = [];
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadContacts() async {
+    try {
+      final raw = await _contactsStorage.read(key: _storageKey);
+      if (raw != null) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map && item['name'] is String && item['phone'] is String) {
+              final name = (item['name'] as String).trim();
+              final phone = (item['phone'] as String).trim();
+              if (name.isNotEmpty && phone.isNotEmpty) {
+                _contacts.add({'name': name, 'phone': phone});
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // Keep the page usable if local storage contains invalid data.
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _persistContacts() async {
+    setState(() => _saving = true);
+    try {
+      await _contactsStorage.write(key: _storageKey, value: jsonEncode(_contacts));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('اړیکې خوندي نه شوې. بیا هڅه وکړئ.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _editContact({int? index}) async {
+    final editing = index != null;
+    _nameController.text = editing ? _contacts[index]['name']! : '';
+    _phoneController.text = editing ? _contacts[index]['phone']! : '';
+    final formKey = GlobalKey<FormState>();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(editing ? 'اړیکه بدله کړئ' : 'نوې اړیکه'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'نوم'),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'نوم ولیکئ' : null,
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'د موبایل شمېره (+93...)'),
+                validator: (value) => value == null ||
+                        !RegExp(r'^\+?[0-9][0-9 ()-]{5,19}$').hasMatch(value.trim())
+                    ? 'سمه شمېره ولیکئ' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('لغوه'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, true);
+              }
+            },
+            child: const Text('خوندي کول'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    final contact = {
+      'name': _nameController.text.trim(),
+      'phone': _phoneController.text.trim(),
+    };
+    setState(() {
+      if (editing) {
+        _contacts[index] = contact;
+      } else {
+        _contacts.add(contact);
+      }
+      _contacts.sort((a, b) => a['name']!.toLowerCase().compareTo(b['name']!.toLowerCase()));
+    });
+    await _persistContacts();
+  }
+
+  Future<void> _deleteContact(int index) async {
+    final contactName = _contacts[index]['name']!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('اړیکه ړنګه کړئ؟'),
+        content: Text('ایا "$contactName" ړنګول غواړئ؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('نه')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('هو، ړنګ یې کړه'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _contacts.removeAt(index));
+    await _persistContacts();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'بېرته پروفایل ته',
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back_rounded, color: primaryRed),
+              ),
+              const Expanded(child: PgntBrandHeader()),
+            ],
+          ),
+          const SizedBox(height: 18),
+          pgntSectionTitle('زما اړیکې', Icons.contacts_outlined),
+          const Text(
+            'دا اړیکې یوازې په همدې موبایل کې ساتل کېږي. اپلېکېشن ستاسو د موبایل ټول contacts نه لولي او هېڅ اړیکه سرور ته نه لېږي.',
+            style: TextStyle(color: Colors.black54, height: 1.45),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _saving ? null : () => _editContact(),
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('نوې اړیکه اضافه کړئ'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_loading)
+            const Center(child: CircularProgressIndicator())
+          else if (_contacts.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Center(child: Text('تر اوسه اړیکه نه ده اضافه شوې.')),
+              ),
+            )
+          else
+            ..._contacts.asMap().entries.map((entry) {
+              final index = entry.key;
+              final contact = entry.value;
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0x147A0C10),
+                    child: Text(
+                      contact['name']!.isEmpty ? '?' : contact['name']![0].toUpperCase(),
+                      style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  title: Text(contact['name']!, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(contact['phone']!),
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') _editContact(index: index);
+                      if (value == 'delete') _deleteContact(index);
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text('بدلول')),
+                      PopupMenuItem(value: 'delete', child: Text('ړنګول')),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          if (_saving)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+

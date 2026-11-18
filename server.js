@@ -126,6 +126,9 @@ const pool = DATABASE_URL
 // duplicating currency, phone and country identity definitions in server.js.
 const { COUNTRY_CURRENCIES, SUPPORTED_COUNTRIES } = require('./country-config'); // Legacy fixed-flow compatibility only.
 const { createCountryRegistryRuntime } = require('./country-registry-runtime');
+const { validateMasterPricingPolicy, buildCountryPricingPreview } = require('./master-country-pricing');
+const { selectEligibleNetworkProducts } = require('./network-product-approval');
+const { inspectFixedRechargeProduct } = require('./dtone-fixed-recharge');
 
 // Keep the DB-backed registry available to customer routes. A missing DB or
 // registry table fails closed at request time; no hard-coded country fallback.
@@ -594,13 +597,54 @@ async function getPricingSettings(client, country) {
   // through the referral ledger and never alter top-up pricing.
   const bonusPercent = 0;
 
-  const stripeFeePercent = Number(settings.stripe_fee_percent);
-  const stripeFixedFeeCents = requireNonNegativeInteger(
-    settings.stripe_fixed_fee_cents,
-    'Stripe fixed fee in EUR cents'
+  // Stripe processing fees are never read from manually editable country settings.
+  // Prefer the latest explicitly approved master policy; otherwise derive a
+  // conservative estimate from settled EUR BalanceTransaction evidence.
+  const approvedPolicyResult = await client.query(
+    `SELECT stripe_fee_percent, stripe_fixed_fee_cents, version
+       FROM master_pricing_policies
+      WHERE status = 'approved' AND payment_currency = 'EUR'
+      ORDER BY approved_at DESC, version DESC
+      LIMIT 1`
   );
+  let stripeFeePercent;
+  let stripeFixedFeeCents;
+  let stripeFeeSource;
+  let stripeFeeSampleCount = 0;
+  if (approvedPolicyResult.rowCount === 1) {
+    stripeFeePercent = Number(approvedPolicyResult.rows[0].stripe_fee_percent);
+    stripeFixedFeeCents = requireNonNegativeInteger(
+      approvedPolicyResult.rows[0].stripe_fixed_fee_cents,
+      'approved Stripe fixed fee in EUR cents'
+    );
+    stripeFeeSource = 'approved_master_policy';
+  } else {
+    const history = await client.query(
+      `SELECT charge_cents, stripe_fee_eur_cents
+         FROM orders
+        WHERE paid_at IS NOT NULL
+          AND currency = 'EUR'
+          AND stripe_fee_currency = 'eur'
+          AND stripe_fee_eur_cents IS NOT NULL
+          AND stripe_balance_transaction_id IS NOT NULL
+          AND charge_cents > 0
+        ORDER BY stripe_fee_reconciled_at DESC
+        LIMIT 500`
+    );
+    const estimate = require('./stripe-fee-estimator').estimateStripeFeeSchedule(history.rows);
+    if (!estimate.ready) {
+      const error = new Error('Automatic Stripe fee estimate is not ready; checkout pricing is safely paused until enough settled Stripe fee evidence exists or an approved master policy is available.');
+      error.code = 'STRIPE_FEE_ESTIMATE_NOT_READY';
+      error.details = estimate;
+      throw error;
+    }
+    stripeFeePercent = estimate.stripeFeePercent;
+    stripeFixedFeeCents = estimate.stripeFixedFeeCents;
+    stripeFeeSource = 'historical_balance_transaction_estimate';
+    stripeFeeSampleCount = estimate.sampleCount;
+  }
   if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
-    throw new Error('Invalid Stripe fee percentage.');
+    throw new Error('Invalid approved or estimated Stripe fee percentage.');
   }
 
   return {
@@ -613,6 +657,8 @@ async function getPricingSettings(client, country) {
     bonusPercent,
     stripeFeePercent,
     stripeFixedFeeCents,
+    stripeFeeSource,
+    stripeFeeSampleCount,
   };
 }
 
@@ -900,8 +946,15 @@ app.get('/api/countries', async (req, res) => {
              AND p.country = c.country_code
              AND p.currency = c.destination_currency
              AND p.active = TRUE
+             AND p.amount >= 75 AND p.amount <= 3000
+             AND p.amount = TRUNC(p.amount)
              AND p.wholesale_price_eur_cents IS NOT NULL
              AND p.wholesale_price_eur_cents > 0
+             AND p.provider_price_source = 'dtone_api'
+             AND p.provider_price_product_id = p.product_id
+             AND p.provider_price_verified_at IS NOT NULL
+             AND p.provider_price_verified_at <= NOW()
+             AND p.provider_price_verified_at >= NOW() - INTERVAL '24 hours'
          )
        ORDER BY COALESCE(localized.display_name, c.country_name), c.country_code`,
       [language]
@@ -973,9 +1026,15 @@ app.get('/api/countries/:countryCode/operators', async (req, res) => {
              AND p.active = TRUE
              AND p.amount >= 75
              AND p.amount <= 3000
+             AND p.amount = TRUNC(p.amount)
              AND p.product_id IS NOT NULL
              AND p.wholesale_price_eur_cents IS NOT NULL
              AND p.wholesale_price_eur_cents > 0
+             AND p.provider_price_source = 'dtone_api'
+             AND p.provider_price_product_id = p.product_id
+             AND p.provider_price_verified_at IS NOT NULL
+             AND p.provider_price_verified_at <= NOW()
+             AND p.provider_price_verified_at >= NOW() - INTERVAL '24 hours'
          )
        ORDER BY COALESCE(localized.display_name, o.display_name), o.operator_key`,
       [countryCode, language]
@@ -1058,9 +1117,15 @@ app.get('/api/countries/:countryCode/operators/:operatorKey/products', async (re
          AND p.active = TRUE
          AND p.amount >= 75
          AND p.amount <= 3000
+         AND p.amount = TRUNC(p.amount)
          AND p.product_id IS NOT NULL
          AND p.wholesale_price_eur_cents IS NOT NULL
          AND p.wholesale_price_eur_cents > 0
+         AND p.provider_price_source = 'dtone_api'
+         AND p.provider_price_product_id = p.product_id
+         AND p.provider_price_verified_at IS NOT NULL
+         AND p.provider_price_verified_at <= NOW()
+         AND p.provider_price_verified_at >= NOW() - INTERVAL '24 hours'
        ORDER BY p.amount, p.id`,
       [countryCode, operatorKey, REGISTRY_LANGUAGES.has(String(req.query.language || 'en').toLowerCase())
         ? String(req.query.language || 'en').toLowerCase() : 'en']
@@ -1802,6 +1867,11 @@ app.post(
           break;
         }
 
+        case 'charge.updated': {
+          await reconcileStripeChargeFee(event.data.object);
+          break;
+        }
+
         case 'charge.refunded': {
           const charge = event.data.object;
 
@@ -2047,6 +2117,38 @@ async function processPaidRangedOrder(order, orderId) {
   return { status: persistedOrderStatus, orderId, providerReference: verified.transactionId, providerStatus: persistedProviderStatus };
 }
 
+async function reconcileStripeChargeFee(chargeEvent) {
+  if (!pool || !stripe || !chargeEvent || typeof chargeEvent.id !== 'string') {
+    throw new Error('Stripe charge reconciliation input is invalid.');
+  }
+  // charge.updated may arrive before the BalanceTransaction is attached.
+  // Retrieve the canonical Charge with its BalanceTransaction expanded.
+  const charge = await stripe.charges.retrieve(chargeEvent.id, {
+    expand: ['balance_transaction'],
+  });
+  if (!charge || charge.status !== 'succeeded' || charge.currency !== 'eur') {
+    return { reconciled: false, reason: 'charge_not_succeeded_eur' };
+  }
+  const evidence = require('./stripe-fee-evidence').extractStripeChargeFeeEvidence(charge);
+  if (!evidence) return { reconciled: false, reason: 'balance_transaction_not_ready' };
+
+  const result = await pool.query(
+    `UPDATE orders
+     SET stripe_fee_eur_cents = $2,
+         stripe_fee_currency = $3,
+         stripe_balance_transaction_id = $4,
+         stripe_fee_reconciled_at = NOW(),
+         updated_at = NOW()
+     WHERE stripe_payment_intent_id = $1
+       AND currency = 'EUR'
+       AND (stripe_balance_transaction_id IS NULL OR stripe_balance_transaction_id = $4)
+     RETURNING order_id`,
+    [evidence.paymentIntentId, evidence.feeEurCents, evidence.currency, evidence.balanceTransactionId]
+  );
+  if (result.rowCount > 1) throw new Error('Stripe PaymentIntent matched multiple orders.');
+  return { reconciled: result.rowCount === 1, matchedOrders: result.rowCount };
+}
+
 async function processPaidStripeSession(session) {
   if (!pool || !stripe) {
     throw new Error('Payment services are not configured.');
@@ -2068,6 +2170,15 @@ async function processPaidStripeSession(session) {
     typeof session.payment_intent === 'object'
       ? session.payment_intent
       : null;
+  // Stripe's exact processing fee is recorded on the Charge's BalanceTransaction.
+  // It is not a universal pre-checkout quote; retrieve canonical evidence after payment.
+  let stripeFeeEvidence = null;
+  if (paymentIntent?.id) {
+    const canonicalIntent = await stripe.paymentIntents.retrieve(paymentIntent.id, {
+      expand: ['latest_charge.balance_transaction'],
+    });
+    stripeFeeEvidence = require('./stripe-fee-evidence').extractStripeFeeEvidence(canonicalIntent);
+  }
   const stripeIsTest = STRIPE_SECRET_KEY.startsWith('sk_test_');
 
   if (
@@ -2157,10 +2268,15 @@ async function processPaidStripeSession(session) {
       `UPDATE orders
        SET status = 'processing_topup',
            stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
+           stripe_fee_eur_cents = COALESCE($3, stripe_fee_eur_cents),
+           stripe_fee_currency = COALESCE($4, stripe_fee_currency),
+           stripe_balance_transaction_id = COALESCE($5, stripe_balance_transaction_id),
+           stripe_fee_reconciled_at = CASE WHEN $3::integer IS NOT NULL THEN NOW() ELSE stripe_fee_reconciled_at END,
            paid_at = COALESCE(paid_at, NOW()),
            updated_at = NOW()
        WHERE order_id = $1`,
-      [orderId, paymentIntentId]
+      [orderId, paymentIntentId, stripeFeeEvidence?.feeEurCents ?? null,
+        stripeFeeEvidence?.currency ?? null, stripeFeeEvidence?.balanceTransactionId ?? null]
     );
     await client.query('COMMIT');
   } catch (error) {
@@ -3381,34 +3497,322 @@ function requireCountryEvidenceReviewer(req, res, next) {
   return next();
 }
 
-// Admin authentication.
-// Set a long, random ADMIN_API_KEY in Render.
+// Admin authentication supports one distinct API key per named admin.
+// Prefer ADMIN_API_KEYS_JSON={"admin-id":"long-random-secret"}.
+// Legacy single-key deployments must also configure ADMIN_ACTOR_ID.
+const { createAdminAuthenticator } = require('./admin-auth');
+const adminAuthenticator = createAdminAuthenticator({
+  adminApiKeysJson: process.env.ADMIN_API_KEYS_JSON || '',
+  legacyApiKey: ADMIN_API_KEY,
+  legacyActorId: process.env.ADMIN_ACTOR_ID || '',
+});
+
 function requireAdmin(req, res, next) {
-  if (!ADMIN_API_KEY) {
+  const result = adminAuthenticator.authenticate(String(req.headers['x-admin-api-key'] || ''));
+  if (!result.configured) {
     return res.status(503).json({
-      error: 'Admin authentication is not configured.',
+      error: 'Admin authentication is not configured. Configure ADMIN_API_KEYS_JSON or ADMIN_API_KEY with ADMIN_ACTOR_ID.',
     });
   }
-
-  const suppliedKey = String(
-    req.headers['x-admin-api-key'] || ''
-  );
-
-  const expected = Buffer.from(ADMIN_API_KEY);
-  const supplied = Buffer.from(suppliedKey);
-
-  const valid =
-    expected.length === supplied.length &&
-    crypto.timingSafeEqual(expected, supplied);
-
-  if (!valid) {
-    return res.status(401).json({
-      error: 'Unauthorized.',
-    });
+  if (!result.authenticated) {
+    return res.status(401).json({ error: 'Unauthorized.' });
   }
-
+  req.adminActorId = result.actorId;
   return next();
 }
+
+// DT One FX observation capture and independent approval.
+// Captures one exact provider product's EUR -> destination wholesale rate.
+// Observation is pending by default; approval never activates products or writes prices.
+app.get('/api/admin/countries/:countryCode/fx/observations', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const expectedCurrency = ({ AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT' })[countryCode];
+  if (!expectedCurrency) return res.status(400).json({ error: 'Unsupported country.' });
+  try {
+    const result = await pool.query(
+      `SELECT id,country_code,base_currency,quote_currency,quote_per_base,source,
+              source_reference,observed_at,expires_at,is_approved,approved_at,approved_by,created_at
+         FROM country_fx_rates
+        WHERE country_code=$1
+        ORDER BY observed_at DESC,id DESC
+        LIMIT 50`,
+      [countryCode]
+    );
+    return res.json({ countryCode, destinationCurrency: expectedCurrency, observations: result.rows });
+  } catch (error) {
+    console.error('Country FX observation history failed:', error.message);
+    return res.status(503).json({ error: 'FX history is unavailable. Confirm migration 024 is applied.' });
+  }
+});
+
+app.post('/api/admin/countries/:countryCode/fx/observations', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ captured: false, error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const expectedCurrency = ({ AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT' })[countryCode];
+  const productId = Number(req.body?.productId);
+  if (!expectedCurrency) return res.status(400).json({ captured: false, error: 'Unsupported country.' });
+  if (!Number.isSafeInteger(productId) || productId < 1) return res.status(400).json({ captured: false, error: 'A valid DT One productId is required.' });
+  if (req.body?.confirmFxObservation !== true) {
+    return res.status(400).json({ captured: false, confirmationRequired: true, error: 'Explicit FX observation confirmation is required.' });
+  }
+  if (!DTONE_API_KEY || !DTONE_API_SECRET) return res.status(503).json({ captured: false, error: 'DT One credentials are not configured.' });
+  try {
+    const country = await pool.query(
+      'SELECT country_code,destination_currency,provider,provider_country_code FROM country_registry WHERE country_code=$1',
+      [countryCode]
+    );
+    if (country.rowCount !== 1 || String(country.rows[0].destination_currency).toUpperCase() !== expectedCurrency ||
+        String(country.rows[0].provider).toLowerCase() !== 'dtone' || !country.rows[0].provider_country_code) {
+      return res.status(409).json({ captured: false, error: 'Country DT One mapping or destination currency is not verified.' });
+    }
+    const response = await fetch(`${DTONE_API_BASE_URL}/v1/products/${productId}`, {
+      method: 'GET',
+      headers: { Authorization: getDtOneAuthHeader(), Accept: 'application/json' },
+      signal: AbortSignal.timeout(15000),
+    });
+    const responseText = await response.text();
+    let product = null;
+    try { product = responseText ? JSON.parse(responseText) : null; } catch (_) {}
+    if (!response.ok || !product || Number(product.id) !== productId) {
+      return res.status(response.status === 404 ? 404 : 502).json({
+        captured: false, error: 'DT One could not verify the exact product. No FX observation was saved.',
+        providerStatus: response.status,
+      });
+    }
+    const providerIso = String(product.operator?.country?.iso_code || '').trim().toUpperCase();
+    const mapping = await resolveDtOneCountryMapping(providerIso);
+    if (!mapping || mapping.countryCode !== countryCode || mapping.destinationCurrency !== expectedCurrency) {
+      return res.status(422).json({ captured: false, error: 'DT One product country does not match the requested country and currency.' });
+    }
+    const { buildDtOneFxObservation } = require('./dtone-fx');
+    const observation = buildDtOneFxObservation(product, expectedCurrency);
+    const saved = await pool.query(
+      `INSERT INTO country_fx_rates
+         (country_code,base_currency,quote_currency,quote_per_base,source,source_reference,observed_at,expires_at,is_approved)
+       VALUES ($1,'EUR',$2,$3,'DT_ONE',$4,$5,$6,FALSE)
+       RETURNING id,country_code,base_currency,quote_currency,quote_per_base,source,source_reference,
+                 observed_at,expires_at,is_approved,approved_at,approved_by`,
+      [countryCode, observation.quoteCurrency, observation.quotePerBase,
+       observation.sourceReference, observation.observedAt, observation.expiresAt]
+    );
+    return res.status(201).json({
+      captured: true, pendingApproval: true, observation: saved.rows[0],
+      pricesWritten: false, productsActivated: false,
+    });
+  } catch (error) {
+    console.error('DT One FX observation capture failed:', error.message);
+    return res.status(422).json({ captured: false, error: error.message || 'Could not capture DT One FX evidence.' });
+  }
+});
+
+app.post('/api/admin/countries/:countryCode/fx/observations/:observationId/approve', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ approved: false, error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const expectedCurrency = ({ AF: 'AFN', PK: 'PKR', IN: 'INR', BD: 'BDT' })[countryCode];
+  const observationId = Number(req.params.observationId);
+  if (!expectedCurrency || !Number.isSafeInteger(observationId) || observationId < 1) {
+    return res.status(400).json({ approved: false, error: 'A valid country and observation ID are required.' });
+  }
+  if (req.body?.confirmFxApproval !== true) {
+    return res.status(400).json({ approved: false, confirmationRequired: true, error: 'Explicit FX approval confirmation is required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const selected = await client.query(
+      `SELECT id,country_code,base_currency,quote_currency,quote_per_base,source,
+              source_reference,observed_at,expires_at,is_approved
+         FROM country_fx_rates WHERE id=$1 AND country_code=$2 FOR UPDATE`,
+      [observationId, countryCode]
+    );
+    if (selected.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ approved: false, error: 'FX observation was not found for this country.' });
+    }
+    const row = selected.rows[0];
+    const now = Date.now();
+    const observedAt = Date.parse(row.observed_at);
+    const expiresAt = Date.parse(row.expires_at);
+    if (row.is_approved || row.base_currency !== 'EUR' || row.quote_currency !== expectedCurrency ||
+        row.source !== 'DT_ONE' || !String(row.source_reference || '').startsWith('product:') ||
+        !Number.isFinite(observedAt) || observedAt > now || !Number.isFinite(expiresAt) || expiresAt <= now) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ approved: false, error: 'FX evidence is already approved, expired, future-dated, or mismatched.' });
+    }
+    const updated = await client.query(
+      `UPDATE country_fx_rates SET is_approved=TRUE,approved_at=NOW(),approved_by=$3
+        WHERE id=$1 AND country_code=$2 AND is_approved=FALSE
+        RETURNING id,country_code,base_currency,quote_currency,quote_per_base,source,
+                  source_reference,observed_at,expires_at,is_approved,approved_at,approved_by`,
+      [observationId, countryCode, req.adminActorId]
+    );
+    if (updated.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ approved: false, error: 'FX observation changed during approval.' });
+    }
+    await client.query('COMMIT');
+    return res.json({ approved: true, observation: updated.rows[0], pricesWritten: false, productsActivated: false });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Country FX approval failed:', error.message);
+    return res.status(500).json({ approved: false, error: 'Could not approve FX evidence.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Read-only, network-scoped DT One product approval preview.
+// Only exact provider-verified identities and fresh EUR wholesale evidence are eligible.
+app.get('/api/admin/countries/:countryCode/operators/:operatorKey/product-approval-preview', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorKey = String(req.params.operatorKey || '').trim();
+  const sourceProductCatalogId = Number(req.query.sourceProductCatalogId);
+  if (!/^[A-Z]{2}$/.test(countryCode) || !Number.isSafeInteger(sourceProductCatalogId) || sourceProductCatalogId < 1) {
+    return res.status(400).json({ error: 'A valid country and sourceProductCatalogId are required.' });
+  }
+  try {
+    const operator = await pool.query(
+      `SELECT o.country_code,o.operator_key,o.display_name,o.provider_operator_id,o.active,o.verified_at,
+              c.destination_currency,c.status AS country_status
+         FROM country_operators o
+         JOIN country_registry c ON c.country_code=o.country_code
+        WHERE o.country_code=$1 AND o.operator_key=$2 AND LOWER(o.provider)='dtone'
+        LIMIT 1`,
+      [countryCode, operatorKey]
+    );
+    if (operator.rowCount !== 1) return res.status(404).json({ error: 'The exact country/network mapping was not found.' });
+    const network = operator.rows[0];
+    if (network.active !== true || network.country_status !== 'active' || !network.provider_operator_id || !String(network.provider_operator_id).trim() || !network.verified_at) {
+      return res.status(409).json({ error: 'DT One operator identity is not independently verified yet.', networkVerified: false });
+    }
+    const rows = await pool.query(
+      `SELECT cop.id AS mapping_id,cop.country_code,cop.operator_key,
+              cop.product_catalog_id,cop.active AS mapping_active,cop.verified_at AS mapping_verified_at,
+              p.product_id AS provider_product_id,p.currency,p.country AS product_country,p.operator,
+              o.display_name AS operator_name,p.wholesale_price_eur_cents,
+              p.amount,p.provider_price_verified_at,p.provider_price_source,
+              p.provider_price_product_id
+         FROM country_operator_products cop
+         JOIN country_operators o
+           ON o.country_code=cop.country_code AND o.operator_key=cop.operator_key
+         JOIN product_catalog p ON p.id=cop.product_catalog_id
+        WHERE cop.country_code=$1 AND cop.operator_key=$2
+        ORDER BY p.amount,p.product_id`,
+      [countryCode, operatorKey]
+    );
+    const selectionRows = rows.rows.filter(row => {
+      const verifiedAt = Date.parse(row.provider_price_verified_at);
+      return row.mapping_active === true && !!row.mapping_verified_at &&
+        row.provider_price_source === 'dtone_api' &&
+        Number(row.provider_price_product_id) === Number(row.provider_product_id) &&
+        Number.isFinite(verifiedAt) && verifiedAt <= Date.now() &&
+        Date.now() - verifiedAt <= 24 * 60 * 60 * 1000 &&
+        Number.isSafeInteger(Number(row.amount)) && Number(row.amount) >= 75 && Number(row.amount) <= 3000;
+    });
+    const result = selectEligibleNetworkProducts(selectionRows, { countryCode, operatorKey, sourceCatalogId: sourceProductCatalogId });
+    return res.set('Cache-Control','no-store').json({
+      ...result,
+      network: { countryCode, operatorKey, displayName: network.display_name, providerOperatorId: network.provider_operator_id },
+      candidatesChecked: rows.rowCount,
+      staleOrUnverifiedExcluded: rows.rowCount - selectionRows.length,
+      note: 'Preview only. No mapping, product, price, or activation state was changed.',
+    });
+  } catch (error) {
+    return res.status(422).json({ error: error.message || 'Could not build the network product approval preview.' });
+  }
+});
+
+// Record an auditable approval batch for one exact network.
+// This records the reviewed product set only; it never activates customer products.
+app.post('/api/admin/countries/:countryCode/operators/:operatorKey/product-approval-batches', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const countryCode = String(req.params.countryCode || '').trim().toUpperCase();
+  const operatorKey = String(req.params.operatorKey || '').trim();
+  const sourceProductCatalogId = Number(req.body?.sourceProductCatalogId);
+  if (!/^[A-Z]{2}$/.test(countryCode) || !Number.isSafeInteger(sourceProductCatalogId) || sourceProductCatalogId < 1) {
+    return res.status(400).json({ error: 'A valid country and sourceProductCatalogId are required.' });
+  }
+  if (req.body?.confirmApprovalBatch !== true) {
+    return res.status(400).json({ confirmationRequired: true, error: 'Explicit network product approval confirmation is required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const operator = await client.query(
+      `SELECT o.display_name,o.provider_operator_id,o.verified_at,o.active,c.destination_currency,c.status AS country_status
+         FROM country_operators o
+         JOIN country_registry c ON c.country_code=o.country_code
+        WHERE o.country_code=$1 AND o.operator_key=$2 AND LOWER(o.provider)='dtone'
+        FOR UPDATE OF o`,
+      [countryCode, operatorKey]
+    );
+    if (operator.rowCount !== 1 || operator.rows[0].active !== true || operator.rows[0].country_status !== 'active' || !operator.rows[0].provider_operator_id || !operator.rows[0].verified_at) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'The exact DT One operator identity must be verified before product approval.' });
+    }
+    const productRows = await client.query(
+      `SELECT cop.id AS mapping_id,cop.country_code,cop.operator_key,
+              cop.active AS mapping_active,cop.verified_at AS mapping_verified_at,
+              cop.product_catalog_id,p.product_id AS provider_product_id,
+              p.currency,p.country AS product_country,p.operator,
+              o.display_name AS operator_name,p.wholesale_price_eur_cents,
+              p.amount,p.provider_price_verified_at,p.provider_price_source,
+              p.provider_price_product_id
+         FROM country_operator_products cop
+         JOIN country_operators o
+           ON o.country_code=cop.country_code AND o.operator_key=cop.operator_key
+         JOIN product_catalog p ON p.id=cop.product_catalog_id
+        WHERE cop.country_code=$1 AND cop.operator_key=$2
+        ORDER BY p.amount,p.product_id
+        FOR UPDATE OF cop,p`,
+      [countryCode, operatorKey]
+    );
+    const now = Date.now();
+    const eligibleRows = productRows.rows.filter(row => {
+      const verifiedAt = Date.parse(row.provider_price_verified_at);
+      return row.mapping_active === true && !!row.mapping_verified_at &&
+        row.provider_price_source === 'dtone_api' &&
+        Number(row.provider_price_product_id) === Number(row.provider_product_id) &&
+        Number.isSafeInteger(Number(row.amount)) && Number(row.amount) >= 75 && Number(row.amount) <= 3000 &&
+        Number.isFinite(verifiedAt) && verifiedAt <= now && now - verifiedAt <= 24 * 60 * 60 * 1000;
+    });
+    const selection = selectEligibleNetworkProducts(eligibleRows, { countryCode, operatorKey, sourceCatalogId: sourceProductCatalogId });
+    const policy = await client.query(
+      `SELECT version FROM master_pricing_policies
+        WHERE status='approved' AND payment_currency='EUR'
+        ORDER BY approved_at DESC,version DESC LIMIT 1`
+    );
+    const batch = await client.query(
+      `INSERT INTO country_network_product_approval_batches
+         (country_code,operator_key,source_product_catalog_id,approved_product_count,blocked_product_count,policy_version,actor)
+       VALUES($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id,country_code,operator_key,source_product_catalog_id,approved_product_count,blocked_product_count,policy_version,created_at`,
+      [countryCode,operatorKey,sourceProductCatalogId,selection.eligible.length,productRows.rowCount-selection.eligible.length,policy.rowCount ? Number(policy.rows[0].version) : null,req.adminActorId]
+    );
+    for (const item of selection.eligible) {
+      await client.query(
+        `INSERT INTO country_network_product_approval_items
+           (batch_id,country_operator_product_id,product_catalog_id,provider_product_id,wholesale_price_eur_cents)
+         VALUES($1,$2,$3,$4,$5)`,
+        [batch.rows[0].id,item.mappingId,item.productCatalogId,item.providerProductId,item.wholesalePriceEurCents]
+      );
+    }
+    await client.query('COMMIT');
+    return res.status(201).set('Cache-Control','no-store').json({
+      recorded: true,batch: batch.rows[0],eligibleProducts: selection.eligible,
+      customerProductsActivated: false,catalogPricesWritten: false,
+      note: 'Approval batch recorded for audit only. Separate activation remains disabled and requires its own release review.',
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Network product approval batch failed:', error.message);
+    return res.status(422).json({ error: error.message || 'Could not record network product approval batch.' });
+  } finally {
+    client.release();
+  }
+});
 
 // Read-only country onboarding overview for the admin panel.
 // It reports canonical registry state only; it never activates countries,
@@ -3651,12 +4055,12 @@ app.post('/api/admin/countries/:countryCode/sandbox-evidence', express.json(), r
     if (!country.rowCount) return res.status(409).json({ error: 'Country must be in testing or configuring status.' });
     const saved = await pool.query(`
       INSERT INTO country_sandbox_evidence(country_code,test_name,passed,evidence_ref,submitted_by,review_status,submitted_at)
-      VALUES($1,$2,TRUE,$3,'admin-session','submitted',NOW())
+      VALUES($1,$2,TRUE,$3,$4,'submitted',NOW())
       ON CONFLICT(country_code,test_name) DO UPDATE SET
         passed=TRUE,evidence_ref=EXCLUDED.evidence_ref,
         submitted_by=EXCLUDED.submitted_by,review_status='submitted',submitted_at=NOW()
       RETURNING country_code,test_name,passed,evidence_ref,review_status,submitted_at
-    `, [countryCode,testName,evidenceRef]);
+    `, [countryCode,testName,evidenceRef,req.adminActorId]);
     return res.status(201).set('Cache-Control','no-store').json({
       recorded: true, evidence: saved.rows[0],
       note: 'Evidence recorded only; this does not activate the country.',
@@ -3992,6 +4396,16 @@ require('./support-routes')({
   app,
   pool,
   requireAdmin,
+});
+
+require('./dtone-master-workbook-reconciliation-routes').registerDtOneMasterWorkbookRoutes({
+  app,
+  express,
+  pool,
+  requireAdmin,
+  dtoneApiBaseUrl: DTONE_API_BASE_URL,
+  dtoneApiBaseUrlExplicit: Boolean(process.env.DTONE_API_BASE_URL),
+  getDtOneAuthHeader,
 });
 
 // Firebase Admin verifies ID tokens only. SMS delivery remains client-side
@@ -5096,6 +5510,15 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
       await client.query('ROLLBACK');
       return res.status(422).json({ refreshed: false, error: 'DT One product currency does not match the supported country currency. No values were changed.', productId });
     }
+    const fixedRechargeEligibility = inspectFixedRechargeProduct(providerProduct, countryMapping.destinationCurrency);
+    if (!fixedRechargeEligibility.eligible) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({
+        refreshed: false,
+        error: fixedRechargeEligibility.reason + ' No catalog values were changed.',
+        productId,
+      });
+    }
     // DT One labels this Afghanistan operator "ATOMA Afghanistan", while
     // the existing catalog uses the canonical short label "ATOMA". Allow only
     // this explicit, country-scoped alias; never strip arbitrary country/network
@@ -5130,10 +5553,13 @@ app.post('/api/admin/catalog/:productId/refresh-prices', express.json(), require
     }
     const updated = await client.query(
       `UPDATE product_catalog
-       SET price_eur_cents = $1, wholesale_price_eur_cents = $2, updated_at = NOW()
+       SET price_eur_cents = $1, wholesale_price_eur_cents = $2,
+           provider_price_verified_at = NOW(), provider_price_source = 'dtone_api',
+           provider_price_product_id = product_id, updated_at = NOW()
        WHERE id = $3 AND active = FALSE
        RETURNING id, product_id, country, operator, amount, currency,
-                 price_eur_cents, wholesale_price_eur_cents, active`,
+                 price_eur_cents, wholesale_price_eur_cents, provider_price_verified_at,
+                 provider_price_source, provider_price_product_id, active`,
       [retailCents, wholesaleCents, current.id]
     );
     if (updated.rowCount !== 1) {
@@ -5204,6 +5630,14 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
     if (!countryMapping || currency !== countryMapping.destinationCurrency) {
       return res.status(422).json({ imported: false, error: 'Product currency does not match the configured currency for this country.', productId, country, currency });
     }
+    const fixedRechargeEligibility = inspectFixedRechargeProduct(providerProduct, countryMapping.destinationCurrency);
+    if (!fixedRechargeEligibility.eligible) {
+      return res.status(422).json({
+        imported: false,
+        error: fixedRechargeEligibility.reason,
+        productId,
+      });
+    }
     const retailCents = Math.round(retailEur * 100);
     const wholesaleCents = Math.round(wholesaleEur * 100);
     if (retailCents <= 0 || wholesaleCents <= 0) {
@@ -5231,10 +5665,12 @@ app.post('/api/admin/catalog/:productId/import', requireAdmin, async (req, res) 
       const inserted = await client.query(
         `INSERT INTO product_catalog
           (country, operator, amount, currency, product_id, price_eur_cents,
-           wholesale_price_eur_cents, bonus_amount, active, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 0, FALSE, NOW())
+           wholesale_price_eur_cents, provider_price_verified_at, provider_price_source,
+           provider_price_product_id, bonus_amount, active, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'dtone_api', $5, 0, FALSE, NOW())
          RETURNING id, country, operator, amount, currency, product_id,
-                   price_eur_cents, wholesale_price_eur_cents, active`,
+                   price_eur_cents, wholesale_price_eur_cents, provider_price_verified_at,
+                   provider_price_source, provider_price_product_id, active`,
         [country, operator, amountValue, currency, productId, retailCents, wholesaleCents]
       );
       await client.query('COMMIT');
@@ -5292,6 +5728,9 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
     for (let page = 1; page <= maxPages; page += 1) {
       const url = new URL(`${DTONE_API_BASE_URL}/v1/products`);
       url.searchParams.set('country_iso_code', countryIsoCode);
+      url.searchParams.set('type', 'FIXED_VALUE_RECHARGE');
+      url.searchParams.set('service_id', '1');
+      url.searchParams.set('subservice_id', '11');
       url.searchParams.set('per_page', String(pageSize));
       url.searchParams.set('page', String(page));
       const response = await fetch(url, {
@@ -5359,27 +5798,31 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
     const candidates = [];
     const rejected = [];
     for (const item of detailedProducts) {
-      const operator = String(item?.operator?.name || '').trim();
-      const currency = String(item?.destination?.unit || item?.benefits?.[0]?.amount?.unit || '').trim().toUpperCase();
-      const amount = Number(item?.destination?.amount ?? item?.benefits?.[0]?.amount?.base);
-      const retailEur = Number(item?.prices?.retail?.amount);
-      const wholesaleEur = Number(item?.prices?.wholesale?.amount);
-      if (!operator || currency !== recipientCurrency || !Number.isFinite(amount) || amount <= 0 ||
-          !Number.isFinite(retailEur) || retailEur <= 0 ||
-          !Number.isFinite(wholesaleEur) || wholesaleEur <= 0 || retailEur < wholesaleEur) {
-        rejected.push({ productId: String(item.id), reason: 'Missing or invalid operator, denomination, country currency, retail EUR price, or wholesale EUR price.' });
+      const currency = String(item?.destination?.unit || '').trim().toUpperCase();
+      if (currency !== recipientCurrency) {
+        rejected.push({
+          productId: String(item?.id ?? 'unknown'),
+          reason: 'DT One destination currency does not match the selected country.',
+        });
         continue;
       }
-      const retailCents = Math.round(retailEur * 100);
-      const wholesaleCents = Math.round(wholesaleEur * 100);
-      if (!Number.isSafeInteger(retailCents) || retailCents <= 0 || !Number.isSafeInteger(wholesaleCents) || wholesaleCents <= 0) {
-        rejected.push({ productId: String(item.id), reason: 'EUR price cannot be safely represented in cents.' });
+      const inspected = inspectFixedRechargeProduct(item, recipientCurrency);
+      if (!inspected.eligible) {
+        rejected.push({
+          productId: String(item?.id ?? 'unknown'),
+          reason: inspected.reason,
+        });
         continue;
       }
       candidates.push({
-        productId: String(item.id), operator, amount, currency,
-        retailPriceEur: retailEur, wholesalePriceEur: wholesaleEur,
-        retailCents, wholesaleCents,
+        productId: String(item.id),
+        operator: inspected.operator,
+        amount: inspected.amount,
+        currency: inspected.currency,
+        retailPriceEur: inspected.retailPriceEur,
+        wholesalePriceEur: inspected.wholesalePriceEur,
+        retailCents: inspected.retailCents,
+        wholesaleCents: inspected.wholesaleCents,
       });
     }
 
@@ -5515,11 +5958,13 @@ app.post('/api/admin/dtone/catalog/sync-country', requireAdmin, async (req, res)
         const result = await client.query(
           `INSERT INTO product_catalog
             (country, operator, amount, currency, product_id, price_eur_cents,
-             wholesale_price_eur_cents, bonus_amount, active, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 0, FALSE, NOW())
+             wholesale_price_eur_cents, provider_price_verified_at, provider_price_source,
+             provider_price_product_id, bonus_amount, active, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), 'dtone_api', $5, 0, FALSE, NOW())
            ON CONFLICT DO NOTHING
            RETURNING id, country, operator, amount, currency, product_id,
-                     price_eur_cents, wholesale_price_eur_cents, active`,
+                     price_eur_cents, wholesale_price_eur_cents, provider_price_verified_at,
+                     provider_price_source, provider_price_product_id, active`,
           [country, product.operator, product.amount, product.currency, product.productId,
             product.retailCents, product.wholesaleCents]
         );
@@ -6146,15 +6591,19 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
       return res.status(404).json({ error: 'Product was not found in product_catalog.', productId });
     }
     const product = productResult.rows[0];
-    const pricingResult = await pool.query(
-      `SELECT country, fee_eur_cents, bonus_percent, stripe_fee_percent,
-              stripe_fixed_fee_cents, active
-       FROM pricing_settings
-       WHERE country = $1
-       LIMIT 1`,
-      [product.country]
-    );
-    const pricing = pricingResult.rows[0] || null;
+    // Use the same server-authoritative app-fee + automatic Stripe-fee
+    // resolver as customer quotes and checkout. Never preview from legacy
+    // manually editable Stripe fee columns.
+    let pricing = null;
+    try {
+      pricing = await getPricingSettings(pool, product.country);
+    } catch (pricingError) {
+      console.warn('Catalog pricing preview is unavailable:', {
+        country: product.country,
+        code: pricingError.code || null,
+        message: String(pricingError.message || '').slice(0, 180),
+      });
+    }
     let customerPricePreview = null;
     let priceCalculationValid = false;
     if (product.wholesale_price_eur_cents != null && pricing !== null) {
@@ -6164,10 +6613,10 @@ app.get('/api/admin/catalog/:productId/pricing', requireAdmin, async (req, res) 
             wholesalePriceCents: Number(product.wholesale_price_eur_cents),
           },
           {
-            feeCents: Number(pricing.fee_eur_cents),
-            bonusPercent: Number(pricing.bonus_percent),
-            stripeFeePercent: Number(pricing.stripe_fee_percent),
-            stripeFixedFeeCents: Number(pricing.stripe_fixed_fee_cents),
+            feeCents: pricing.feeCents,
+            bonusPercent: 0,
+            stripeFeePercent: pricing.stripeFeePercent,
+            stripeFixedFeeCents: pricing.stripeFixedFeeCents,
           }
         );
         priceCalculationValid = Number.isSafeInteger(preview.finalPriceCents) &&
@@ -6312,6 +6761,201 @@ app.put('/api/admin/operator-pricing/:country/:operator', requireAdmin, async (r
   }
 });
 
+// Versioned country-neutral pricing policy. Creating a draft never changes live prices.
+app.get('/api/admin/master-pricing-policy', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(
+      `SELECT id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
+              stripe_fixed_fee_cents,bonus_percent,status,created_at,approved_at
+         FROM master_pricing_policies ORDER BY version DESC LIMIT 10`
+    );
+    return res.set('Cache-Control','no-store').json({ policies: result.rows, readOnly: true });
+  } catch (error) {
+    console.error('Master pricing policy lookup failed:', error.message);
+    return res.status(503).json({ error: 'Master pricing policy migration 032 is not installed or unavailable.' });
+  }
+});
+
+app.post('/api/admin/master-pricing-policy/draft', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  let feeEurCents;
+  try {
+    feeEurCents = requireNonNegativeInteger(req.body?.feeEurCents, 'app fee in EUR cents');
+    if (feeEurCents > 100000) throw new Error('App fee exceeds the supported limit.');
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  if (req.body?.confirmDraft !== true) {
+    return res.status(400).json({ confirmationRequired: true, error: 'Explicit draft confirmation is required.' });
+  }
+  const estimator = require('./stripe-fee-estimator');
+  try {
+    const history = await pool.query(
+      `SELECT charge_cents, stripe_fee_eur_cents
+         FROM orders
+        WHERE paid_at IS NOT NULL
+          AND currency = 'EUR'
+          AND stripe_fee_currency = 'eur'
+          AND stripe_fee_eur_cents IS NOT NULL
+          AND stripe_balance_transaction_id IS NOT NULL
+          AND charge_cents > 0
+        ORDER BY stripe_fee_reconciled_at DESC
+        LIMIT 500`
+    );
+    const estimate = estimator.estimateStripeFeeSchedule(history.rows);
+    if (!estimate.ready) {
+      return res.status(409).json({
+        error: 'Automatic Stripe fee estimate is not ready; more settled Stripe fee evidence is required.',
+        stripeFeeEstimate: estimate,
+        appFeeAccepted: true,
+        draftCreated: false,
+      });
+    }
+    const policy = validateMasterPricingPolicy({
+      feeEurCents,
+      stripeFeePercent: estimate.stripeFeePercent,
+      stripeFixedFeeCents: estimate.stripeFixedFeeCents,
+    });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const next = await client.query('SELECT COALESCE(MAX(version),0)+1 AS version FROM master_pricing_policies');
+      const version = Number(next.rows[0].version);
+      const saved = await client.query(
+        `INSERT INTO master_pricing_policies
+           (version,payment_currency,fee_eur_cents,stripe_fee_percent,stripe_fixed_fee_cents,
+            bonus_percent,status,created_by)
+         VALUES($1,'EUR',$2,$3,$4,0,'draft',$5)
+         RETURNING id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
+                   stripe_fixed_fee_cents,bonus_percent,status,created_at`,
+        [version,policy.feeEurCents,policy.stripeFeePercent,policy.stripeFixedFeeCents,req.adminActorId]
+      );
+      await client.query('COMMIT');
+      return res.status(201).json({
+        policy: saved.rows[0], livePricesChanged: false, approvalRequired: true,
+        stripeFeeEstimate: { sampleCount: estimate.sampleCount, method: estimate.method, guaranteed: false },
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
+  } catch (error) {
+    console.error('Master pricing draft creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create master pricing draft.' });
+  }
+});
+
+app.post('/api/admin/master-pricing-policy/:version/approve', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const version = Number(req.params.version);
+  if (!Number.isSafeInteger(version) || version < 1 || req.body?.confirmApproval !== true) {
+    return res.status(400).json({ error: 'A valid policy version and explicit approval confirmation are required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const selected = await client.query(
+      'SELECT id,status FROM master_pricing_policies WHERE version=$1 FOR UPDATE', [version]
+    );
+    if (!selected.rowCount || selected.rows[0].status !== 'draft') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Only an existing draft policy can be approved.' });
+    }
+    await client.query(
+      "UPDATE master_pricing_policies SET status='superseded' WHERE status='approved'"
+    );
+    const approved = await client.query(
+      `UPDATE master_pricing_policies
+          SET status='approved',approved_by=$2,approved_at=NOW()
+        WHERE id=$1
+        RETURNING id,version,payment_currency,fee_eur_cents,stripe_fee_percent,
+                  stripe_fixed_fee_cents,status,approved_at`,
+      [selected.rows[0].id,req.adminActorId]
+    );
+    await client.query('COMMIT');
+    return res.json({ policy: approved.rows[0], approvalRecorded: true, productsActivated: false, productPricesWritten: false });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Master pricing policy approval failed:', error.message);
+    return res.status(500).json({ error: 'Could not approve master pricing policy.' });
+  } finally { client.release(); }
+});
+
+// Generate a complete staging preview from each country's own verified DT One wholesale
+// EUR costs and its own independently approved, unexpired FX row. Does not write catalog prices.
+app.post('/api/admin/master-pricing-policy/preview', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  if (req.body?.confirmPreview !== true) {
+    return res.status(400).json({ confirmationRequired: true, error: 'Explicit preview confirmation is required.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const policyResult = await client.query(
+      `SELECT id,version,fee_eur_cents,stripe_fee_percent,stripe_fixed_fee_cents
+         FROM master_pricing_policies WHERE status='approved' FOR SHARE`
+    );
+    if (policyResult.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Exactly one approved master pricing policy is required.' });
+    }
+    const saved = policyResult.rows[0];
+    const [countriesResult, productsResult, fxResult] = await Promise.all([
+      client.query(`SELECT country_code,destination_currency FROM country_registry
+                     WHERE country_code IN ('AF','PK','IN','BD') ORDER BY country_code`),
+      client.query(`SELECT product_id,country,operator,amount,currency,wholesale_price_eur_cents,
+                           provider_price_verified_at,provider_price_source,provider_price_product_id
+                      FROM product_catalog
+                     WHERE country IN ('AF','PK','IN','BD') AND product_id IS NOT NULL
+                     ORDER BY country,operator,amount,product_id`),
+      client.query(`SELECT id,country_code,base_currency,quote_currency,
+                           quote_per_base,is_approved,approved_at,observed_at,expires_at
+                      FROM country_fx_rates
+                     WHERE base_currency='EUR' AND is_approved=TRUE
+                       AND approved_at IS NOT NULL AND observed_at <= NOW()
+                       AND expires_at > NOW()
+                     ORDER BY country_code,observed_at DESC,id DESC`),
+    ]);
+    const latestFx = [];
+    for (const country of countriesResult.rows) {
+      const row = fxResult.rows.find(item => item.country_code === country.country_code &&
+        item.quote_currency === country.destination_currency);
+      if (row) latestFx.push({ ...row, rateId: Number(row.id) });
+    }
+    const preview = buildCountryPricingPreview({
+      policy: {
+        version: Number(saved.version),
+        feeEurCents: Number(saved.fee_eur_cents),
+        stripeFeePercent: Number(saved.stripe_fee_percent),
+        stripeFixedFeeCents: Number(saved.stripe_fixed_fee_cents),
+      },
+      countries: countriesResult.rows,
+      products: productsResult.rows,
+      fxRates: latestFx,
+    });
+    for (const country of preview.countries) {
+      const fx = latestFx.find(row => row.country_code === country.countryCode);
+      await client.query(
+        `INSERT INTO country_pricing_preview_runs
+          (policy_id,country_code,destination_currency,fx_rate_id,product_count,ready,blockers,preview,created_by)
+         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`,
+        [saved.id,country.countryCode,country.destinationCurrency,fx?.id || null,
+         country.products.length,country.ready,JSON.stringify(country.blockers),JSON.stringify(country),req.adminActorId]
+      );
+    }
+    await client.query('COMMIT');
+    return res.set('Cache-Control','no-store').json({
+      preview, persistedAsPreview: true, catalogPricesChanged: false,
+      productsActivated: false, paymentsCreated: false, topupsCreated: false,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Master country pricing preview failed:', error.message);
+    return res.status(503).json({ error: 'Could not build master country pricing preview. Confirm migrations 024 and 032 and verified provider catalog data.' });
+  } finally { client.release(); }
+});
+
 app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({
@@ -6327,8 +6971,6 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
          COALESCE(local_currency_per_eur, afn_per_eur) AS local_currency_per_eur,
          afn_per_eur,
          bonus_percent,
-         stripe_fee_percent,
-         stripe_fixed_fee_cents,
          active
        FROM pricing_settings
        ORDER BY country`
@@ -6337,7 +6979,7 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
     return res.json({
       paymentCurrency: 'EUR',
       pricing: result.rows,
-      stripeFeeNote: 'Stripe fee is an estimate; actual fees vary by card and payment method.',
+      stripeFeeNote: 'Stripe fees are resolved automatically from an approved master policy or reconciled Stripe balance-transaction evidence; legacy country fee fields are not used.',
     });
   } catch (error) {
     console.error(
@@ -6348,6 +6990,73 @@ app.get('/api/admin/pricing', requireAdmin, async (req, res) => {
     return res.status(500).json({
       error: 'Could not load pricing settings.',
     });
+  }
+});
+
+// Explicit Admin Panel approval for the owner-requested EUR 0.49 app fee.
+// This updates only the four app-fee fields; FX, Stripe settings, products and orders are untouched.
+app.post('/api/admin/pricing/fee/approve-four-countries', express.json(), requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  if (req.body?.confirmApproval !== true || Number(req.body?.feeEurCents) !== 49) {
+    return res.status(400).json({
+      confirmationRequired: true,
+      error: 'Explicit Admin approval of the fixed EUR 0.49 app fee is required.',
+    });
+  }
+
+  const countries = ['AF', 'BD', 'IN', 'PK'];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await client.query(
+      `SELECT country, fee_eur_cents
+         FROM pricing_settings
+        WHERE country = ANY($1::text[])
+        ORDER BY country
+        FOR UPDATE`,
+      [countries]
+    );
+    if (current.rowCount !== 4 || countries.some(code => !current.rows.some(row => row.country === code))) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: 'Approval blocked: exactly four existing country pricing rows (AF, PK, IN, BD) are required.',
+        updated: false,
+      });
+    }
+
+    const updated = await client.query(
+      `UPDATE pricing_settings
+          SET fee_eur_cents = 49, updated_at = NOW()
+        WHERE country = ANY($1::text[])
+        RETURNING country, fee_eur_cents, updated_at`,
+      [countries]
+    );
+    for (const row of current.rows) {
+      await client.query(
+        `INSERT INTO country_pricing_fee_audit
+           (country_code, previous_fee_eur_cents, new_fee_eur_cents, changed_by, change_reason)
+         VALUES ($1, $2, 49, $3, 'Admin-approved four-country application fee: EUR 0.49')`,
+        [row.country, Number(row.fee_eur_cents), req.adminActorId]
+      );
+    }
+    await client.query('COMMIT');
+    return res.json({
+      approvalRecorded: true,
+      paymentCurrency: 'EUR',
+      appFeeEur: 0.49,
+      pricing: updated.rows,
+      changedBy: req.adminActorId,
+      ordersChanged: false,
+      fxRatesChanged: false,
+      stripeSettingsChanged: false,
+      productsActivated: false,
+    });
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('Four-country app fee approval failed:', error.message);
+    return res.status(500).json({ error: 'Could not approve the four-country app fee.' });
+  } finally {
+    client.release();
   }
 });
 
@@ -6378,8 +7087,6 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
   );
   // Ignore legacy client bonus values. General bonus is always persisted as zero.
   const bonusPercent = 0;
-  const stripeFeePercent = Number(body.stripeFeePercent);
-  const stripeFixedFeeCents = Number(body.stripeFixedFeeCents);
 
   if (
     !Number.isSafeInteger(feeCents) ||
@@ -6395,13 +7102,6 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'localCurrencyPerEur must be a positive number no greater than 1000000.' });
   }
 
-  if (!Number.isFinite(stripeFeePercent) || stripeFeePercent < 0 || stripeFeePercent >= 100) {
-    return res.status(400).json({ error: 'stripeFeePercent must be from 0 up to (but not including) 100.' });
-  }
-  if (!Number.isSafeInteger(stripeFixedFeeCents) || stripeFixedFeeCents < 0 || stripeFixedFeeCents > 10000) {
-    return res.status(400).json({ error: 'stripeFixedFeeCents must be an integer from 0 to 10000.' });
-  }
-
   if (typeof body.active !== 'boolean') {
     return res.status(400).json({
       error: 'active must be true or false.',
@@ -6412,29 +7112,26 @@ app.put('/api/admin/pricing/:country', requireAdmin, async (req, res) => {
     const result = await pool.query(
       `INSERT INTO pricing_settings (
          country, fee_eur_cents, local_currency_per_eur, afn_per_eur, bonus_percent,
-         stripe_fee_percent, stripe_fixed_fee_cents, active, updated_at
+         active, updated_at
        )
-       VALUES ($1, $2, $3, $3, $4, $5, $6, $7, NOW())
+       VALUES ($1, $2, $3, $3, $4, $5, NOW())
        ON CONFLICT (country)
        DO UPDATE SET
          fee_eur_cents = EXCLUDED.fee_eur_cents,
          local_currency_per_eur = EXCLUDED.local_currency_per_eur,
          afn_per_eur = EXCLUDED.afn_per_eur,
          bonus_percent = EXCLUDED.bonus_percent,
-         stripe_fee_percent = EXCLUDED.stripe_fee_percent,
-         stripe_fixed_fee_cents = EXCLUDED.stripe_fixed_fee_cents,
          active = EXCLUDED.active,
          updated_at = NOW()
        RETURNING country, fee_eur_cents, local_currency_per_eur,
-                 afn_per_eur, bonus_percent, stripe_fee_percent,
-                 stripe_fixed_fee_cents, active, updated_at`,
-      [country, feeCents, localCurrencyPerEur, bonusPercent, stripeFeePercent, stripeFixedFeeCents, body.active]
+                 afn_per_eur, bonus_percent, active, updated_at`,
+      [country, feeCents, localCurrencyPerEur, bonusPercent, body.active]
     );
 
     return res.json({
       paymentCurrency: 'EUR',
       pricing: result.rows[0],
-      note: 'Bonus percentage is saved as a setting; bonus delivery is not enabled by this endpoint.',
+      note: 'App fee and FX settings were saved. Stripe processing fees are automatic and are not editable through country pricing. General bonus remains disabled.',
     });
   } catch (error) {
     console.error(
