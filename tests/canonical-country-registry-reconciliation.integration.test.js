@@ -88,6 +88,19 @@ test('canonical registry reconciliation supports a clean install', async () => {
 test('canonical registry reconciliation upgrades the PR #196 schema and preserves country/localization rows', async () => {
   await inSchema('registry_196', async (client, schema) => {
     await client.query(fixture196);
+    // A non-country foreign key on the shared operator table must survive
+    // canonical country-parent reconciliation.
+    await client.query(`
+      CREATE TABLE operator_provider_types (
+        id BIGSERIAL PRIMARY KEY,
+        type_key TEXT NOT NULL UNIQUE
+      )
+    `);
+    await client.query(`
+      ALTER TABLE country_operators
+      ADD COLUMN provider_type_id BIGINT
+      REFERENCES operator_provider_types(id) ON DELETE RESTRICT
+    `);
     const before = await client.query('SELECT COUNT(*)::int AS count FROM country_localizations');
     assert.equal(before.rows[0].count, 24);
     const inserted = await client.query(`
@@ -120,6 +133,16 @@ test('canonical registry reconciliation upgrades the PR #196 schema and preserve
     assert.equal(preservedChildren.rows[0].provider_settings, 4);
     assert.equal(preservedChildren.rows[0].fx_rates, 1);
     assert.equal(preservedChildren.rows[0].prefixes, 1);
+    const unrelatedForeignKey = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM pg_constraint c
+      JOIN pg_class parent ON parent.oid=c.confrelid
+      WHERE c.contype='f'
+        AND c.conrelid='country_operators'::regclass
+        AND parent.relname='operator_provider_types'
+    `);
+    assert.equal(unrelatedForeignKey.rows[0].count, 1,
+      'non-country foreign keys on country_operators must be preserved');
     const legacy = await client.query(`SELECT status FROM country_registry WHERE country_code='AF'`);
     assert.equal(legacy.rows[0].status, 'legacy');
     const operator = await client.query(`
