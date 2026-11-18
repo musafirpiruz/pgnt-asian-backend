@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ps">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PGNT ASIAN TOPUP — DT One Master Reconciliation</title>
+<style>
+:root{color-scheme:light}body{font:16px system-ui,sans-serif;max-width:820px;margin:28px auto;padding:0 16px;color:#222}
+h1{font-size:1.35rem;color:#7a0c10}h2{font-size:1.1rem;margin-top:24px}
+label{display:block;margin:14px 0 6px}input,button{box-sizing:border-box;width:100%;padding:12px;font:inherit}
+input[type=checkbox]{width:auto;margin-inline-end:8px}
+button{margin-top:10px;border:0;border-radius:7px;background:#7a0c10;color:#fff;font-weight:600}
+button.secondary{background:#333}button:disabled{opacity:.55}
+.card{border:1px solid #ddd;border-radius:10px;padding:16px;margin:14px 0;background:#fff}
+.notice{padding:12px;border-radius:8px;background:#f4f4f4;white-space:pre-wrap;overflow-wrap:anywhere}
+small,.muted{color:#555}.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+progress{width:100%;height:18px}pre{white-space:pre-wrap;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<h1>PGNT ASIAN TOPUP</h1>
+<h2>د DT One د رسمي Master Excel تصدیق</h2>
+<p>دا پاڼه یوازې د Excel له ۱٬۹۶۰ Product ID ګانو څخه د DT One د محصولاتو تفصیلي معلومات په یو-یو ډول، د محدود سرعت سره لولي. هېڅ تادیه، فرمایش، Top-up یا د محصول فعالول نه ترسره کېږي.</p>
+<section class="card">
+<label for="adminKey">Admin API Key</label>
+<input id="adminKey" type="password" autocomplete="off" placeholder="Admin key">
+<small>کیلي یوازې د همدې غوښتنې لپاره لېږل کېږي؛ په پاڼه یا Browser Storage کې نه ساتل کېږي.</small>
+<label for="workbook">رسمي Excel فایل (.xlsx)</label>
+<input id="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+<label><input id="confirmReadOnly" type="checkbox"> تاییدوم چې دا یوازې Read-only DT One تصدیق دی او ۱٬۹۶۰ ریکارډونه به یوازې په جلا Staging Report کې ثبتېږي، نه په product_catalog کې.</label>
+<button id="startRun">تصدیق پیل کړئ</button>
+</section>
+<section class="card">
+<h2>د تصدیق روان حالت</h2>
+<label for="runId">Run ID (د پخواني کار د بیا کتلو لپاره هم کارېږي)</label>
+<input id="runId" autocomplete="off" placeholder="Run ID">
+<div class="actions">
+<button class="secondary" id="refresh">حالت تازه کړئ</button>
+<button class="secondary" id="pause">تصدیق ودروئ</button>
+<button class="secondary" id="resume">له ځنډ وروسته دوام ورکړئ</button>
+<button class="secondary" id="download">د راپور فایل واخلئ</button>
+</div>
+<progress id="progress" max="1960" value="0"></progress>
+<div id="status" class="notice" role="status">تر اوسه Run نه دی ټاکل شوی.</div>
+</section>
+<script>
+const byId=(id)=>document.getElementById(id);
+const key=byId('adminKey'),runId=byId('runId'),statusBox=byId('status'),progress=byId('progress');
+let pollTimer=null;
+async function request(url,options={}){
+ const headers={...(options.headers||{}),'x-admin-api-key':key.value};
+ const response=await fetch(url,{...options,headers,cache:'no-store'});
+ const raw=await response.text();let data={};
+ try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('Backend returned a non-JSON response (HTTP '+response.status+').');}
+ if(!response.ok)throw new Error(data.error||('HTTP '+response.status));
+ return data;
+}
+function show(data){
+ const counts=data.counts||{};
+ const checked=Number(data.checked_products||0);
+ progress.value=checked;
+ statusBox.textContent=[
+  'حالت: '+data.status,
+  'د ځنډ لامل: '+(data.last_error_code||'—'),
+  'Run ID: '+data.id,
+  'DT One API: '+(data.api_origin||'—'),
+  'ټول محصولات: '+data.total_products,
+  'تصدیق شوي: '+checked+' / '+data.total_products,
+  'MATCHED: '+(counts.matched||0),
+  'MISMATCH: '+(counts.mismatch||0),
+  'MISSING AT PROVIDER: '+(counts.missing_at_provider||0),
+  'LOOKUP ERROR: '+(counts.lookup_error||0),
+  'پاتې: '+(data.remaining_products||0),
+  'د Excel SHA-256: '+data.source_sha256,
+  'د product_catalog بدلون: نشته',
+  'فعالول / تادیات / Top-up: نشته'
+ ].join('\n');
+ if(data.status==='completed'||data.status==='paused'||data.status==='failed'){
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+ }
+}
+async function refresh(){
+ if(!key.value||!runId.value.trim())throw new Error('Admin API Key او Run ID ولیکئ.');
+ const data=await request('/api/admin/dtone/master-reconciliation/runs/'+encodeURIComponent(runId.value.trim()));
+ show(data);return data;
+}
+byId('startRun').addEventListener('click',async()=>{
+ const file=byId('workbook').files[0];
+ if(!key.value){statusBox.textContent='لومړی Admin API Key ولیکئ.';return;}
+ if(!file){statusBox.textContent='رسمي Excel فایل وټاکئ.';return;}
+ if(!byId('confirmReadOnly').checked){statusBox.textContent='د Read-only تصدیق شرط تایید کړئ.';return;}
+ if(!confirm('ایا د ۱٬۹۶۰ محصولاتو لپاره یوازې Read-only تصدیق پیل کړو؟ هېڅ محصول نه واردېږي او نه فعالېږي.'))return;
+ byId('startRun').disabled=true;statusBox.textContent='Excel تاییدېږي او جلا Staging Report جوړېږي…';
+ try{
+  const data=await request('/api/admin/dtone/master-reconciliation/runs',{
+   method:'POST',
+   headers:{
+    'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'x-read-only-confirmation':'true',
+    'x-workbook-file-name':encodeURIComponent(file.name)
+   },
+   body:file
+  });
+  runId.value=data.runId;
+  statusBox.textContent='Run جوړ شو. د DT One تصدیق په شالید کې روان دی.\nRun ID: '+data.runId+'\nمحصولات: '+data.totalProducts+'\nد Database product_catalog بدلون: نشته';
+  await refresh();
+  if(pollTimer)clearInterval(pollTimer);
+  pollTimer=setInterval(()=>refresh().catch(error=>{statusBox.textContent='د حالت لوستل ناکام شول: '+error.message;}),3000);
+ }catch(error){statusBox.textContent='Run پیل نه شو: '+error.message;}
+ finally{byId('startRun').disabled=false;}
+});
+byId('refresh').addEventListener('click',()=>refresh().catch(error=>{statusBox.textContent=error.message;}));
+byId('pause').addEventListener('click',async()=>{
+ try{
+  if(!confirm('ایا روان Read-only تصدیق ودروو؟ روانه یوه API غوښتنه ښايي بشپړه شي.'))return;
+  const data=await request('/api/admin/dtone/master-reconciliation/runs/'+encodeURIComponent(runId.value.trim())+'/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmPause:true})});
+  statusBox.textContent='Run ودرول شو. '+data.runId;
+  await refresh();
+ }catch(error){statusBox.textContent='Pause ناکام شو: '+error.message;}
+});
+byId('resume').addEventListener('click',async()=>{
+ try{
+  if(!confirm('ایا د DT One د تېروتنې یا Rate-limit له کتلو وروسته Run بیا پیل کړو؟'))return;
+  const data=await request('/api/admin/dtone/master-reconciliation/runs/'+encodeURIComponent(runId.value.trim())+'/resume',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmResume:true})});
+  statusBox.textContent='Run بیا Queue ته داخل شو. '+data.runId;
+  await refresh();
+  if(pollTimer)clearInterval(pollTimer);
+  pollTimer=setInterval(()=>refresh().catch(error=>{statusBox.textContent=error.message;}),3000);
+ }catch(error){statusBox.textContent='Resume ناکام شو: '+error.message;}
+});
+byId('download').addEventListener('click',async()=>{
+ try{
+  const data=await request('/api/admin/dtone/master-reconciliation/runs/'+encodeURIComponent(runId.value.trim())+'/report');
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);const link=document.createElement('a');
+  link.href=url;link.download='pgnt-dtone-master-reconciliation-'+runId.value.trim()+'.json';
+  document.body.append(link);link.click();link.remove();URL.revokeObjectURL(url);
+ }catch(error){statusBox.textContent='راپور ښکته نه شو: '+error.message;}
+});
+</script>
+</body>
+</html>
