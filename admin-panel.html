@@ -69,17 +69,23 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="notice" class="status" role="status" aria-live="polite">د پیل لپاره کیلي ولیکئ او «د کتنې فرمایشونه ښکاره کړه» کېکاږئ.</div>
 </section>
 <section class="card">
-<h2>۲. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
+<h2>۲. د شبکو او محصولاتو اتومات تصدیق</h2>
+<p class="muted">د هرې شبکې لپاره یوازې یو نمونه محصول په لاسي ډول تایید کړئ. وروسته نور محصولات په هر پړاو کې تر ۲۵ پورې په اتومات ډول ارزول کېږي. دا کار محصولات نه فعالوي او تادیه یا Top-up نه ترسره کوي.</p>
+<div class="actions"><button id="loadOperatorCatalog" type="button">د شبکو او محصولاتو لېست ولوله</button></div>
+<div id="operatorCatalog"><div class="empty">د شبکو د لېست لپاره پورته تڼۍ کېکاږئ.</div></div>
+</section>
+<section class="card">
+<h2>۳. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
 <p class="muted">یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.</p>
 <div id="queue"><div class="empty">تر اوسه فرمایشونه نه دي لوستل شوي.</div></div>
 </section>
 <section class="card">
-<h2>۳. د بیو او فیسونو لنډ راپور</h2>
+<h2>۴. د بیو او فیسونو لنډ راپور</h2>
 <p class="muted">دا برخه یوازې اوسني ثبت شوي تنظیمات ښيي؛ هېڅ ارزښت نه بدلوي.</p>
 <div id="pricing"><div class="empty">د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.</div></div>
 </section>
 <section class="card">
-<h2>۴. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
+<h2>۵. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
 <p class="muted">د DT One د محصول ID ولیکئ. دا برخه د محصول، بیې، اسعارو او تادیې د چمتووالي ستونزې ښيي؛ هېڅ محصول نه فعالوي او هېڅ قیمت نه بدلوي.</p>
 <label for="diagnosticProductId">DT One Product ID</label>
 <input id="diagnosticProductId" inputmode="numeric" autocomplete="off" placeholder="د محصول ID، لکه 7194">
@@ -87,7 +93,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="diagnostic"><div class="empty">د تشخیص لپاره د محصول ID ولیکئ.</div></div>
 </section>
 <section class="card">
-<h2>۵. د Wallet او Ledger د Migration خوندیتوب (یوازې لوستل)</h2>
+<h2>۶. د Wallet او Ledger د Migration خوندیتوب (یوازې لوستل)</h2>
 <p class="muted">دا کتنه د اصلي Database د تکراري Wallet حسابونو، تکراري Ledger حوالو او د مالي تاریخ د حذف کېدو احتمالي خطرونه شمېري. هېڅ Migration، مالي لیکنه یا د Wallet فعالول نه ترسره کوي.</p>
 <div class="actions"><button class="secondary" id="loadWalletPreflight">د Wallet خوندیتوب راپور ولوله</button></div>
 <div id="walletPreflight"><div class="empty">د راپور لپاره پورته تڼۍ کېکاږئ. د اډمین کیلي یوازې د دې پاڼې په حافظه کې کارول کېږي.</div></div>
@@ -194,6 +200,115 @@ function makeOrderCard(order){
  card.append(stripeResult,dtoneResult);
  return card;
 }
+const operatorCatalog=document.getElementById('operatorCatalog');
+const loadOperatorCatalogButton=document.getElementById('loadOperatorCatalog');
+const catalogCursors=new Map();
+const countryNames={AF:'افغانستان',PK:'پاکستان',IN:'هند',BD:'بنګله دېش'};
+const reasonNames={
+ provider_product_not_found:'محصول په DT One کې ونه موندل شو',
+ provider_unavailable:'د DT One خدمت موقتاً شتون نه لري',
+ provider_timeout_or_network_error:'د DT One اړیکه و نه رسېده یا وخت ختم شو',
+ approved_sample_provider_operator_id_mismatch:'د شبکې Provider ID له تایید شوې نمونې سره توپیر لري',
+ invalid_or_missing_eur_prices:'د EUR عمده/پرچون قیمتونه ناسم یا نیمګړي دي',
+ product_id_mismatch:'د محصول پېژندشمېره برابره نه ده',
+ country_mismatch:'هېواد سمون نه لري',
+ operator_mismatch:'شبکه سمون نه لري',
+ currency_mismatch:'اسعار سمون نه لري',
+ denomination_mismatch:'د محصول اندازه سمون نه لري',
+ unsupported_product_type:'د محصول ډول ملاتړ نه لري'
+};
+function reasonLabel(reason){return reasonNames[reason]||String(reason||'نامعلوم دلیل');}
+function makeCatalogOperatorCard(operator){
+ const card=document.createElement('article');card.className='order';
+ const top=document.createElement('div');top.className='order-top';
+ const heading=document.createElement('strong');heading.textContent=(countryNames[operator.countryCode]||operator.countryCode)+' · '+operator.name;
+ const state=document.createElement('span');state.className='pill';state.textContent=operator.approval?'د نمونې تایید شوی':'د نمونې تایید ته اړتیا لري';
+ top.append(heading,state);card.append(top);
+ const counts=document.createElement('p');counts.className='muted';
+ counts.textContent='ټول محصولات: '+operator.counts.total+' · تخنیکي تایید: '+operator.counts.verified+' · پاتې: '+operator.counts.pending+' · د بیاکتنې نښې: '+operator.counts.review+' · فعال: '+operator.counts.active;
+ card.append(counts);
+ const meta=document.createElement('p');meta.className='muted';
+ meta.textContent='Operator ID: '+operator.id+' · DT One Operator ID: '+(operator.providerOperatorId||'لا نه دی تایید شوی')+' · حالت: '+(operator.active?'فعال':'غیرفعال');
+ card.append(meta);
+ const area=document.createElement('div');area.className='detail';card.append(area);
+ if(operator.approval){
+  const sample=document.createElement('p');sample.textContent='منل شوې نمونه Product Catalog ID: '+operator.approval.sampleProductCatalogId+' · Approval ID: '+operator.approval.id;
+  area.append(sample);
+  const run=document.createElement('button');run.type='button';run.textContent='تر ۲۵ پورې پاتې محصولات اتومات تصدیق کړه';
+  const progress=document.createElement('div');progress.className='status';progress.textContent='د اتومات تصدیق پیل یا دوام ته چمتو دی.';
+  run.addEventListener('click',async()=>{
+   run.disabled=true;progress.className='status';progress.textContent='د DT One له لارې د محصولاتو کره کتنه روانه ده…';
+   try{
+    const after=catalogCursors.get(String(operator.id))||0;
+    const result=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-auto-verify',{limit:25,afterProductCatalogId:after});
+    catalogCursors.set(String(operator.id),Number(result.nextAfterProductCatalogId)||after);
+    progress.className='status '+(result.reviewCount?'warn':'ok');
+    progress.textContent='په دې پړاو کې: '+result.requestedCount+' · تایید شوي: '+result.verifiedCount+' · بیاکتنې ته: '+result.reviewCount+' · نور پاتې: '+(result.hasMore?'هو':'دا پاڼه بشپړه شوه')+'. فعالول نه دي شوي.';
+    if(Array.isArray(result.items)&&result.items.length){
+     const list=document.createElement('div');list.className='detail';
+     result.items.forEach(item=>{
+      const line=document.createElement('p');
+      line.textContent='Catalog ID '+item.productCatalogId+' · '+(item.verified?'تخنیکي تایید شو':'بیاکتنې ته اړتیا لري')+(item.reasons?.length?' · '+item.reasons.map(reasonLabel).join('، '):'');
+      list.append(line);
+     });
+     area.append(list);
+    }
+    run.textContent=result.hasMore?'راتلونکی پړاو (تر ۲۵ محصولاتو)':'د نورو پاتې محصولاتو لپاره بیا کتنه';
+    await loadOperatorCatalog();
+   }catch(error){progress.className='status error';progress.textContent=error.message;}
+   finally{run.disabled=false;}
+  });
+  area.append(run,progress);
+ }else{
+  const load=document.createElement('button');load.type='button';load.className='secondary';load.textContent='د نمونې لپاره محصولات ښکاره کړه';
+  const choices=document.createElement('div');choices.className='detail';
+  load.addEventListener('click',async()=>{
+   load.disabled=true;choices.replaceChildren();
+   try{
+    const data=await adminRequest('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-candidates');
+    const candidates=Array.isArray(data.candidates)?data.candidates.filter(item=>item.active!==true&&item.mappingActive!==true):[];
+    if(!candidates.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='د دې شبکې لپاره غیرفعال نمونه محصول ونه موندل شو.';choices.append(empty);return;}
+    const label=document.createElement('label');label.textContent='یوازې یو نمونه محصول وټاکئ';
+    const select=document.createElement('select');select.id='sample-'+operator.id;
+    candidates.forEach(item=>{
+     const option=document.createElement('option');option.value=String(item.productCatalogId);
+     option.textContent='ID '+item.productCatalogId+' · DT One '+item.providerProductId+' · '+item.denomination+' '+item.currency;
+     select.append(option);
+    });
+    const approve=document.createElement('button');approve.type='button';approve.textContent='دا نمونه د شبکې لپاره تایید کړه';
+    const status=document.createElement('div');status.className='status';status.textContent='له تایید مخکې د محصول او شبکې معلومات وګورئ.';
+    approve.addEventListener('click',async()=>{
+     if(!confirm('ایا ډاډه یاست چې همدا یو محصول د دې شبکې استازې نمونه تاییدوئ؟ نور محصولات به وروسته اتومات وکتل شي، خو فعال به نه شي.'))return;
+     approve.disabled=true;status.className='status';status.textContent='د DT One اصلي معلومات تاییدېږي…';
+     try{
+      const result=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/approve-sample',{productCatalogId:Number(select.value),confirmApproval:true});
+      status.className='status ok';status.textContent='نمونه تایید شوه. Approval ID: '+result.approvalId+' · هېڅ محصول یا شبکه فعاله نه شوه.';
+      await loadOperatorCatalog();
+     }catch(error){status.className='status error';status.textContent=error.message;}
+     finally{approve.disabled=false;}
+    });
+    choices.append(label,select,approve,status);
+   }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;choices.append(failed);}
+   finally{load.disabled=false;}
+  });
+  area.append(load,choices);
+ }
+ return card;
+}
+async function loadOperatorCatalog(){
+ loadOperatorCatalogButton.disabled=true;operatorCatalog.replaceChildren();
+ try{
+  const data=await adminRequest('/api/admin/country-operators');
+  const operators=Array.isArray(data.operators)?data.operators:[];
+  if(!operators.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='د شبکو ثبت شوی لېست نشته.';operatorCatalog.append(empty);}
+  operators.forEach(operator=>operatorCatalog.append(makeCatalogOperatorCard(operator)));
+  const note=document.createElement('div');note.className='safe';note.textContent='یادونه: تخنیکي تایید د فعالولو اجازه نه ده. د شبکې، Mapping او محصول فعالول جلا مالکانه تایید غواړي.';
+  operatorCatalog.append(note);
+  setNotice('د شبکو لېست ولوستل شو: '+operators.length+' شبکې.','ok');
+ }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;operatorCatalog.append(failed);setNotice(error.message,'error');}
+ finally{loadOperatorCatalogButton.disabled=false;}
+}
+loadOperatorCatalogButton.addEventListener('click',loadOperatorCatalog);
 loadQueueButton.addEventListener('click',async()=>{
  loadQueueButton.disabled=true;queue.replaceChildren();setNotice('د کتنې فرمایشونه لوستل کېږي…');
  try{
