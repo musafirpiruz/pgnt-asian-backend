@@ -5,7 +5,7 @@ The adapter follows the official DT One DVS product-detail schema:
 - `id`
 - `operator.name` and `operator.country.iso_code`
 - `service.name` and nested `service.subservice.name`
-- `type` for the product type
+- `type` for the product type (all five official enum values are accepted, including `RANGED_VALUE_PIN_PURCHASE`)
 - `destination.amount` and `destination.unit`; ranged amounts may be objects with `min`, `max`, and `increment`
 - `prices.wholesale.amount/unit` and `prices.retail.amount/unit`; ranged price amounts may be `{ min, max }` objects
 - the existing benefits fallback uses `benefits[0].amount.base` with `benefits[0].unit`
