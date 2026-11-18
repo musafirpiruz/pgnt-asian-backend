@@ -16,7 +16,7 @@ function provider(overrides = {}) {
     type: 'FIXED_VALUE_RECHARGE',
     operator: { id: 88, name: 'ATOMA Afghanistan', country: { iso_code: 'AFG' } },
     destination: { amount: 115, unit: 'AFN' },
-    prices: { retail: { amount: 2.10 }, wholesale: { amount: 1.89 } },
+    prices: { retail: { amount: 2.10, unit: 'EUR' }, wholesale: { amount: 1.89, unit: 'EUR' } },
     ...overrides,
   };
 }
@@ -54,11 +54,19 @@ test('rejects unsupported product type and missing or invalid wholesale pricing'
   assert.ok(evaluateDtOneCatalogMatch(catalog(), provider({ type: 'UNKNOWN' }))
     .reasons.includes('unsupported_product_type'));
   assert.ok(evaluateDtOneCatalogMatch(catalog(), provider({
-    prices: { retail: { amount: 2.1 }, wholesale: { amount: null } },
+    prices: { retail: { amount: 2.1, unit: 'EUR' }, wholesale: { amount: null, unit: 'EUR' } },
   })).reasons.includes('invalid_or_missing_eur_prices'));
   assert.ok(evaluateDtOneCatalogMatch(catalog(), provider({
-    prices: { retail: { amount: 1.5 }, wholesale: { amount: 1.9 } },
+    prices: { retail: { amount: 1.5, unit: 'EUR' }, wholesale: { amount: 1.9, unit: 'EUR' } },
   })).reasons.includes('invalid_or_missing_eur_prices'));
+});
+
+test('rejects provider prices unless both explicit units are EUR', () => {
+  const result = evaluateDtOneCatalogMatch(catalog(), provider({
+    prices: { retail: { amount: 2.1, unit: 'USD' }, wholesale: { amount: 1.89, unit: 'EUR' } },
+  }));
+  assert.equal(result.verified, false);
+  assert.ok(result.reasons.includes('invalid_or_missing_eur_prices'));
 });
 
 test('requires an authoritative provider operator ID, not just a display name', () => {
