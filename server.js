@@ -3347,7 +3347,7 @@ app.post('/api/admin/country-operators/:operatorId/catalog-batch-preview', requi
   let client;
   try {
     const candidates=await pool.query(
-      \`SELECT o.id AS operator_id,o.country_code,o.operator_key,o.display_name AS operator_name,
+      `SELECT o.id AS operator_id,o.country_code,o.operator_key,o.display_name AS operator_name,
               o.provider,o.provider_operator_id,o.active AS operator_active,
               p.id AS product_catalog_id,p.product_id,p.country,p.operator,p.amount,p.currency,
               p.active AS product_active,m.active AS mapping_active
@@ -3355,7 +3355,7 @@ app.post('/api/admin/country-operators/:operatorId/catalog-batch-preview', requi
        JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
        JOIN product_catalog p ON p.id=m.product_catalog_id
        WHERE o.id=$1 AND p.id=ANY($2::bigint[])
-       ORDER BY p.id\`,
+       ORDER BY p.id`,
       [operatorId,productCatalogIds]
     );
     if(!candidates.rowCount) return res.status(404).json({dryRun:true,error:'Operator or mapped catalog products were not found.'});
@@ -3393,25 +3393,36 @@ app.post('/api/admin/country-operators/:operatorId/catalog-batch-preview', requi
     client=await pool.connect();
     await client.query('BEGIN');
     const locked=await client.query(
-      \`SELECT o.id AS operator_id,o.active AS operator_active,
-              p.id AS product_catalog_id,p.active AS product_active,m.active AS mapping_active
+      `SELECT o.id AS operator_id,o.provider_operator_id,o.active AS operator_active,
+              p.id AS product_catalog_id,p.product_id,p.country,p.operator,p.amount,p.currency,
+              p.active AS product_active,m.active AS mapping_active
        FROM country_operators o
        JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
        JOIN product_catalog p ON p.id=m.product_catalog_id
        WHERE o.id=$1 AND p.id=ANY($2::bigint[])
-       ORDER BY p.id FOR UPDATE OF o,m,p\`,
+       ORDER BY p.id FOR UPDATE OF o,m,p`,
       [operatorId,productCatalogIds]
     );
-    if(locked.rowCount!==productCatalogIds.length||
-       locked.rows.some(row=>row.operator_active||row.product_active||row.mapping_active)){
+    const originalById=new Map(candidates.rows.map(row=>[String(row.product_catalog_id),row]));
+    const changed=locked.rowCount!==productCatalogIds.length||locked.rows.some(row=>{
+      const original=originalById.get(String(row.product_catalog_id));
+      return !original||row.operator_active||row.product_active||row.mapping_active||
+        String(row.product_id)!==String(original.product_id)||
+        String(row.country).trim()!==String(original.country).trim()||
+        String(row.operator)!==String(original.operator)||
+        Number(row.amount)!==Number(original.amount)||
+        String(row.currency).trim()!==String(original.currency).trim()||
+        String(row.provider_operator_id||'')!==String(original.provider_operator_id||'');
+    });
+    if(changed){
       await client.query('ROLLBACK');
       return res.status(409).json({dryRun:true,error:'Catalog state changed during provider verification; rerun the preview.'});
     }
     for(const item of items){
       await client.query(
-        \`INSERT INTO catalog_verification_audit
+        `INSERT INTO catalog_verification_audit
           (operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
-         VALUES($1,$2,'batch_previewed','admin_api_key','shared_admin_api_key','preview',$3,$4::jsonb)\`,
+         VALUES($1,$2,'batch_previewed','admin_api_key','shared_admin_api_key','preview',$3,$4::jsonb)`,
         [operatorId,item.productCatalogId,item.reasons,
          JSON.stringify({dryRun:true,verified:item.verified,providerProductId:item.providerProductId,
            providerStatus:item.providerStatus||null,providerEvidence:item.evidence||null})]
