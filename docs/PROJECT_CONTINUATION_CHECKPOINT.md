@@ -210,3 +210,42 @@ Calling implementation must remain a separately gated feature:
 - EUR customer quote before call; authenticated server-side wallet reservation, immutable idempotent ledger debit/release, CDR reconciliation and fraud/velocity controls.
 - Optional contact picker/manual contacts only after permission; no address-book upload by default.
 - No production voice credential, prepaid deposit, wallet debit, live call or rollout without explicit approval and successful staging evidence.
+
+
+## Continuation update — 2026-11-18, mainline registry bootstrap work
+
+### Work added to the mainline-based integration PR
+- PR #225 remains OPEN and DRAFT, targeting `main`.
+- Branch: `integration/four-country-fx-dtone-reconciliation`.
+- Latest observed PR head after these edits: `aa89118fa75a4fe2011793dfd5f2cd9b330308b7`.
+- Added migrations 022 and 023 to the PR #225 branch and wired them in `migrate.js` after the existing 017/018 foundation:
+  1. 022 creates/reconciles the canonical `country_registry`, country localizations, country operators, and related operator localization structure. It rejects conflicting legacy identities transactionally.
+  2. 023 validates all four existing pricing rows and catalog country/currency consistency, seeds AF/PK/IN/BD as `legacy`, and derives candidate operators from existing product catalog labels.
+- 023 deliberately creates operator candidates with NULL provider operator IDs, inactive/unverified status, inactive product mappings, and does not change `product_catalog.active`.
+- Added `tests/country-registry-mainline-bootstrap.test.js` and retained `tests/country-operator-registry-api-contract.test.js`.
+- Updated `docs/CANONICAL_COUNTRY_REGISTRY_DECISION.md` with the production-shaped bootstrap behavior and dependency notes.
+- Temporary dependent PR #247 was closed after these same changes were applied directly to PR #225's branch. No code was merged to main.
+
+### Production snapshot used for the migration review (read-only)
+- PostgreSQL 18.6, database `pgnt_asian_tp`.
+- Schema ledger 002–016 only.
+- No canonical country registry tables yet.
+- `pricing_settings.local_currency_per_eur` exists and all four expected country rows exist.
+- `product_catalog` has 9 rows; all are inactive.
+- No Production writes or migration execution occurred.
+
+### Expected operator API behavior after a future approved migration
+The seed only creates unverified candidates from the nine existing catalog rows. The PR #225 operator endpoint requires country status active, operator active, non-empty provider operator ID, verification timestamp, and at least one active verified country/operator/product mapping. Therefore it must return an empty list until genuine DT One provider operator IDs and evidence are reviewed and explicit activation is approved. Empty is correct; guessed network names are not.
+
+### CI state at handoff
+- Latest PR #225 head: `aa89118fa75a4fe2011793dfd5f2cd9b330308b7`.
+- The GitHub workflow-run/status lookup returned no workflow runs/statuses for the new head at the time of review. Do NOT claim the new migrations/tests passed CI.
+- Previous PR #225 CI on older head `32d0e3418868c460cc61c4efa2f032beb99efc70` was green, but it predates migrations 022/023 and does not validate them.
+- Backend tests workflow is configured for pull requests and runs `node migrate.js` against isolated PostgreSQL, then `npm test`. Wait for or explicitly trigger a fresh workflow before claiming validation.
+
+### Next actions
+1. Obtain a fresh CI run for exact PR #225 head `aa89118fa75a4fe2011793dfd5f2cd9b330308b7`. Review migration and regression steps. If workflows do not trigger from the GitHub integration commits, arrange an authorized CI trigger; do not mark green by inference.
+2. If CI fails, inspect exact job logs and fix without weakening fail-closed assertions.
+3. Only after CI passes, continue porting the minimal canonical country list and operator/product lifecycle/admin workflow needed for activation, preserving verified-only output.
+4. Configure DT One sandbox credentials securely outside chat and perform GET-only product/operator verification; no create/confirm transactions.
+5. Keep PR #225 and PR #246 draft/unmerged; no Production deploy/migration, product activation, payment, refund, or top-up without explicit user approval.
