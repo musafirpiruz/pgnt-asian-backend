@@ -3214,6 +3214,46 @@ require('./phone-auth').registerPhoneAuthRoutes({
 
 // Admin sample approval: verify one authoritative DT One product per operator.
 // This records identity and price evidence only. All activation flags remain false.
+// Authenticated operator overview for the admin catalog-verification panel.
+// Counts are read-only; no catalog or activation state is changed.
+app.get('/api/admin/country-operators', requireAdmin, async (req,res)=>{
+  if(!pool) return res.status(503).json({error:'Database is not configured.'});
+  try{
+    const result=await pool.query(`
+      SELECT o.id,o.country_code,o.operator_key,o.display_name,o.provider,o.provider_operator_id,
+             o.verified_at AS operator_verified_at,o.active AS operator_active,
+             a.id AS approval_id,a.sample_product_catalog_id,a.provider_operator_id AS approved_provider_operator_id,
+             a.verified_at AS sample_approved_at,
+             COUNT(DISTINCT p.id)::int AS total_products,
+             COUNT(DISTINCT p.id) FILTER (WHERE p.active=TRUE OR m.active=TRUE)::int AS active_products,
+             COUNT(DISTINCT p.id) FILTER (WHERE m.verified_at IS NOT NULL)::int AS verified_products,
+             COUNT(DISTINCT p.id) FILTER (WHERE m.verified_at IS NULL AND p.active=FALSE AND m.active=FALSE)::int AS pending_products,
+             COUNT(DISTINCT p.id) FILTER (WHERE m.verified_at IS NULL AND p.active=FALSE AND m.active=FALSE
+               AND EXISTS (SELECT 1 FROM catalog_verification_audit v
+                           WHERE v.operator_id=o.id AND v.product_catalog_id=p.id
+                             AND v.event_type='product_rejected'))::int AS review_products
+      FROM country_operators o
+      LEFT JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
+      LEFT JOIN product_catalog p ON p.id=m.product_catalog_id
+      LEFT JOIN country_operator_approvals a ON a.operator_id=o.id AND a.status='approved'
+      GROUP BY o.id,a.id
+      ORDER BY o.country_code,o.display_name,o.id
+    `);
+    return res.json({operators:result.rows.map(row=>({
+      id:row.id,countryCode:row.country_code,operatorKey:row.operator_key,name:row.display_name,
+      provider:row.provider,providerOperatorId:row.provider_operator_id,active:row.operator_active,
+      verifiedAt:row.operator_verified_at,
+      approval:row.approval_id?{id:row.approval_id,sampleProductCatalogId:row.sample_product_catalog_id,
+        providerOperatorId:row.approved_provider_operator_id,verifiedAt:row.sample_approved_at}:null,
+      counts:{total:Number(row.total_products),active:Number(row.active_products),
+        verified:Number(row.verified_products),pending:Number(row.pending_products),review:Number(row.review_products)}
+    }))});
+  }catch(error){
+    console.error('Country operator admin overview failed:',error.message);
+    return res.status(500).json({error:'Could not load country operator overview.'});
+  }
+});
+
 app.get('/api/admin/country-operators/:operatorId/catalog-candidates', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   const operatorId = Number(req.params.operatorId);
