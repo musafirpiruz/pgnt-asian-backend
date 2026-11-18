@@ -14,6 +14,14 @@ on:
       - "network-product-approval.js"
       - "stripe-fee-estimator.js"
       - "stripe-fee-evidence.js"
+      - "dtone-product-detail-adapter.js"
+      - "dtone-master-workbook-parser.js"
+      - "dtone-master-catalog-reconciliation.js"
+      - "dtone-master-workbook-reconciliation-routes.js"
+      - "tests/dtone-product-detail-adapter.test.js"
+      - "tests/dtone-master-workbook-parser.test.js"
+      - "tests/dtone-master-workbook-reconciliation-routes.test.js"
+      - "tests/dtone-master-workbook-reconciliation.integration.test.js"
       - "tests/master-country-pricing.test.js"
       - "tests/network-product-approval.test.js"
       - "tests/stripe-fee-estimator.test.js"
@@ -40,6 +48,10 @@ on:
       - "stripe-fee-estimator.js"
       - "stripe-fee-evidence.js"
       - "dtone-fixed-recharge.js"
+      - "dtone-product-detail-adapter.js"
+      - "dtone-master-workbook-parser.js"
+      - "dtone-master-catalog-reconciliation.js"
+      - "dtone-master-workbook-reconciliation-routes.js"
       - "tests/**"
       - ".github/workflows/backend-check.yml"
 
@@ -64,3 +76,7 @@ jobs:
           node --check network-product-approval.js
           node --check stripe-fee-estimator.js
           node --check stripe-fee-evidence.js
+          node --check dtone-product-detail-adapter.js
+          node --check dtone-master-workbook-parser.js
+          node --check dtone-master-catalog-reconciliation.js
+          node --check dtone-master-workbook-reconciliation-routes.js
