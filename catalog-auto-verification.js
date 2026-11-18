@@ -98,9 +98,12 @@ function evaluateDtOneCatalogMatch(catalog, providerProduct) {
     reasons.push('denomination_mismatch');
   }
 
+  const retailUnit = String(providerProduct.prices?.retail?.unit || '').trim().toUpperCase();
+  const wholesaleUnit = String(providerProduct.prices?.wholesale?.unit || '').trim().toUpperCase();
   const retailCents = positiveMoneyCents(providerProduct.prices?.retail?.amount);
   const wholesaleCents = positiveMoneyCents(providerProduct.prices?.wholesale?.amount);
-  if (retailCents === null || wholesaleCents === null || retailCents < wholesaleCents) {
+  if (retailUnit !== 'EUR' || wholesaleUnit !== 'EUR' ||
+      retailCents === null || wholesaleCents === null || retailCents < wholesaleCents) {
     reasons.push('invalid_or_missing_eur_prices');
   }
 
