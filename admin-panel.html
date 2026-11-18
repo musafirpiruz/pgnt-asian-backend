@@ -202,7 +202,7 @@ function makeOrderCard(order){
 }
 const operatorCatalog=document.getElementById('operatorCatalog');
 const loadOperatorCatalogButton=document.getElementById('loadOperatorCatalog');
-const catalogCursors=new Map();
+const 
 const countryNames={AF:'افغانستان',PK:'پاکستان',IN:'هند',BD:'بنګله دېش'};
 const reasonNames={
  provider_product_not_found:'محصول په DT One کې ونه موندل شو',
@@ -239,10 +239,8 @@ function makeCatalogOperatorCard(operator){
   run.addEventListener('click',async()=>{
    run.disabled=true;progress.className='status';progress.textContent='د DT One له لارې د محصولاتو کره کتنه روانه ده…';
    try{
-    const after=catalogCursors.get(String(operator.id))||0;
-    const result=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-auto-verify',{limit:25,afterProductCatalogId:after});
+    const result=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-auto-verify',{limit:25});
     if(result.activationChanged!==false||result.transactionCreated!==false)throw new Error('خوندیتوب: سرور د نه فعالولو تمه شوې پایله تایید نه کړه؛ پروسه ودرول شوه.');
-    catalogCursors.set(String(operator.id),Number(result.nextAfterProductCatalogId)||after);
     progress.className='status '+(result.reviewCount?'warn':'ok');
     progress.textContent='په دې پړاو کې: '+result.requestedCount+' · تایید شوي: '+result.verifiedCount+' · بیاکتنې ته: '+result.reviewCount+' · نور پاتې: '+(result.hasMore?'هو':'دا پاڼه بشپړه شوه')+'. فعالول نه دي شوي.';
     if(Array.isArray(result.items)&&result.items.length){
@@ -258,6 +256,17 @@ function makeCatalogOperatorCard(operator){
    }catch(error){progress.className='status error';progress.textContent=error.message;}
    finally{run.disabled=false;}
   });
+    const retry=document.createElement('button');retry.type='button';retry.className='secondary';retry.textContent='د بیاکتنې محصولاتو بیا ازموینه چمتو کړه';
+    retry.addEventListener('click',async()=>{
+     if(!confirm('ایا غواړئ د بیاکتنې ټول غیرفعال محصولات د بیا ازموینې لپاره له سره په کتار کې واچوئ؟ ازموینه به یوازې د بل تڼۍ په کېکاږلو پیل شي.'))return;
+     retry.disabled=true;
+     try{
+      const queued=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-retry-reviewed',{confirmRetry:true});
+      progress.className='status warn';progress.textContent='بیا ازموینه چمتو شوه. د پیل لپاره د اتومات تصدیق تڼۍ کېکاږئ. لومړی محصول: '+queued.firstReviewedProductCatalogId;
+     }catch(error){progress.className='status error';progress.textContent=error.message;}
+     finally{retry.disabled=false;}
+    });
+    area.append(retry);
   area.append(run,progress);
  }else{
   const load=document.createElement('button');load.type='button';load.className='secondary';load.textContent='د نمونې لپاره محصولات ښکاره کړه';
