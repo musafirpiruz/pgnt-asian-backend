@@ -94,7 +94,9 @@ test('admin panel exposes one-sample approval and bounded automatic verification
 });
 
 test('admin panel inline JavaScript parses successfully', () => {
-  const scripts = [...adminPanel.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
-  assert.equal(scripts.length, 1, 'expected one inline admin panel script');
-  assert.doesNotThrow(() => new vm.Script(scripts[0][1]));
+  const start = adminPanel.indexOf('<script>');
+  const end = adminPanel.indexOf('</script>', start);
+  assert.ok(start >= 0 && end > start, 'expected one inline admin panel script');
+  assert.equal(adminPanel.indexOf('<script>', start + 1), -1, 'unexpected second inline script');
+  assert.doesNotThrow(() => new vm.Script(adminPanel.slice(start + 8, end)));
 });
