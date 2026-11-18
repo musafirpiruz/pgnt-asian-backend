@@ -112,6 +112,9 @@ test('durable catalog cursor and explicit reviewed-product retry are server-side
   assert.match(server, /requestedAfterProductCatalogId!==afterProductCatalogId/);
   assert.match(server, /catalog-retry-reviewed/);
   assert.match(server, /confirmRetry!==true/);
+  assert.match(server, /product_retry_queued/);
+  assert.match(server, /owner_confirmed_retry/);
+  assert.match(progressMigration, /product_retry_queued/);
   assert.match(server, /verificationStarted:false/);
   assert.match(progressMigration, /country_operator_catalog_progress/);
   assert.match(progressMigration, /last_processed_product_catalog_id/);
