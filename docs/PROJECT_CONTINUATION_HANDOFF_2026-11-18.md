@@ -1,5 +1,5 @@
 # PGNT ASIAN TOPUP — Continuation Handoff
-Last verified: 2026-11-18 (UTC)
+Last verified: 2026-11-18 (UTC; updated after PR #249 CI run 44311686082)
 Repository: https://github.com/musafirpiruz/pgnt-asian-backend
 
 ## Working rule
@@ -9,11 +9,11 @@ Continue the existing Flutter + Node.js/Express project. Do not rebuild it. Keep
 - PR #249: https://github.com/musafirpiruz/pgnt-asian-backend/pull/249
 - Branch: `feature/one-product-per-operator-auto-verification`
 - Base: `integration/four-country-fx-dtone-reconciliation`
-- Verified head: `a2b89b2fc009a4ab8bd8b55e78dc561bf3141fda`
+- Verified head: `5950f84114d7c6e67cead451ad0632406a4dbfa2`
 - PR state: open, Draft, unmerged.
 - Latest CI on that exact head:
-  - Backend tests run 44308977515: success.
-  - Backend Syntax Check run 44308977849: success.
+  - Backend tests run 44311686082: success.
+  - Backend Syntax Check run 44311686058: success.
 - PR #249 is not merged. Do not mistake passing CI for production readiness.
 
 ## Implemented in PR #249
@@ -31,7 +31,7 @@ Continue the existing Flutter + Node.js/Express project. Do not rebuild it. Keep
 - Added `tests/country-operator-admin-approval-contract.test.js` for source-level safety contracts (authenticated/read-only candidate route, explicit confirmation, provider detail lookup, transaction/audit markers, and activation invariants). This is not an HTTP route-level PostgreSQL integration test.
 - Route-level PostgreSQL integration tests for the new admin endpoints are still required. Existing evaluator tests and migration tests do not fully exercise HTTP authorization, provider failures, transaction rollback, duplicate approval, and all DB writes.
 - Admin authentication currently uses shared `ADMIN_API_KEY`; actor is recorded as `shared_admin_api_key`. Per-admin accounts/RBAC and individual identity audit remain outstanding.
-- Review the new route's DB connection failure path (pool.connect is currently before try/catch) and add defensive transaction tests.
+- The DB connection failure path was hardened in commit `5950f84114d7c6e67cead451ad0632406a4dbfa2`: rollback is guarded when no client was acquired; `finally` only releases an acquired client. Add defensive route-level transaction tests.
 - Add bounded catalog batch preview/apply only after sample approval is tested: operator-specific, maximum 25 records per batch, dry-run first, explicit confirmApply, exact provider IDs and strict evaluator, persisted audit evidence, no activation. Never bulk-process/activate the 1,960-row workbook.
 - Check product type/range handling against live DT One product detail schemas before using beyond fixed-value recharge.
 - Verify DT One wholesale prices in EUR; never substitute reference FX rates.
@@ -70,4 +70,4 @@ Branch `integration/four-country-fx-dtone-reconciliation`, base `main`, Draft/un
 9. Only after reviewed tests and owner approval: staging migration/deploy, read-only verification, then separately approved production rollout.
 
 ## Current truthful status
-Latest PR #249 code includes source-level admin approval safety contract tests and guarded DB connection handling. The previous handoff-only head passed Backend tests and Syntax Check; all subsequent code/test commits require fresh CI confirmation. HTTP route-level PostgreSQL integration tests remain outstanding. No production migrations, deploy, product activation, payment, refund, or DT One top-up was performed. International calling remains planned, not implemented.
+Latest PR #249 head `5950f84114d7c6e67cead451ad0632406a4dbfa2` passed Backend tests run `44311686082` and Syntax Check run `44311686058`. Source-level admin approval safety contract tests are present and the DB connection failure path is guarded. HTTP route-level PostgreSQL integration tests remain outstanding. Issue #248 was updated in comment `6979758655` with this exact evidence and limitations. No production migrations, deploy, product activation, payment, refund, or DT One top-up was performed. International calling remains planned, not implemented.
