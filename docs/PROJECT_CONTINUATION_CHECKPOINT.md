@@ -194,3 +194,19 @@ Fresh CI recheck on exact PR #246 head `9b6800c58ff49c1be5ed8e990c6da82c045bbc74
 - Dependency security audit run 44222373723 / run #763: SUCCESS.
 - Artifact `pgnt-asian-topup-apk`, ID `14392050192`, 25,480,898 bytes, SHA256 `3be23f1a6980161b98785ae7a67fab7183c7df05cf9a6c9976e318620d68f475`, expiry 2026-12-02.
 These green workflows validate only that exact PR head; they do not prove safe production migration or deployment.
+
+
+## Outbound international calling — scope correction from user
+
+The design-only document `docs/paid-outbound-calling-and-contacts-plan.md` proposes VoIP-to-PSTN calling and currently mentions both mobile and landline destinations. The user's later explicit product decision (2026-11-17) narrows PGNT's requested feature to **international mobile numbers only**. Treat the user's mobile-only scope as authoritative; do not include landlines unless the user changes this requirement.
+
+The design proposal lists AF/PK/BD/IN destinations and possible operator-level routes, but no provider has been selected, no written tariff/KYC confirmation has been received, no provider account/call has been created, no call is enabled, and no wallet debit/reservation has been implemented. Public price snapshots in the proposal are indicative only and must not be used as production prices.
+
+Calling implementation must remain a separately gated feature:
+- Provider shortlist/quote and written mobile-operator coverage only; test each mobile network.
+- Confirm France/EU caller-ID and resale eligibility, KYC, billing increment, answer supervision, CDRs, webhook signatures, quality/SLA and test terms.
+- E.164 mobile-number validation and destination restrictions; emergency/premium-rate numbers are not part of this mobile-calling feature.
+- Provider-neutral voice adapter, separate from DT One top-up adapter.
+- EUR customer quote before call; authenticated server-side wallet reservation, immutable idempotent ledger debit/release, CDR reconciliation and fraud/velocity controls.
+- Optional contact picker/manual contacts only after permission; no address-book upload by default.
+- No production voice credential, prepaid deposit, wallet debit, live call or rollout without explicit approval and successful staging evidence.
