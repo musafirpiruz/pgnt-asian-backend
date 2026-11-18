@@ -162,3 +162,35 @@ Before production deploy:
 ## User-facing handoff
 
 Explain progress in Pashto, distinguish confirmed from pending work, use actual percentages only when there is a defined checklist and evidence. Include the international-calling feature in project scope/progress, but separate it from top-up readiness.
+
+
+## Detailed migration-order finding — verified 2026-11-18
+
+Inspection of the actual `migrate.js` on PR #246 head shows this sequence:
+- 017 `country_operator_product_mapping` is conditional and is deferred until `country_registry` and `country_operators` already exist.
+- 018 `dtone_ranged_value_foundation`
+- 019 `ranged_order_identity`
+- 020 `ranged_confirmation_claim`
+- 022 `canonical_country_registry_reconciliation`
+- 023 `current_catalog_country_registry_bootstrap`
+- 024 `country_fx_rates`
+- 030 `country_registry_audit_trail`
+- 031 `order_country_configuration_snapshot`
+- 032 `master_country_pricing_policy`
+- 033 `network_product_approval_batches`
+- 034 `dtone_price_evidence_freshness`
+- 035 `stripe_actual_fee_reconciliation`
+- 036 `four_country_app_fee_eur_049`
+- 037 `dtone_master_reconciliation_staging`
+
+There is no migration 021 in this invocation list, and migrations 025–029 are not in the automatic list; code comments explicitly identify 029 as a separately reviewed/manual rollout gate. Do not fill these numbering gaps by inventing migrations or assuming they are required. Determine whether each is intentionally absent, manually gated, superseded, or still needed by inspecting the repository history and every dependent module/test.
+
+Important additional finding: migration 022/023 are not a generic "apply all" operation. They are intended to reconcile canonical country-registry schemas and seed from the current catalog; migration 023 contains fail-closed validation for pricing/currency and rejects conflicting existing registry identities. Tests expect incompatible legacy schemas to fail without damaging rows. Production currently has no registry tables and only migrations 002–016, so these migrations need a production-shaped rehearsal and review before any live execution.
+
+Fresh CI recheck on exact PR #246 head `9b6800c58ff49c1be5ed8e990c6da82c045bbc74` (2026-11-18):
+- Backend tests run 44222373709 / run #1905: SUCCESS; all 27 job steps completed, including isolated PostgreSQL migration/reconciliation checks and regression tests.
+- APK build run 44222373738 / run #951: SUCCESS; Dart analysis, release APK build, APK verification and artifact upload all succeeded.
+- Syntax run 44222373783 / run #1602: SUCCESS.
+- Dependency security audit run 44222373723 / run #763: SUCCESS.
+- Artifact `pgnt-asian-topup-apk`, ID `14392050192`, 25,480,898 bytes, SHA256 `3be23f1a6980161b98785ae7a67fab7183c7df05cf9a6c9976e318620d68f475`, expiry 2026-12-02.
+These green workflows validate only that exact PR head; they do not prove safe production migration or deployment.
