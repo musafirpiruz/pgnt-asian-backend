@@ -3326,6 +3326,111 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
   }finally{if(client) client.release();}
 });
 
+// Operator-scoped catalog batch preview. This is a dry-run only:
+// it checks at most 25 explicitly mapped inactive products and records audit evidence.
+// It never changes catalog activation, creates orders, or submits top-ups.
+app.post('/api/admin/country-operators/:operatorId/catalog-batch-preview', requireAdmin, async (req,res)=>{
+  if(!pool) return res.status(503).json({dryRun:true,error:'Database is not configured.'});
+  const operatorId=Number(req.params.operatorId);
+  const productCatalogIds=req.body?.productCatalogIds;
+  if(!Number.isSafeInteger(operatorId)||operatorId<1)
+    return res.status(400).json({dryRun:true,error:'A valid operatorId is required.'});
+  if(req.body?.dryRun!==true)
+    return res.status(400).json({dryRun:true,confirmationRequired:true,error:'Send dryRun: true to request a non-activating preview.'});
+  if(!Array.isArray(productCatalogIds)||productCatalogIds.length<1||productCatalogIds.length>25||
+     productCatalogIds.some(id=>!Number.isSafeInteger(id)||id<1)||
+     new Set(productCatalogIds).size!==productCatalogIds.length)
+    return res.status(400).json({dryRun:true,error:'Provide 1-25 unique positive productCatalogIds.'});
+  if(!DTONE_API_KEY||!DTONE_API_SECRET)
+    return res.status(503).json({dryRun:true,error:'DT One credentials are not configured.'});
+
+  let client;
+  try {
+    const candidates=await pool.query(
+      \`SELECT o.id AS operator_id,o.country_code,o.operator_key,o.display_name AS operator_name,
+              o.provider,o.provider_operator_id,o.active AS operator_active,
+              p.id AS product_catalog_id,p.product_id,p.country,p.operator,p.amount,p.currency,
+              p.active AS product_active,m.active AS mapping_active
+       FROM country_operators o
+       JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
+       JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE o.id=$1 AND p.id=ANY($2::bigint[])
+       ORDER BY p.id\`,
+      [operatorId,productCatalogIds]
+    );
+    if(!candidates.rowCount) return res.status(404).json({dryRun:true,error:'Operator or mapped catalog products were not found.'});
+    if(candidates.rowCount!==productCatalogIds.length)
+      return res.status(422).json({dryRun:true,error:'Every requested product must be explicitly mapped to this operator.'});
+    const first=candidates.rows[0];
+    if(first.operator_active||candidates.rows.some(row=>row.product_active||row.mapping_active))
+      return res.status(409).json({dryRun:true,error:'Active operators, mappings or products cannot enter batch preview.'});
+
+    const items=[];
+    for(const row of candidates.rows){
+      try{
+        const response=await fetch(DTONE_API_BASE_URL+'/v1/products/'+encodeURIComponent(row.product_id),{
+          method:'GET',
+          headers:{Authorization:getDtOneAuthHeader(),Accept:'application/json'},
+          signal:AbortSignal.timeout(15000)
+        });
+        if(!response.ok){
+          items.push({productCatalogId:row.product_catalog_id,providerProductId:String(row.product_id),
+            verified:false,providerStatus:response.status,
+            reasons:[response.status===404?'provider_product_not_found':'provider_unavailable']});
+          continue;
+        }
+        const providerProduct=await response.json();
+        const evaluated=evaluateDtOneCatalogMatch({...row,active:row.product_active},providerProduct);
+        items.push({productCatalogId:row.product_catalog_id,providerProductId:String(row.product_id),
+          verified:evaluated.verified,reasons:evaluated.reasons,
+          evidence:evaluated.verified?evaluated.provider:null});
+      }catch(providerError){
+        items.push({productCatalogId:row.product_catalog_id,providerProductId:String(row.product_id),
+          verified:false,reasons:['provider_timeout_or_network_error']});
+      }
+    }
+
+    client=await pool.connect();
+    await client.query('BEGIN');
+    const locked=await client.query(
+      \`SELECT o.id AS operator_id,o.active AS operator_active,
+              p.id AS product_catalog_id,p.active AS product_active,m.active AS mapping_active
+       FROM country_operators o
+       JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
+       JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE o.id=$1 AND p.id=ANY($2::bigint[])
+       ORDER BY p.id FOR UPDATE OF o,m,p\`,
+      [operatorId,productCatalogIds]
+    );
+    if(locked.rowCount!==productCatalogIds.length||
+       locked.rows.some(row=>row.operator_active||row.product_active||row.mapping_active)){
+      await client.query('ROLLBACK');
+      return res.status(409).json({dryRun:true,error:'Catalog state changed during provider verification; rerun the preview.'});
+    }
+    for(const item of items){
+      await client.query(
+        \`INSERT INTO catalog_verification_audit
+          (operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
+         VALUES($1,$2,'batch_previewed','admin_api_key','shared_admin_api_key','preview',$3,$4::jsonb)\`,
+        [operatorId,item.productCatalogId,item.reasons,
+         JSON.stringify({dryRun:true,verified:item.verified,providerProductId:item.providerProductId,
+           providerStatus:item.providerStatus||null,providerEvidence:item.evidence||null})]
+      );
+    }
+    await client.query('COMMIT');
+    const verifiedCount=items.filter(item=>item.verified).length;
+    return res.json({dryRun:true,operatorId,requestedCount:items.length,verifiedCount,
+      rejectedCount:items.length-verifiedCount,items,auditPersisted:true,
+      applyAvailable:false,activationChanged:false,transactionCreated:false});
+  }catch(error){
+    if(client) await client.query('ROLLBACK').catch(()=>{});
+    console.error('Country operator catalog batch preview failed:',error.message);
+    return res.status(500).json({dryRun:true,error:'Could not safely preview the requested catalog batch.'});
+  }finally{
+    if(client) client.release();
+  }
+});
+
 // Small browser page for the owner to run the read-only product check
 // without installing an API client. The admin key is entered by the owner
 // in their browser and is never stored by this page.
