@@ -42,14 +42,14 @@ Implemented in the current PR branch:
 - Verification does not activate countries/operators/products/mappings and creates no payment/order/top-up transaction.
 - PostgreSQL-backed HTTP test covers second-product automatic verification without a second owner action, provider operator ID mismatch rejection despite matching display name, authentication, and missing sample approval.
 
-Remaining: admin UI must drive the bounded pages and present exceptions; add deeper tests for pagination, provider 404/5xx/timeout, concurrent state changes, and retry behavior. Do not describe the full operator catalog as complete until these and the UI are validated.
+Implemented in Admin Panel: authenticated operator overview, one-sample selection and approval, one-page-at-a-time auto verification (maximum 25 products per click), per-product reason display, and verified/pending/review/active counts. It verifies the API response reports no activation or transaction changes. Remaining: durable cursor recovery and explicit retry for previously reviewed failures, plus deeper provider 404/5xx/timeout/concurrency tests and staging UI validation.
 
 ## Important limitations / next engineering steps
 - Admin authentication currently uses shared `ADMIN_API_KEY`; actor is recorded as `shared_admin_api_key`. Per-admin accounts/RBAC and individual identity audit remain outstanding.
 - Check product type/range handling against live DT One product detail schemas before using beyond supported products.
 - Verify DT One wholesale prices in EUR; never substitute reference FX rates.
 - Public API should expose only active/verified operators and mappings; quote and checkout must use the same unique verified resolver.
-- Current batch preview is dry-run only; it does not activate products and is not the full automatic-after-sample workflow.
+- Current batch preview remains dry-run only. The separate automatic-after-sample endpoint and Admin Panel controls are now implemented; they still do not activate products.
 
 ## Canonical country registry (PR #225 dependency)
 PR #225: https://github.com/musafirpiruz/pgnt-asian-backend/pull/225
@@ -83,4 +83,4 @@ Branch `integration/four-country-fx-dtone-reconciliation`, base `main`, Draft/un
 8. Only after reviewed tests and owner approval: staging migration/deploy, read-only verification, then separately approved production rollout.
 
 ## Current truthful status
-The automatic operator-scoped verification endpoint and PostgreSQL-backed integration coverage have been added on PR #249. Backend Syntax Check and Backend tests passed on commit `393104d8c4dd438e97a2d665205693180d32be04` (CI runs 44318451160 and 44318451091). A later small server correction and authentication/no-sample test plus documentation updates advanced the branch to `f4b90c024e3805247fad1a23e3f542fd7c82110d`; CI for that exact latest head must be checked before calling it validated. PR #249 remains open, Draft, and unmerged. Automatic verification is bounded to pages of up to 25; no activation, payment, refund, order, or DT One top-up is performed. Production migrations/deploy were not performed. International calling remains planned, not implemented.
+The automatic operator-scoped verification endpoint, authenticated operator overview, and Admin Panel controls have been added on PR #249. Admins can select and approve one representative sample per operator, then run automatic verification in bounded pages of up to 25; the panel displays verified/pending/review/active counts and product-level reason codes. Backend Syntax Check and Backend tests both passed on code commit `a1150873ce596946aaa3f42eb9ad05b3da4b3e5d` (runs 44320049760 and 44320049731). Documentation has since been refreshed; re-run CI on the documentation-updated head before treating that exact head as fully checked. PR #249 remains open, Draft, and unmerged. Verification never activates countries/operators/products or creates payments, refunds, orders, or DT One top-ups. Production migrations/deploy were not performed. International calling remains planned, not implemented.
