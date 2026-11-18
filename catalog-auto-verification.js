@@ -15,13 +15,9 @@ const COUNTRY_PROVIDER_CODES = Object.freeze({
 const OPERATOR_ALIASES = Object.freeze({
   AF: Object.freeze({ 'ATOMA AFGHANISTAN': 'ATOMA' }),
 });
-const SUPPORTED_PRODUCT_TYPES = new Set([
-  'FIXED_VALUE_RECHARGE',
-  'RANGED_VALUE_RECHARGE',
-  'FIXED_VALUE_PIN_PURCHASE',
-  'RANGED_VALUE_PIN_PURCHASE',
-  'RANGED_VALUE_PAYMENT',
-]);
+const SUPPORTED_PRODUCT_TYPES = new Set(['FIXED_VALUE_RECHARGE']);
+const MIN_FIXED_RECHARGE_AMOUNT = 75;
+const MAX_FIXED_RECHARGE_AMOUNT = 3000;
 
 function normalizeOperator(country, value) {
   const label = String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
@@ -93,7 +89,8 @@ function evaluateDtOneCatalogMatch(catalog, providerProduct) {
       ? amountValue.base ?? amountValue.min
       : amountValue
   );
-  if (!Number.isFinite(providerAmount) || providerAmount <= 0 ||
+  if (!Number.isFinite(providerAmount) || !Number.isSafeInteger(providerAmount) ||
+      providerAmount < MIN_FIXED_RECHARGE_AMOUNT || providerAmount > MAX_FIXED_RECHARGE_AMOUNT ||
       Number(catalog.amount) !== providerAmount) {
     reasons.push('denomination_mismatch');
   }
