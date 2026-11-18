@@ -72,14 +72,14 @@ The owner has explicitly requested **exactly two administrator accounts for the 
 1. **Owner account:** the project owner, with full administrative authority.
 2. **Second Admin account:** one additional individually named account, with permissions explicitly granted by the Owner and limited to its assigned duties.
 
-Do not create a third account or provision the future specialist roles as separate accounts at this stage. The five role categories below are a permission-design vocabulary for future growth, not a requirement to create five users. The second Admin's exact permission set must be confirmed by the Owner before provisioning; default to least privilege and do not grant account/role management, refunds, or financial-setting changes unless separately authorized.
+Do not create a third account or provision the future specialist roles as separate accounts at this stage. The five role categories below are a permission-design vocabulary for future growth, not a requirement to create five users. The Second Admin is approved for **customer support only**: view the minimum customer/order/top-up status needed to answer support requests and reply/escalate support cases when those workflows are implemented. Do not grant catalog/network/product management, product activation, pricing/FX/fee changes, referral administration, payment reconciliation, Stripe candidate access, refunds, wallet operations, or administrator/role management.
 
 ## Proposed role definitions
 
 1. **Owner** — the project owner; full administrative authority, account lifecycle, role assignment, emergency recovery, and explicit approval of high-impact actions.
 2. **Catalog reviewer** — inspect provider products, preview imports, run bounded catalog verification, and handle reviewed catalog retries. Cannot change pricing, issue refunds, activate products, or manage administrator accounts.
 3. **Finance operator** — view payment/reconciliation evidence and manage approved EUR pricing/fees within configured limits. Refund authority remains Owner-only in the initial rollout.
-4. **Support agent** — view the minimum order/payment/top-up status needed to answer customers. Cannot see full payment candidate data, edit prices, issue refunds, or alter catalog state.
+4. **Support agent (the only role assigned to the Second Admin initially)** — view only the minimum customer/order/top-up status needed to answer customer requests and reply/escalate support cases when implemented. Cannot see full payment candidate data, edit prices, issue refunds, alter catalog/network/product state, manage referrals or wallets, or manage administrators.
 5. **Read-only auditor** — access approved reports and audit evidence only; no mutations and no secrets.
 
 ## Mandatory authorization design
@@ -102,7 +102,7 @@ Do not create a third account or provision the future specialist roles as separa
 4. **Owner bootstrap:** create the first Owner through a one-time secure bootstrap flow; never seed a default password or expose a public registration endpoint.
 5. **Route-by-route migration:** map every route above to a permission, migrate admin UI to secure sessions, and verify no route is omitted.
 6. **Dual-control and audit review:** test refund/pricing/role-change safeguards, audit immutability, redaction, and recovery.
-7. **Staging validation:** verify with a staging database using exactly two test identities (Owner and Second Admin), including explicit tests that the second account cannot exceed its assigned permissions.
+7. **Staging validation:** verify with exactly two test identities (Owner and Second Admin). Prove that the Second Admin can access only customer-support functions and is denied catalog/network/product, pricing/FX/fees, referrals, payments/reconciliation, refunds, wallets, product activation, and administrator-management actions.
 8. **Owner approval:** only after staging evidence is reviewed may production migration, key rotation, and deployment be proposed. These actions require separate explicit authorization.
 
 ## Acceptance criteria
@@ -112,7 +112,7 @@ Do not create a third account or provision the future specialist roles as separa
 - Support and auditor roles cannot invoke catalog, pricing, referral mutation, or refund actions.
 - Catalog reviewer cannot change fees, FX rates, payment records, or refund orders.
 - The initial release provisions exactly two administrator accounts: one Owner and one Second Admin; no third account is created.
-- The Second Admin receives only the permissions explicitly approved by the Owner and cannot manage admin accounts/roles.
+- The Second Admin receives customer-support permissions only and cannot manage catalog/networks/products, pricing/FX/fees, referrals, payments/reconciliation, refunds, wallets, product activation, or admin accounts/roles.
 - Finance operator cannot manage users/roles or approve provider operator identity anchors.
 - Owner-only actions have audit evidence and explicit confirmation where required.
 - Stripe and DT One provider callbacks continue to use their own signature/authentication mechanisms.
