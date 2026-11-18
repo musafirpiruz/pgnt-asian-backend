@@ -65,6 +65,15 @@ The route inventory contains 32 administrative API route declarations in the cur
 - `GET /api/referrals/validate/:code`: public referral-code validation; return only the minimum public fields.
 - Customer country/operator, currency, pricing quote, and checkout routes remain customer-facing and must not accidentally inherit admin roles.
 
+## Initial account count and provisioning scope
+
+The owner has explicitly requested **exactly two administrator accounts for the initial release**:
+
+1. **Owner account:** the project owner, with full administrative authority.
+2. **Second Admin account:** one additional individually named account, with permissions explicitly granted by the Owner and limited to its assigned duties.
+
+Do not create a third account or provision the future specialist roles as separate accounts at this stage. The five role categories below are a permission-design vocabulary for future growth, not a requirement to create five users. The second Admin's exact permission set must be confirmed by the Owner before provisioning; default to least privilege and do not grant account/role management, refunds, or financial-setting changes unless separately authorized.
+
 ## Proposed role definitions
 
 1. **Owner** — the project owner; full administrative authority, account lifecycle, role assignment, emergency recovery, and explicit approval of high-impact actions.
@@ -93,7 +102,7 @@ The route inventory contains 32 administrative API route declarations in the cur
 4. **Owner bootstrap:** create the first Owner through a one-time secure bootstrap flow; never seed a default password or expose a public registration endpoint.
 5. **Route-by-route migration:** map every route above to a permission, migrate admin UI to secure sessions, and verify no route is omitted.
 6. **Dual-control and audit review:** test refund/pricing/role-change safeguards, audit immutability, redaction, and recovery.
-7. **Staging validation:** verify with a staging database and separate test accounts for all five roles.
+7. **Staging validation:** verify with a staging database using exactly two test identities (Owner and Second Admin), including explicit tests that the second account cannot exceed its assigned permissions.
 8. **Owner approval:** only after staging evidence is reviewed may production migration, key rotation, and deployment be proposed. These actions require separate explicit authorization.
 
 ## Acceptance criteria
@@ -102,6 +111,8 @@ The route inventory contains 32 administrative API route declarations in the cur
 - Every mutating admin route rejects missing, disabled, expired, and insufficiently privileged identities.
 - Support and auditor roles cannot invoke catalog, pricing, referral mutation, or refund actions.
 - Catalog reviewer cannot change fees, FX rates, payment records, or refund orders.
+- The initial release provisions exactly two administrator accounts: one Owner and one Second Admin; no third account is created.
+- The Second Admin receives only the permissions explicitly approved by the Owner and cannot manage admin accounts/roles.
 - Finance operator cannot manage users/roles or approve provider operator identity anchors.
 - Owner-only actions have audit evidence and explicit confirmation where required.
 - Stripe and DT One provider callbacks continue to use their own signature/authentication mechanisms.
