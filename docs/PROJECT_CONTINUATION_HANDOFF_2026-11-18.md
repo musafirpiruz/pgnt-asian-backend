@@ -1,5 +1,5 @@
 # PGNT ASIAN TOPUP — Continuation Handoff
-Last verified: 2026-11-18 (UTC; after PR #249 CI run 44317732067)
+Last verified: 2026-11-18 (UTC; after adding bounded automatic operator catalog verification)
 Repository: https://github.com/musafirpiruz/pgnt-asian-backend
 
 ## Working rule
@@ -9,7 +9,7 @@ Continue the existing Flutter + Node.js/Express project. Do not rebuild it. Keep
 - PR #249: https://github.com/musafirpiruz/pgnt-asian-backend/pull/249
 - Branch: `feature/one-product-per-operator-auto-verification`
 - Base: `integration/four-country-fx-dtone-reconciliation`
-- Verified head: `502d9f492c79e33b73f7c1fc6b69913a0b534e3d`
+- Verified source head before documentation refresh: `22bab4194ca66575f32e34acbb5b195a8f680942`; latest docs head: `f4b90c024e3805247fad1a23e3f542fd7c82110d`
 - PR state: open, Draft, unmerged; current API reports mergeable true, but do not merge without owner approval and base integration review.
 - Latest CI on this exact head:
   - Backend Syntax Check run 44317732037: success.
@@ -30,12 +30,19 @@ Continue the existing Flutter + Node.js/Express project. Do not rebuild it. Keep
 6. PostgreSQL-backed HTTP route integration tests cover safe sample approval, batch preview, and failure/rollback behavior; source-level safety contract tests remain too.
 
 ## Critical owner requirement — one sample per operator
-For each mobile network/operator, the owner manually approves only ONE representative product. After that, the system must automatically verify the remaining products belonging to that same network/operator. Do not require manual approval for every product.
-- The current PR implements manual sample approval and a bounded dry-run batch preview.
-- It does NOT yet automatically launch/complete verification of every remaining operator product after sample approval.
-- Next implementation: operator-scoped, bounded/paginated automatic verification after sample approval, using the approved sample as the operator reference and exact DT One product detail for every candidate. Compare exact provider product ID, country, operator ID/name, currency, product type, denomination, and EUR retail/wholesale prices.
-- Matching candidates may become technically verified with persisted evidence/audit; mismatches, ambiguous results, provider errors/timeouts must go to review/rejected and never be guessed.
-- Technical verification must remain separate from activation. Never auto-activate products/operators/mappings. Keep a safe batch/page limit (maximum 25 per request) and revalidate state under DB locks.
+For each mobile network/operator, the owner manually approves only ONE representative product. After that, the system automatically verifies the remaining products belonging to that same network/operator. Do not require manual approval for every product.
+
+Implemented in the current PR branch:
+- Authenticated POST `/api/admin/country-operators/:operatorId/catalog-auto-verify`.
+- Requires exactly one current owner-approved sample; the sample's provider operator ID is the exact identity anchor.
+- Processes up to 25 remaining inactive, unverified products per page, using each exact DT One provider product ID.
+- Checks exact product ID, country, operator name and exact provider operator ID, currency, supported product type, denomination, and explicit EUR retail/wholesale price units.
+- Matching candidates receive technical mapping verification timestamps and updated EUR price evidence. Mismatches/provider failures are audited as rejected/review outcomes.
+- Returns a product-catalog cursor for the next page; callers can continue until no more candidates remain.
+- Verification does not activate countries/operators/products/mappings and creates no payment/order/top-up transaction.
+- PostgreSQL-backed HTTP test covers second-product automatic verification without a second owner action, provider operator ID mismatch rejection despite matching display name, authentication, and missing sample approval.
+
+Remaining: admin UI must drive the bounded pages and present exceptions; add deeper tests for pagination, provider 404/5xx/timeout, concurrent state changes, and retry behavior. Do not describe the full operator catalog as complete until these and the UI are validated.
 
 ## Important limitations / next engineering steps
 - Admin authentication currently uses shared `ADMIN_API_KEY`; actor is recorded as `shared_admin_api_key`. Per-admin accounts/RBAC and individual identity audit remain outstanding.
@@ -66,14 +73,14 @@ Branch `integration/four-country-fx-dtone-reconciliation`, base `main`, Draft/un
 - Keep Stripe/DT One sandbox and production isolated. No real charge/refund/top-up without explicit approval.
 
 ## Next steps in order
-1. Keep PR #249 Draft and unmerged; recheck branch head and CI before every edit.
-2. Implement automatic operator-scoped catalog verification triggered/available after the one manual sample approval; bounded pages (<=25), exact provider lookups, strict fail-closed evaluator, durable audit evidence, explicit mismatch/provider-error review states.
-3. Add PostgreSQL-backed tests for automatic verification: approved sample required, exact operator scope, pagination/limits, provider 404/5xx/timeout, match/mismatch, concurrent changes, audit persistence rollback, idempotency, and no activation/payment/top-up.
-4. Update PR #249 and issue #248 with evidence and limitations.
+1. Keep PR #249 Draft and unmerged; verify CI on the exact latest head before any merge discussion.
+2. Finish automatic verification hardening: pagination, provider 404/5xx/timeout, concurrent catalog changes, audit persistence rollback, idempotent retries, and exact operator scope.
+3. Add/update admin UI to trigger the automatic pages and show verified/review/rejected/inactive counts without asking for per-product owner approvals.
+4. Update PR #249 and issue #248 with test evidence and remaining limitations.
 5. Review PR #225/#249 dependency and mergeability before any future merge; require explicit approval.
 6. Separately plan country/network price verification for all four markets.
 7. Plan international calling as a separate provider integration and compliance workstream.
 8. Only after reviewed tests and owner approval: staging migration/deploy, read-only verification, then separately approved production rollout.
 
 ## Current truthful status
-Latest PR #249 head `502d9f492c79e33b73f7c1fc6b69913a0b534e3d` passed Backend Syntax Check run `44317732037` and Backend tests run `44317732067`. The PostgreSQL-backed admin route integration test job passed after correcting string IDs to numeric IDs in the test request. PR #249 remains open, Draft, and unmerged. Manual one-sample-per-operator approval and dry-run batch preview exist; the full automatic verification of remaining products after sample approval is still outstanding. No production migrations, deploy, product activation, payment, refund, or DT One top-up was performed. International calling remains planned, not implemented.
+The automatic operator-scoped verification endpoint and PostgreSQL-backed integration coverage have been added on PR #249. Backend Syntax Check and Backend tests passed on commit `393104d8c4dd438e97a2d665205693180d32be04` (CI runs 44318451160 and 44318451091). A later small server correction and authentication/no-sample test plus documentation updates advanced the branch to `f4b90c024e3805247fad1a23e3f542fd7c82110d`; CI for that exact latest head must be checked before calling it validated. PR #249 remains open, Draft, and unmerged. Automatic verification is bounded to pages of up to 25; no activation, payment, refund, order, or DT One top-up is performed. Production migrations/deploy were not performed. International calling remains planned, not implemented.
