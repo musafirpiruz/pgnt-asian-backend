@@ -28,7 +28,8 @@ Continue the existing Flutter + Node.js/Express project. Do not rebuild it. Keep
 5. `migrate.js` includes migration 024 after 022 and 023.
 
 ## Important limitations / next engineering steps
-- Current CI is green for the exact PR head, but route-level PostgreSQL integration tests for the new admin endpoints are still required. Existing evaluator tests and migration tests do not fully exercise HTTP authorization, provider failures, transaction rollback, duplicate approval, and all DB writes.
+- Added `tests/country-operator-admin-approval-contract.test.js` for source-level safety contracts (authenticated/read-only candidate route, explicit confirmation, provider detail lookup, transaction/audit markers, and activation invariants). This is not an HTTP route-level PostgreSQL integration test.
+- Route-level PostgreSQL integration tests for the new admin endpoints are still required. Existing evaluator tests and migration tests do not fully exercise HTTP authorization, provider failures, transaction rollback, duplicate approval, and all DB writes.
 - Admin authentication currently uses shared `ADMIN_API_KEY`; actor is recorded as `shared_admin_api_key`. Per-admin accounts/RBAC and individual identity audit remain outstanding.
 - Review the new route's DB connection failure path (pool.connect is currently before try/catch) and add defensive transaction tests.
 - Add bounded catalog batch preview/apply only after sample approval is tested: operator-specific, maximum 25 records per batch, dry-run first, explicit confirmApply, exact provider IDs and strict evaluator, persisted audit evidence, no activation. Never bulk-process/activate the 1,960-row workbook.
@@ -69,4 +70,4 @@ Branch `integration/four-country-fx-dtone-reconciliation`, base `main`, Draft/un
 9. Only after reviewed tests and owner approval: staging migration/deploy, read-only verification, then separately approved production rollout.
 
 ## Current truthful status
-Latest PR #249 commit has passing Backend tests and Backend Syntax Check. New admin endpoints are implemented but still need route-level integration tests. No production migrations, deploy, product activation, payment, refund, or DT One top-up was performed. International calling remains planned, not implemented.
+Latest PR #249 code includes source-level admin approval safety contract tests and guarded DB connection handling. The previous handoff-only head passed Backend tests and Syntax Check; all subsequent code/test commits require fresh CI confirmation. HTTP route-level PostgreSQL integration tests remain outstanding. No production migrations, deploy, product activation, payment, refund, or DT One top-up was performed. International calling remains planned, not implemented.
