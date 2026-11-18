@@ -143,3 +143,30 @@ test('preserves ranged PIN purchase type, destination range, service and nullabl
   assert.equal(row.retailPriceEur, '');
   assert.equal(row.retailPriceCurrency, '');
 });
+
+ 
+test('normalizes ranged payment products with Pakistan mobile Airtime service metadata', () => {
+  const rangedPayment = {
+    ...detail,
+    id: 50460,
+    operator: { name: 'Jazz Pakistan Postpaid', country: { iso_code: 'PAK' } },
+    service: { id: 1, name: 'Mobile', subservice: { id: 11, name: 'Airtime' } },
+    type: 'RANGED_VALUE_PAYMENT',
+    destination: { amount: { min: 100, max: 5000, increment: 1 }, unit: 'PKR' },
+    prices: {
+      wholesale: { amount: { min: 0.43, max: 21.1 }, unit: 'EUR' },
+      retail: { amount: { min: 0.48, max: 23.45 }, unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(rangedPayment, '50460', { PAK: 'PK' });
+  assert.equal(row.productId, '50460');
+  assert.equal(row.country, 'PK');
+  assert.equal(row.operator, 'Jazz Pakistan Postpaid');
+  assert.equal(row.service, 'Mobile');
+  assert.equal(row.subservice, 'Airtime');
+  assert.equal(row.productType, 'RANGED_VALUE_PAYMENT');
+  assert.equal(row.destinationCurrency, 'PKR');
+  assert.equal(row.destinationAmount, '100 - 5000');
+  assert.equal(row.wholesalePriceEur, '0.43 - 21.1');
+  assert.equal(row.retailPriceEur, '0.48 - 23.45');
+});
