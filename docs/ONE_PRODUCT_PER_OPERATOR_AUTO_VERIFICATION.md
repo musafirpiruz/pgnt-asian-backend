@@ -51,6 +51,14 @@ The owner should not have to approve every denomination in the 1,960-row catalog
 - Quote and checkout use the same unique verified mapping.
 - All tests, syntax, and dependency security checks pass on the exact commit.
 
-## Current implementation status
+## Current implementation status (2026-11-18)
 
-This document records the approved product behavior and acceptance criteria. It does not claim the automation or admin UI has been implemented. PR #225 remains the draft integration foundation; production database, deployment, and product activation remain untouched.
+PR #249 now contains:
+- One owner-approved representative sample per operator, with exact DT One detail validation and persisted approval/audit evidence.
+- An authenticated `POST /api/admin/country-operators/:operatorId/catalog-auto-verify` endpoint. It requires exactly one current approved sample, uses its provider operator ID as the exact identity anchor, and processes a bounded page of up to 25 remaining inactive/unverified mapped products.
+- Each candidate is fetched by its exact DT One product ID. The evaluator checks exact product ID, country, operator name, provider operator ID against the approved sample, currency, supported product type, denomination, and positive retail/wholesale prices explicitly denominated in EUR.
+- Successful rows receive technical mapping verification timestamps and refreshed EUR price evidence. Mismatches/provider failures are audited as rejected/review outcomes. The endpoint returns a cursor for the next page.
+- Technical verification does not activate countries, operators, mappings, or products and does not create payment, order, or top-up transactions.
+- PostgreSQL-backed HTTP tests cover successful automatic verification of a second product without a second owner approval, rejection of a different provider operator ID despite a matching display name, authentication, and the requirement for a prior approved sample.
+
+Remaining before merge: verify the exact latest PR head with all CI checks; add further coverage for pagination/concurrent changes/provider failures and inspect review evidence; update admin UI to drive page-by-page verification and show exceptions. Per-admin identity/RBAC, four-country live product/price verification, and calling remain separate outstanding work. PR #225 remains the draft integration foundation; production database, deployment, and product activation remain untouched.
