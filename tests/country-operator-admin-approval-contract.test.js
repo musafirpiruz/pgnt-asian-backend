@@ -27,7 +27,7 @@ test('admin catalog candidate route is authenticated and read-only', () => {
   assert.match(route, /FROM country_operators/);
   assert.match(route, /LEFT JOIN country_operator_products/);
   assert.match(route, /LEFT JOIN product_catalog/);
-  assert.doesNotMatch(route, /INSERT INTO|UPDATE\\s+country_|fetch\\(/i);
+  assert.doesNotMatch(route, /INSERT INTO|UPDATE\s+country_|fetch\(/i);
 });
 
 test('sample approval requires explicit confirmation and authoritative DT One detail', () => {
@@ -51,7 +51,7 @@ test('sample approval requires explicit confirmation and authoritative DT One de
   assert.match(route, /operator_active\|\|row\.product_active\|\|row\.mapping_active/);
   assert.match(route, /operatorActive:false,productMappingActive:false,productActive:false/);
   assert.match(route, /transactionCreated:false/);
-  assert.doesNotMatch(route, /SET\\s+(?:active|operator_active|mapping_active)\\s*=\\s*TRUE/i);
+  assert.doesNotMatch(route, /SET\s+(?:active|operator_active|mapping_active)\s*=\s*TRUE/i);
 });
 
 test('approval audit schema restricts actors, outcomes, and one active sample per operator', () => {
