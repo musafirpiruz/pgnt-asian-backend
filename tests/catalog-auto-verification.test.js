@@ -61,6 +61,13 @@ test('rejects unsupported product type and missing or invalid wholesale pricing'
   })).reasons.includes('invalid_or_missing_eur_prices'));
 });
 
+test('requires an authoritative provider operator ID, not just a display name', () => {
+  const missingId = provider({ operator: { name: 'ATOMA Afghanistan', country: { iso_code: 'AFG' } } });
+  const result = evaluateDtOneCatalogMatch(catalog(), missingId);
+  assert.equal(result.verified, false);
+  assert.ok(result.reasons.includes('missing_or_invalid_provider_operator_id'));
+});
+
 test('never auto-verifies an already active catalog row', () => {
   const result = evaluateDtOneCatalogMatch(catalog({ active: true }), provider());
   assert.equal(result.verified, false);
