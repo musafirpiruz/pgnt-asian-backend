@@ -97,14 +97,18 @@ module.exports = function registerSupportRoutes({ app, pool, requireAdmin }) {
       const result = await pool.query(
         `SELECT t.id, t.order_id, t.subject, t.message, t.category, t.status, t.priority,
                 t.admin_reply, t.created_at, t.updated_at,
-                o.country, o.operator, o.phone, o.amount, o.currency, o.charge_cents, o.status AS order_status
+                o.country, o.operator,
+                CASE WHEN $3 = 'owner' THEN o.phone ELSE NULL END AS phone,
+                o.amount, o.currency,
+                CASE WHEN $3 = 'owner' THEN o.charge_cents ELSE NULL END AS charge_cents,
+                o.status AS order_status
          FROM support_tickets t
          LEFT JOIN orders o ON o.order_id = t.order_id
          WHERE ($1 = '' OR t.status = $1)
          ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
                   t.created_at ASC
          LIMIT $2`,
-        [status, limit]
+        [status, limit, req.admin?.role || 'legacy']
       );
       return res.json({ tickets: result.rows });
     } catch (error) {
