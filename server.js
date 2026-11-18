@@ -3365,7 +3365,7 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
        FROM country_operator_products m
        JOIN product_catalog p ON p.id=m.product_catalog_id
        WHERE m.country_code=$1 AND m.operator_key=$2 AND p.id<>$3
-         AND p.id>$4 AND m.verified_at IS NULL
+         AND p.id>$4 AND m.verified_at IS NULL AND p.active=FALSE AND m.active=FALSE
        ORDER BY p.id LIMIT $5`,
       [operator.country_code,operator.operator_key,approval.sample_product_catalog_id,afterProductCatalogId,limit]);
     const items=[];
