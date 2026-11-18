@@ -44,6 +44,8 @@ Observed service/subservice totals in the workbook (these are source values, not
 | Bangladesh | Mobile | Data | 73 |
 | Bangladesh | eSIM | blank | 3 |
 
+The workbook's `Service_Summary` tab totals 1,960 products and reports zero missing wholesale EUR prices and zero missing retail EUR prices. The `Duplicate_ID_Audit` tab contains four cross-source overlap records for Pakistan eSIM products; these are repeated appearances in source CSV files, not duplicate rows in the final `All_Products` sheet. The final sheet remains the authoritative, deduplicated 1,960-row baseline.
+
 Observed product type totals are `FIXED_VALUE_RECHARGE=1929`, `RANGED_VALUE_RECHARGE=14`, `FIXED_VALUE_PIN_PURCHASE=14`, and `RANGED_VALUE_PAYMENT=3`. The current workbook contains no `RANGED_VALUE_PIN_PURCHASE` rows. The parser accepts all five official DT One enum values so a future valid workbook is not rejected, but the fifth type must not be added to current workbook counts or treated as present.
 
 ## Outcomes
