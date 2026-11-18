@@ -13,11 +13,11 @@ The project owner has explicitly selected **two administrator accounts only** fo
 1. **Owner:** the project owner; full administrative authority and sole authority to create, disable, or change administrator accounts and roles.
 2. **Second Admin:** one additional individually named administrator; receives only the specific permissions the Owner approves.
 
-Do not provision a third administrator account in the initial release. The specialist roles below describe permission boundaries and future extensibility; they do not mean that five separate administrator accounts must be created. The Second Admin's precise duties remain subject to Owner confirmation. Until confirmed, apply least privilege and do not grant account/role management, refunds, product activation, or changes to fees/FX.
+Do not provision a third administrator account in the initial release. The specialist roles below describe permission boundaries and future extensibility; they do not mean that five separate administrator accounts must be created. The Second Admin is approved for **customer support only**. Permit only minimum necessary customer/order/top-up status viewing and support replies/escalations when those workflows are implemented. Deny catalog/network/product management, product activation, pricing/FX/fee changes, referral administration, payment reconciliation, Stripe candidate access, refunds, wallet operations, and administrator/role management.
 
 ## Roles and permissions
 
-| Capability | Owner | Catalog reviewer | Finance operator | Support agent | Read-only auditor |
+| Capability | Owner | Catalog reviewer | Finance operator | Support agent (Second Admin) | Read-only auditor |
 |---|---:|---:|---:|---:|---:|
 | Read operational overview | Yes | Yes | Yes | Yes | Yes |
 | View catalog candidates and verification evidence | Yes | Yes | No | No | Yes |
@@ -37,7 +37,7 @@ All permissions are deny-by-default. Role names are not sufficient by themselves
 
 ## Authentication and account lifecycle
 
-1. Provision exactly two initial identities: Owner and Second Admin. Use individually assigned admin identities; never store plaintext passwords or reusable API secrets in the database.
+1. Provision exactly two initial identities: Owner and Second Admin. The Second Admin is assigned Support Agent permissions only. Use individually assigned admin identities; never store plaintext passwords or reusable API secrets in the database.
 2. Prefer the existing trusted identity provider only after verifying issuer, audience, signature, expiry, and subject server-side. Do not trust a client-supplied email or role.
 3. Store a stable provider subject ID, account status, created/updated timestamps, and role assignments. Enforce unique identity subject IDs.
 4. Disabled, suspended, unknown, or unprovisioned identities are denied.
@@ -66,7 +66,7 @@ All permissions are deny-by-default. Role names are not sufficient by themselves
 
 ## Release gates
 
-- No production migration, deployment, account provisioning, key rotation, or disabling of the current key is authorized by this design document. The approved initial account count is two only; provisioning still requires a separately tested implementation and explicit Owner approval.
+- No production migration, deployment, account provisioning, key rotation, or disabling of the current key is authorized by this design document. The approved initial account count is two only; the Second Admin is support-only, and provisioning still requires a separately tested implementation and explicit Owner approval.
 - Do not claim RBAC is implemented until all admin routes and mounted routers enforce tested permissions.
 - Do not merge or deploy solely because this document exists.
 - Catalog technical verification must remain separate from activation; finance and support roles must not gain activation permissions by implication.
