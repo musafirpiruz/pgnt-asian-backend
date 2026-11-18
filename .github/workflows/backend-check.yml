@@ -17,6 +17,7 @@ on:
     branches:
       - main
       - "fix/schema-server-compatibility"
+      - "integration/four-country-fx-dtone-reconciliation"
     paths:
       - "server.js"
       - "migrate.js"
