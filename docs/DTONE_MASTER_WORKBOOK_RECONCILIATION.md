@@ -10,6 +10,42 @@ Workbook rows may use the literal exported column names or normalized camelCase 
 
 The comparison checks product ID, ISO country code, operator, service, subservice, product type, destination currency/amount, and wholesale/retail EUR prices. Numeric values and ascending ranges (for example, `30 - 4000` and `0.50 - 66.33`) are normalized before comparison; EUR price ranges compare endpoint-by-endpoint at cent precision. DT One's ranged detail schema returns `min`/`max` objects for destination and wholesale amounts, which the adapter converts to the same endpoint representation; a null retail price remains missing and is not guessed. Fixed PIN/eSIM products may legitimately have a USD destination currency while their provider wholesale and retail prices remain EUR; destination currency is compared exactly as supplied, never inferred from the country. Blank workbook subservice remains blank and must match a blank provider subservice.
 
+## Verified source workbook composition
+
+The Library copy of `PGNT_ASIAN_TOPUP_MASTER_CATALOG_ALL_COUNTRIES-1.xlsx` was independently read and checked. It contains 1,960 rows and 1,960 unique nonblank Product IDs, with no duplicate IDs. Required comparison fields (Product ID, product name, operator country/name, service, product type, destination currency/amount, wholesale EUR and retail EUR) are populated on every row.
+
+Country totals in the workbook:
+
+| Country | Products | Distinct operators |
+| --- | ---: | ---: |
+| Afghanistan | 542 | 5 |
+| Pakistan | 783 | 8 |
+| India | 147 | 9 |
+| Bangladesh | 488 | 6 |
+
+Observed service/subservice totals in the workbook (these are source values, not yet independently verified against live DT One responses):
+
+| Country | Service | Subservice | Products |
+| --- | --- | --- | ---: |
+| Afghanistan | Mobile | Airtime | 496 |
+| Afghanistan | Mobile | Bundle | 20 |
+| Afghanistan | Mobile | Data | 26 |
+| Pakistan | Mobile | Airtime | 598 |
+| Pakistan | Mobile | Bundle | 118 |
+| Pakistan | Mobile | Data | 63 |
+| Pakistan | eSIM | blank | 4 |
+| India | Mobile | Airtime | 16 |
+| India | Mobile | Bundle | 77 |
+| India | Mobile | Data | 27 |
+| India | Utilities | Television | 20 |
+| India | eSIM | blank | 7 |
+| Bangladesh | Mobile | Airtime | 308 |
+| Bangladesh | Mobile | Bundle | 104 |
+| Bangladesh | Mobile | Data | 73 |
+| Bangladesh | eSIM | blank | 3 |
+
+Observed product type totals are `FIXED_VALUE_RECHARGE=1929`, `RANGED_VALUE_RECHARGE=14`, `FIXED_VALUE_PIN_PURCHASE=14`, and `RANGED_VALUE_PAYMENT=3`. The current workbook contains no `RANGED_VALUE_PIN_PURCHASE` rows. The parser accepts all five official DT One enum values so a future valid workbook is not rejected, but the fifth type must not be added to current workbook counts or treated as present.
+
 ## Outcomes
 
 - `MATCHED`: every compared field agrees; candidate only, not approval.
