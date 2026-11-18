@@ -1,6 +1,13 @@
 -- Durable server-side cursor for operator catalog verification.
 -- Progress is scoped to the current approved sample and never changes activation.
 BEGIN;
+ALTER TABLE catalog_verification_audit
+  DROP CONSTRAINT IF EXISTS catalog_verification_audit_event_type_check;
+ALTER TABLE catalog_verification_audit
+  ADD CONSTRAINT catalog_verification_audit_event_type_check CHECK (event_type IN (
+    'sample_approved','sample_revoked','product_verified','product_rejected',
+    'batch_previewed','batch_applied','product_retry_queued'
+  ));
 CREATE TABLE IF NOT EXISTS country_operator_catalog_verification_progress (
   operator_id BIGINT PRIMARY KEY REFERENCES country_operators(id) ON DELETE RESTRICT,
   approval_id BIGINT NOT NULL REFERENCES country_operator_approvals(id) ON DELETE RESTRICT,
