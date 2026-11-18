@@ -3452,6 +3452,16 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
       [operatorId]);
     const lockedOperator=await client.query(
       'SELECT id,provider_operator_id,active FROM country_operators WHERE id=$1 FOR UPDATE',[operatorId]);
+    const lockedProgress=await client.query(
+      'SELECT last_processed_product_catalog_id FROM country_operator_catalog_verification_progress WHERE operator_id=$1 AND approval_id=$2 FOR UPDATE',
+      [operatorId,approval.id]);
+    const persistedCursor=lockedProgress.rowCount
+      ? Number(lockedProgress.rows[0].last_processed_product_catalog_id) : 0;
+
+    if(persistedCursor!==afterProductCatalogId){
+      await client.query('ROLLBACK');
+      return res.status(409).json({error:'Another verification page advanced the saved cursor. Reload and continue.' ,nextAfterProductCatalogId:persistedCursor});
+    }
     if(lockedApproval.rowCount!==1||lockedOperator.rowCount!==1||lockedOperator.rows[0].active||
        String(lockedApproval.rows[0].provider_operator_id)!==String(approval.provider_operator_id)||
        String(lockedOperator.rows[0].provider_operator_id||'')!==String(approval.provider_operator_id)){
@@ -3528,6 +3538,7 @@ app.post('/api/admin/country-operators/:operatorId/catalog-retry-reviewed', requ
        JOIN country_operator_products m ON m.product_catalog_id=v.product_catalog_id
        JOIN product_catalog p ON p.id=m.product_catalog_id
        WHERE a.operator_id=$1 AND a.status='approved' AND v.event_type='product_rejected'
+         AND v.evidence->>'approvalId'=a.id::text
          AND m.verified_at IS NULL AND m.active=FALSE AND p.active=FALSE
        GROUP BY a.id`,[operatorId]);
     if(!result.rowCount||result.rows[0].first_reviewed===null)
