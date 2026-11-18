@@ -1,6 +1,6 @@
 # PGNT ASIAN TOPUP — Admin Identity and RBAC Design
 
-Status: design only; no admin accounts or permissions are enabled by this document.
+Status: backend RBAC foundation and route guard are implemented in the feature branch; Admin Panel Firebase sign-in and production activation are not implemented.
 
 ## Security objective
 
@@ -35,14 +35,16 @@ Do not provision a third administrator account in the initial release. The speci
 
 All permissions are deny-by-default. Role names are not sufficient by themselves: each route must require a named permission. High-risk actions (activation, pricing changes, refunds, role changes) require explicit confirmation and an audit event containing actor ID, action, target, timestamp, request ID, and before/after evidence with secrets and personal data redacted.
 
-## First implementation slice (code added, not yet connected to routes)
+## Implemented backend slice (feature branch only; not deployed)
 
-- `admin-rbac.js` now contains a fail-closed policy module that accepts only two distinct, explicitly configured Firebase UIDs: one Owner and one Support Admin.
+- `admin-rbac.js` contains a fail-closed policy module that accepts only two distinct, explicitly configured Firebase UIDs: one Owner and one Support Admin.
 - The module derives roles from the verified `req.auth.uid` produced by the existing Firebase token-verification middleware. It does not trust request-body roles, headers, query parameters, or unverified token claims.
-- The second UID receives only `support.orders.read_limited`, `support.tickets.read`, `support.tickets.reply`, and `support.tickets.escalate`.
+- The second UID receives only `support.tickets.read` and `support.tickets.reply` for the existing support inbox endpoints. The unused `support.orders.read_limited` and `support.tickets.escalate` permissions are reserved but no route is mapped to them.
 - All other identities are denied. Missing UIDs, identical UIDs, or missing Firebase middleware return a fail-closed configuration response.
-- `tests/admin-rbac.test.js` covers configuration failure, Owner assignment, support-only assignment, unknown identity denial, named permission enforcement, and empty permission rejection.
-- **Important:** this first slice is not yet wired into `server.js` routes or the Admin Panel. The existing shared `ADMIN_API_KEY` remains the active gate. Do not set up or share any UID/credential in chat; account provisioning and route migration are separate steps.
+- `server.js` now routes admin requests through Firebase identity/RBAC when both `ADMIN_OWNER_FIREBASE_UID` and `ADMIN_SUPPORT_FIREBASE_UID` are configured. The legacy shared-key path remains Owner-equivalent only while RBAC is not configured.
+- Every admin route defaults to Owner-only. Only `GET /api/admin/support/tickets` and `PATCH /api/admin/support/tickets/:ticketId` map to Support permissions. Support ticket responses hide the customer's phone number and charge amount from the Support role.
+- `tests/admin-rbac.test.js` covers configuration failure, Owner assignment, support-only assignment, unknown identity denial, named permission enforcement, Owner-only route boundaries, and empty permission rejection.
+- **Important:** the Admin Panel still uses `x-admin-api-key`; its Firebase browser sign-in is not yet implemented. Therefore do not configure the two UID environment variables on Render yet, because doing so would switch API authentication to Firebase bearer tokens and the existing Admin Panel would stop working. Do not share UIDs, credentials, or service-account JSON in chat.
 
 ## Authentication and account lifecycle
 
@@ -65,8 +67,8 @@ All permissions are deny-by-default. Role names are not sufficient by themselves
 
 ## Safe migration plan
 
-1. Inventory every `/api/admin` route and every mounted admin router; map each to a permission.
-2. Implement and test the identity-verification adapter and permission middleware without changing production behavior. The initial policy module is in `admin-rbac.js`; it still needs route integration and Admin Panel login support.
+1. Inventory every `/api/admin` route and every mounted admin router; map each to a permission. The current backend guard defaults all routes to Owner-only except the two support inbox routes.
+2. Implement and test the identity-verification adapter and permission middleware without changing production behavior. Firebase identity and route-level RBAC now exist in the feature branch; the Admin Panel login flow remains outstanding.
 3. Add admin identity and role tables with reversible, additive migrations; do not seed a default password or public account.
 4. Add tests for missing/invalid/expired token, wrong issuer/audience, disabled account, unknown subject, missing permission, role escalation, last-owner protection, audit failure rollback, and each high-risk route.
 5. Add a controlled owner-provisioning procedure using a verified identity subject. Keep the shared key as a temporary emergency compatibility path only during a documented cutover window.
@@ -76,6 +78,6 @@ All permissions are deny-by-default. Role names are not sufficient by themselves
 ## Release gates
 
 - No production migration, deployment, account provisioning, key rotation, or disabling of the current key is authorized by this design document. The approved initial account count is two only; the Second Admin is support-only, and provisioning still requires a separately tested implementation and explicit Owner approval.
-- Do not claim RBAC is implemented until all admin routes and mounted routers enforce tested permissions.
+- Backend route-level RBAC is implemented in this feature branch, but do not call the full administrator system complete until the Admin Panel uses Firebase sign-in and all mounted admin routers have dedicated route-level integration tests.
 - Do not merge or deploy solely because this document exists.
 - Catalog technical verification must remain separate from activation; finance and support roles must not gain activation permissions by implication.
