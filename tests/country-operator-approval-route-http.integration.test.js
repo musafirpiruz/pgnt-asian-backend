@@ -43,8 +43,11 @@ test('country operator approval HTTP routes persist samples safely and roll back
 }, async () => {
   const db = new Pool({ connectionString: databaseUrl, max: 4 });
   const providerProducts = new Map();
+  const providerFailures = new Map();
   const providerServer = http.createServer((req, res) => {
     const id = decodeURIComponent((req.url || '').split('/').pop());
+    const failure = providerFailures.get(id);
+    if (failure) return res.writeHead(failure).end(JSON.stringify({ error: 'simulated provider failure' }));
     const product = providerProducts.get(id);
     res.setHeader('content-type', 'application/json');
     if (!product) return res.writeHead(404).end(JSON.stringify({ error: 'not found' }));
@@ -261,6 +264,28 @@ test('country operator approval HTTP routes persist samples safely and roll back
     providerProducts.set(String(autoMismatch.productId),
       providerProduct(autoMismatch.productId, 'different-provider-operator-id', good.operatorName, autoMismatch.amount));
 
+    const autoNotFoundProduct = await db.query(
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,113.13,'AFN',2147483008,350,300,FALSE,NOW()) RETURNING id",
+      [good.operatorName],
+    );
+    const autoNotFound = {operatorId:good.operatorId,productCatalogId:autoNotFoundProduct.rows[0].id,
+      productId:2147483008,operatorName:good.operatorName,amount:113.13};
+    fixtures.push(autoNotFound);
+    await db.query('INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
+      [autoNotFound.productCatalogId,good.operatorId]);
+    providerFailures.set(String(autoNotFound.productId),404);
+
+    const autoUnavailableProduct = await db.query(
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,114.14,'AFN',2147483009,350,300,FALSE,NOW()) RETURNING id",
+      [good.operatorName],
+    );
+    const autoUnavailable = {operatorId:good.operatorId,productCatalogId:autoUnavailableProduct.rows[0].id,
+      productId:2147483009,operatorName:good.operatorName,amount:114.14};
+    fixtures.push(autoUnavailable);
+    await db.query('INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
+      [autoUnavailable.productCatalogId,good.operatorId]);
+    providerFailures.set(String(autoUnavailable.productId),503);
+
     const autoResponse = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
@@ -268,9 +293,11 @@ test('country operator approval HTTP routes persist samples safely and roll back
     });
     assert.equal(autoResponse.status, 200);
     const autoBody = await autoResponse.json();
-    assert.equal(autoBody.requestedCount, 2);
+    assert.equal(autoBody.requestedCount, 4);
     assert.equal(autoBody.verifiedCount, 1);
-    assert.equal(autoBody.reviewCount, 1);
+    assert.equal(autoBody.reviewCount, 3);
+    assert.ok(autoBody.items.some(item => item.productCatalogId === autoNotFound.productCatalogId && item.reasons.includes('provider_product_not_found')));
+    assert.ok(autoBody.items.some(item => item.productCatalogId === autoUnavailable.productCatalogId && item.reasons.includes('provider_unavailable')));
     assert.equal(autoBody.activationChanged, false);
     assert.equal(autoBody.transactionCreated, false);
     const autoState = await db.query(
@@ -289,6 +316,28 @@ test('country operator approval HTTP routes persist samples safely and roll back
     );
     assert.equal(autoMismatchState.rows[0].verified_at, null);
     assert.equal(autoMismatchState.rows[0].rejected_audits, 1);
+
+    const retryResponse = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-retry-reviewed', {
+      method: 'POST', headers: {'content-type':'application/json','x-admin-api-key':adminKey},
+      body: JSON.stringify({confirmRetry:true}),
+    });
+    assert.equal(retryResponse.status,200);
+    const retryBody=await retryResponse.json();
+    assert.equal(retryBody.retryQueued,true);
+    assert.equal(retryBody.verificationStarted,false);
+    assert.equal(retryBody.activationChanged,false);
+    assert.equal(retryBody.transactionCreated,false);
+    const retryAudit=await db.query(
+      "SELECT COUNT(*)::int AS count FROM catalog_verification_audit WHERE operator_id=$1 AND event_type='product_retry_queued' AND product_catalog_id=$2",
+      [good.operatorId,autoMismatch.productCatalogId]);
+    assert.equal(retryAudit.rows[0].count,1);
+    const retryRun=await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify',{
+      method:'POST',headers:{'content-type':'application/json','x-admin-api-key':adminKey},
+      body:JSON.stringify({limit:25}),
+    });
+    assert.equal(retryRun.status,200);
+    const retryRunBody=await retryRun.json();
+    assert.ok(retryRunBody.items.some(item=>item.productCatalogId===autoMismatch.productCatalogId));
 
     const duplicate = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/approve-sample', {
       method: 'POST',
