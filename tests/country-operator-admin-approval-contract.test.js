@@ -84,6 +84,7 @@ test('admin panel exposes one-sample approval and bounded automatic verification
     '/approve-sample',
     'confirmApproval:true',
     '/catalog-auto-verify',
+    '/catalog-retry-reviewed',
     'limit:25',
     'result.verifiedCount',
     'result.reviewCount',
@@ -99,4 +100,15 @@ test('admin panel inline JavaScript parses successfully', () => {
   assert.ok(start >= 0 && end > start, 'expected one inline admin panel script');
   assert.equal(adminPanel.indexOf('<script>', start + 1), -1, 'unexpected second inline script');
   assert.doesNotThrow(() => new vm.Script(adminPanel.slice(start + 8, end)));
+});
+
+
+test('durable catalog cursor and explicit reviewed-product retry are server-side', () => {
+  assert.match(server, /country_operator_catalog_verification_progress/);
+  assert.match(server, /requestedAfterProductCatalogId!==afterProductCatalogId/);
+  assert.match(server, /catalog-retry-reviewed/);
+  assert.match(server, /confirmRetry!==true/);
+  assert.match(server, /verificationStarted:false/);
+  assert.match(migration, /country_operator_catalog_progress/);
+  assert.match(migration, /last_processed_product_catalog_id/);
 });
