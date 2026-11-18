@@ -3319,7 +3319,7 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
     return res.status(201).json({approved:true,approvalId:approval.rows[0].id,verifiedAt:approval.rows[0].verified_at,
       operatorActive:false,productMappingActive:false,productActive:false,activationChanged:false,transactionCreated:false});
   }catch(error){
-    await client.query('ROLLBACK').catch(()=>{});
+    if(client) await client.query('ROLLBACK').catch(()=>{});
     if(error.code==='23505') return res.status(409).json({approved:false,error:'An approved sample already exists for this operator.'});
     console.error('Country operator sample approval failed:',error.message);
     return res.status(500).json({approved:false,error:'Could not safely approve the representative product.'});
