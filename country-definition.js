@@ -18,7 +18,7 @@ function validateCountryDefinition(input) {
   const code = String(input.countryCode || '').trim().toUpperCase();
   const currency = String(input.destinationCurrency || '').trim().toUpperCase();
   const callingCode = String(input.callingCode || '').trim();
-  const provider = String(input.provider || 'dtone').trim().toLowerCase();
+  const provider = String(input.provider || '').trim().toLowerCase();
   const providerCountryCode = input.providerCountryCode == null
     ? null : String(input.providerCountryCode).trim();
   const minDigits = Number(input.phoneMinDigits);
@@ -38,7 +38,7 @@ function validateCountryDefinition(input) {
     errors.push('invalid_phone_max_digits');
   }
   if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(provider)) errors.push('invalid_provider_key');
-  if (providerCountryCode !== null && !/^[A-Z0-9_-]{2,8}$/.test(providerCountryCode)) {
+  if (providerCountryCode === null || !/^[A-Z0-9_-]{2,8}$/.test(providerCountryCode)) {
     errors.push('invalid_provider_country_code');
   }
   if (!languages.length || languages.length > 20) errors.push('invalid_language_list');
