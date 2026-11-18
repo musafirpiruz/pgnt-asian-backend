@@ -268,7 +268,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
       body: JSON.stringify({
-        productCatalogIds: [previewGood.productCatalogId, previewBad.productCatalogId],
+        productCatalogIds: [Number(previewGood.productCatalogId), Number(previewBad.productCatalogId)],
         dryRun: true,
       }),
     });
