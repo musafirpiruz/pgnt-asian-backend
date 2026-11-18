@@ -35,6 +35,15 @@ Do not provision a third administrator account in the initial release. The speci
 
 All permissions are deny-by-default. Role names are not sufficient by themselves: each route must require a named permission. High-risk actions (activation, pricing changes, refunds, role changes) require explicit confirmation and an audit event containing actor ID, action, target, timestamp, request ID, and before/after evidence with secrets and personal data redacted.
 
+## First implementation slice (code added, not yet connected to routes)
+
+- `admin-rbac.js` now contains a fail-closed policy module that accepts only two distinct, explicitly configured Firebase UIDs: one Owner and one Support Admin.
+- The module derives roles from the verified `req.auth.uid` produced by the existing Firebase token-verification middleware. It does not trust request-body roles, headers, query parameters, or unverified token claims.
+- The second UID receives only `support.orders.read_limited`, `support.tickets.read`, `support.tickets.reply`, and `support.tickets.escalate`.
+- All other identities are denied. Missing UIDs, identical UIDs, or missing Firebase middleware return a fail-closed configuration response.
+- `tests/admin-rbac.test.js` covers configuration failure, Owner assignment, support-only assignment, unknown identity denial, named permission enforcement, and empty permission rejection.
+- **Important:** this first slice is not yet wired into `server.js` routes or the Admin Panel. The existing shared `ADMIN_API_KEY` remains the active gate. Do not set up or share any UID/credential in chat; account provisioning and route migration are separate steps.
+
 ## Authentication and account lifecycle
 
 1. Provision exactly two initial identities: Owner and Second Admin. The Second Admin is assigned Support Agent permissions only. Use individually assigned admin identities; never store plaintext passwords or reusable API secrets in the database.
@@ -57,7 +66,7 @@ All permissions are deny-by-default. Role names are not sufficient by themselves
 ## Safe migration plan
 
 1. Inventory every `/api/admin` route and every mounted admin router; map each to a permission.
-2. Implement and test the identity-verification adapter and permission middleware without changing production behavior.
+2. Implement and test the identity-verification adapter and permission middleware without changing production behavior. The initial policy module is in `admin-rbac.js`; it still needs route integration and Admin Panel login support.
 3. Add admin identity and role tables with reversible, additive migrations; do not seed a default password or public account.
 4. Add tests for missing/invalid/expired token, wrong issuer/audience, disabled account, unknown subject, missing permission, role escalation, last-owner protection, audit failure rollback, and each high-risk route.
 5. Add a controlled owner-provisioning procedure using a verified identity subject. Keep the shared key as a temporary emergency compatibility path only during a documented cutover window.
