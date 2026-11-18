@@ -114,6 +114,8 @@ test('durable catalog cursor and explicit reviewed-product retry are server-side
   assert.match(server, /confirmRetry!==true/);
   assert.match(server, /product_retry_queued/);
   assert.match(server, /owner_confirmed_retry/);
+  assert.match(server, /SELECT id FROM country_operator_approvals WHERE operator_id=\$1 AND status='approved' FOR UPDATE/);
+  assert.doesNotMatch(server, /GROUP BY a\.id FOR UPDATE OF a/);
   assert.match(progressMigration, /product_retry_queued/);
   assert.match(server, /verificationStarted:false/);
   assert.match(progressMigration, /country_operator_catalog_progress/);
