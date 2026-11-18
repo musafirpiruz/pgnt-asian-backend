@@ -3426,7 +3426,7 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
       try{
         const response=await fetch(DTONE_API_BASE_URL+'/v1/products/'+encodeURIComponent(row.product_id),{
           method:'GET',headers:{Authorization:getDtOneAuthHeader(),Accept:'application/json'},
-          signal:AbortSignal.timeout(15000)});
+          signal:AbortSignal.timeout(catalogVerificationTimeoutMs)});
         if(!response.ok){
           items.push({productCatalogId:row.product_catalog_id,verified:false,
             reasons:[response.status===404?'provider_product_not_found':'provider_unavailable'],providerStatus:response.status});
