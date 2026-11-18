@@ -3534,7 +3534,10 @@ app.post('/api/admin/country-operators/:operatorId/catalog-retry-reviewed', requ
   try{
     client=await pool.connect();
     await client.query('BEGIN');
-    const result=await client.query(
+    const lockedApproval=await client.query(
+      "SELECT id FROM country_operator_approvals WHERE operator_id=$1 AND status='approved' FOR UPDATE",
+      [operatorId]);
+    const result=lockedApproval.rowCount===1 ? await client.query(
       `SELECT a.id AS approval_id,MIN(v.product_catalog_id)::bigint AS first_reviewed
        FROM country_operator_approvals a
        JOIN catalog_verification_audit v ON v.operator_id=a.operator_id
@@ -3543,7 +3546,7 @@ app.post('/api/admin/country-operators/:operatorId/catalog-retry-reviewed', requ
        WHERE a.operator_id=$1 AND a.status='approved' AND v.event_type='product_rejected'
          AND v.evidence->>'approvalId'=a.id::text
          AND m.verified_at IS NULL AND m.active=FALSE AND p.active=FALSE
-       GROUP BY a.id FOR UPDATE OF a`,[operatorId]);
+       GROUP BY a.id`,[operatorId]) : {rowCount:0,rows:[]};
     if(!result.rowCount||result.rows[0].first_reviewed===null){
       await client.query('ROLLBACK');
       return res.status(404).json({error:'No rejected inactive products are available for an explicit retry.'});
