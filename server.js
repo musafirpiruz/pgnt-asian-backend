@@ -18,7 +18,7 @@ const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
 const { evaluateDtOneCatalogMatch } = require('./catalog-auto-verification');
 
-const PGNT_MIN_AMOUNT = 10;
+const PGNT_MIN_AMOUNT = 75;
 const PGNT_MAX_AMOUNT = 3000;
 
 const app = express();
