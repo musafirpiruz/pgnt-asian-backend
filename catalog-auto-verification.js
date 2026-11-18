@@ -61,6 +61,10 @@ function evaluateDtOneCatalogMatch(catalog, providerProduct) {
   }
 
   const providerOperator = String(providerProduct.operator?.name || '').trim();
+  const providerOperatorId = String(providerProduct.operator?.id ?? '').trim();
+  if (!providerOperatorId || !/^[A-Za-z0-9_-]{1,80}$/.test(providerOperatorId)) {
+    reasons.push('missing_or_invalid_provider_operator_id');
+  }
   if (!providerOperator ||
       normalizeOperator(String(catalog.country || '').toUpperCase(), catalog.operator) !==
       normalizeOperator(providerCountry || '', providerOperator)) {
@@ -107,8 +111,7 @@ function evaluateDtOneCatalogMatch(catalog, providerProduct) {
     reasons,
     provider: reasons.length === 0 ? {
       productId: providerProductId,
-      operatorId: providerProduct.operator?.id == null
-        ? null : String(providerProduct.operator.id),
+      operatorId: providerOperatorId,
       country: providerCountry,
       operator: providerOperator,
       currency: providerCurrency,
