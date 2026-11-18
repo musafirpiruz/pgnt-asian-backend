@@ -239,7 +239,14 @@ BEGIN
   IF to_regclass(current_schema() || '.country_localizations') IS NOT NULL THEN
     FOR constraint_name IN
       SELECT c.conname FROM pg_constraint c
+      JOIN pg_attribute local_col
+        ON local_col.attrelid=c.conrelid AND local_col.attnum=c.conkey[1]
+      JOIN pg_attribute parent_col
+        ON parent_col.attrelid=c.confrelid AND parent_col.attnum=c.confkey[1]
       WHERE c.conrelid='country_localizations'::regclass AND c.contype='f'
+        AND array_length(c.conkey,1)=1 AND array_length(c.confkey,1)=1
+        AND local_col.attname='country_code'
+        AND parent_col.attname IN ('code','country_code')
         AND c.confrelid <> 'country_registry'::regclass
     LOOP
       EXECUTE format('ALTER TABLE country_localizations DROP CONSTRAINT %I', constraint_name);
@@ -258,7 +265,14 @@ BEGIN
   IF to_regclass(current_schema() || '.country_operators') IS NOT NULL THEN
     FOR constraint_name IN
       SELECT c.conname FROM pg_constraint c
+      JOIN pg_attribute local_col
+        ON local_col.attrelid=c.conrelid AND local_col.attnum=c.conkey[1]
+      JOIN pg_attribute parent_col
+        ON parent_col.attrelid=c.confrelid AND parent_col.attnum=c.confkey[1]
       WHERE c.conrelid='country_operators'::regclass AND c.contype='f'
+        AND array_length(c.conkey,1)=1 AND array_length(c.confkey,1)=1
+        AND local_col.attname='country_code'
+        AND parent_col.attname IN ('code','country_code')
         AND c.confrelid <> 'country_registry'::regclass
     LOOP
       EXECUTE format('ALTER TABLE country_operators DROP CONSTRAINT %I', constraint_name);
