@@ -89,9 +89,9 @@ test('country operator approval HTTP routes persist samples safely and roll back
       "INSERT INTO country_registry (country_code,country_name,destination_currency,calling_code,phone_min_digits,phone_max_digits,provider,status) VALUES ('AF','Afghanistan','AFN','+93',9,9,'dtone','legacy') ON CONFLICT (country_code) DO NOTHING",
     );
 
-    const good = await fixture('good', 2147483001, 101.01, null);
-    const mismatch = await fixture('mismatch', 2147483002, 102.02, 'canonical-provider-operator');
-    const rollback = await fixture('rollback', 2147483003, 103.03, null);
+    const good = await fixture('good', 2147483001, 101, null);
+    const mismatch = await fixture('mismatch', 2147483002, 102, 'canonical-provider-operator');
+    const rollback = await fixture('rollback', 2147483003, 103, null);
 
     providerProducts.set(String(good.productId), providerProduct(good.productId, 'provider-operator-good', good.operatorName, good.amount));
     providerProducts.set(String(mismatch.productId), providerProduct(mismatch.productId, 'different-provider-operator', mismatch.operatorName, mismatch.amount));
@@ -228,7 +228,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
     // One manually approved sample should unlock exact-identity automatic verification
     // for another denomination on the same operator, without another owner approval.
     const autoProduct = await db.query(
-      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,111.11,'AFN',2147483006,350,300,FALSE,NOW()) RETURNING id",
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,111,'AFN',2147483006,350,300,FALSE,NOW()) RETURNING id",
       [good.operatorName],
     );
     const autoCandidate = {
@@ -236,7 +236,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
       productCatalogId: autoProduct.rows[0].id,
       productId: 2147483006,
       operatorName: good.operatorName,
-      amount: 111.11,
+      amount: 111,
     };
     fixtures.push(autoCandidate);
     await db.query(
@@ -247,7 +247,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
       providerProduct(autoCandidate.productId, 'provider-operator-good', good.operatorName, autoCandidate.amount));
 
     const autoMismatchProduct = await db.query(
-      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,112.12,'AFN',2147483007,350,300,FALSE,NOW()) RETURNING id",
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,112,'AFN',2147483007,350,300,FALSE,NOW()) RETURNING id",
       [good.operatorName],
     );
     const autoMismatch = {
@@ -255,7 +255,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
       productCatalogId: autoMismatchProduct.rows[0].id,
       productId: 2147483007,
       operatorName: good.operatorName,
-      amount: 112.12,
+      amount: 112,
     };
     fixtures.push(autoMismatch);
     await db.query(
@@ -267,33 +267,33 @@ test('country operator approval HTTP routes persist samples safely and roll back
       providerProduct(autoMismatch.productId, 'different-provider-operator-id', good.operatorName, autoMismatch.amount));
 
     const autoNotFoundProduct = await db.query(
-      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,113.13,'AFN',2147483008,350,300,FALSE,NOW()) RETURNING id",
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,113,'AFN',2147483008,350,300,FALSE,NOW()) RETURNING id",
       [good.operatorName],
     );
     const autoNotFound = {operatorId:good.operatorId,productCatalogId:autoNotFoundProduct.rows[0].id,
-      productId:2147483008,operatorName:good.operatorName,amount:113.13};
+      productId:2147483008,operatorName:good.operatorName,amount:113};
     fixtures.push(autoNotFound);
     await db.query('INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
       [autoNotFound.productCatalogId,good.operatorId]);
     providerFailures.set(String(autoNotFound.productId),404);
 
     const autoUnavailableProduct = await db.query(
-      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,114.14,'AFN',2147483009,350,300,FALSE,NOW()) RETURNING id",
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,114,'AFN',2147483009,350,300,FALSE,NOW()) RETURNING id",
       [good.operatorName],
     );
     const autoUnavailable = {operatorId:good.operatorId,productCatalogId:autoUnavailableProduct.rows[0].id,
-      productId:2147483009,operatorName:good.operatorName,amount:114.14};
+      productId:2147483009,operatorName:good.operatorName,amount:114};
     fixtures.push(autoUnavailable);
     await db.query('INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
       [autoUnavailable.productCatalogId,good.operatorId]);
     providerFailures.set(String(autoUnavailable.productId),503);
 
     const autoTimeoutProduct = await db.query(
-      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,115.15,'AFN',2147483010,350,300,FALSE,NOW()) RETURNING id",
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,115,'AFN',2147483010,350,300,FALSE,NOW()) RETURNING id",
       [good.operatorName],
     );
     const autoTimeout = {operatorId:good.operatorId,productCatalogId:autoTimeoutProduct.rows[0].id,
-      productId:2147483010,operatorName:good.operatorName,amount:115.15};
+      productId:2147483010,operatorName:good.operatorName,amount:115};
     fixtures.push(autoTimeout);
     await db.query('INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
       [autoTimeout.productCatalogId,good.operatorId]);
@@ -410,17 +410,17 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(rollbackState.rows[0].mapping_verified_at, null);
     assert.equal(rollbackState.rows[0].retail_price, 350);
     // Operator-scoped batch preview is bounded, mapped-only, audited, and never activates.
-    const previewGood = await fixture('preview-good', 2147483004, 104.04, null);
+    const previewGood = await fixture('preview-good', 2147483004, 104, null);
     const previewBadProduct = await db.query(
       "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,$2,'AFN',$3,350,300,FALSE,NOW()) RETURNING id",
-      [previewGood.operatorName, 105.05, 2147483005],
+      [previewGood.operatorName, 105, 2147483005],
     );
     const previewBad = {
       operatorId: previewGood.operatorId,
       productCatalogId: previewBadProduct.rows[0].id,
       productId: 2147483005,
       operatorName: previewGood.operatorName,
-      amount: 105.05,
+      amount: 105,
     };
     fixtures.push(previewBad);
     await db.query(
