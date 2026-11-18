@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const adminPanel = fs.readFileSync(path.join(__dirname, '..', 'admin-panel.html'), 'utf8');
 const migration = fs.readFileSync(
   path.join(__dirname, '..', 'migrations', '024_country_provider_approval_audit.sql'),
   'utf8'
@@ -59,4 +60,34 @@ test('approval audit schema restricts actors, outcomes, and one active sample pe
   assert.match(migration, /WHERE status = 'approved'/);
   assert.match(migration, /'admin_user','admin_api_key','system'/);
   assert.match(migration, /'success','rejected','preview'/);
+});
+
+test('operator overview endpoint is authenticated and reports read-only verification counts', () => {
+  const route = routeBetween(
+    "app.get('/api/admin/country-operators',",
+    "app.get('/api/admin/country-operators/:operatorId/catalog-candidates'"
+  );
+  assert.match(route, /requireAdmin/);
+  assert.match(route, /COUNT\(DISTINCT p\.id\)/);
+  assert.match(route, /country_operator_approvals/);
+  assert.match(route, /catalog_verification_audit/);
+  assert.doesNotMatch(route, /INSERT INTO|UPDATE\s+(?:country_|product_)/i);
+});
+
+test('admin panel exposes one-sample approval and bounded automatic verification controls', () => {
+  for (const token of [
+    'id="loadOperatorCatalog"',
+    'id="operatorCatalog"',
+    '/api/admin/country-operators',
+    '/catalog-candidates',
+    '/approve-sample',
+    'confirmApproval:true',
+    '/catalog-auto-verify',
+    'limit:25',
+    'result.verifiedCount',
+    'result.reviewCount',
+    'activationChanged',
+  ]) assert.ok(adminPanel.includes(token), 'missing admin panel workflow element: ' + token);
+  assert.match(adminPanel, /if\(!confirm\(/);
+  assert.match(adminPanel, /products not activated|محصول یا شبکه فعاله نه شوه/);
 });
