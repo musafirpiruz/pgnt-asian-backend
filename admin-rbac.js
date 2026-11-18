@@ -17,6 +17,9 @@ function permissionForAdminRequest(req) {
   if (method === 'GET' && path === '/api/admin/support/tickets') {
     return 'support.tickets.read';
   }
+  if (method === 'GET' && path === '/api/admin/session') {
+    return 'support.orders.read_limited';
+  }
   if (method === 'PATCH' && /^\/api\/admin\/support\/tickets\/\d+$/.test(path)) {
     return 'support.tickets.reply';
   }
