@@ -2975,31 +2975,43 @@ async function syncStripeRefundStatus(charge) {
 // =====================================================
 
 // Admin authentication.
-// Set a long, random ADMIN_API_KEY in Render.
+// Legacy shared-key mode remains Owner-equivalent until Firebase RBAC and the
+// browser sign-in flow are both configured. Never configure the UID variables
+// before the Admin Panel has been migrated to Firebase bearer tokens.
+let adminRbac = null;
+let permissionForAdminRequest = null;
+
 function requireAdmin(req, res, next) {
-  if (!ADMIN_API_KEY) {
-    return res.status(503).json({
-      error: 'Admin authentication is not configured.',
+  if (adminRbac && adminRbac.configured) {
+    return adminRbac.authenticateAdmin(req, res, () => {
+      const permission = permissionForAdminRequest(req);
+      return adminRbac.requireAdminPermission(permission)(req, res, next);
     });
   }
 
-  const suppliedKey = String(
-    req.headers['x-admin-api-key'] || ''
-  );
+  if (!ADMIN_API_KEY) {
+    return res.status(503).json({
+      error: 'Admin authentication is not configured.',
+      code: 'ADMIN_AUTH_NOT_CONFIGURED',
+    });
+  }
 
+  const suppliedKey = String(req.headers['x-admin-api-key'] || '');
   const expected = Buffer.from(ADMIN_API_KEY);
   const supplied = Buffer.from(suppliedKey);
-
-  const valid =
-    expected.length === supplied.length &&
+  const valid = expected.length === supplied.length &&
     crypto.timingSafeEqual(expected, supplied);
 
   if (!valid) {
     return res.status(401).json({
       error: 'Unauthorized.',
+      code: 'ADMIN_AUTH_REJECTED',
     });
   }
 
+  // Legacy shared-key access is treated as Owner. This fallback must be
+  // removed after the Firebase browser sign-in migration is verified.
+  req.admin = Object.freeze({ uid: 'legacy-admin-key', role: 'owner', permissions: Object.freeze(['*']) });
   return next();
 }
 
@@ -3202,6 +3214,16 @@ const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
   verifyIdToken: firebaseAdminConfig.verifyIdToken,
   requirePhoneNumber: true,
 });
+
+// Firebase UID allow-list is optional during the staged rollout. It activates
+// role enforcement only after both distinct administrator UIDs are configured.
+const { createAdminRbac, permissionForAdminRequest: resolveAdminPermission } = require('./admin-rbac');
+adminRbac = createAdminRbac({
+  firebaseAuthMiddleware,
+  ownerUid: process.env.ADMIN_OWNER_FIREBASE_UID,
+  supportUid: process.env.ADMIN_SUPPORT_FIREBASE_UID,
+});
+permissionForAdminRequest = resolveAdminPermission;
 
 // International customer phone authentication (Firebase; SMS remains deferred).
 require('./phone-auth').registerPhoneAuthRoutes({
