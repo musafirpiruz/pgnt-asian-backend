@@ -3386,10 +3386,8 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
         const providerProduct=await response.json();
         const evaluated=evaluateDtOneCatalogMatch({...row,active:row.product_active},providerProduct);
         const reasons=[...evaluated.reasons];
-        if(String(evaluated.provider?.operatorId||'')!==String(approval.provider_operator_id))
-          reasons.push('approved_sample_provider_operator_id_mismatch');
         if(String(providerProduct?.operator?.id??'')!==String(approval.provider_operator_id))
-          if(!reasons.includes('approved_sample_provider_operator_id_mismatch')) reasons.push('approved_sample_provider_operator_id_mismatch');
+          reasons.push('approved_sample_provider_operator_id_mismatch');
         items.push({productCatalogId:row.product_catalog_id,providerProductId:String(row.product_id),
           verified:reasons.length===0,reasons,
           evidence:reasons.length===0?evaluated.provider:null});
