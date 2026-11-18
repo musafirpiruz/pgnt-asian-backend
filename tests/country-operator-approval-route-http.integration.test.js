@@ -47,6 +47,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
   const providerServer = http.createServer((req, res) => {
     const id = decodeURIComponent((req.url || '').split('/').pop());
     const failure = providerFailures.get(id);
+    if (failure && failure.delay) return setTimeout(() => res.writeHead(failure.status || 200).end(JSON.stringify({ error: 'simulated provider delay' })), failure.delay);
     if (failure) return res.writeHead(failure).end(JSON.stringify({ error: 'simulated provider failure' }));
     const product = providerProducts.get(id);
     res.setHeader('content-type', 'application/json');
@@ -116,6 +117,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
         DTONE_API_KEY: 'ci-local-provider-fixture-key',
         DTONE_API_SECRET: 'ci-local-provider-fixture-secret',
         DTONE_API_BASE_URL: 'http://127.0.0.1:' + providerPort,
+        DTONE_CATALOG_VERIFY_TIMEOUT_MS: '50',
         STRIPE_SECRET_KEY: 'sk_test_ci_country_approval_no_network',
         STRIPE_WEBHOOK_SECRET: '',
         NODE_ENV: 'test',
@@ -286,6 +288,17 @@ test('country operator approval HTTP routes persist samples safely and roll back
       [autoUnavailable.productCatalogId,good.operatorId]);
     providerFailures.set(String(autoUnavailable.productId),503);
 
+    const autoTimeoutProduct = await db.query(
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,115.15,'AFN',2147483010,350,300,FALSE,NOW()) RETURNING id",
+      [good.operatorName],
+    );
+    const autoTimeout = {operatorId:good.operatorId,productCatalogId:autoTimeoutProduct.rows[0].id,
+      productId:2147483010,operatorName:good.operatorName,amount:115.15};
+    fixtures.push(autoTimeout);
+    await db.query('INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
+      [autoTimeout.productCatalogId,good.operatorId]);
+    providerFailures.set(String(autoTimeout.productId),{delay:250,status:200});
+
     const autoResponse = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
@@ -293,11 +306,12 @@ test('country operator approval HTTP routes persist samples safely and roll back
     });
     assert.equal(autoResponse.status, 200);
     const autoBody = await autoResponse.json();
-    assert.equal(autoBody.requestedCount, 4);
+    assert.equal(autoBody.requestedCount, 5);
     assert.equal(autoBody.verifiedCount, 1);
-    assert.equal(autoBody.reviewCount, 3);
+    assert.equal(autoBody.reviewCount, 4);
     assert.ok(autoBody.items.some(item => item.productCatalogId === autoNotFound.productCatalogId && item.reasons.includes('provider_product_not_found')));
     assert.ok(autoBody.items.some(item => item.productCatalogId === autoUnavailable.productCatalogId && item.reasons.includes('provider_unavailable')));
+    assert.ok(autoBody.items.some(item => item.productCatalogId === autoTimeout.productCatalogId && item.reasons.includes('provider_timeout_or_network_error')));
     assert.equal(autoBody.activationChanged, false);
     assert.equal(autoBody.transactionCreated, false);
     const autoState = await db.query(
