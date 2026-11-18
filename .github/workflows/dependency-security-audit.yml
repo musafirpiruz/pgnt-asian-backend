@@ -2,7 +2,7 @@ name: Dependency Security Audit (diagnostic)
 
 on:
   push:
-    branches: [main]
+    branches: [main, integration/four-country-fx-dtone-reconciliation]
   pull_request:
     branches: [main]
   workflow_dispatch:
