@@ -3530,8 +3530,11 @@ app.post('/api/admin/country-operators/:operatorId/catalog-retry-reviewed', requ
   const operatorId=Number(req.params.operatorId);
   if(!Number.isSafeInteger(operatorId)||operatorId<1||req.body?.confirmRetry!==true)
     return res.status(400).json({error:'A valid operatorId and confirmRetry:true are required.'});
+  let client;
   try{
-    const result=await pool.query(
+    client=await pool.connect();
+    await client.query('BEGIN');
+    const result=await client.query(
       `SELECT a.id AS approval_id,MIN(v.product_catalog_id)::bigint AS first_reviewed
        FROM country_operator_approvals a
        JOIN catalog_verification_audit v ON v.operator_id=a.operator_id
@@ -3540,23 +3543,32 @@ app.post('/api/admin/country-operators/:operatorId/catalog-retry-reviewed', requ
        WHERE a.operator_id=$1 AND a.status='approved' AND v.event_type='product_rejected'
          AND v.evidence->>'approvalId'=a.id::text
          AND m.verified_at IS NULL AND m.active=FALSE AND p.active=FALSE
-       GROUP BY a.id`,[operatorId]);
-    if(!result.rowCount||result.rows[0].first_reviewed===null)
+       GROUP BY a.id FOR UPDATE OF a`,[operatorId]);
+    if(!result.rowCount||result.rows[0].first_reviewed===null){
+      await client.query('ROLLBACK');
       return res.status(404).json({error:'No rejected inactive products are available for an explicit retry.'});
+    }
     const firstReviewed=Number(result.rows[0].first_reviewed),cursor=Math.max(0,firstReviewed-1);
-    await pool.query(
+    await client.query(
       `INSERT INTO country_operator_catalog_verification_progress(operator_id,approval_id,last_processed_product_catalog_id,pages_completed)
        VALUES($1,$2,$3,0)
        ON CONFLICT(operator_id) DO UPDATE SET approval_id=EXCLUDED.approval_id,
          last_processed_product_catalog_id=EXCLUDED.last_processed_product_catalog_id,
          pages_completed=0,updated_at=NOW()`,
       [operatorId,result.rows[0].approval_id,cursor]);
+    await client.query(
+      `INSERT INTO catalog_verification_audit(operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
+       VALUES($1,$2,'product_retry_queued','system','owner_confirmed_retry','preview',ARRAY[]::TEXT[],$3::jsonb)`,
+      [operatorId,firstReviewed,JSON.stringify({approvalId:result.rows[0].approval_id,
+        firstReviewedProductCatalogId:firstReviewed,cursor,verificationStarted:false})]);
+    await client.query('COMMIT');
     return res.json({retryQueued:true,firstReviewedProductCatalogId:firstReviewed,
       nextAfterProductCatalogId:cursor,verificationStarted:false,activationChanged:false,transactionCreated:false});
   }catch(error){
+    if(client) await client.query('ROLLBACK').catch(()=>{});
     console.error('Catalog reviewed-product retry preparation failed:',error.message);
     return res.status(500).json({error:'Could not safely prepare reviewed-product retry.'});
-  }
+  }finally{if(client)client.release();}
 });
 
 // Operator-scoped catalog batch preview. This is a dry-run only:
