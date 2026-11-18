@@ -19,7 +19,7 @@ This report records a read-only validation of the four CSV exports supplied for 
 - All 455 fixed-value rows have positive wholesale EUR and retail EUR prices; no fixed row has retail below wholesale.
 - All 455 fixed-value rows have a numeric destination amount.
 - 13 fixed-value rows have decimal destination amounts (Afghanistan). Preserve the decimal amounts; do not coerce them to integers.
-- 29 fixed-value rows fall outside the previously requested 10–3000 local-amount range: Afghanistan 4, India 4, Pakistan 21, Bangladesh 0. They must be reviewed against the product-availability policy rather than silently altered.
+- Under the owner-confirmed 75–3000 local-amount policy, 396 fixed-value rows are within range and 59 are outside: Afghanistan 13 (9 below 75, 4 above 3000), Pakistan 26 (5 below 75, 21 above 3000), India 9 (5 below 75, 4 above 3000), Bangladesh 11 (11 below 75, 0 above 3000). Keep out-of-range products disabled and review them; never alter provider denominations to force compliance.
 - The 3 ranged products (Afghanistan product 11899, Pakistan product 11322, Bangladesh product 11744) have no destination min/max amount and no wholesale/retail EUR price in these CSV exports. They cannot be priced or activated from these files alone.
 
 ## Rate interpretation
@@ -41,7 +41,7 @@ Observed row-level ranges:
 
 ## Next gates
 1. Obtain provider-confirmed min/max and price calculation semantics for the 3 ranged products.
-2. Review the 29 fixed products outside 10–3000 and the 13 decimal AFN denominations against the intended customer amount policy and DT One acceptance.
+2. Review the 59 fixed products outside 75–3000 against the customer amount policy and DT One acceptance; preserve the 13 decimal AFN denominations because they are within the accepted numeric interval.
 3. Reconcile the CSV-derived product-level rates with the separate reference FX feed and the currently stored country pricing settings.
 4. Complete operator identity wiring and database migration/restore rehearsal before any catalog import.
 5. Run quote-only checks for representative products in all four countries, then sandbox checkout/refund tests.
