@@ -141,6 +141,7 @@ test('real Express/PostgreSQL route stages 1,960 rows and worker handles GET, 40
   let server;
   const originalFetch = global.fetch;
   const calls = [];
+  let responseMode = 'normal';
   try {
     await adminPool.query('CREATE SCHEMA ' + schema);
     testPool = new Pool({
@@ -157,6 +158,9 @@ test('real Express/PostgreSQL route stages 1,960 rows and worker handles GET, 40
       const url = typeof input === 'string' ? input : input.url;
       if (!url.startsWith(BASE_URL + '/')) return originalFetch(input, init);
       calls.push({ url, method: init.method, headers: init.headers, at: Date.now() });
+      if (responseMode === 'server_error') {
+        return new Response(JSON.stringify({ error: 'provider unavailable' }), { status: 500 });
+      }
       if (calls.length === 1) {
         return new Response(JSON.stringify({
           id: 100000,
@@ -263,6 +267,32 @@ test('real Express/PostgreSQL route stages 1,960 rows and worker handles GET, 40
 
     const catalog = await testPool.query("SELECT to_regclass('product_catalog') AS table_name");
     assert.equal(catalog.rows[0].table_name, null, 'the reconciliation route must not create or touch the customer catalog');
+
+    responseMode = 'server_error';
+    calls.length = 0;
+    const secondUpload = await originalFetch(origin + '/api/admin/dtone/master-reconciliation/runs', {
+      method: 'POST',
+      headers: {
+        'content-type': MIME,
+        'x-workbook-file-name': SOURCE_NAME,
+        'x-read-only-confirmation': 'true',
+      },
+      body: workbook,
+    });
+    assert.equal(secondUpload.status, 201);
+    const secondRun = await secondUpload.json();
+    await waitForPausedRun(testPool, secondRun.runId);
+    await waitForAdvisoryLockRelease(testPool);
+
+    const failedItem = await testPool.query(
+      'SELECT status, last_error_code, attempt_count FROM dtone_master_reconciliation_items WHERE run_id = $1 AND product_id = $2',
+      [secondRun.runId, '100000']
+    );
+    assert.equal(failedItem.rows[0].status, 'lookup_error');
+    assert.equal(failedItem.rows[0].last_error_code, 'HTTP_500');
+    assert.equal(Number(failedItem.rows[0].attempt_count), 1);
+    assert.equal(calls.length, 1, 'HTTP 500 must pause instead of automatically retrying');
+    assert.equal(calls[0].method, 'GET');
   } finally {
     global.fetch = originalFetch;
     if (server) await new Promise(resolve => server.close(resolve));
