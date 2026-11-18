@@ -255,7 +255,6 @@ function makeCatalogOperatorCard(operator){
      area.append(list);
     }
     run.textContent=result.hasMore?'راتلونکی پړاو (تر ۲۵ محصولاتو)':'د نورو پاتې محصولاتو لپاره بیا کتنه';
-    await loadOperatorCatalog();
    }catch(error){progress.className='status error';progress.textContent=error.message;}
    finally{run.disabled=false;}
   });
