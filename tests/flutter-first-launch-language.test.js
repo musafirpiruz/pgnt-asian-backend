@@ -27,3 +27,17 @@ test('selected language is saved and restored across app launches', () => {
   assert.match(dart, /preferences\.setString\(\s*_languagePreferenceKey/);
   assert.match(dart, /preferences\.getString\(_languagePreferenceKey\)/);
 });
+
+test('empty country operator registry falls back to curated local operators', () => {
+  assert.match(dart, /directoryOperators\s*=\s*loaded\.isEmpty\s*\?\s*null\s*:\s*loaded/);
+  assert.match(dart, /directoryOperators\s*\?\?\s*operators\.where/);
+});
+
+test('Flutter country operators retain verified backend and DT One identifiers', () => {
+  assert.match(dart, /final String\? operatorKey;/);
+  assert.match(dart, /final String\? providerOperatorId;/);
+  assert.match(dart, /row\['operator_key'\]/);
+  assert.match(dart, /row\['provider_operator_id'\]/);
+  assert.match(dart, /operatorKey:\s*operatorKey/);
+  assert.match(dart, /providerOperatorId:\s*providerOperatorId/);
+});
