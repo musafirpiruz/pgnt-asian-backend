@@ -3259,8 +3259,9 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
   if(!DTONE_API_KEY||!DTONE_API_SECRET)
     return res.status(503).json({approved:false,error:'DT One credentials are not configured.'});
 
-  const client=await pool.connect();
+  let client;
   try {
+    client=await pool.connect();
     await client.query('BEGIN');
     const found=await client.query(
       `SELECT o.id AS operator_id,o.country_code,o.operator_key,o.display_name AS operator_name,
@@ -3280,7 +3281,7 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
       method:'GET',headers:{Authorization:getDtOneAuthHeader(),Accept:'application/json'},signal:AbortSignal.timeout(15000)});
     if(!response.ok){await client.query('ROLLBACK');return res.status(response.status===404?404:502).json({approved:false,providerStatus:response.status,error:'DT One did not confirm this product.'});}
     const providerProduct=await response.json();
-    const evaluated=evaluateDtOneCatalogMatch(row,providerProduct);
+    const evaluated=evaluateDtOneCatalogMatch({...row,active:row.product_active},providerProduct);
     if(!evaluated.verified){
       await client.query(
         `INSERT INTO catalog_verification_audit(operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
@@ -3322,7 +3323,7 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
     if(error.code==='23505') return res.status(409).json({approved:false,error:'An approved sample already exists for this operator.'});
     console.error('Country operator sample approval failed:',error.message);
     return res.status(500).json({approved:false,error:'Could not safely approve the representative product.'});
-  }finally{client.release();}
+  }finally{if(client) client.release();}
 });
 
 // Small browser page for the owner to run the read-only product check
