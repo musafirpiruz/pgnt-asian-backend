@@ -10,6 +10,22 @@ const SUPPORT_PERMISSIONS = Object.freeze([
   'support.tickets.escalate',
 ]);
 
+function permissionForAdminRequest(req) {
+  const method = String(req?.method || '').toUpperCase();
+  const path = String(req?.path || req?.originalUrl || '').split('?')[0];
+
+  if (method === 'GET' && path === '/api/admin/support/tickets') {
+    return 'support.tickets.read';
+  }
+  if (method === 'PATCH' && /^\/api\/admin\/support\/tickets\/\d+$/.test(path)) {
+    return 'support.tickets.reply';
+  }
+
+  // Default deny-by-role: all existing finance, catalog, payment, refund,
+  // referral, wallet, DT One and configuration routes are Owner-only.
+  return 'owner.only';
+}
+
 function createAdminRbac({
   firebaseAuthMiddleware,
   ownerUid,
@@ -86,4 +102,8 @@ function createAdminRbac({
   });
 }
 
-module.exports = { createAdminRbac, SUPPORT_PERMISSIONS };
+module.exports = {
+  createAdminRbac,
+  SUPPORT_PERMISSIONS,
+  permissionForAdminRequest,
+};
