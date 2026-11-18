@@ -183,6 +183,50 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(saved.rows[0].product_active, false);
     assert.ok(saved.rows[0].mapping_verified_at);
 
+    // One manually approved sample should unlock exact-identity automatic verification
+    // for another denomination on the same operator, without another owner approval.
+    const autoProduct = await db.query(
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,111.11,'AFN',2147483006,350,300,FALSE,NOW()) RETURNING id",
+      [good.operatorName],
+    );
+    const autoCandidate = {
+      operatorId: good.operatorId,
+      productCatalogId: autoProduct.rows[0].id,
+      productId: 2147483006,
+      operatorName: good.operatorName,
+      amount: 111.11,
+    };
+    fixtures.push(autoCandidate);
+    await db.query(
+      'INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
+      [autoCandidate.productCatalogId, good.operatorId],
+    );
+    providerProducts.set(String(autoCandidate.productId),
+      providerProduct(autoCandidate.productId, 'provider-operator-good', good.operatorName, autoCandidate.amount));
+
+    const autoResponse = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({ limit: 25 }),
+    });
+    assert.equal(autoResponse.status, 200);
+    const autoBody = await autoResponse.json();
+    assert.equal(autoBody.requestedCount, 1);
+    assert.equal(autoBody.verifiedCount, 1);
+    assert.equal(autoBody.reviewCount, 0);
+    assert.equal(autoBody.activationChanged, false);
+    assert.equal(autoBody.transactionCreated, false);
+    const autoState = await db.query(
+      "SELECT m.verified_at,p.price_eur_cents,p.wholesale_price_eur_cents,p.active,m.active AS mapping_active,(SELECT COUNT(*)::int FROM catalog_verification_audit a WHERE a.operator_id=$1 AND a.product_catalog_id=$2 AND a.event_type='product_verified') AS verified_audits FROM country_operator_products m JOIN product_catalog p ON p.id=m.product_catalog_id WHERE m.product_catalog_id=$2",
+      [good.operatorId, autoCandidate.productCatalogId],
+    );
+    assert.equal(autoState.rows[0].verified_audits, 1);
+    assert.ok(autoState.rows[0].verified_at);
+    assert.equal(autoState.rows[0].price_eur_cents, 350);
+    assert.equal(autoState.rows[0].wholesale_price_eur_cents, 300);
+    assert.equal(autoState.rows[0].active, false);
+    assert.equal(autoState.rows[0].mapping_active, false);
+
     const duplicate = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/approve-sample', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
