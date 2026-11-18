@@ -170,3 +170,64 @@ test('normalizes ranged payment products with Pakistan mobile Airtime service me
   assert.equal(row.wholesalePriceEur, '0.43 - 21.1');
   assert.equal(row.retailPriceEur, '0.48 - 23.45');
 });
+
+
+test('covers the documented DT One ranged response with benefits min/max, USD wholesale and null retail', () => {
+  // This is a schema fixture based on DT One's published example, not live product data.
+  const documented = {
+    id: 11874,
+    operator: { name: 'Vodafone Ghana', country: { iso_code: 'GHA' } },
+    service: { name: 'Mobile', subservice: { name: 'Airtime' } },
+    type: 'RANGED_VALUE_RECHARGE',
+    benefits: [{
+      amount: { base: { min: 0.5, max: 1000 } },
+      unit: 'GHS',
+    }],
+    destination: {
+      amount: { increment: 0.01, max: 1000, min: 0.5 },
+      unit: 'GHS',
+    },
+    prices: {
+      retail: null,
+      wholesale: { amount: { max: 65.1759, min: 0.0325 }, unit: 'USD' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(documented, '11874', { GHA: 'GH' });
+  assert.equal(row.country, 'GH');
+  assert.equal(row.service, 'Mobile');
+  assert.equal(row.subservice, 'Airtime');
+  assert.equal(row.productType, 'RANGED_VALUE_RECHARGE');
+  assert.equal(row.destinationAmount, '0.5 - 1000');
+  assert.equal(row.destinationCurrency, 'GHS');
+  assert.equal(row.wholesalePriceEur, '0.0325 - 65.1759');
+  assert.equal(row.wholesalePriceCurrency, 'USD');
+  assert.equal(row.retailPriceEur, '');
+  assert.equal(row.retailPriceCurrency, '');
+  assert.equal(row.rawFieldAvailability.retailPrice, false);
+});
+
+test('supports the documented benefits fallback when destination is absent and keeps object ranges', () => {
+  const documented = {
+    id: 11874,
+    operator: { name: 'Vodafone Ghana', country: { iso_code: 'GHA' } },
+    service: { name: 'Mobile', subservice: { name: 'Airtime' } },
+    type: 'RANGED_VALUE_RECHARGE',
+    benefits: [{
+      amount: { base: { min: 0.5, max: 1000 } },
+      unit: 'GHS',
+    }],
+    prices: {
+      wholesale: { amount: { min: 0.0325, max: 65.1759 }, unit: 'EUR' },
+      retail: { amount: { min: 0.04, max: 70 }, unit: 'EUR' },
+    },
+  };
+  const row = normalizeDtOneProductDetail(
+    { ...documented, destination: undefined },
+    '11874',
+    { GHA: 'GH' }
+  );
+  assert.equal(row.destinationAmount, '0.5 - 1000');
+  assert.equal(row.destinationCurrency, 'GHS');
+  assert.equal(row.wholesalePriceEur, '0.0325 - 65.1759');
+  assert.equal(row.retailPriceEur, '0.04 - 70');
+});
