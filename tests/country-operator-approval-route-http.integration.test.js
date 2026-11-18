@@ -39,7 +39,7 @@ test('country operator approval HTTP routes enforce auth, validation and mapped-
       DTONE_API_KEY: 'ci-not-a-real-dtone-key',
       DTONE_API_SECRET: 'ci-not-a-real-dtone-secret',
       DTONE_API_BASE_URL: 'https://preprod-dvs-api.dtone.com',
-      STRIPE_SECRET_KEY: '',
+      // A syntactically valid test-mode key satisfies startup; these routes never call Stripe.\n      STRIPE_SECRET_KEY: 'sk_test_ci_country_approval_no_network',
       STRIPE_WEBHOOK_SECRET: '',
       NODE_ENV: 'test',
     },
