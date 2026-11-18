@@ -29,12 +29,58 @@ async function makeWorkbook() {
     'DESTINATION AMOUNT', 'WHOLESALE PRICE (EUR)', 'RETAIL PRICE (EUR)',
   ]);
   for (let index = 0; index < 1960; index += 1) {
-    let type = 'FIXED_VALUE_RECHARGE';
-    if (index >= 1929 && index < 1943) type = 'RANGED_VALUE_RECHARGE';
-    else if (index >= 1943 && index < 1957) type = 'FIXED_VALUE_PIN_PURCHASE';
-    else if (index >= 1957) type = 'RANGED_VALUE_PAYMENT';
     const country = COUNTRIES[index];
-    const currency = { Afghanistan: 'AFN', Pakistan: 'PKR', India: 'INR', Bangladesh: 'BDT' }[country];
+    let service = 'Mobile';
+    let subservice = 'Airtime';
+    let type = 'FIXED_VALUE_RECHARGE';
+    let currency = { Afghanistan: 'AFN', Pakistan: 'PKR', India: 'INR', Bangladesh: 'BDT' }[country];
+    let localIndex;
+
+    if (country === 'Afghanistan') {
+      localIndex = index;
+      if (localIndex >= 496 && localIndex < 516) subservice = 'Bundle';
+      else if (localIndex >= 516) subservice = 'Data';
+      if (localIndex >= 537) type = 'RANGED_VALUE_RECHARGE';
+    } else if (country === 'Pakistan') {
+      localIndex = index - 542;
+      if (localIndex >= 598 && localIndex < 716) subservice = 'Bundle';
+      else if (localIndex >= 716 && localIndex < 779) subservice = 'Data';
+      if (localIndex >= 594 && localIndex < 598) type = 'RANGED_VALUE_RECHARGE';
+      if (localIndex >= 776 && localIndex < 779) type = 'RANGED_VALUE_PAYMENT';
+      if (localIndex >= 779) {
+        service = 'eSIM';
+        subservice = '';
+        type = 'FIXED_VALUE_PIN_PURCHASE';
+        currency = 'USD';
+      }
+    } else if (country === 'India') {
+      localIndex = index - 1325;
+      if (localIndex < 120) {
+        if (localIndex >= 16 && localIndex < 93) subservice = 'Bundle';
+        else if (localIndex >= 93) subservice = 'Data';
+      } else if (localIndex < 140) {
+        service = 'Utilities';
+        subservice = 'Television';
+      } else {
+        service = 'eSIM';
+        subservice = '';
+        type = 'FIXED_VALUE_PIN_PURCHASE';
+        currency = 'USD';
+      }
+    } else {
+      localIndex = index - 1472;
+      if (localIndex < 485) {
+        if (localIndex >= 308 && localIndex < 412) subservice = 'Bundle';
+        else if (localIndex >= 412) subservice = 'Data';
+        if (localIndex < 5) type = 'RANGED_VALUE_RECHARGE';
+      } else {
+        service = 'eSIM';
+        subservice = '';
+        type = 'FIXED_VALUE_PIN_PURCHASE';
+        currency = 'USD';
+      }
+    }
+
     const ranged = ['RANGED_VALUE_RECHARGE', 'RANGED_VALUE_PAYMENT'].includes(type);
     const pin = type === 'FIXED_VALUE_PIN_PURCHASE';
     sheet.addRow([
@@ -42,16 +88,34 @@ async function makeWorkbook() {
       'Integration fixture ' + index,
       country,
       'Test operator',
-      pin ? 'eSIM' : 'Mobile',
-      type === 'FIXED_VALUE_RECHARGE' ? 'Airtime' : '',
+      service,
+      subservice,
       type,
-      pin ? 'USD' : currency,
+      currency,
       ranged ? '30 - 4000' : pin ? 1.69 : 100,
       ranged ? '0.5 - 66.33' : pin ? 1.29 : 0.5,
       ranged ? '0.56 - 73.7' : pin ? 1.44 : 0.6,
     ]);
   }
   return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+async function waitForAdvisoryLockRelease(pool) {
+  const deadline = Date.now() + 10000;
+  const client = await pool.connect();
+  try {
+    while (Date.now() < deadline) {
+      const result = await client.query('SELECT pg_try_advisory_lock($1) AS locked', [71230941]);
+      if (result.rows[0]?.locked === true) {
+        await client.query('SELECT pg_advisory_unlock($1)', [71230941]);
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Timed out waiting for the reconciliation worker advisory lock to release.');
+  } finally {
+    client.release();
+  }
 }
 
 async function waitForPausedRun(pool, runId) {
@@ -153,6 +217,7 @@ test('real Express/PostgreSQL route stages 1,960 rows and worker handles GET, 40
     assert.equal(staged.topupsCreated, false);
 
     await waitForPausedRun(testPool, staged.runId);
+    await waitForAdvisoryLockRelease(testPool);
 
     const run = await testPool.query(
       'SELECT status, total_products FROM dtone_master_reconciliation_runs WHERE id = $1',
