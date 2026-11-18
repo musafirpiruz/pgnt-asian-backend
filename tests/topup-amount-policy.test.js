@@ -8,7 +8,7 @@ const path = require('node:path');
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
 test('server defines the customer-selectable amount policy as 75 through 3000', () => {
-  assert.ok(server.includes('const PGNT_MIN_AMOUNT = 10;'));
+  assert.ok(server.includes('const PGNT_MIN_AMOUNT = 75;'));
   assert.ok(server.includes('const PGNT_MAX_AMOUNT = 3000;'));
 });
 
