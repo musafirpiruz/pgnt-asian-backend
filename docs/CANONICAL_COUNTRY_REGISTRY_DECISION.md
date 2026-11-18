@@ -214,3 +214,19 @@ Safety and acceptance:
 - Sandbox-test minimum, maximum, representative interior amounts, and provider increment for each approved product/operator in AFN, PKR, INR, and BDT.
 - Verify duplicate Stripe webhooks, duplicate confirmation requests, timeout-after-create, timeout-after-confirm, abandoned checkout, expiry, callback/status reconciliation, and cancellation.
 - Do not enable any ranged product or production checkout until the above tests pass.
+
+
+## Mainline bootstrap implementation — 2026-11-18
+
+The mainline-based integration branch now contains:
+- `migrations/022_canonical_country_registry_reconciliation.sql`
+- `migrations/023_current_catalog_country_registry_bootstrap.sql`
+- Explicit ordered invocation of 022 then 023 in `migrate.js`, after existing 017/018 foundations.
+- `tests/country-registry-mainline-bootstrap.test.js` for migration order, inactive seed contract, and the Flutter/server registry API contract.
+- Existing `tests/country-operator-registry-api-contract.test.js` continues to enforce read-only and verified-only operator responses.
+
+Production-shaped read-only evidence (2026-11-18): migrations 002–016 are applied; `pricing_settings.local_currency_per_eur` exists; four country pricing rows exist; nine `product_catalog` rows exist and are all inactive. No canonical registry tables exist yet. The migration sequence has not been executed against Production.
+
+Expected behavior after a future approved migration: four countries are seeded as `legacy`; candidate operators are derived from the nine existing catalog rows but have NULL provider operator IDs, are inactive and unverified; their product mappings remain inactive; existing catalog activation remains unchanged. Consequently the public operator API must return an empty list (HTTP 200) rather than inventing or exposing unverified networks until DT One identities/evidence and explicit activation are supplied.
+
+Dependency correction: the temporary dependent PR #247 was closed after the same changes were moved onto this PR #225 mainline-based branch, avoiding a redundant stacked PR. PR #225 remains OPEN/DRAFT and targets `main`.
