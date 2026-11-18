@@ -3902,7 +3902,7 @@ app.delete('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) =>
 app.get('/admin', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline' https://www.gstatic.com; style-src 'unsafe-inline'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com; frame-src https://www.google.com https://pgnt-asian-topup.firebaseapp.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; style-src 'unsafe-inline'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://www.recaptcha.net; frame-src https://www.google.com https://www.recaptcha.net https://pgnt-asian-topup.firebaseapp.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
   return res.sendFile(require('path').join(__dirname, 'admin-panel.html'));
 });
 
