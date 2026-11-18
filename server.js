@@ -4398,6 +4398,16 @@ require('./support-routes')({
   requireAdmin,
 });
 
+require('./dtone-master-workbook-reconciliation-routes').registerDtOneMasterWorkbookRoutes({
+  app,
+  express,
+  pool,
+  requireAdmin,
+  dtoneApiBaseUrl: DTONE_API_BASE_URL,
+  dtoneApiBaseUrlExplicit: Boolean(process.env.DTONE_API_BASE_URL),
+  getDtOneAuthHeader,
+});
+
 // Firebase Admin verifies ID tokens only. SMS delivery remains client-side
 // through Firebase Authentication and the send/verify backend routes stay disabled.
 const { createFirebaseAuthMiddleware } = require('./firebase-auth');
