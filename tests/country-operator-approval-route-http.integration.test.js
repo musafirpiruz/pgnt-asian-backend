@@ -138,6 +138,21 @@ test('country operator approval HTTP routes persist samples safely and roll back
     const unauth = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-candidates');
     assert.equal(unauth.status, 401);
 
+    const autoUnauth = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ limit: 25 }),
+    });
+    assert.equal(autoUnauth.status, 401);
+
+    const autoBeforeApproval = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({ limit: 25 }),
+    });
+    assert.equal(autoBeforeApproval.status, 409);
+
+
     const invalid = await fetch(baseUrl + '/api/admin/country-operators/not-a-number/catalog-candidates', {
       headers: { 'x-admin-api-key': adminKey },
     });
