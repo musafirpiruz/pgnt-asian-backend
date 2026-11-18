@@ -227,6 +227,58 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(rollbackState.rows[0].operator_verified_at, null);
     assert.equal(rollbackState.rows[0].mapping_verified_at, null);
     assert.equal(rollbackState.rows[0].retail_price, 350);
+    // Operator-scoped batch preview is bounded, mapped-only, audited, and never activates.
+    const previewGood = await fixture('preview-good', 2147483004, 104.04, null);
+    const previewBad = await fixture('preview-bad', 2147483005, 105.05, null);
+    providerProducts.set(String(previewGood.productId),
+      providerProduct(previewGood.productId, 'provider-operator-preview-good', previewGood.operatorName, previewGood.amount));
+    providerProducts.set(String(previewBad.productId),
+      providerProduct(previewBad.productId, 'provider-operator-preview-bad', 'A different operator', previewBad.amount));
+
+    const previewNoFlag = await fetch(baseUrl + '/api/admin/country-operators/' + previewGood.operatorId + '/catalog-batch-preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({ productCatalogIds: [previewGood.productCatalogId], dryRun: false }),
+    });
+    assert.equal(previewNoFlag.status, 400);
+
+    const tooMany = await fetch(baseUrl + '/api/admin/country-operators/' + previewGood.operatorId + '/catalog-batch-preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({ productCatalogIds: Array.from({ length: 26 }, (_, i) => i + 1), dryRun: true }),
+    });
+    assert.equal(tooMany.status, 400);
+
+    const previewResponse = await fetch(baseUrl + '/api/admin/country-operators/' + previewGood.operatorId + '/catalog-batch-preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-api-key': adminKey },
+      body: JSON.stringify({
+        productCatalogIds: [previewGood.productCatalogId, previewBad.productCatalogId],
+        dryRun: true,
+      }),
+    });
+    assert.equal(previewResponse.status, 200);
+    const previewBody = await previewResponse.json();
+    assert.equal(previewBody.dryRun, true);
+    assert.equal(previewBody.requestedCount, 2);
+    assert.equal(previewBody.verifiedCount, 1);
+    assert.equal(previewBody.rejectedCount, 1);
+    assert.equal(previewBody.auditPersisted, true);
+    assert.equal(previewBody.applyAvailable, false);
+    assert.equal(previewBody.activationChanged, false);
+    assert.equal(previewBody.transactionCreated, false);
+    assert.equal(previewBody.items.find(item => item.productCatalogId === previewGood.productCatalogId).verified, true);
+    assert.equal(previewBody.items.find(item => item.productCatalogId === previewBad.productCatalogId).verified, false);
+
+    const previewState = await db.query(
+      "SELECT (SELECT COUNT(*)::int FROM country_operator_approvals WHERE operator_id=$1) AS approvals,(SELECT COUNT(*)::int FROM catalog_verification_audit WHERE operator_id=$1 AND event_type='batch_previewed' AND outcome='preview') AS preview_audits,(SELECT bool_and(NOT active) FROM country_operators WHERE id=$1) AS operator_inactive,(SELECT bool_and(NOT p.active AND NOT m.active) FROM product_catalog p JOIN country_operator_products m ON m.product_catalog_id=p.id WHERE p.id=ANY($2::bigint[])) AS products_inactive",
+      [previewGood.operatorId, [previewGood.productCatalogId, previewBad.productCatalogId]],
+    );
+    assert.equal(previewState.rows[0].approvals, 0);
+    assert.equal(previewState.rows[0].preview_audits, 2);
+    assert.equal(previewState.rows[0].operator_inactive, true);
+    assert.equal(previewState.rows[0].products_inactive, true);
+
     assert.doesNotMatch(logs, /sk_live_/);
   } finally {
     if (child) {
