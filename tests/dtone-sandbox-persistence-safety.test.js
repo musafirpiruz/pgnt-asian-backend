@@ -1,7 +1,7 @@
 'use strict';
 
-// Source-level safeguards for the explicitly invoked DT One pre-production
-// test route. These checks do not make any network request or create a top-up.
+// Source-level safeguards for the deliberately disabled legacy DT One
+// sandbox transaction route. These checks never make network requests.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,32 +9,30 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'dtone-sandbox-test.js'), 'utf8');
 
-test('DT One sandbox test is restricted to the exact HTTPS pre-production host', () => {
-  assert.ok(source.includes("const PREPROD_HOST = 'preprod-dvs-api.dtone.com'"));
-  assert.ok(source.includes("url.protocol === 'https:'"));
-  assert.ok(source.includes("url.hostname === PREPROD_HOST"));
-  assert.ok(source.includes('if (!isPreproduction())'));
+test('legacy fixed-price sandbox transaction creation is explicitly disabled with HTTP 410', () => {
+  assert.ok(source.includes("app.post('/api/admin/dtone/sandbox-test', requireAdmin"));
+  assert.ok(source.includes("return res.status(410).json({"));
+  assert.ok(source.includes('created: false'));
+  assert.ok(source.includes('legacyRouteDisabled: true'));
+  assert.ok(source.includes('Legacy fixed-price sandbox tests are disabled'));
 });
 
-test('sandbox transaction requires explicit confirmation and a fixed test scenario', () => {
-  assert.ok(source.includes('req.body?.confirmSandbox !== true'));
-  assert.ok(source.includes('const TEST_PRODUCT_ID = 7194'));
-  assert.ok(source.includes("completed: '+93700100100'"));
-  assert.ok(source.includes("declined: '+93700100106'"));
-  assert.ok(source.includes('if (!testPhone)'));
+test('disabled POST route performs no database, DT One, or order-creation work', () => {
+  const postRoute = source.split("app.post('/api/admin/dtone/sandbox-test'")[1]?.split("app.get('/api/admin/dtone/sandbox-test/:orderId'")[0] || '';
+  assert.ok(postRoute.includes('return res.status(410).json({'));
+  assert.ok(!postRoute.includes('pool.query'));
+  assert.ok(!postRoute.includes('fetch('));
+  assert.ok(!postRoute.includes('INSERT INTO orders'));
+  assert.ok(!postRoute.includes('/v1/transactions'));
 });
 
-test('sandbox result is not acknowledged unless the matching local order update succeeds', () => {
-  assert.ok(source.includes('const savedOrder = await pool.query('));
-  assert.ok(source.includes('if (savedOrder.rowCount !== 1) {'));
-  assert.ok(source.includes('DT One accepted the sandbox transaction but its result could not be saved'));
-  assert.ok(source.includes("WHERE order_id = $3 AND status IN ('processing_topup', 'topup_submitted')"),
-    'provider response must not overwrite callback terminal/review statuses');
-  assert.ok(source.includes("dtone_status = 'sandbox_test_outcome_unknown'"));
-  assert.ok(source.includes('do not retry blindly'));
+test('existing sandbox order status lookup remains restricted to the isolated test operator', () => {
+  assert.ok(source.includes("app.get('/api/admin/dtone/sandbox-test/:orderId'"));
+  assert.ok(source.includes("operator = 'ATOMA-SANDBOX-TEST'"));
+  assert.ok(source.includes('Sandbox test order not found.'));
 });
 
-test('sandbox test route does not create a Stripe payment or perform a refund', () => {
+test('sandbox route does not create a Stripe payment or perform a refund', () => {
   assert.ok(!source.includes('stripe.paymentIntents.create('));
   assert.ok(!source.includes('stripe.checkout.sessions.create('));
   assert.ok(!source.includes('stripe.refunds.create('));
