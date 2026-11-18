@@ -86,3 +86,17 @@ test('fails closed for incomplete provider payloads', () => {
   assert.equal(evaluateDtOneCatalogMatch(catalog(), null).verified, false);
   assert.equal(evaluateDtOneCatalogMatch(catalog(), {}).verified, false);
 });
+
+test('only auto-verifies fixed recharge denominations that are integer values from 75 to 3000', () => {
+  for (const remote of [
+    provider({ type: 'RANGED_VALUE_RECHARGE' }),
+    provider({ type: 'FIXED_VALUE_PIN_PURCHASE' }),
+    provider({ destination: { amount: 74, unit: 'AFN' } }),
+    provider({ destination: { amount: 3001, unit: 'AFN' } }),
+    provider({ destination: { amount: 115.5, unit: 'AFN' } }),
+  ]) {
+    const result = evaluateDtOneCatalogMatch(catalog(), remote);
+    assert.equal(result.verified, false);
+    assert.ok(result.reasons.includes(remote.type === 'FIXED_VALUE_RECHARGE' ? 'denomination_mismatch' : 'unsupported_product_type'));
+  }
+});
