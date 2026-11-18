@@ -2,7 +2,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createAdminRbac, SUPPORT_PERMISSIONS } = require('../admin-rbac');
+const {
+  createAdminRbac,
+  SUPPORT_PERMISSIONS,
+  permissionForAdminRequest,
+} = require('../admin-rbac');
 
 function responseRecorder() {
   return {
@@ -20,7 +24,7 @@ function verifiedAuth(uid) {
   };
 }
 
-async function authenticate(rbac, uid) {
+async function authenticate(rbac) {
   const req = {};
   const res = responseRecorder();
   let nextCalled = false;
@@ -35,7 +39,7 @@ test('fails closed until both distinct administrator Firebase UIDs are configure
     { firebaseAuthMiddleware: verifiedAuth('owner'), ownerUid: 'same', supportUid: 'same' },
   ]) {
     const rbac = createAdminRbac(config);
-    const result = await authenticate(rbac, 'owner');
+    const result = await authenticate(rbac);
     assert.equal(rbac.configured, false);
     assert.equal(result.res.statusCode, 503);
     assert.equal(result.res.body.code, 'ADMIN_RBAC_NOT_CONFIGURED');
@@ -49,7 +53,7 @@ test('assigns full owner role only to the configured verified Firebase UID', asy
     ownerUid: 'owner-uid',
     supportUid: 'support-uid',
   });
-  const result = await authenticate(rbac, 'owner-uid');
+  const result = await authenticate(rbac);
   assert.equal(result.nextCalled, true);
   assert.deepEqual(result.req.admin, {
     uid: 'owner-uid',
@@ -65,7 +69,7 @@ test('assigns the second administrator support permissions only', async () => {
     ownerUid: 'owner-uid',
     supportUid: 'support-uid',
   });
-  const result = await authenticate(rbac, 'support-uid');
+  const result = await authenticate(rbac);
   assert.equal(result.nextCalled, true);
   assert.equal(result.req.admin.role, 'support');
   assert.deepEqual(result.req.admin.permissions, SUPPORT_PERMISSIONS);
@@ -81,7 +85,7 @@ test('denies any Firebase identity other than the two configured administrator U
     ownerUid: 'owner-uid',
     supportUid: 'support-uid',
   });
-  const result = await authenticate(rbac, 'intruder-uid');
+  const result = await authenticate(rbac);
   assert.equal(result.res.statusCode, 403);
   assert.equal(result.res.body.code, 'ADMIN_IDENTITY_NOT_ALLOWED');
   assert.equal(result.nextCalled, false);
@@ -113,6 +117,21 @@ test('permission middleware allows Owner and only named support permissions', as
   const unauth = responseRecorder();
   allowSupport(missing, unauth, () => assert.fail('unauthenticated request must not pass'));
   assert.equal(unauth.statusCode, 401);
+});
+
+test('routes only support inbox read and reply to the support permission set', () => {
+  assert.equal(permissionForAdminRequest({ method: 'GET', path: '/api/admin/support/tickets' }), 'support.tickets.read');
+  assert.equal(permissionForAdminRequest({ method: 'PATCH', path: '/api/admin/support/tickets/12' }), 'support.tickets.reply');
+  for (const request of [
+    { method: 'GET', path: '/api/admin/pricing' },
+    { method: 'PUT', path: '/api/admin/pricing/AF' },
+    { method: 'POST', path: '/api/admin/orders/abc/refund' },
+    { method: 'POST', path: '/api/admin/country-operators/12/approve-sample' },
+    { method: 'GET', path: '/api/admin/wallets/diagnostics' },
+    { method: 'DELETE', path: '/api/admin/referrals/codes/ABC' },
+  ]) {
+    assert.equal(permissionForAdminRequest(request), 'owner.only');
+  }
 });
 
 test('rejects empty permission names at configuration time', () => {
