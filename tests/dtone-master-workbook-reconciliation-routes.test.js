@@ -59,6 +59,6 @@ test('rate-limit and provider errors pause the run rather than retrying automati
 test('registers reconciliation staging as migration 037 after independently versioned pricing migrations', () => {
   const runner = fs.readFileSync(path.join(__dirname, '..', 'migrate.js'), 'utf8');
   assert.match(runner, /version: "037_dtone_master_reconciliation_staging"/);
-  assert.match(runner, /037_dtone_master_reconciliation_staging\\.sql/);
+  assert.match(runner, /037_dtone_master_reconciliation_staging\.sql/);
   assert.match(runner, /Keep reconciliation staging after the optional 032-036 pricing\/audit/);
 });
