@@ -117,7 +117,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
         DTONE_API_KEY: 'ci-local-provider-fixture-key',
         DTONE_API_SECRET: 'ci-local-provider-fixture-secret',
         DTONE_API_BASE_URL: 'http://127.0.0.1:' + providerPort,
-        DTONE_CATALOG_VERIFY_TIMEOUT_MS: '50',
+        DTONE_CATALOG_VERIFY_TIMEOUT_MS: '250',
         STRIPE_SECRET_KEY: 'sk_test_ci_country_approval_no_network',
         STRIPE_WEBHOOK_SECRET: '',
         NODE_ENV: 'test',
@@ -297,7 +297,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
     fixtures.push(autoTimeout);
     await db.query('INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
       [autoTimeout.productCatalogId,good.operatorId]);
-    providerFailures.set(String(autoTimeout.productId),{delay:250,status:200});
+    providerFailures.set(String(autoTimeout.productId),{delay:1000,status:200});
 
     const autoResponse = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify', {
       method: 'POST',
