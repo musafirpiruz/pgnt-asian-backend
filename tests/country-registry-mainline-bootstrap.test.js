@@ -18,7 +18,7 @@ test('canonical country registry migrations run after legacy catalog foundation 
   const bootstrap = migrate.indexOf('023_current_catalog_country_registry_bootstrap');
   assert.ok(ranged >= 0 && canonical > ranged && bootstrap > canonical,
     '022 and 023 must run after 018 and in canonical-before-bootstrap order');
-  assert.match(migrate, /canonicalCountryMigrations\\s*=\\s*\\[/);
+  assert.match(migrate, /canonicalCountryMigrations\s*=\s*\[/);
   assert.match(migrate, /Required migration file is missing/);
 });
 
@@ -53,8 +53,8 @@ test('023 seeds only four known countries and leaves all imported capabilities d
 });
 
 test('Flutter obtains operator options from the registry endpoint and server filters unverified mappings', () => {
-  assert.match(flutter, /api\\/countries\\/\\$countryCode\\/operators/);
+  assert.match(flutter, /api\/countries\/\$countryCode\/operators/);
   assert.match(flutter, /operatorKey/);
-  assert.match(server, /o\\.provider_operator_id IS NOT NULL/);
-  assert.match(server, /o\\.verified_at IS NOT NULL/);
+  assert.match(server, /o\.provider_operator_id IS NOT NULL/);
+  assert.match(server, /o\.verified_at IS NOT NULL/);
 });
