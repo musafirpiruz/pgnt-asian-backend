@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const adminPanel = fs.readFileSync(path.join(__dirname, '..', 'admin-panel.html'), 'utf8');
@@ -90,4 +91,10 @@ test('admin panel exposes one-sample approval and bounded automatic verification
   ]) assert.ok(adminPanel.includes(token), 'missing admin panel workflow element: ' + token);
   assert.match(adminPanel, /if\(!confirm\(/);
   assert.match(adminPanel, /products not activated|محصول یا شبکه فعاله نه شوه/);
+});
+
+test('admin panel inline JavaScript parses successfully', () => {
+  const scripts = [...adminPanel.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];
+  assert.equal(scripts.length, 1, 'expected one inline admin panel script');
+  assert.doesNotThrow(() => new vm.Script(scripts[0][1]));
 });
