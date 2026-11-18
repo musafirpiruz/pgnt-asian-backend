@@ -40,13 +40,13 @@ async function makeWorkbook() {
       localIndex = index;
       if (localIndex >= 496 && localIndex < 516) subservice = 'Bundle';
       else if (localIndex >= 516) subservice = 'Data';
-      if (localIndex >= 537) type = 'RANGED_VALUE_RECHARGE';
+      if (localIndex >= 491 && localIndex < 496) type = 'RANGED_VALUE_RECHARGE';
     } else if (country === 'Pakistan') {
       localIndex = index - 542;
       if (localIndex >= 598 && localIndex < 716) subservice = 'Bundle';
       else if (localIndex >= 716 && localIndex < 779) subservice = 'Data';
-      if (localIndex >= 594 && localIndex < 598) type = 'RANGED_VALUE_RECHARGE';
-      if (localIndex >= 776 && localIndex < 779) type = 'RANGED_VALUE_PAYMENT';
+      if (localIndex < 3) type = 'RANGED_VALUE_PAYMENT';
+      else if (localIndex >= 3 && localIndex < 7) type = 'RANGED_VALUE_RECHARGE';
       if (localIndex >= 779) {
         service = 'eSIM';
         subservice = '';
