@@ -229,7 +229,22 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(rollbackState.rows[0].retail_price, 350);
     // Operator-scoped batch preview is bounded, mapped-only, audited, and never activates.
     const previewGood = await fixture('preview-good', 2147483004, 104.04, null);
-    const previewBad = await fixture('preview-bad', 2147483005, 105.05, null);
+    const previewBadProduct = await db.query(
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,$2,'AFN',$3,350,300,FALSE,NOW()) RETURNING id",
+      [previewGood.operatorName, 105.05, 2147483005],
+    );
+    const previewBad = {
+      operatorId: previewGood.operatorId,
+      productCatalogId: previewBadProduct.rows[0].id,
+      productId: 2147483005,
+      operatorName: previewGood.operatorName,
+      amount: 105.05,
+    };
+    fixtures.push(previewBad);
+    await db.query(
+      'INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
+      [previewBad.productCatalogId, previewGood.operatorId],
+    );
     providerProducts.set(String(previewGood.productId),
       providerProduct(previewGood.productId, 'provider-operator-preview-good', previewGood.operatorName, previewGood.amount));
     providerProducts.set(String(previewBad.productId),
@@ -298,7 +313,9 @@ test('country operator approval HTTP routes persist samples safely and roll back
       await db.query('DELETE FROM catalog_verification_audit WHERE operator_id=$1', [item.operatorId]);
       await db.query('DELETE FROM country_operator_products WHERE product_catalog_id=$1', [item.productCatalogId]);
       await db.query('DELETE FROM product_catalog WHERE id=$1', [item.productCatalogId]);
-      await db.query('DELETE FROM country_operators WHERE id=$1', [item.operatorId]);
+    }
+    for (const operatorId of [...new Set(fixtures.map(item => item.operatorId))]) {
+      await db.query('DELETE FROM country_operators WHERE id=$1', [operatorId]);
     }
     await db.end();
     await new Promise(resolve => providerServer.close(resolve));
