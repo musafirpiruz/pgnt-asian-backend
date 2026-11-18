@@ -122,8 +122,8 @@ test('preserves ranged PIN purchase type, destination range, service and nullabl
   const rangedPin = {
     ...detail,
     id: 66483,
-    operator: { name: 'eSIM Pakistan', country: { iso_code: 'PAK' } },
-    service: { id: 13, name: 'eSIM', subservice: null },
+    operator: { name: 'Test gift-card operator', country: { iso_code: 'PAK' } },
+    service: { id: 4, name: 'Gift Cards', subservice: { id: 41, name: 'Retail' } },
     type: 'RANGED_VALUE_PIN_PURCHASE',
     destination: { amount: { min: 1, max: 20, increment: 1 }, unit: 'USD' },
     prices: {
@@ -134,8 +134,8 @@ test('preserves ranged PIN purchase type, destination range, service and nullabl
   const row = normalizeDtOneProductDetail(rangedPin, '66483', { PAK: 'PK' });
   assert.equal(row.productType, 'RANGED_VALUE_PIN_PURCHASE');
   assert.equal(row.country, 'PK');
-  assert.equal(row.service, 'eSIM');
-  assert.equal(row.subservice, '');
+  assert.equal(row.service, 'Gift Cards');
+  assert.equal(row.subservice, 'Retail');
   assert.equal(row.destinationAmount, '1 - 20');
   assert.equal(row.destinationCurrency, 'USD');
   assert.equal(row.wholesalePriceEur, '0.8 - 16');
