@@ -44,6 +44,7 @@ All permissions are deny-by-default. Role names are not sufficient by themselves
 - `server.js` now routes admin requests through Firebase identity/RBAC when both `ADMIN_OWNER_FIREBASE_UID` and `ADMIN_SUPPORT_FIREBASE_UID` are configured. The legacy shared-key path remains Owner-equivalent only while RBAC is not configured.
 - Every admin route defaults to Owner-only. Only `GET /api/admin/support/tickets` and `PATCH /api/admin/support/tickets/:ticketId` map to Support permissions. Support ticket responses hide the customer's phone number and charge amount from the Support role.
 - `tests/admin-rbac.test.js` covers configuration failure, Owner assignment, support-only assignment, unknown identity denial, named permission enforcement, Owner-only route boundaries, and empty permission rejection.
+- `tests/support-routes-rbac.test.js` verifies that the support role receives redacted phone and charge fields while the Owner-equivalent migration path retains full support details.
 - **Important:** the Admin Panel still uses `x-admin-api-key`; its Firebase browser sign-in is not yet implemented. Therefore do not configure the two UID environment variables on Render yet, because doing so would switch API authentication to Firebase bearer tokens and the existing Admin Panel would stop working. Do not share UIDs, credentials, or service-account JSON in chat.
 
 ## Authentication and account lifecycle
