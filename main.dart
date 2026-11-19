@@ -1943,9 +1943,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        backgroundColor: cream,
-        indicatorColor: gold.withValues(alpha: 0.35),
-        selectedIndex: selectedTab > 4 ? 0 : selectedTab,
+        backgroundColor: Colors.white,
+        indicatorColor: const Color(0xFFF8EDEE),
+        selectedIndex: selectedTab >= 4 ? 4 : selectedTab,
         onDestinationSelected: (index) {
           setState(() => selectedTab = index);
         },
