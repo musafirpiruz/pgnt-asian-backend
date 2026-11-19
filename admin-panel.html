@@ -585,7 +585,7 @@ document.getElementById('loadSupportTickets').addEventListener('click',async()=>
    const card=document.createElement('div');card.className='order';
    const title=document.createElement('strong');title.textContent='#'+ticket.id+' · '+ticket.subject;
    const body=document.createElement('p');body.textContent=ticket.message||'';
-   const meta=document.createElement('p');meta.className='muted';meta.textContent='حالت: '+ticket.status+' · کټګوري: '+ticket.category+' · لومړیتوب: '+ticket.priority;
+   const meta=document.createElement('p');meta.className='muted';meta.textContent='حالت: '+ticket.status+' · کټګوري: '+ticket.category+' · لومړیتوب: '+ticket.priority+(ticket.escalation_status?' · Owner بیاکتنه: '+ticket.escalation_status:'');
    const reply=document.createElement('textarea');reply.rows=3;reply.maxLength=4000;reply.placeholder='مشتري ته ځواب ولیکئ';
    const actions=document.createElement('div');actions.className='actions';
    const send=document.createElement('button');send.type='button';send.textContent='ځواب ولېږه';
@@ -594,13 +594,16 @@ document.getElementById('loadSupportTickets').addEventListener('click',async()=>
     try{const response=await fetch('/api/admin/support/tickets/'+ticket.id,{method:'PATCH',headers:adminHeaders(true),body:JSON.stringify({adminReply:reply.value,status:'in_progress'}),cache:'no-store'});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'ځواب ونه لېږل شو.');meta.textContent='ځواب ثبت شو · حالت: '+result.ticket.status;reply.value='';}
     catch(error){meta.textContent=error.message;}finally{send.disabled=false;}
    });
-   const escalate=document.createElement('button');escalate.type='button';escalate.className='secondary';escalate.textContent='Owner ته د عاجلې بیاکتنې نښه';
-   escalate.addEventListener('click',async()=>{
-    escalate.disabled=true;
-    try{const response=await fetch('/api/admin/support/tickets/'+ticket.id,{method:'PATCH',headers:adminHeaders(true),body:JSON.stringify({status:'in_progress',priority:'urgent',adminReply:'دا موضوع د Owner بیاکتنې ته پورته شوه.'}),cache:'no-store'});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'موضوع پورته نه شوه.');meta.textContent='موضوع Owner ته د عاجل بیاکتنې لپاره نښه شوه.';}
-    catch(error){meta.textContent=error.message;}finally{escalate.disabled=false;}
-   });
-   actions.append(send,escalate);card.append(title,body,meta,reply,actions);output.append(card);
+   if(adminRole==='support'&&ticket.escalation_status!=='pending'){
+    const escalate=document.createElement('button');escalate.type='button';escalate.className='secondary';escalate.textContent='Owner ته د بیاکتنې لپاره وسپاره';
+    escalate.addEventListener('click',async()=>{
+     escalate.disabled=true;
+     try{const response=await fetch('/api/admin/support/tickets/'+ticket.id+'/escalate',{method:'POST',headers:adminHeaders(true),body:JSON.stringify({note:'د Support Admin له خوا د Owner بیاکتنې ته وسپارل شو.'}),cache:'no-store'});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'موضوع Owner ته ونه سپارل شوه.');meta.textContent='موضوع Owner ته وسپارل شوه · حالت: pending';escalate.textContent='Owner ته وسپارل شو';}
+     catch(error){meta.textContent=error.message;escalate.disabled=false;}
+    });
+    actions.append(escalate);
+   }
+   actions.append(send);card.append(title,body,meta,reply,actions);output.append(card);
   });
  }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);}
  finally{button.disabled=false;}
