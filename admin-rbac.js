@@ -24,6 +24,10 @@ function permissionForAdminRequest(req) {
     return 'support.tickets.reply';
   }
 
+  if (method === 'POST' && /^\\/api\\/admin\\/support\\/tickets\\/\\d+\\/escalate$/.test(path)) {
+    return 'support.tickets.escalate';
+  }
+
   // Default deny-by-role: all existing finance, catalog, payment, refund,
   // referral, wallet, DT One and configuration routes are Owner-only.
   return 'owner.only';
