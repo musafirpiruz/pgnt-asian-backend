@@ -2324,6 +2324,70 @@ class _PgntHomePageState extends State<PgntHomePage> {
     );
   }
 
+  Future<void> pickTopUpContact() async {
+    await loadDeviceContacts();
+    if (!mounted || _phoneContacts.isEmpty) return;
+    final selected = await showModalBottomSheet<Contact>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.7,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        t('chooseContact'),
+                        style: const TextStyle(
+                          color: primaryRed,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _phoneContacts.length,
+                  itemBuilder: (context, index) {
+                    final contact = _phoneContacts[index];
+                    return ListTile(
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFFF8EDEE),
+                        child: Icon(Icons.person_outline, color: primaryRed),
+                      ),
+                      title: Text(contact.displayName),
+                      subtitle: Text(contact.phones.first.number),
+                      onTap: () => Navigator.pop(sheetContext, contact),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    phoneController.text = selected.phones.first.number;
+    handlePhoneChanged(phoneController.text);
+    FocusScope.of(context).unfocus();
+  }
+
   Widget buildPhoneField() {
     final phoneHint = switch (selectedCountry.code) {
       'AF' => '07X XXX XXXX',
@@ -2345,9 +2409,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
           Icons.phone_android,
           color: primaryRed,
         ),
-        suffixIcon: const Icon(
-          Icons.shield_outlined,
-          color: successGreen,
+        suffixIcon: IconButton(
+          tooltip: t('contacts'),
+          icon: const Icon(Icons.contacts_outlined, color: primaryRed),
+          onPressed: pickTopUpContact,
         ),
       ),
     );
