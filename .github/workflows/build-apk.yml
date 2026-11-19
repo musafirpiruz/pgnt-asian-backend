@@ -20,6 +20,7 @@ on:
       - ui/homepage-redesign
       - feature/vip-support-screen
       - ui/optional-profile-in-settings
+      - ui/redesign-pgnt-maroon-white
       - fix/persist-order-history-secure-tokens
       - fix/referral-first-topup-rewards
       - fix/android-internet-permission
@@ -59,7 +60,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -193,6 +194,7 @@ jobs:
           required = [
               "android.permission.INTERNET",
               "android.permission.ACCESS_NETWORK_STATE",
+              "android.permission.READ_CONTACTS",
           ]
           for permission in required:
               if permission not in text:
