@@ -506,6 +506,7 @@ String formatEuroCents(int cents) {
 }
 const Map<String, Map<String, String>> translations = {
   'ps': {
+    'chooseContact': 'اړیکه انتخاب کړئ',
     'call': 'زنګ',
     'contacts': 'اړیکې',
     'loadContacts': 'اړیکې ښکاره کړئ',
@@ -578,6 +579,7 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'fa': {
+    'chooseContact': 'انتخاب مخاطب',
     'call': 'تماس',
     'contacts': 'مخاطبین',
     'loadContacts': 'نمایش مخاطبین',
@@ -650,6 +652,7 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'en': {
+    'chooseContact': 'Choose a contact',
     'call': 'Call',
     'contacts': 'Contacts',
     'loadContacts': 'Load contacts',
@@ -722,6 +725,7 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'ur': {
+    'chooseContact': 'رابطہ منتخب کریں',
     'call': 'کال',
     'contacts': 'رابطے',
     'loadContacts': 'رابطے دکھائیں',
@@ -794,6 +798,7 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'hi': {
+    'chooseContact': 'संपर्क चुनें',
     'call': 'कॉल',
     'contacts': 'संपर्क',
     'loadContacts': 'संपर्क दिखाएँ',
@@ -866,6 +871,7 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'bn': {
+    'chooseContact': 'পরিচিতি নির্বাচন করুন',
     'call': 'কল',
     'contacts': 'পরিচিতি',
     'loadContacts': 'পরিচিতি দেখান',
