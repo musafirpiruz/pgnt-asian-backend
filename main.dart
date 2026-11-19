@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import 'firebase_options.dart';
 import 'global_phone_auth_gate.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -505,6 +506,13 @@ String formatEuroCents(int cents) {
 }
 const Map<String, Map<String, String>> translations = {
   'ps': {
+    'call': 'زنګ',
+    'contacts': 'اړیکې',
+    'loadContacts': 'اړیکې ښکاره کړئ',
+    'noContacts': 'اړیکې ونه موندل شوې',
+    'enterNumber': 'نړیوال موبایل نمبر ولیکئ',
+    'permissionDenied': 'د اړیکو اجازه نه ده ورکړل شوې',
+    'dial': 'زنګ ووهئ',
     'faqCheckQ': "څنګه د خپل ټاپ‌اپ حالت وګورم؟",
     'faqCheckA': "د معاملاتو تاریخ خلاص کړئ او د امر حالت وګورئ. د مرستې غوښتلو پر مهال د معاملې شمېره وساتئ.",
     'faqDelayQ': "که ټاپ‌اپ وځنډېږي، څه وکړم؟",
@@ -570,6 +578,13 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'fa': {
+    'call': 'تماس',
+    'contacts': 'مخاطبین',
+    'loadContacts': 'نمایش مخاطبین',
+    'noContacts': 'مخاطبی پیدا نشد',
+    'enterNumber': 'شماره موبایل بین‌المللی را وارد کنید',
+    'permissionDenied': 'اجازه دسترسی به مخاطبین داده نشد',
+    'dial': 'تماس بگیرید',
     'faqCheckQ': "چگونه وضعیت شارژ خود را بررسی کنم؟",
     'faqCheckA': "تاریخچه تراکنش‌ها را باز کنید و وضعیت سفارش را ببینید. هنگام درخواست کمک، شماره تراکنش را نگه دارید.",
     'faqDelayQ': "اگر شارژ به تأخیر افتاد چه کنم؟",
@@ -635,6 +650,13 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'en': {
+    'call': 'Call',
+    'contacts': 'Contacts',
+    'loadContacts': 'Load contacts',
+    'noContacts': 'No contacts found',
+    'enterNumber': 'Enter an international mobile number',
+    'permissionDenied': 'Contacts permission was not granted',
+    'dial': 'Call now',
     'faqCheckQ': "How can I check my top-up?",
     'faqCheckA': "Open History and review the order status. Keep your transaction ID when asking for help.",
     'faqDelayQ': "What should I do if a top-up is delayed?",
@@ -700,6 +722,13 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'ur': {
+    'call': 'کال',
+    'contacts': 'رابطے',
+    'loadContacts': 'رابطے دکھائیں',
+    'noContacts': 'کوئی رابطہ نہیں ملا',
+    'enterNumber': 'بین الاقوامی موبائل نمبر درج کریں',
+    'permissionDenied': 'رابطوں کی اجازت نہیں ملی',
+    'dial': 'کال کریں',
     'faqCheckQ': "میں اپنے ٹاپ اپ کی حالت کیسے دیکھ سکتا ہوں؟",
     'faqCheckA': "ہسٹری کھولیں اور آرڈر کی حالت دیکھیں۔ مدد مانگتے وقت ٹرانزیکشن نمبر محفوظ رکھیں۔",
     'faqDelayQ': "اگر ٹاپ اپ میں دیر ہو تو کیا کروں؟",
@@ -765,6 +794,13 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'hi': {
+    'call': 'कॉल',
+    'contacts': 'संपर्क',
+    'loadContacts': 'संपर्क दिखाएँ',
+    'noContacts': 'कोई संपर्क नहीं मिला',
+    'enterNumber': 'अंतरराष्ट्रीय मोबाइल नंबर दर्ज करें',
+    'permissionDenied': 'संपर्क अनुमति नहीं मिली',
+    'dial': 'कॉल करें',
     'faqCheckQ': "मैं अपना टॉप-अप कैसे जाँचूँ?",
     'faqCheckA': "इतिहास खोलें और ऑर्डर की स्थिति देखें। सहायता माँगते समय लेन-देन आईडी अपने पास रखें।",
     'faqDelayQ': "टॉप-अप में देरी हो तो क्या करूँ?",
@@ -830,6 +866,13 @@ const Map<String, Map<String, String>> translations = {
   },
 
   'bn': {
+    'call': 'কল',
+    'contacts': 'পরিচিতি',
+    'loadContacts': 'পরিচিতি দেখান',
+    'noContacts': 'কোনো পরিচিতি পাওয়া যায়নি',
+    'enterNumber': 'আন্তর্জাতিক মোবাইল নম্বর লিখুন',
+    'permissionDenied': 'পরিচিতির অনুমতি দেওয়া হয়নি',
+    'dial': 'কল করুন',
     'faqCheckQ': "আমি কীভাবে আমার টপ-আপের অবস্থা দেখব?",
     'faqCheckA': "ইতিহাস খুলে অর্ডারের অবস্থা দেখুন। সাহায্য চাইলে লেনদেনের আইডি সংরক্ষণ করুন।",
     'faqDelayQ': "টপ-আপ দেরি হলে কী করব?",
@@ -1356,6 +1399,10 @@ class _PgntHomePageState extends State<PgntHomePage> {
   MobileOperator? selectedOperator;
   int selectedAmount = 100;
   int selectedTab = 0;
+  final TextEditingController callNumberController = TextEditingController();
+  List<Contact> _phoneContacts = [];
+  bool _isLoadingContacts = false;
+  bool _contactsPermissionDenied = false;
   bool isLoading = false;
   bool isQuoteLoading = false;
   Map<String, dynamic>? priceQuote;
@@ -1637,6 +1684,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
     phoneController.dispose();
     customAmountController.dispose();
     referralCodeController.dispose();
+    callNumberController.dispose();
     supportSubjectController.dispose();
     supportMessageController.dispose();
     super.dispose();
@@ -1809,6 +1857,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
         ),
         actions: [
           IconButton(
+            tooltip: t('support'),
+            icon: const Icon(Icons.headset_mic_outlined),
+            onPressed: () => setState(() => selectedTab = 5),
+          ),
+          IconButton(
             tooltip: t('settings'),
             icon: const Icon(Icons.settings_outlined),
             onPressed: openSettings,
@@ -1821,14 +1874,15 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildHome(),
           buildHistory(),
           buildWallet(),
-          buildSupport(),
+          buildCall(),
           buildProfile(),
+          buildSupport(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: cream,
         indicatorColor: gold.withValues(alpha: 0.35),
-        selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
+        selectedIndex: selectedTab > 4 ? 0 : selectedTab,
         onDestinationSelected: (index) {
           setState(() => selectedTab = index);
         },
@@ -1849,9 +1903,146 @@ class _PgntHomePageState extends State<PgntHomePage> {
             label: t('wallet'),
           ),
           NavigationDestination(
-            icon: const Icon(Icons.support_agent_outlined),
-            selectedIcon: const Icon(Icons.support_agent),
-            label: t('support'),
+            icon: const Icon(Icons.call_outlined),
+            selectedIcon: const Icon(Icons.call),
+            label: t('call'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings),
+            label: t('settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> loadDeviceContacts() async {
+    setState(() {
+      _isLoadingContacts = true;
+      _contactsPermissionDenied = false;
+    });
+    try {
+      final granted = await FlutterContacts.requestPermission(readonly: true);
+      if (!granted) {
+        if (mounted) setState(() => _contactsPermissionDenied = true);
+        return;
+      }
+      final contacts = await FlutterContacts.getContacts(withProperties: true);
+      contacts.sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+      if (mounted) setState(() => _phoneContacts = contacts.where((c) => c.phones.isNotEmpty).toList());
+    } catch (_) {
+      if (mounted) showMessage('Could not load contacts. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isLoadingContacts = false);
+    }
+  }
+
+  Future<void> callInternationalNumber(String rawNumber) async {
+    final number = rawNumber.trim();
+    final normalized = number.replaceAll(RegExp(r'[^+0-9]'), '');
+    if (normalized.length < 7 || normalized.length > 16) {
+      showMessage(t('invalidPhone'));
+      return;
+    }
+    final uri = Uri(scheme: 'tel', path: normalized);
+    try {
+      final launched = await launchUrl(uri);
+      if (!launched && mounted) showMessage('Unable to open the phone dialer on this device.');
+    } catch (_) {
+      if (mounted) showMessage('Unable to open the phone dialer on this device.');
+    }
+  }
+
+  Widget buildCall() {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const PgntBrandHeader(subtitle: 'International mobile calls'),
+          const SizedBox(height: 18),
+          pgntSectionTitle(t('call'), Icons.call_rounded),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(t('enterNumber'), style: const TextStyle(fontWeight: FontWeight.w700, color: primaryRed)),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: callNumberController,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      hintText: '+33 6 12 34 56 78',
+                      prefixIcon: const Icon(Icons.phone_outlined, color: primaryRed),
+                      suffixIcon: IconButton(
+                        tooltip: t('contacts'),
+                        icon: const Icon(Icons.contacts_outlined, color: primaryRed),
+                        onPressed: loadDeviceContacts,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: () => callInternationalNumber(callNumberController.text),
+                    icon: const Icon(Icons.call),
+                    label: Text(t('dial')),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(child: pgntSectionTitle(t('contacts'), Icons.contacts_outlined)),
+              TextButton.icon(
+                onPressed: _isLoadingContacts ? null : loadDeviceContacts,
+                icon: _isLoadingContacts
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh),
+                label: Text(t('loadContacts')),
+              ),
+            ],
+          ),
+          if (_contactsPermissionDenied)
+            Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(t('permissionDenied'))))
+          else if (_isLoadingContacts)
+            const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: primaryRed)))
+          else if (_phoneContacts.isEmpty)
+            Card(child: Padding(padding: const EdgeInsets.all(18), child: Center(child: Text(t('noContacts')))))
+          else
+            ..._phoneContacts.map((contact) {
+              final phone = contact.phones.first.number;
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xFFF8EDEE),
+                    child: Text(
+                      contact.displayName.isEmpty ? '?' : contact.displayName.characters.first.toUpperCase(),
+                      style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  title: Text(contact.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(phone),
+                  onTap: () {
+                    callNumberController.text = phone;
+                    FocusScope.of(context).unfocus();
+                  },
+                  trailing: IconButton(
+                    tooltip: t('dial'),
+                    icon: const Icon(Icons.call, color: successGreen),
+                    onPressed: () => callInternationalNumber(phone),
+                  ),
+                ),
+              );
+            }),
+          const SizedBox(height: 10),
+          const Text(
+            'Calls are placed through the phone service available on your device. International carrier charges may apply.',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
           ),
         ],
       ),
