@@ -9,10 +9,14 @@ CREATE TABLE IF NOT EXISTS support_ticket_escalations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   acknowledged_at TIMESTAMPTZ,
   acknowledged_by_uid TEXT,
+  resolved_at TIMESTAMPTZ,
+  resolved_by_uid TEXT,
   CHECK (
-    (status = 'pending' AND acknowledged_at IS NULL AND acknowledged_by_uid IS NULL)
+    (status = 'pending' AND acknowledged_at IS NULL AND acknowledged_by_uid IS NULL AND resolved_at IS NULL AND resolved_by_uid IS NULL)
     OR
-    (status IN ('acknowledged', 'resolved') AND acknowledged_at IS NOT NULL AND acknowledged_by_uid IS NOT NULL)
+    (status = 'acknowledged' AND acknowledged_at IS NOT NULL AND acknowledged_by_uid IS NOT NULL AND resolved_at IS NULL AND resolved_by_uid IS NULL)
+    OR
+    (status = 'resolved' AND acknowledged_at IS NOT NULL AND acknowledged_by_uid IS NOT NULL AND resolved_at IS NOT NULL AND resolved_by_uid IS NOT NULL)
   )
 );
 CREATE INDEX IF NOT EXISTS idx_support_ticket_escalations_owner_inbox
