@@ -19,3 +19,6 @@ CREATE INDEX IF NOT EXISTS idx_support_ticket_escalations_owner_inbox
   ON support_ticket_escalations(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_support_ticket_escalations_ticket
   ON support_ticket_escalations(ticket_id, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_support_ticket_one_pending_escalation
+  ON support_ticket_escalations(ticket_id) WHERE status = 'pending';
