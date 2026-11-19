@@ -49,3 +49,15 @@ test('owner inbox exposes acknowledge and resolve actions', () => {
   assert.match(panel, /\/acknowledge/);
   assert.match(panel, /\/resolve/);
 });
+
+test('Firebase admin phone and SMS code validation use correct digit patterns', () => {
+  assert.ok(panel.includes(String.raw\`if(!/^\\+[1-9]\\d{7,14}$/.test(phone))\`));
+  assert.ok(panel.includes(String.raw\`if(!/^\\d{6}$/.test(code))\`));
+
+  const phonePattern = new RegExp('^\\\\+[1-9]\\\\d{7,14}$');
+  const otpPattern = new RegExp('^\\\\d{6}$');
+  assert.equal(phonePattern.test('+33612345678'), true);
+  assert.equal(phonePattern.test('33612345678'), false);
+  assert.equal(otpPattern.test('123456'), true);
+  assert.equal(otpPattern.test('12345x'), false);
+});
