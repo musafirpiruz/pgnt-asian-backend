@@ -37,3 +37,14 @@ test('owner-only finance and catalog routes remain owner-only', () => {
   assert.equal(permissionForAdminRequest({ method: 'POST', path: '/api/admin/refunds' }), 'owner.only');
   assert.equal(permissionForAdminRequest({ method: 'PATCH', path: '/api/admin/products/42' }), 'owner.only');
 });
+
+test('escalation acknowledgement and resolution remain Owner-only', () => {
+  for (const path of [
+    '/api/admin/support/escalations/1/acknowledge',
+    '/api/admin/support/escalations/1/resolve',
+    '/api/admin/support/escalations/not-a-number/resolve',
+    '/api/admin/support/escalations/1/acknowledge/extra',
+  ]) {
+    assert.equal(permissionForAdminRequest({ method: 'POST', path }), 'owner.only');
+  }
+});
