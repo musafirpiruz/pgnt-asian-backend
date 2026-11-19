@@ -33,6 +33,11 @@ on:
       - "tests/firebase-auth.test.js"
       - "tests/firebase-admin-adapter.test.js"
       - "tests/phone-auth.test.js"
+      - "admin-rbac.js"
+      - "support-routes.js"
+      - "admin-panel.html"
+      - "tests/admin-rbac-permissions.test.js"
+      - "tests/support-escalation.test.js"
       - ".github/workflows/backend-check.yml"
 
 jobs:
