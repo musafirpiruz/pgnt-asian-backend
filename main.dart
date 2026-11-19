@@ -530,6 +530,7 @@ const Map<String, Map<String, String>> translations = {
     'topup': 'موبایل چارج',
     'wallet': 'والټ',
     'history': 'د معاملاتو تاریخچه',
+    'tickets': 'ټکټونه',
     'receipt': 'رسید',
     'support': 'مرسته',
     'profile': 'پروفایل',
@@ -603,6 +604,7 @@ const Map<String, Map<String, String>> translations = {
     'topup': 'شارژ موبایل',
     'wallet': 'کیف پول',
     'history': 'تاریخچه تراکنش‌ها',
+    'tickets': 'تکت‌ها',
     'receipt': 'رسید',
     'support': 'پشتیبانی',
     'profile': 'پروفایل',
@@ -676,6 +678,7 @@ const Map<String, Map<String, String>> translations = {
     'topup': 'Mobile Top-up',
     'wallet': 'Wallet',
     'history': 'Transaction History',
+    'tickets': 'Tickets',
     'receipt': 'Receipt',
     'support': 'Support',
     'profile': 'Profile',
@@ -749,6 +752,7 @@ const Map<String, Map<String, String>> translations = {
     'topup': 'موبائل ریچارج',
     'wallet': 'والٹ',
     'history': 'لین دین کی تاریخ',
+    'tickets': 'ٹکٹ',
     'receipt': 'رسید',
     'support': 'مدد',
     'profile': 'پروفائل',
@@ -822,6 +826,7 @@ const Map<String, Map<String, String>> translations = {
     'topup': 'मोबाइल रिचार्ज',
     'wallet': 'वॉलेट',
     'history': 'लेन-देन इतिहास',
+    'tickets': 'टिकट',
     'receipt': 'रसीद',
     'support': 'सहायता',
     'profile': 'प्रोफ़ाइल',
@@ -895,6 +900,7 @@ const Map<String, Map<String, String>> translations = {
     'topup': 'মোবাইল রিচার্জ',
     'wallet': 'ওয়ালেট',
     'history': 'লেনদেনের ইতিহাস',
+    'tickets': 'টিকিট',
     'receipt': 'রসিদ',
     'support': 'সহায়তা',
     'profile': 'প্রোফাইল',
@@ -1889,7 +1895,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       bottomNavigationBar: NavigationBar(
         backgroundColor: Colors.white,
         indicatorColor: const Color(0xFFF8EDEE),
-        selectedIndex: selectedTab >= 5 ? 0 : selectedTab,
+        selectedIndex: selectedTab >= 4 ? 0 : selectedTab,
         onDestinationSelected: (index) {
           setState(() => selectedTab = index);
         },
@@ -1902,7 +1908,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           NavigationDestination(
             icon: const Icon(Icons.receipt_long_outlined),
             selectedIcon: const Icon(Icons.receipt_long),
-            label: t('history'),
+            label: t('tickets'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.account_balance_wallet_outlined),
@@ -1913,11 +1919,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
             icon: const Icon(Icons.call_outlined),
             selectedIcon: const Icon(Icons.call),
             label: t('call'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.contacts_outlined),
-            selectedIcon: const Icon(Icons.contacts),
-            label: t('contacts'),
           ),
         ],
       ),
