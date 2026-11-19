@@ -1928,7 +1928,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           IconButton(
             tooltip: t('support'),
             icon: const Icon(Icons.headset_mic_outlined),
-            onPressed: () => setState(() => selectedTab = 5),
+            onPressed: () => setState(() => selectedTab = 6),
           ),
           IconButton(
             tooltip: t('settings'),
@@ -1944,6 +1944,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
           buildHistory(),
           buildWallet(),
           buildCall(),
+          buildContacts(),
           buildProfile(),
           buildSupport(),
         ],
@@ -1951,7 +1952,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       bottomNavigationBar: NavigationBar(
         backgroundColor: Colors.white,
         indicatorColor: const Color(0xFFF8EDEE),
-        selectedIndex: selectedTab >= 4 ? 4 : selectedTab,
+        selectedIndex: selectedTab >= 5 ? 5 : selectedTab,
         onDestinationSelected: (index) {
           setState(() => selectedTab = index);
         },
@@ -1975,6 +1976,11 @@ class _PgntHomePageState extends State<PgntHomePage> {
             icon: const Icon(Icons.call_outlined),
             selectedIcon: const Icon(Icons.call),
             label: t('call'),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.contacts_outlined),
+            selectedIcon: const Icon(Icons.contacts),
+            label: t('contacts'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.settings_outlined),
@@ -2021,6 +2027,59 @@ class _PgntHomePageState extends State<PgntHomePage> {
     } catch (_) {
       if (mounted) showMessage('Unable to open the phone dialer on this device.');
     }
+  }
+
+  Widget buildContacts() {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const PgntBrandHeader(subtitle: 'Your saved phone contacts'),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(child: pgntSectionTitle(t('contacts'), Icons.contacts_outlined)),
+              TextButton.icon(
+                onPressed: _isLoadingContacts ? null : loadDeviceContacts,
+                icon: _isLoadingContacts
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh),
+                label: Text(t('loadContacts')),
+              ),
+            ],
+          ),
+          if (_contactsPermissionDenied)
+            Card(child: Padding(padding: const EdgeInsets.all(16), child: Text(t('permissionDenied'))))
+          else if (_isLoadingContacts)
+            const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: primaryRed)))
+          else if (_phoneContacts.isEmpty)
+            Card(child: Padding(padding: const EdgeInsets.all(18), child: Center(child: Text(t('noContacts')))))
+          else
+            ..._phoneContacts.map((contact) {
+              final phone = contact.phones.first.number;
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xFFF8EDEE),
+                    child: Text(contact.displayName.isEmpty ? '?' : contact.displayName.substring(0, 1).toUpperCase(), style: const TextStyle(color: primaryRed, fontWeight: FontWeight.bold)),
+                  ),
+                  title: Text(contact.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(phone),
+                  trailing: IconButton(
+                    tooltip: t('call'),
+                    icon: const Icon(Icons.call, color: successGreen),
+                    onPressed: () => callInternationalNumber(phone),
+                  ),
+                  onTap: () {
+                    callNumberController.text = phone;
+                    setState(() => selectedTab = 3);
+                  },
+                ),
+              );
+            }),
+        ],
+      ),
+    );
   }
 
   Widget buildCall() {
@@ -2349,10 +2408,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
           Icons.phone_android,
           color: primaryRed,
         ),
-        suffixIcon: IconButton(
-          tooltip: t('contacts'),
-          icon: const Icon(Icons.contacts_outlined, color: primaryRed),
-          onPressed: pickTopUpContact,
+        suffixIcon: const Icon(
+          Icons.shield_outlined,
+          color: successGreen,
         ),
       ),
     );
@@ -3712,7 +3770,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
             title: Text(t('support')),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              setState(() => selectedTab = 5);
+              setState(() => selectedTab = 6);
             },
           ),
         ),
