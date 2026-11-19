@@ -38,6 +38,9 @@ test('owner escalation lifecycle endpoints require the owner role and verified U
   assert.equal((support.match(/req\.admin\?\.role !== 'owner'/g) || []).length, 2);
   assert.match(support, /acknowledged_by_uid = \$2/);
   assert.match(support, /status = 'resolved'/);
+  assert.match(support, /resolved_at = NOW\(\), resolved_by_uid = \$2/);
+  assert.match(support, /resolved_at TIMESTAMPTZ/);
+  assert.match(migration, /resolved_by_uid TEXT/);
 });
 
 test('owner inbox exposes acknowledge and resolve actions', () => {
