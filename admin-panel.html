@@ -594,6 +594,34 @@ document.getElementById('loadSupportTickets').addEventListener('click',async()=>
     try{const response=await fetch('/api/admin/support/tickets/'+ticket.id,{method:'PATCH',headers:adminHeaders(true),body:JSON.stringify({adminReply:reply.value,status:'in_progress'}),cache:'no-store'});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'ځواب ونه لېږل شو.');meta.textContent='ځواب ثبت شو · حالت: '+result.ticket.status;reply.value='';}
     catch(error){meta.textContent=error.message;}finally{send.disabled=false;}
    });
+   if(adminRole==='owner'&&ticket.escalation_id&&ticket.escalation_status!=='resolved'){
+    const acknowledge=document.createElement('button');acknowledge.type='button';acknowledge.className='secondary';
+    acknowledge.textContent=ticket.escalation_status==='acknowledged'?'Owner منلې ده':'د سپارل شوې موضوع منل';
+    acknowledge.disabled=ticket.escalation_status==='acknowledged';
+    acknowledge.addEventListener('click',async()=>{
+     acknowledge.disabled=true;
+     try{
+      const response=await fetch('/api/admin/support/escalations/'+ticket.escalation_id+'/acknowledge',{method:'POST',headers:adminHeaders(true),body:JSON.stringify({}),cache:'no-store'});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'موضوع ونه منل شوه.');
+      meta.textContent='Owner موضوع ومنله · حالت: '+result.escalation.status;
+      acknowledge.textContent='Owner منلې ده';
+     }catch(error){meta.textContent=error.message;acknowledge.disabled=false;}
+    });
+    const resolve=document.createElement('button');resolve.type='button';resolve.className='secondary';resolve.textContent='موضوع حل شوې وټاکه';
+    resolve.addEventListener('click',async()=>{
+     if(!confirm('ایا دا موضوع حل شوې ده؟'))return;
+     resolve.disabled=true;
+     try{
+      const response=await fetch('/api/admin/support/escalations/'+ticket.escalation_id+'/resolve',{method:'POST',headers:adminHeaders(true),body:JSON.stringify({}),cache:'no-store'});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'موضوع حل شوې ونه ثبت شوه.');
+      meta.textContent='موضوع حل شوې ثبت شوه · حالت: '+result.escalation.status;
+      acknowledge.disabled=true;resolve.textContent='حل ثبت شو';
+     }catch(error){meta.textContent=error.message;resolve.disabled=false;}
+    });
+    actions.append(acknowledge,resolve);
+   }
    if(adminRole==='support'&&ticket.escalation_status!=='pending'){
     const escalate=document.createElement('button');escalate.type='button';escalate.className='secondary';escalate.textContent='Owner ته د بیاکتنې لپاره وسپاره';
     escalate.addEventListener('click',async()=>{
