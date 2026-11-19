@@ -26,7 +26,7 @@ const Color darkRed = Color(0xFF450609);
 const Color gold = Color(0xFFD4B896);
 const Color brightGold = Color(0xFFFFD700);
 const Color cream = Color(0xFFFFF8E7);
-const Color pageBg = Color(0xFFF8F5F0);
+const Color pageBg = Color(0xFFFAFAFA);
 const Color cardWhite = Color(0xFFFFFFFF);
 const Color successGreen = Color(0xFF238636);
 const Color errorRed = Color(0xFFB42318);
@@ -928,7 +928,7 @@ class PgntAsianApp extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 6),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: gold, width: 0.6),
+            side: const BorderSide(color: Color(0xFFE2E2E2), width: 0.7),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
@@ -943,7 +943,7 @@ class PgntAsianApp extends StatelessWidget {
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(15),
-            borderSide: const BorderSide(color: gold),
+            borderSide: const BorderSide(color: Color(0xFFD8D8D8)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(15),
@@ -2090,8 +2090,8 @@ class _PgntHomePageState extends State<PgntHomePage> {
           color: primaryRed,
         ),
         suffixIcon: const Icon(
-          Icons.shield_outlined,
-          color: successGreen,
+          Icons.contacts_outlined,
+          color: primaryRed,
         ),
       ),
     );
