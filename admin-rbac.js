@@ -24,7 +24,7 @@ function permissionForAdminRequest(req) {
     return 'support.tickets.reply';
   }
 
-  if (method === 'POST' && /^\\/api\\/admin\\/support\\/tickets\\/\\d+\\/escalate$/.test(path)) {
+  if (method === 'POST' && /^\/api\/admin\/support\/tickets\/\d+\/escalate$/.test(path)) {
     return 'support.tickets.escalate';
   }
 
