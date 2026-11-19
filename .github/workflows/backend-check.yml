@@ -12,6 +12,11 @@ on:
       - "phone-auth.js"
       - "tests/firebase-auth.test.js"
       - "tests/phone-auth.test.js"
+      - "admin-rbac.js"
+      - "support-routes.js"
+      - "admin-panel.html"
+      - "tests/admin-rbac-permissions.test.js"
+      - "tests/support-escalation.test.js"
       - ".github/workflows/backend-check.yml"
   push:
     branches:
