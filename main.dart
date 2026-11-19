@@ -1889,7 +1889,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
       bottomNavigationBar: NavigationBar(
         backgroundColor: Colors.white,
         indicatorColor: const Color(0xFFF8EDEE),
-        selectedIndex: selectedTab >= 5 ? 5 : selectedTab,
+        selectedIndex: selectedTab >= 5 ? 0 : selectedTab,
         onDestinationSelected: (index) {
           setState(() => selectedTab = index);
         },
@@ -1918,11 +1918,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
             icon: const Icon(Icons.contacts_outlined),
             selectedIcon: const Icon(Icons.contacts),
             label: t('contacts'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.settings_outlined),
-            selectedIcon: const Icon(Icons.settings),
-            label: t('settings'),
           ),
         ],
       ),
