@@ -97,19 +97,119 @@ module.exports = function registerSupportRoutes({ app, pool, requireAdmin }) {
       const result = await pool.query(
         `SELECT t.id, t.order_id, t.subject, t.message, t.category, t.status, t.priority,
                 t.admin_reply, t.created_at, t.updated_at,
-                o.country, o.operator, o.phone, o.amount, o.currency, o.charge_cents, o.status AS order_status
+                e.id AS escalation_id, e.status AS escalation_status,
+                e.note AS escalation_note, e.created_at AS escalated_at,
+                o.country, o.operator,
+                CASE WHEN $3 = 'owner' THEN o.phone ELSE NULL END AS phone,
+                o.amount, o.currency,
+                CASE WHEN $3 = 'owner' THEN o.charge_cents ELSE NULL END AS charge_cents,
+                o.status AS order_status
          FROM support_tickets t
          LEFT JOIN orders o ON o.order_id = t.order_id
+         LEFT JOIN LATERAL (
+           SELECT id, status, note, created_at
+           FROM support_ticket_escalations
+           WHERE ticket_id = t.id
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1
+         ) e ON TRUE
          WHERE ($1 = '' OR t.status = $1)
          ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
                   t.created_at ASC
          LIMIT $2`,
-        [status, limit]
+        [status, limit, req.admin?.role || 'legacy']
       );
       return res.json({ tickets: result.rows });
     } catch (error) {
       console.error('Admin support ticket list failed:', error.message);
       return res.status(500).json({ error: 'Could not load support tickets.' });
+    }
+  });
+
+  // A separate, permission-gated handoff. The owner inbox reads the pending
+  // escalation from the admin ticket list; normal replies cannot create one.
+  app.post('/api/admin/support/tickets/:ticketId/escalate', requireAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+    const ticketId = Number(req.params.ticketId);
+    if (!Number.isSafeInteger(ticketId) || ticketId < 1) {
+      return res.status(400).json({ error: 'Invalid ticket ID.' });
+    }
+    const note = String(req.body?.note || '').trim();
+    if (note.length > 1000) {
+      return res.status(400).json({ error: 'Escalation note must be 1000 characters or fewer.' });
+    }
+    const adminUid = String(req.admin?.uid || '').trim();
+    if (!adminUid) return res.status(401).json({ error: 'Verified administrator identity is required.' });
+
+    try {
+      const result = await pool.query(
+        `INSERT INTO support_ticket_escalations (ticket_id, escalated_by_uid, note)
+         SELECT id, $2, $3 FROM support_tickets WHERE id = $1
+         ON CONFLICT (ticket_id) WHERE status = 'pending'
+         DO UPDATE SET note = EXCLUDED.note
+         RETURNING id, ticket_id, status, note, created_at`,
+        [ticketId, adminUid, note]
+      );
+      if (result.rowCount !== 1) return res.status(404).json({ error: 'Support ticket not found.' });
+      await pool.query(
+        "UPDATE support_tickets SET priority = 'urgent', updated_at = NOW() WHERE id = $1",
+        [ticketId]
+      );
+      return res.status(201).json({ escalation: result.rows[0] });
+    } catch (error) {
+      console.error('Support ticket escalation failed:', error.message);
+      return res.status(500).json({ error: 'Could not escalate support ticket.' });
+    }
+  });
+
+  // Owner-only lifecycle controls for the escalation inbox. The RBAC mapper
+  // intentionally leaves these POST routes at owner.only.
+  app.post('/api/admin/support/escalations/:escalationId/acknowledge', requireAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+    if (req.admin?.role !== 'owner') return res.status(403).json({ error: 'Owner access is required.' });
+    const escalationId = Number(req.params.escalationId);
+    const adminUid = String(req.admin?.uid || '').trim();
+    if (!Number.isSafeInteger(escalationId) || escalationId < 1) return res.status(400).json({ error: 'Invalid escalation ID.' });
+    if (!adminUid) return res.status(401).json({ error: 'Verified administrator identity is required.' });
+    try {
+      const result = await pool.query(
+        `UPDATE support_ticket_escalations
+         SET status = 'acknowledged', acknowledged_at = NOW(), acknowledged_by_uid = $2
+         WHERE id = $1 AND status = 'pending'
+         RETURNING id, ticket_id, status, note, created_at, acknowledged_at, acknowledged_by_uid`,
+        [escalationId, adminUid]
+      );
+      if (result.rowCount !== 1) return res.status(409).json({ error: 'Escalation is not pending or does not exist.' });
+      return res.json({ escalation: result.rows[0] });
+    } catch (error) {
+      console.error('Support escalation acknowledgement failed:', error.message);
+      return res.status(500).json({ error: 'Could not acknowledge support escalation.' });
+    }
+  });
+
+  app.post('/api/admin/support/escalations/:escalationId/resolve', requireAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+    if (req.admin?.role !== 'owner') return res.status(403).json({ error: 'Owner access is required.' });
+    const escalationId = Number(req.params.escalationId);
+    const adminUid = String(req.admin?.uid || '').trim();
+    if (!Number.isSafeInteger(escalationId) || escalationId < 1) return res.status(400).json({ error: 'Invalid escalation ID.' });
+    if (!adminUid) return res.status(401).json({ error: 'Verified administrator identity is required.' });
+    try {
+      const result = await pool.query(
+        `UPDATE support_ticket_escalations
+         SET status = 'resolved', acknowledged_at = COALESCE(acknowledged_at, NOW()),
+             acknowledged_by_uid = COALESCE(acknowledged_by_uid, $2),
+             resolved_at = NOW(), resolved_by_uid = $2
+         WHERE id = $1 AND status IN ('pending', 'acknowledged')
+         RETURNING id, ticket_id, status, note, created_at, acknowledged_at, acknowledged_by_uid,
+                   resolved_at, resolved_by_uid`,
+        [escalationId, adminUid]
+      );
+      if (result.rowCount !== 1) return res.status(409).json({ error: 'Escalation is already resolved or does not exist.' });
+      return res.json({ escalation: result.rows[0] });
+    } catch (error) {
+      console.error('Support escalation resolution failed:', error.message);
+      return res.status(500).json({ error: 'Could not resolve support escalation.' });
     }
   });
 

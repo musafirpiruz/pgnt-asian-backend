@@ -896,6 +896,9 @@ async function runMigration() {
     const canonicalCountryMigrations = [
       { version: "022_canonical_country_registry_reconciliation", file: "022_canonical_country_registry_reconciliation.sql" },
       { version: "023_current_catalog_country_registry_bootstrap", file: "023_current_catalog_country_registry_bootstrap.sql" },
+      { version: "024_country_provider_approval_audit", file: "024_country_provider_approval_audit.sql" },
+      { version: "025_country_operator_catalog_progress", file: "025_country_operator_catalog_progress.sql" },
+      { version: "026_support_ticket_escalation_inbox", file: "026_support_ticket_escalation_inbox.sql" },
     ];
     for (const migration of canonicalCountryMigrations) {
       const applied = await client.query(

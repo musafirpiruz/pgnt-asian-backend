@@ -16,8 +16,9 @@ const Stripe = require('stripe');
 const { Pool } = require('pg');
 const { executeReservedRefund } = require('./refund-flow');
 const { parseRangedProductCapability, isValidRangedDestinationAmount } = require('./dtone-ranged');
+const { evaluateDtOneCatalogMatch } = require('./catalog-auto-verification');
 
-const PGNT_MIN_AMOUNT = 10;
+const PGNT_MIN_AMOUNT = 75;
 const PGNT_MAX_AMOUNT = 3000;
 
 const app = express();
@@ -182,7 +183,7 @@ app.use(
         new Error('Origin not allowed by CORS')
       );
     },
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
       'Authorization',
@@ -2974,31 +2975,51 @@ async function syncStripeRefundStatus(charge) {
 // =====================================================
 
 // Admin authentication.
-// Set a long, random ADMIN_API_KEY in Render.
+// Legacy shared-key mode remains Owner-equivalent until Firebase RBAC and the
+// browser sign-in flow are both configured. Never configure the UID variables
+// before the Admin Panel has been migrated to Firebase bearer tokens.
+let adminRbac = null;
+let permissionForAdminRequest = null;
+
+app.get('/api/admin/session', requireAdmin, (req, res) => {
+  return res.set('Cache-Control', 'no-store').json({
+    authenticated: true,
+    role: req.admin?.role || 'owner',
+    permissions: req.admin?.permissions || ['*'],
+  });
+});
+
 function requireAdmin(req, res, next) {
-  if (!ADMIN_API_KEY) {
-    return res.status(503).json({
-      error: 'Admin authentication is not configured.',
+  if (adminRbac && adminRbac.configured) {
+    return adminRbac.authenticateAdmin(req, res, () => {
+      const permission = permissionForAdminRequest(req);
+      return adminRbac.requireAdminPermission(permission)(req, res, next);
     });
   }
 
-  const suppliedKey = String(
-    req.headers['x-admin-api-key'] || ''
-  );
+  if (!ADMIN_API_KEY) {
+    return res.status(503).json({
+      error: 'Admin authentication is not configured.',
+      code: 'ADMIN_AUTH_NOT_CONFIGURED',
+    });
+  }
 
+  const suppliedKey = String(req.headers['x-admin-api-key'] || '');
   const expected = Buffer.from(ADMIN_API_KEY);
   const supplied = Buffer.from(suppliedKey);
-
-  const valid =
-    expected.length === supplied.length &&
+  const valid = expected.length === supplied.length &&
     crypto.timingSafeEqual(expected, supplied);
 
   if (!valid) {
     return res.status(401).json({
       error: 'Unauthorized.',
+      code: 'ADMIN_AUTH_REJECTED',
     });
   }
 
+  // Legacy shared-key access is treated as Owner. This fallback must be
+  // removed after the Firebase browser sign-in migration is verified.
+  req.admin = Object.freeze({ uid: 'legacy-admin-key', role: 'owner', permissions: Object.freeze(['*']) });
   return next();
 }
 
@@ -3202,6 +3223,16 @@ const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
   requirePhoneNumber: true,
 });
 
+// Firebase UID allow-list is optional during the staged rollout. It activates
+// role enforcement only after both distinct administrator UIDs are configured.
+const { createAdminRbac, permissionForAdminRequest: resolveAdminPermission } = require('./admin-rbac');
+adminRbac = createAdminRbac({
+  firebaseAuthMiddleware,
+  ownerUid: process.env.ADMIN_OWNER_FIREBASE_UID,
+  supportUid: process.env.ADMIN_SUPPORT_FIREBASE_UID,
+});
+permissionForAdminRequest = resolveAdminPermission;
+
 // International customer phone authentication (Firebase; SMS remains deferred).
 require('./phone-auth').registerPhoneAuthRoutes({
   app,
@@ -3210,6 +3241,484 @@ require('./phone-auth').registerPhoneAuthRoutes({
 });
 
 
+
+// Admin sample approval: verify one authoritative DT One product per operator.
+// This records identity and price evidence only. All activation flags remain false.
+// Authenticated operator overview for the admin catalog-verification panel.
+// Counts are read-only; no catalog or activation state is changed.
+app.get('/api/admin/country-operators', requireAdmin, async (req,res)=>{
+  if(!pool) return res.status(503).json({error:'Database is not configured.'});
+  try{
+    const result=await pool.query(`
+      SELECT o.id,o.country_code,o.operator_key,o.display_name,o.provider,o.provider_operator_id,
+             o.verified_at AS operator_verified_at,o.active AS operator_active,
+             a.id AS approval_id,a.sample_product_catalog_id,a.provider_operator_id AS approved_provider_operator_id,
+             a.verified_at AS sample_approved_at,
+             COUNT(DISTINCT p.id)::int AS total_products,
+             COUNT(DISTINCT p.id) FILTER (WHERE p.active=TRUE OR m.active=TRUE)::int AS active_products,
+             COUNT(DISTINCT p.id) FILTER (WHERE m.verified_at IS NOT NULL)::int AS verified_products,
+             COUNT(DISTINCT p.id) FILTER (WHERE m.verified_at IS NULL AND p.active=FALSE AND m.active=FALSE)::int AS pending_products,
+             COUNT(DISTINCT p.id) FILTER (WHERE m.verified_at IS NULL AND p.active=FALSE AND m.active=FALSE
+               AND EXISTS (SELECT 1 FROM catalog_verification_audit v
+                           WHERE v.operator_id=o.id AND v.product_catalog_id=p.id
+                             AND v.event_type='product_rejected'))::int AS review_products
+      FROM country_operators o
+      LEFT JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
+      LEFT JOIN product_catalog p ON p.id=m.product_catalog_id
+      LEFT JOIN country_operator_approvals a ON a.operator_id=o.id AND a.status='approved'
+      GROUP BY o.id,a.id
+      ORDER BY o.country_code,o.display_name,o.id
+    `);
+    return res.json({operators:result.rows.map(row=>({
+      id:row.id,countryCode:row.country_code,operatorKey:row.operator_key,name:row.display_name,
+      provider:row.provider,providerOperatorId:row.provider_operator_id,active:row.operator_active,
+      verifiedAt:row.operator_verified_at,
+      approval:row.approval_id?{id:row.approval_id,sampleProductCatalogId:row.sample_product_catalog_id,
+        providerOperatorId:row.approved_provider_operator_id,verifiedAt:row.sample_approved_at}:null,
+      counts:{total:Number(row.total_products),active:Number(row.active_products),
+        verified:Number(row.verified_products),pending:Number(row.pending_products),review:Number(row.review_products)}
+    }))});
+  }catch(error){
+    console.error('Country operator admin overview failed:',error.message);
+    return res.status(500).json({error:'Could not load country operator overview.'});
+  }
+});
+
+app.get('/api/admin/country-operators/:operatorId/catalog-candidates', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const operatorId = Number(req.params.operatorId);
+  if (!Number.isSafeInteger(operatorId) || operatorId < 1) return res.status(400).json({ error: 'A valid operator ID is required.' });
+  try {
+    const result = await pool.query(
+      `SELECT o.id AS operator_id,o.country_code,o.operator_key,o.display_name AS operator_name,
+              o.provider_operator_id,o.verified_at AS operator_verified_at,o.active AS operator_active,
+              p.id AS product_catalog_id,p.product_id AS provider_product_id,p.operator AS catalog_operator,
+              p.amount,p.currency,p.price_eur_cents,p.wholesale_price_eur_cents,p.active AS product_active,
+              m.verified_at AS mapping_verified_at,m.active AS mapping_active
+       FROM country_operators o
+       LEFT JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
+       LEFT JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE o.id=$1 ORDER BY p.amount NULLS LAST,p.id`, [operatorId]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Country operator was not found.' });
+    const first=result.rows[0];
+    return res.json({
+      operator:{id:first.operator_id,countryCode:first.country_code,operatorKey:first.operator_key,
+        name:first.operator_name,providerOperatorId:first.provider_operator_id,
+        verifiedAt:first.operator_verified_at,active:first.operator_active},
+      candidates:result.rows.filter(r=>r.product_catalog_id!==null).map(r=>({
+        productCatalogId:r.product_catalog_id,providerProductId:r.provider_product_id,
+        operator:r.catalog_operator,denomination:r.amount,currency:r.currency,
+        retailPriceEurCents:r.price_eur_cents,wholesalePriceEurCents:r.wholesale_price_eur_cents,
+        active:r.product_active,mappingVerifiedAt:r.mapping_verified_at,mappingActive:r.mapping_active})),
+      activationChanged:false
+    });
+  } catch(error) {
+    console.error('Country operator candidate lookup failed:',error.message);
+    return res.status(500).json({error:'Could not load catalog candidates.'});
+  }
+});
+
+app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin, async (req,res)=>{
+  if(!pool) return res.status(503).json({approved:false,error:'Database is not configured.'});
+  const operatorId=Number(req.params.operatorId), productCatalogId=Number(req.body?.productCatalogId);
+  if(!Number.isSafeInteger(operatorId)||operatorId<1||!Number.isSafeInteger(productCatalogId)||productCatalogId<1)
+    return res.status(400).json({approved:false,error:'Valid operatorId and productCatalogId are required.'});
+  if(req.body?.confirmApproval!==true)
+    return res.status(400).json({approved:false,confirmationRequired:true,error:'Send confirmApproval: true to approve this sample.'});
+  if(!DTONE_API_KEY||!DTONE_API_SECRET)
+    return res.status(503).json({approved:false,error:'DT One credentials are not configured.'});
+
+  let client;
+  try {
+    client=await pool.connect();
+    await client.query('BEGIN');
+    const found=await client.query(
+      `SELECT o.id AS operator_id,o.country_code,o.operator_key,o.display_name AS operator_name,
+              o.provider,o.provider_operator_id,o.active AS operator_active,
+              p.id AS product_catalog_id,p.product_id,p.country,p.operator,p.amount,p.currency,p.active AS product_active,
+              m.id AS mapping_id,m.active AS mapping_active
+       FROM country_operators o
+       JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
+       JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE o.id=$1 AND p.id=$2 FOR UPDATE OF o,m,p`,[operatorId,productCatalogId]);
+    if(found.rowCount!==1){await client.query('ROLLBACK');return res.status(404).json({approved:false,error:'Product is not mapped to this operator.'});}
+    const row=found.rows[0];
+    if(row.operator_active||row.product_active||row.mapping_active){
+      await client.query('ROLLBACK');return res.status(409).json({approved:false,error:'Active operator, mapping or product cannot enter sample approval.'});
+    }
+    const response=await fetch(`${DTONE_API_BASE_URL}/v1/products/${encodeURIComponent(row.product_id)}`,{
+      method:'GET',headers:{Authorization:getDtOneAuthHeader(),Accept:'application/json'},signal:AbortSignal.timeout(15000)});
+    if(!response.ok){await client.query('ROLLBACK');return res.status(response.status===404?404:502).json({approved:false,providerStatus:response.status,error:'DT One did not confirm this product.'});}
+    const providerProduct=await response.json();
+    const evaluated=evaluateDtOneCatalogMatch({...row,active:row.product_active},providerProduct);
+    if(!evaluated.verified){
+      await client.query(
+        `INSERT INTO catalog_verification_audit(operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
+         VALUES($1,$2,'product_rejected','admin_api_key','shared_admin_api_key','rejected',$3,$4::jsonb)`,
+        [operatorId,productCatalogId,evaluated.reasons,JSON.stringify({providerProductId:String(providerProduct?.id??''),providerOperatorId:String(providerProduct?.operator?.id??'')})]);
+      await client.query('COMMIT');
+      return res.status(422).json({approved:false,verified:false,reasons:evaluated.reasons,activationChanged:false,transactionCreated:false});
+    }
+    const p=evaluated.provider;
+    if(row.provider_operator_id&&String(row.provider_operator_id)!==String(p.operatorId)){
+      await client.query('ROLLBACK');return res.status(409).json({approved:false,error:'Provider operator ID conflicts with canonical mapping.'});
+    }
+    const current=await client.query("SELECT id FROM country_operator_approvals WHERE operator_id=$1 AND status='approved' FOR UPDATE",[operatorId]);
+    if(current.rowCount){await client.query('ROLLBACK');return res.status(409).json({approved:false,error:'An approved sample already exists for this operator.'});}
+    const approval=await client.query(
+      `INSERT INTO country_operator_approvals
+       (operator_id,sample_product_catalog_id,provider,provider_operator_id,provider_product_id,
+        destination_currency,product_type,denomination,retail_price_eur_cents,wholesale_price_eur_cents,
+        status,verified_by,evidence)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approved','shared_admin_api_key',$11::jsonb)
+       RETURNING id,verified_at`,
+      [operatorId,productCatalogId,row.provider,p.operatorId,p.productId,p.currency,p.productType,p.amount,
+       p.retailPriceEurCents,p.wholesalePriceEurCents,
+       JSON.stringify({source:'dtone_product_detail',environment:/preprod/i.test(DTONE_API_BASE_URL)?'pre-production':'configured'})]);
+    await client.query("UPDATE country_operators SET provider_operator_id=$1,verified_at=NOW(),updated_at=NOW() WHERE id=$2",[p.operatorId,operatorId]);
+    await client.query("UPDATE country_operator_products SET verified_at=NOW(),updated_at=NOW() WHERE id=$1",[row.mapping_id]);
+    await client.query("UPDATE product_catalog SET price_eur_cents=$1,wholesale_price_eur_cents=$2,updated_at=NOW() WHERE id=$3 AND active=FALSE",[p.retailPriceEurCents,p.wholesalePriceEurCents,productCatalogId]);
+    await client.query(
+      `INSERT INTO catalog_verification_audit(operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,evidence)
+       VALUES($1,$2,'sample_approved','admin_api_key','shared_admin_api_key','success',$3::jsonb)`,
+      [operatorId,productCatalogId,JSON.stringify({approvalId:approval.rows[0].id,providerProductId:p.productId,
+        providerOperatorId:p.operatorId,currency:p.currency,denomination:p.amount,
+        retailPriceEurCents:p.retailPriceEurCents,wholesalePriceEurCents:p.wholesalePriceEurCents})]);
+    await client.query('COMMIT');
+    return res.status(201).json({approved:true,approvalId:approval.rows[0].id,verifiedAt:approval.rows[0].verified_at,
+      operatorActive:false,productMappingActive:false,productActive:false,activationChanged:false,transactionCreated:false});
+  }catch(error){
+    if(client) await client.query('ROLLBACK').catch(()=>{});
+    if(error.code==='23505') return res.status(409).json({approved:false,error:'An approved sample already exists for this operator.'});
+    console.error('Country operator sample approval failed:',error.message);
+    return res.status(500).json({approved:false,error:'Could not safely approve the representative product.'});
+  }finally{if(client) client.release();}
+});
+
+// Automatically verify the next bounded page of products after one owner-approved sample.
+// A successful check records technical verification only; it never activates anything.
+app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', requireAdmin, async (req,res)=>{
+  if(!pool) return res.status(503).json({error:'Database is not configured.'});
+  const operatorId=Number(req.params.operatorId);
+  const requestedAfterProductCatalogId=req.body?.afterProductCatalogId===undefined||req.body?.afterProductCatalogId===null
+    ? null : Number(req.body.afterProductCatalogId);
+  const limit=req.body?.limit===undefined ? 25 : Number(req.body.limit);
+  if(!Number.isSafeInteger(operatorId)||operatorId<1||
+     (requestedAfterProductCatalogId!==null&&(!Number.isSafeInteger(requestedAfterProductCatalogId)||requestedAfterProductCatalogId<0))||
+     !Number.isSafeInteger(limit)||limit<1||limit>25)
+    return res.status(400).json({error:'Valid operatorId, non-negative afterProductCatalogId, and limit 1-25 are required.'});
+  if(!DTONE_API_KEY||!DTONE_API_SECRET)
+    return res.status(503).json({error:'DT One credentials are not configured.'});
+
+  let client;
+  try{
+    const approvalResult=await pool.query(
+      "SELECT id,sample_product_catalog_id,provider,provider_operator_id,provider_product_id,destination_currency,product_type,denomination,retail_price_eur_cents,wholesale_price_eur_cents FROM country_operator_approvals WHERE operator_id=$1 AND status='approved'",
+      [operatorId]);
+    if(approvalResult.rowCount!==1)
+      return res.status(409).json({error:'Exactly one current owner-approved sample is required before automatic verification.'});
+    const approval=approvalResult.rows[0];
+    const progressResult=await pool.query(
+      'SELECT last_processed_product_catalog_id FROM country_operator_catalog_verification_progress WHERE operator_id=$1 AND approval_id=$2',
+      [operatorId,approval.id]);
+    const afterProductCatalogId=progressResult.rowCount
+      ? Number(progressResult.rows[0].last_processed_product_catalog_id)
+      : 0;
+    if(requestedAfterProductCatalogId!==null&&requestedAfterProductCatalogId!==afterProductCatalogId)
+      return res.status(409).json({error:'The saved verification cursor has changed. Reload the operator overview and continue from the server cursor.',nextAfterProductCatalogId:afterProductCatalogId});
+
+    const operatorResult=await pool.query(
+      'SELECT id,country_code,operator_key,display_name,provider,provider_operator_id,active FROM country_operators WHERE id=$1',
+      [operatorId]);
+    if(operatorResult.rowCount!==1) return res.status(404).json({error:'Country operator was not found.'});
+    const operator=operatorResult.rows[0];
+    if(operator.active) return res.status(409).json({error:'Active operators cannot enter automatic catalog verification.'});
+    if(String(operator.provider_operator_id||'')!==String(approval.provider_operator_id))
+      return res.status(409).json({error:'Approved provider operator identity no longer matches the canonical operator.'});
+
+    const candidates=await pool.query(
+      `SELECT p.id AS product_catalog_id,p.product_id,p.country,p.operator,p.amount,p.currency,
+              p.price_eur_cents,p.wholesale_price_eur_cents,p.active AS product_active,
+              m.id AS mapping_id,m.active AS mapping_active,m.verified_at AS mapping_verified_at
+       FROM country_operator_products m
+       JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE m.country_code=$1 AND m.operator_key=$2 AND p.id<>$3
+         AND p.id>$4 AND m.verified_at IS NULL AND p.active=FALSE AND m.active=FALSE
+       ORDER BY p.id LIMIT $5`,
+      [operator.country_code,operator.operator_key,approval.sample_product_catalog_id,afterProductCatalogId,limit]);
+    const items=[];
+    for(const row of candidates.rows){
+      if(row.product_active||row.mapping_active){
+        items.push({productCatalogId:row.product_catalog_id,verified:false,reasons:['active_catalog_row_not_eligible_for_auto_verification']});
+        continue;
+      }
+      try{
+        const response=await fetch(DTONE_API_BASE_URL+'/v1/products/'+encodeURIComponent(row.product_id),{
+          method:'GET',headers:{Authorization:getDtOneAuthHeader(),Accept:'application/json'},
+          signal:AbortSignal.timeout(catalogVerificationTimeoutMs)});
+        if(!response.ok){
+          items.push({productCatalogId:row.product_catalog_id,verified:false,
+            reasons:[response.status===404?'provider_product_not_found':'provider_unavailable'],providerStatus:response.status});
+          continue;
+        }
+        const providerProduct=await response.json();
+        const evaluated=evaluateDtOneCatalogMatch({...row,active:row.product_active},providerProduct);
+        const reasons=[...evaluated.reasons];
+        if(String(providerProduct?.operator?.id??'')!==String(approval.provider_operator_id))
+          reasons.push('approved_sample_provider_operator_id_mismatch');
+        items.push({productCatalogId:row.product_catalog_id,providerProductId:String(row.product_id),
+          verified:reasons.length===0,reasons,
+          evidence:reasons.length===0?evaluated.provider:null});
+      }catch(providerError){
+        items.push({productCatalogId:row.product_catalog_id,verified:false,reasons:['provider_timeout_or_network_error']});
+      }
+    }
+
+    client=await pool.connect();
+    await client.query('BEGIN');
+    const lockedApproval=await client.query(
+      "SELECT id,provider_operator_id,sample_product_catalog_id FROM country_operator_approvals WHERE operator_id=$1 AND status='approved' FOR UPDATE",
+      [operatorId]);
+    const lockedOperator=await client.query(
+      'SELECT id,provider_operator_id,active FROM country_operators WHERE id=$1 FOR UPDATE',[operatorId]);
+    const lockedProgress=await client.query(
+      'SELECT last_processed_product_catalog_id FROM country_operator_catalog_verification_progress WHERE operator_id=$1 AND approval_id=$2 FOR UPDATE',
+      [operatorId,approval.id]);
+    const persistedCursor=lockedProgress.rowCount
+      ? Number(lockedProgress.rows[0].last_processed_product_catalog_id) : 0;
+
+    if(persistedCursor!==afterProductCatalogId){
+      await client.query('ROLLBACK');
+      return res.status(409).json({error:'Another verification page advanced the saved cursor. Reload and continue.' ,nextAfterProductCatalogId:persistedCursor});
+    }
+    if(lockedApproval.rowCount!==1||lockedOperator.rowCount!==1||lockedOperator.rows[0].active||
+       String(lockedApproval.rows[0].provider_operator_id)!==String(approval.provider_operator_id)||
+       String(lockedOperator.rows[0].provider_operator_id||'')!==String(approval.provider_operator_id)){
+      await client.query('ROLLBACK');
+      return res.status(409).json({error:'Operator approval or identity changed during verification; retry the page.'});
+    }
+    for(const item of items){
+      const row=candidates.rows.find(candidate=>String(candidate.product_catalog_id)===String(item.productCatalogId));
+      const locked=await client.query(
+        `SELECT p.id,p.product_id,p.country,p.operator,p.amount,p.currency,p.active AS product_active,
+                p.price_eur_cents,p.wholesale_price_eur_cents,m.active AS mapping_active,m.verified_at
+         FROM product_catalog p JOIN country_operator_products m ON m.product_catalog_id=p.id
+         WHERE p.id=$1 AND m.country_code=$2 AND m.operator_key=$3
+         FOR UPDATE OF p,m`,
+        [item.productCatalogId,operator.country_code,operator.operator_key]);
+      const current=locked.rows[0];
+      const unchanged=!!current&&String(current.product_id)===String(row.product_id)&&
+        String(current.country).trim()===String(row.country).trim()&&String(current.operator)===String(row.operator)&&
+        Number(current.amount)===Number(row.amount)&&String(current.currency).trim()===String(row.currency).trim()&&
+        !current.product_active&&!current.mapping_active&&!current.verified_at;
+      if(!unchanged){
+        await client.query('ROLLBACK');
+        return res.status(409).json({error:'A catalog row changed during provider verification; retry the page.'});
+      }
+      const verified=item.verified===true;
+      if(verified){
+        await client.query(
+          'UPDATE product_catalog SET price_eur_cents=$1,wholesale_price_eur_cents=$2,updated_at=NOW() WHERE id=$3 AND active=FALSE',
+          [item.evidence.retailPriceEurCents,item.evidence.wholesalePriceEurCents,item.productCatalogId]);
+        await client.query('UPDATE country_operator_products SET verified_at=NOW(),updated_at=NOW() WHERE id=$1 AND active=FALSE',[row.mapping_id]);
+      }
+      await client.query(
+        `INSERT INTO catalog_verification_audit(operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
+         VALUES($1,$2,$3,'system','operator_sample_auto_verification',$4,$5,$6::jsonb)`,
+        [operatorId,item.productCatalogId,verified?'product_verified':'product_rejected',
+         verified?'success':'rejected',item.reasons,
+         JSON.stringify({source:'dtone_product_detail',approvalId:approval.id,
+           approvedSampleProductCatalogId:approval.sample_product_catalog_id,
+           approvedProviderOperatorId:approval.provider_operator_id,providerProductId:item.providerProductId||null,
+           providerStatus:item.providerStatus||null,providerEvidence:item.evidence||null})]);
+    }
+    const nextAfter= candidates.rows.length ? candidates.rows[candidates.rows.length-1].product_catalog_id : afterProductCatalogId;
+    await client.query(
+      `INSERT INTO country_operator_catalog_verification_progress(operator_id,approval_id,last_processed_product_catalog_id,pages_completed)
+       VALUES($1,$2,$3,1)
+       ON CONFLICT(operator_id) DO UPDATE SET approval_id=EXCLUDED.approval_id,
+         last_processed_product_catalog_id=EXCLUDED.last_processed_product_catalog_id,
+         pages_completed=country_operator_catalog_verification_progress.pages_completed+1,
+         updated_at=NOW()`,
+      [operatorId,approval.id,nextAfter]);
+    await client.query('COMMIT');
+    const verifiedCount=items.filter(item=>item.verified).length;
+    return res.json({operatorId,approvalId:approval.id,requestedCount:items.length,verifiedCount,
+      reviewCount:items.length-verifiedCount,items,nextAfterProductCatalogId:nextAfter,
+      hasMore:items.length===limit,activationChanged:false,transactionCreated:false});
+  }catch(error){
+    if(client) await client.query('ROLLBACK').catch(()=>{});
+    console.error('Country operator automatic catalog verification failed:',error.message);
+    return res.status(500).json({error:'Could not safely complete automatic catalog verification.'});
+  }finally{if(client) client.release();}
+});
+
+
+app.post('/api/admin/country-operators/:operatorId/catalog-retry-reviewed', requireAdmin, async (req,res)=>{
+  if(!pool) return res.status(503).json({error:'Database is not configured.'});
+  const operatorId=Number(req.params.operatorId);
+  if(!Number.isSafeInteger(operatorId)||operatorId<1||req.body?.confirmRetry!==true)
+    return res.status(400).json({error:'A valid operatorId and confirmRetry:true are required.'});
+  let client;
+  try{
+    client=await pool.connect();
+    await client.query('BEGIN');
+    const lockedApproval=await client.query(
+      "SELECT id FROM country_operator_approvals WHERE operator_id=$1 AND status='approved' FOR UPDATE",
+      [operatorId]);
+    const result=lockedApproval.rowCount===1 ? await client.query(
+      `SELECT a.id AS approval_id,MIN(v.product_catalog_id)::bigint AS first_reviewed
+       FROM country_operator_approvals a
+       JOIN catalog_verification_audit v ON v.operator_id=a.operator_id
+       JOIN country_operator_products m ON m.product_catalog_id=v.product_catalog_id
+       JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE a.operator_id=$1 AND a.status='approved' AND v.event_type='product_rejected'
+         AND v.evidence->>'approvalId'=a.id::text
+         AND m.verified_at IS NULL AND m.active=FALSE AND p.active=FALSE
+       GROUP BY a.id`,[operatorId]) : {rowCount:0,rows:[]};
+    if(!result.rowCount||result.rows[0].first_reviewed===null){
+      await client.query('ROLLBACK');
+      return res.status(404).json({error:'No rejected inactive products are available for an explicit retry.'});
+    }
+    const firstReviewed=Number(result.rows[0].first_reviewed),cursor=Math.max(0,firstReviewed-1);
+    await client.query(
+      `INSERT INTO country_operator_catalog_verification_progress(operator_id,approval_id,last_processed_product_catalog_id,pages_completed)
+       VALUES($1,$2,$3,0)
+       ON CONFLICT(operator_id) DO UPDATE SET approval_id=EXCLUDED.approval_id,
+         last_processed_product_catalog_id=EXCLUDED.last_processed_product_catalog_id,
+         pages_completed=0,updated_at=NOW()`,
+      [operatorId,result.rows[0].approval_id,cursor]);
+    await client.query(
+      `INSERT INTO catalog_verification_audit(operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
+       VALUES($1,$2,'product_retry_queued','system','owner_confirmed_retry','preview',ARRAY[]::TEXT[],$3::jsonb)`,
+      [operatorId,firstReviewed,JSON.stringify({approvalId:result.rows[0].approval_id,
+        firstReviewedProductCatalogId:firstReviewed,cursor,verificationStarted:false})]);
+    await client.query('COMMIT');
+    return res.json({retryQueued:true,firstReviewedProductCatalogId:firstReviewed,
+      nextAfterProductCatalogId:cursor,verificationStarted:false,activationChanged:false,transactionCreated:false});
+  }catch(error){
+    if(client) await client.query('ROLLBACK').catch(()=>{});
+    console.error('Catalog reviewed-product retry preparation failed:',error.message);
+    return res.status(500).json({error:'Could not safely prepare reviewed-product retry.'});
+  }finally{if(client)client.release();}
+});
+
+// Operator-scoped catalog batch preview. This is a dry-run only:
+// it checks at most 25 explicitly mapped inactive products and records audit evidence.
+// It never changes catalog activation, creates orders, or submits top-ups.
+app.post('/api/admin/country-operators/:operatorId/catalog-batch-preview', requireAdmin, async (req,res)=>{
+  if(!pool) return res.status(503).json({dryRun:true,error:'Database is not configured.'});
+  const operatorId=Number(req.params.operatorId);
+  const productCatalogIds=req.body?.productCatalogIds;
+  if(!Number.isSafeInteger(operatorId)||operatorId<1)
+    return res.status(400).json({dryRun:true,error:'A valid operatorId is required.'});
+  if(req.body?.dryRun!==true)
+    return res.status(400).json({dryRun:true,confirmationRequired:true,error:'Send dryRun: true to request a non-activating preview.'});
+  if(!Array.isArray(productCatalogIds)||productCatalogIds.length<1||productCatalogIds.length>25||
+     productCatalogIds.some(id=>!Number.isSafeInteger(id)||id<1)||
+     new Set(productCatalogIds).size!==productCatalogIds.length)
+    return res.status(400).json({dryRun:true,error:'Provide 1-25 unique positive productCatalogIds.'});
+  if(!DTONE_API_KEY||!DTONE_API_SECRET)
+    return res.status(503).json({dryRun:true,error:'DT One credentials are not configured.'});
+
+  let client;
+  try {
+    const candidates=await pool.query(
+      `SELECT o.id AS operator_id,o.country_code,o.operator_key,o.display_name AS operator_name,
+              o.provider,o.provider_operator_id,o.active AS operator_active,
+              p.id AS product_catalog_id,p.product_id,p.country,p.operator,p.amount,p.currency,
+              p.active AS product_active,m.active AS mapping_active
+       FROM country_operators o
+       JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
+       JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE o.id=$1 AND p.id=ANY($2::bigint[])
+       ORDER BY p.id`,
+      [operatorId,productCatalogIds]
+    );
+    if(!candidates.rowCount) return res.status(404).json({dryRun:true,error:'Operator or mapped catalog products were not found.'});
+    if(candidates.rowCount!==productCatalogIds.length)
+      return res.status(422).json({dryRun:true,error:'Every requested product must be explicitly mapped to this operator.'});
+    const first=candidates.rows[0];
+    if(first.operator_active||candidates.rows.some(row=>row.product_active||row.mapping_active))
+      return res.status(409).json({dryRun:true,error:'Active operators, mappings or products cannot enter batch preview.'});
+
+    const items=[];
+    for(const row of candidates.rows){
+      try{
+        const response=await fetch(DTONE_API_BASE_URL+'/v1/products/'+encodeURIComponent(row.product_id),{
+          method:'GET',
+          headers:{Authorization:getDtOneAuthHeader(),Accept:'application/json'},
+          signal:AbortSignal.timeout(15000)
+        });
+        if(!response.ok){
+          items.push({productCatalogId:row.product_catalog_id,providerProductId:String(row.product_id),
+            verified:false,providerStatus:response.status,
+            reasons:[response.status===404?'provider_product_not_found':'provider_unavailable']});
+          continue;
+        }
+        const providerProduct=await response.json();
+        const evaluated=evaluateDtOneCatalogMatch({...row,active:row.product_active},providerProduct);
+        items.push({productCatalogId:row.product_catalog_id,providerProductId:String(row.product_id),
+          verified:evaluated.verified,reasons:evaluated.reasons,
+          evidence:evaluated.verified?evaluated.provider:null});
+      }catch(providerError){
+        items.push({productCatalogId:row.product_catalog_id,providerProductId:String(row.product_id),
+          verified:false,reasons:['provider_timeout_or_network_error']});
+      }
+    }
+
+    client=await pool.connect();
+    await client.query('BEGIN');
+    const locked=await client.query(
+      `SELECT o.id AS operator_id,o.provider_operator_id,o.active AS operator_active,
+              p.id AS product_catalog_id,p.product_id,p.country,p.operator,p.amount,p.currency,
+              p.active AS product_active,m.active AS mapping_active
+       FROM country_operators o
+       JOIN country_operator_products m ON m.country_code=o.country_code AND m.operator_key=o.operator_key
+       JOIN product_catalog p ON p.id=m.product_catalog_id
+       WHERE o.id=$1 AND p.id=ANY($2::bigint[])
+       ORDER BY p.id FOR UPDATE OF o,m,p`,
+      [operatorId,productCatalogIds]
+    );
+    const originalById=new Map(candidates.rows.map(row=>[String(row.product_catalog_id),row]));
+    const changed=locked.rowCount!==productCatalogIds.length||locked.rows.some(row=>{
+      const original=originalById.get(String(row.product_catalog_id));
+      return !original||row.operator_active||row.product_active||row.mapping_active||
+        String(row.product_id)!==String(original.product_id)||
+        String(row.country).trim()!==String(original.country).trim()||
+        String(row.operator)!==String(original.operator)||
+        Number(row.amount)!==Number(original.amount)||
+        String(row.currency).trim()!==String(original.currency).trim()||
+        String(row.provider_operator_id||'')!==String(original.provider_operator_id||'');
+    });
+    if(changed){
+      await client.query('ROLLBACK');
+      return res.status(409).json({dryRun:true,error:'Catalog state changed during provider verification; rerun the preview.'});
+    }
+    for(const item of items){
+      await client.query(
+        `INSERT INTO catalog_verification_audit
+          (operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
+         VALUES($1,$2,'batch_previewed','admin_api_key','shared_admin_api_key','preview',$3,$4::jsonb)`,
+        [operatorId,item.productCatalogId,item.reasons,
+         JSON.stringify({dryRun:true,verified:item.verified,providerProductId:item.providerProductId,
+           providerStatus:item.providerStatus||null,providerEvidence:item.evidence||null})]
+      );
+    }
+    await client.query('COMMIT');
+    const verifiedCount=items.filter(item=>item.verified).length;
+    return res.json({dryRun:true,operatorId,requestedCount:items.length,verifiedCount,
+      rejectedCount:items.length-verifiedCount,items,auditPersisted:true,
+      applyAvailable:false,activationChanged:false,transactionCreated:false});
+  }catch(error){
+    if(client) await client.query('ROLLBACK').catch(()=>{});
+    console.error('Country operator catalog batch preview failed:',error.message);
+    return res.status(500).json({dryRun:true,error:'Could not safely preview the requested catalog batch.'});
+  }finally{
+    if(client) client.release();
+  }
+});
 
 // Small browser page for the owner to run the read-only product check
 // without installing an API client. The admin key is entered by the owner
@@ -3393,7 +3902,7 @@ app.delete('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) =>
 app.get('/admin', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; style-src 'unsafe-inline'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://www.recaptcha.net; frame-src https://www.google.com https://www.recaptcha.net https://pgnt-asian-topup.firebaseapp.com; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
   return res.sendFile(require('path').join(__dirname, 'admin-panel.html'));
 });
 

@@ -4,10 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PGNT ASIAN TOPUP — ساده اډمین</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <style>
 :root{color-scheme:light;--red:#7a0c10;--red-dark:#51070a;--gold:#d4b896;--ink:#202124;--muted:#626b76;--line:#e3e7ec;--bg:#f3f5f8;--green:#176b3a;--amber:#805000;--surface:#fff;--shadow:0 12px 34px #1822300a}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
+body:not(.authenticated) #adminMain > .card:not(#loginCard){display:none}
 body{margin:0;background:radial-gradient(ellipse at top right,#f1e7dc 0,transparent 36%),var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
 header{position:relative;overflow:hidden;background:linear-gradient(115deg,var(--red-dark),var(--red) 62%,#8e2024);color:white;padding:25px 18px 24px;border-bottom:4px solid var(--gold)}
 header:after{content:"";position:absolute;width:230px;height:230px;border:1px solid #ffffff20;border-radius:50%;right:-65px;top:-120px;box-shadow:0 0 0 28px #ffffff08,0 0 0 58px #ffffff06;pointer-events:none}
@@ -59,27 +62,49 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 </head>
 <body>
 <header><div class="wrap"><h1>PGNT ASIAN TOPUP</h1><p>ساده اډمین — د فرمایشونو او تادیاتو کتنه</p></div></header>
-<main>
-<section class="card">
-<h2>۱. خوندي ننوتل</h2>
-<p class="muted">د اډمین API کیلي دلته ولیکئ. کیلي په دې پاڼه کې د کار تر پای پورې پاتې کېږي؛ په موبایل یا براوزر کې نه ساتل کېږي.</p>
-<label for="adminKey">Admin API key</label>
-<input id="adminKey" type="password" autocomplete="off" placeholder="خپله اډمین کیلي ولیکئ">
-<div class="actions"><button id="loadQueue">د کتنې فرمایشونه ښکاره کړه</button><button class="secondary" id="loadPricing">د بیو او فیسونو کتنه</button><button class="secondary" id="clearKey">کیلي پاکه کړه</button></div>
-<div id="notice" class="status" role="status" aria-live="polite">د پیل لپاره کیلي ولیکئ او «د کتنې فرمایشونه ښکاره کړه» کېکاږئ.</div>
+<main id="adminMain">
+<section class="card" id="loginCard">
+<h2>۱. د اډمین خوندي ننوتل</h2>
+<p class="muted">د Firebase Phone Login له لارې ننوتل. یوازې د Owner او ټاکل شوي Support Admin شمېرې منل کېږي.</p>
+<label for="adminPhone">د اډمین موبایل شمېره (نړیواله بڼه، لکه +33…)</label>
+<input id="adminPhone" type="tel" autocomplete="tel" placeholder="+33..." inputmode="tel">
+<div class="actions"><button id="sendAdminCode" type="button">د تایید کوډ راولېږه</button></div>
+<div id="recaptcha-container"></div>
+<label for="adminOtp" id="otpLabel" hidden>د SMS تایید کوډ</label>
+<input id="adminOtp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="د SMS کوډ" hidden>
+<div class="actions"><button id="verifyAdminCode" type="button" hidden>ننوتل تایید کړه</button><button class="secondary" id="adminSignOut" type="button" hidden>وتل</button></div>
+<details><summary>د Owner لپاره د پخوانۍ API Key موقتي بدیل</summary>
+<p class="muted">دا یوازې د خوندي انتقال پر مهال د Owner پخوانی لاسرسی ساتي. Support Admin باید دا کیلي ونه لري.</p>
+<label for="adminKey">Legacy Owner API key</label><input id="adminKey" type="password" autocomplete="off" placeholder="یوازې د Owner پخوانۍ کیلي">
+<div class="actions"><button class="secondary" id="legacyOwnerLogin" type="button">د Owner موقتي لاسرسی</button><button class="secondary" id="clearKey" type="button">کیلي پاکه کړه</button></div>
+</details>
+<div id="notice" class="status" role="status" aria-live="polite">د Firebase له لارې د ننوتلو لپاره خپله ثبت شوې اډمین شمېره ولیکئ.</div>
+<div id="sessionInfo" class="status" hidden></div>
+</section>
+<section class="card" id="supportCard" hidden>
+<h2>د مشتریانو ملاتړ — Support Admin</h2>
+<p class="muted">Support Admin یوازې د ټکټونو لوستل، ځواب ورکول او Owner ته د موضوع پورته کولای شي. د تلیفون شمېره او د تادیې اندازه نه ښودل کېږي.</p>
+<div class="actions"><button id="loadSupportTickets" type="button">د ملاتړ ټکټونه ولوله</button></div>
+<div id="supportTickets"><div class="empty">د ملاتړ ټکټونه لا نه دي لوستل شوي.</div></div>
 </section>
 <section class="card">
-<h2>۲. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
+<h2>۲. د شبکو او محصولاتو اتومات تصدیق</h2>
+<p class="muted">د هرې شبکې لپاره یوازې یو نمونه محصول په لاسي ډول تایید کړئ. وروسته نور محصولات په هر پړاو کې تر ۲۵ پورې په اتومات ډول ارزول کېږي. دا کار محصولات نه فعالوي او تادیه یا Top-up نه ترسره کوي.</p>
+<div class="actions"><button id="loadOperatorCatalog" type="button">د شبکو او محصولاتو لېست ولوله</button></div>
+<div id="operatorCatalog"><div class="empty">د شبکو د لېست لپاره پورته تڼۍ کېکاږئ.</div></div>
+</section>
+<section class="card">
+<h2>۳. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
 <p class="muted">یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.</p>
 <div id="queue"><div class="empty">تر اوسه فرمایشونه نه دي لوستل شوي.</div></div>
 </section>
 <section class="card">
-<h2>۳. د بیو او فیسونو لنډ راپور</h2>
+<h2>۴. د بیو او فیسونو لنډ راپور</h2>
 <p class="muted">دا برخه یوازې اوسني ثبت شوي تنظیمات ښيي؛ هېڅ ارزښت نه بدلوي.</p>
 <div id="pricing"><div class="empty">د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.</div></div>
 </section>
 <section class="card">
-<h2>۴. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
+<h2>۵. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
 <p class="muted">د DT One د محصول ID ولیکئ. دا برخه د محصول، بیې، اسعارو او تادیې د چمتووالي ستونزې ښيي؛ هېڅ محصول نه فعالوي او هېڅ قیمت نه بدلوي.</p>
 <label for="diagnosticProductId">DT One Product ID</label>
 <input id="diagnosticProductId" inputmode="numeric" autocomplete="off" placeholder="د محصول ID، لکه 7194">
@@ -87,7 +112,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div id="diagnostic"><div class="empty">د تشخیص لپاره د محصول ID ولیکئ.</div></div>
 </section>
 <section class="card">
-<h2>۵. د Wallet او Ledger د Migration خوندیتوب (یوازې لوستل)</h2>
+<h2>۶. د Wallet او Ledger د Migration خوندیتوب (یوازې لوستل)</h2>
 <p class="muted">دا کتنه د اصلي Database د تکراري Wallet حسابونو، تکراري Ledger حوالو او د مالي تاریخ د حذف کېدو احتمالي خطرونه شمېري. هېڅ Migration، مالي لیکنه یا د Wallet فعالول نه ترسره کوي.</p>
 <div class="actions"><button class="secondary" id="loadWalletPreflight">د Wallet خوندیتوب راپور ولوله</button></div>
 <div id="walletPreflight"><div class="empty">د راپور لپاره پورته تڼۍ کېکاږئ. د اډمین کیلي یوازې د دې پاڼې په حافظه کې کارول کېږي.</div></div>
@@ -118,6 +143,44 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <script>
 'use strict';
 const keyInput=document.getElementById('adminKey');
+const firebaseConfig={apiKey:"AIzaSyCbQZv-n9mtf6zG4HNGa2aIhIM76sHkSlY",authDomain:"pgnt-asian-topup.firebaseapp.com",projectId:"pgnt-asian-topup",storageBucket:"pgnt-asian-topup.firebasestorage.app",messagingSenderId:"992919566178",appId:"1:992919566178:web:9e40deec1331aa202c1e3b"};
+const firebaseApp=firebase.apps.length?firebase.app():firebase.initializeApp(firebaseConfig);
+const firebaseAuth=firebase.auth();
+let adminConfirmation=null;
+let adminIdToken=null;
+let adminRole=null;
+let recaptchaVerifier=null;
+function setAuthenticatedView(role){
+ adminRole=role;
+ document.body.classList.add('authenticated');
+ document.getElementById('sessionInfo').hidden=false;
+ document.getElementById('sessionInfo').className='status ok';
+ document.getElementById('sessionInfo').textContent='ننوتل بریالی شو · رول: '+(role==='owner'?'Owner':'Support Admin');
+ document.getElementById('adminSignOut').hidden=false;
+ document.getElementById('supportCard').hidden=false;
+ document.querySelectorAll('#adminMain > .card').forEach(card=>{
+  if(card.id==='loginCard'||card.id==='supportCard')return;
+  card.hidden=role!=='owner';
+ });
+ document.getElementById('supportCard').hidden=false;
+}
+function adminHeaders(json=false){
+ const headers={Accept:'application/json'};
+ if(json)headers['Content-Type']='application/json';
+ if(adminIdToken)headers.Authorization='Bearer '+adminIdToken;
+ const legacy=keyInput?.value?.trim();
+ if(legacy)headers['x-admin-api-key']=legacy;
+ return headers;
+}
+async function activateAdminSession(){
+ if(adminIdToken)adminIdToken=await firebaseAuth.currentUser.getIdToken(true);
+ const response=await fetch('/api/admin/session',{method:'GET',headers:adminHeaders(),cache:'no-store'});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(data.error||'د اډمین رول تایید نه شو.');
+ setAuthenticatedView(data.role);
+ setNotice('خوندي ننوتل بریالي شول.','ok');
+}
+
 const notice=document.getElementById('notice');
 const queue=document.getElementById('queue');
 const pricing=document.getElementById('pricing');
@@ -127,18 +190,16 @@ function setNotice(message,type=''){notice.className='status'+(type?' '+type:'')
 function escapeText(value){return String(value??'—');}
 function moneyEur(cents){const n=Number(cents);return Number.isFinite(n)?new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(n/100):'—';}
 async function adminRequest(url){
- const key=keyInput.value.trim();
- if(!key)throw new Error('لومړی د اډمین API کیلي ولیکئ.');
- const response=await fetch(url,{method:'GET',headers:{'x-admin-api-key':key,'Accept':'application/json'},cache:'no-store'});
+ if(!adminIdToken&&!keyInput.value.trim())throw new Error('لومړی د اډمین په توګه ننوتل وکړئ.');
+ const response=await fetch(url,{method:'GET',headers:adminHeaders(),cache:'no-store'});
  const raw=await response.text();let data={};
  try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('سرور د لوستلو وړ ځواب ورنه کړ (HTTP '+response.status+').');}
  if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
  return data;
 }
 async function adminPost(url,body){
- const key=keyInput.value.trim();
- if(!key)throw new Error('لومړی د اډمین API کیلي ولیکئ.');
- const response=await fetch(url,{method:'POST',headers:{'x-admin-api-key':key,'Accept':'application/json','Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});
+ if(!adminIdToken&&!keyInput.value.trim())throw new Error('لومړی د اډمین په توګه ننوتل وکړئ.');
+ const response=await fetch(url,{method:'POST',headers:adminHeaders(true),body:JSON.stringify(body),cache:'no-store'});
  const raw=await response.text();let data={};
  try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('سرور د لوستلو وړ ځواب ورنه کړ (HTTP '+response.status+').');}
  if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
@@ -194,6 +255,123 @@ function makeOrderCard(order){
  card.append(stripeResult,dtoneResult);
  return card;
 }
+const operatorCatalog=document.getElementById('operatorCatalog');
+const loadOperatorCatalogButton=document.getElementById('loadOperatorCatalog');
+const countryNames={AF:'افغانستان',PK:'پاکستان',IN:'هند',BD:'بنګله دېش'};
+const reasonNames={
+ provider_product_not_found:'محصول په DT One کې ونه موندل شو',
+ provider_unavailable:'د DT One خدمت موقتاً شتون نه لري',
+ provider_timeout_or_network_error:'د DT One اړیکه و نه رسېده یا وخت ختم شو',
+ approved_sample_provider_operator_id_mismatch:'د شبکې Provider ID له تایید شوې نمونې سره توپیر لري',
+ invalid_or_missing_eur_prices:'د EUR عمده/پرچون قیمتونه ناسم یا نیمګړي دي',
+ product_id_mismatch:'د محصول پېژندشمېره برابره نه ده',
+ country_mismatch:'هېواد سمون نه لري',
+ operator_mismatch:'شبکه سمون نه لري',
+ currency_mismatch:'اسعار سمون نه لري',
+ denomination_mismatch:'د محصول اندازه سمون نه لري',
+ unsupported_product_type:'د محصول ډول ملاتړ نه لري'
+};
+function reasonLabel(reason){return reasonNames[reason]||String(reason||'نامعلوم دلیل');}
+function makeCatalogOperatorCard(operator){
+ const card=document.createElement('article');card.className='order';
+ const top=document.createElement('div');top.className='order-top';
+ const heading=document.createElement('strong');heading.textContent=(countryNames[operator.countryCode]||operator.countryCode)+' · '+operator.name;
+ const state=document.createElement('span');state.className='pill';state.textContent=operator.approval?'د نمونې تایید شوی':'د نمونې تایید ته اړتیا لري';
+ top.append(heading,state);card.append(top);
+ const counts=document.createElement('p');counts.className='muted';
+ counts.textContent='ټول محصولات: '+operator.counts.total+' · تخنیکي تایید: '+operator.counts.verified+' · پاتې: '+operator.counts.pending+' · د بیاکتنې نښې: '+operator.counts.review+' · فعال: '+operator.counts.active;
+ card.append(counts);
+ const meta=document.createElement('p');meta.className='muted';
+ meta.textContent='Operator ID: '+operator.id+' · DT One Operator ID: '+(operator.providerOperatorId||'لا نه دی تایید شوی')+' · حالت: '+(operator.active?'فعال':'غیرفعال');
+ card.append(meta);
+ const area=document.createElement('div');area.className='detail';card.append(area);
+ if(operator.approval){
+  const sample=document.createElement('p');sample.textContent='منل شوې نمونه Product Catalog ID: '+operator.approval.sampleProductCatalogId+' · Approval ID: '+operator.approval.id;
+  area.append(sample);
+  const run=document.createElement('button');run.type='button';run.textContent='تر ۲۵ پورې پاتې محصولات اتومات تصدیق کړه';
+  const progress=document.createElement('div');progress.className='status';progress.textContent='د اتومات تصدیق پیل یا دوام ته چمتو دی.';
+  run.addEventListener('click',async()=>{
+   run.disabled=true;progress.className='status';progress.textContent='د DT One له لارې د محصولاتو کره کتنه روانه ده…';
+   try{
+    const result=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-auto-verify',{limit:25});
+    if(result.activationChanged!==false||result.transactionCreated!==false)throw new Error('خوندیتوب: سرور د نه فعالولو تمه شوې پایله تایید نه کړه؛ پروسه ودرول شوه.');
+    progress.className='status '+(result.reviewCount?'warn':'ok');
+    progress.textContent='په دې پړاو کې: '+result.requestedCount+' · تایید شوي: '+result.verifiedCount+' · بیاکتنې ته: '+result.reviewCount+' · نور پاتې: '+(result.hasMore?'هو':'دا پاڼه بشپړه شوه')+'. فعالول نه دي شوي.';
+    if(Array.isArray(result.items)&&result.items.length){
+     const list=document.createElement('div');list.className='detail';
+     result.items.forEach(item=>{
+      const line=document.createElement('p');
+      line.textContent='Catalog ID '+item.productCatalogId+' · '+(item.verified?'تخنیکي تایید شو':'بیاکتنې ته اړتیا لري')+(item.reasons?.length?' · '+item.reasons.map(reasonLabel).join('، '):'');
+      list.append(line);
+     });
+     area.append(list);
+    }
+    run.textContent=result.hasMore?'راتلونکی پړاو (تر ۲۵ محصولاتو)':'د نورو پاتې محصولاتو لپاره بیا کتنه';
+   }catch(error){progress.className='status error';progress.textContent=error.message;}
+   finally{run.disabled=false;}
+  });
+    const retry=document.createElement('button');retry.type='button';retry.className='secondary';retry.textContent='د بیاکتنې محصولاتو بیا ازموینه چمتو کړه';
+    retry.addEventListener('click',async()=>{
+     if(!confirm('ایا غواړئ د بیاکتنې ټول غیرفعال محصولات د بیا ازموینې لپاره له سره په کتار کې واچوئ؟ ازموینه به یوازې د بل تڼۍ په کېکاږلو پیل شي.'))return;
+     retry.disabled=true;
+     try{
+      const queued=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-retry-reviewed',{confirmRetry:true});
+      progress.className='status warn';progress.textContent='بیا ازموینه چمتو شوه. د پیل لپاره د اتومات تصدیق تڼۍ کېکاږئ. لومړی محصول: '+queued.firstReviewedProductCatalogId;
+     }catch(error){progress.className='status error';progress.textContent=error.message;}
+     finally{retry.disabled=false;}
+    });
+    area.append(retry);
+  area.append(run,progress);
+ }else{
+  const load=document.createElement('button');load.type='button';load.className='secondary';load.textContent='د نمونې لپاره محصولات ښکاره کړه';
+  const choices=document.createElement('div');choices.className='detail';
+  load.addEventListener('click',async()=>{
+   load.disabled=true;choices.replaceChildren();
+   try{
+    const data=await adminRequest('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/catalog-candidates');
+    const candidates=Array.isArray(data.candidates)?data.candidates.filter(item=>item.active!==true&&item.mappingActive!==true):[];
+    if(!candidates.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='د دې شبکې لپاره غیرفعال نمونه محصول ونه موندل شو.';choices.append(empty);return;}
+    const label=document.createElement('label');label.textContent='یوازې یو نمونه محصول وټاکئ';
+    const select=document.createElement('select');select.id='sample-'+operator.id;
+    candidates.forEach(item=>{
+     const option=document.createElement('option');option.value=String(item.productCatalogId);
+     option.textContent='ID '+item.productCatalogId+' · DT One '+item.providerProductId+' · '+item.denomination+' '+item.currency;
+     select.append(option);
+    });
+    const approve=document.createElement('button');approve.type='button';approve.textContent='دا نمونه د شبکې لپاره تایید کړه';
+    const status=document.createElement('div');status.className='status';status.textContent='له تایید مخکې د محصول او شبکې معلومات وګورئ.';
+    approve.addEventListener('click',async()=>{
+     if(!confirm('ایا ډاډه یاست چې همدا یو محصول د دې شبکې استازې نمونه تاییدوئ؟ نور محصولات به وروسته اتومات وکتل شي، خو فعال به نه شي.'))return;
+     approve.disabled=true;status.className='status';status.textContent='د DT One اصلي معلومات تاییدېږي…';
+     try{
+      const result=await adminPost('/api/admin/country-operators/'+encodeURIComponent(operator.id)+'/approve-sample',{productCatalogId:Number(select.value),confirmApproval:true});
+      status.className='status ok';status.textContent='نمونه تایید شوه. Approval ID: '+result.approvalId+' · هېڅ محصول یا شبکه فعاله نه شوه.';
+      await loadOperatorCatalog();
+     }catch(error){status.className='status error';status.textContent=error.message;}
+     finally{approve.disabled=false;}
+    });
+    choices.append(label,select,approve,status);
+   }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;choices.append(failed);}
+   finally{load.disabled=false;}
+  });
+  area.append(load,choices);
+ }
+ return card;
+}
+async function loadOperatorCatalog(){
+ loadOperatorCatalogButton.disabled=true;operatorCatalog.replaceChildren();
+ try{
+  const data=await adminRequest('/api/admin/country-operators');
+  const operators=Array.isArray(data.operators)?data.operators:[];
+  if(!operators.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='د شبکو ثبت شوی لېست نشته.';operatorCatalog.append(empty);}
+  operators.forEach(operator=>operatorCatalog.append(makeCatalogOperatorCard(operator)));
+  const note=document.createElement('div');note.className='safe';note.textContent='یادونه: تخنیکي تایید د فعالولو اجازه نه ده. د شبکې، Mapping او محصول فعالول جلا مالکانه تایید غواړي.';
+  operatorCatalog.append(note);
+  setNotice('د شبکو لېست ولوستل شو: '+operators.length+' شبکې.','ok');
+ }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;operatorCatalog.append(failed);setNotice(error.message,'error');}
+ finally{loadOperatorCatalogButton.disabled=false;}
+}
+loadOperatorCatalogButton.addEventListener('click',loadOperatorCatalog);
 loadQueueButton.addEventListener('click',async()=>{
  loadQueueButton.disabled=true;queue.replaceChildren();setNotice('د کتنې فرمایشونه لوستل کېږي…');
  try{
@@ -352,6 +530,110 @@ document.getElementById('createReferralCode').addEventListener('click',async()=>
   document.getElementById('newReferralContact').value='';
   document.getElementById('loadReferralReport').click();
  }catch(error){result.className='status error';result.textContent=error.message;}
+ finally{button.disabled=false;}
+});
+firebaseAuth.onAuthStateChanged(async user=>{
+ if(!user)return;
+ try{adminIdToken=await user.getIdToken(true);await activateAdminSession();}
+ catch(error){setNotice('Firebase حساب تایید شو، خو د اډمین رول لا فعال نه دی. د Owner لپاره د پخوانۍ API Key موقتي لاره شته.','warn');}
+});
+document.getElementById('sendAdminCode').addEventListener('click',async()=>{
+ const phone=document.getElementById('adminPhone').value.trim();
+ const button=document.getElementById('sendAdminCode');
+ if(!/^\+[1-9]\d{7,14}$/.test(phone)){setNotice('د موبایل شمېره د نړیوالې بڼې په ډول ولیکئ، لکه +33…','warn');return;}
+ button.disabled=true;setNotice('د Firebase له لارې د تایید کوډ لېږل کېږي…');
+ try{
+  if(!recaptchaVerifier)recaptchaVerifier=new firebase.auth.RecaptchaVerifier('recaptcha-container',{size:'invisible'});
+  adminConfirmation=await firebaseAuth.signInWithPhoneNumber(phone,recaptchaVerifier);
+  document.getElementById('adminOtp').hidden=false;document.getElementById('otpLabel').hidden=false;document.getElementById('verifyAdminCode').hidden=false;
+  setNotice('د تایید کوډ ولېږل شو. کوډ دننه کړئ.','ok');
+ }catch(error){if(recaptchaVerifier){recaptchaVerifier.clear();recaptchaVerifier=null;}setNotice('د Firebase Login ناکام شو: '+(error.code||error.message),'error');}
+ finally{button.disabled=false;}
+});
+document.getElementById('verifyAdminCode').addEventListener('click',async()=>{
+ const code=document.getElementById('adminOtp').value.trim();const button=document.getElementById('verifyAdminCode');
+ if(!/^\d{6}$/.test(code)){setNotice('د SMS شپږ عددي کوډ ولیکئ.','warn');return;}
+ button.disabled=true;
+ try{
+  const credential=await adminConfirmation.confirm(code);adminIdToken=await credential.user.getIdToken(true);
+  await activateAdminSession();
+ }catch(error){setNotice('ننوتل تایید نه شول: '+(error.code||error.message),'error');}
+ finally{button.disabled=false;}
+});
+document.getElementById('legacyOwnerLogin').addEventListener('click',async()=>{
+ if(!keyInput.value.trim()){setNotice('د Owner پخوانۍ API Key ولیکئ.','warn');return;}
+ adminIdToken=null;
+ try{await activateAdminSession();}catch(error){setNotice(error.message,'error');}
+});
+document.getElementById('adminSignOut').addEventListener('click',async()=>{
+ try{await firebaseAuth.signOut();}catch(_){}
+ adminIdToken=null;adminRole=null;document.body.classList.remove('authenticated');
+ document.querySelectorAll('#adminMain > .card').forEach(card=>{card.hidden=false;});
+ document.getElementById('supportCard').hidden=true;document.getElementById('adminSignOut').hidden=true;
+ document.getElementById('sessionInfo').hidden=true;setNotice('له اډمین حساب څخه ووتلئ.','ok');
+});
+document.getElementById('loadSupportTickets').addEventListener('click',async()=>{
+ const output=document.getElementById('supportTickets');const button=document.getElementById('loadSupportTickets');
+ output.replaceChildren();button.disabled=true;
+ try{
+  const response=await fetch('/api/admin/support/tickets',{headers:adminHeaders(),cache:'no-store'});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'د ملاتړ ټکټونه ونه لوستل شول.');
+  const tickets=Array.isArray(data.tickets)?data.tickets:[];
+  if(!tickets.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='اوس مهال د ملاتړ ټکټ نشته.';output.append(empty);}
+  tickets.forEach(ticket=>{
+   const card=document.createElement('div');card.className='order';
+   const title=document.createElement('strong');title.textContent='#'+ticket.id+' · '+ticket.subject;
+   const body=document.createElement('p');body.textContent=ticket.message||'';
+   const meta=document.createElement('p');meta.className='muted';meta.textContent='حالت: '+ticket.status+' · کټګوري: '+ticket.category+' · لومړیتوب: '+ticket.priority+(ticket.escalation_status?' · Owner بیاکتنه: '+ticket.escalation_status:'');
+   const reply=document.createElement('textarea');reply.rows=3;reply.maxLength=4000;reply.placeholder='مشتري ته ځواب ولیکئ';
+   const actions=document.createElement('div');actions.className='actions';
+   const send=document.createElement('button');send.type='button';send.textContent='ځواب ولېږه';
+   send.addEventListener('click',async()=>{
+    send.disabled=true;
+    try{const response=await fetch('/api/admin/support/tickets/'+ticket.id,{method:'PATCH',headers:adminHeaders(true),body:JSON.stringify({adminReply:reply.value,status:'in_progress'}),cache:'no-store'});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'ځواب ونه لېږل شو.');meta.textContent='ځواب ثبت شو · حالت: '+result.ticket.status;reply.value='';}
+    catch(error){meta.textContent=error.message;}finally{send.disabled=false;}
+   });
+   if(adminRole==='owner'&&ticket.escalation_id&&ticket.escalation_status!=='resolved'){
+    const acknowledge=document.createElement('button');acknowledge.type='button';acknowledge.className='secondary';
+    acknowledge.textContent=ticket.escalation_status==='acknowledged'?'Owner منلې ده':'د سپارل شوې موضوع منل';
+    acknowledge.disabled=ticket.escalation_status==='acknowledged';
+    acknowledge.addEventListener('click',async()=>{
+     acknowledge.disabled=true;
+     try{
+      const response=await fetch('/api/admin/support/escalations/'+ticket.escalation_id+'/acknowledge',{method:'POST',headers:adminHeaders(true),body:JSON.stringify({}),cache:'no-store'});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'موضوع ونه منل شوه.');
+      meta.textContent='Owner موضوع ومنله · حالت: '+result.escalation.status;
+      acknowledge.textContent='Owner منلې ده';
+     }catch(error){meta.textContent=error.message;acknowledge.disabled=false;}
+    });
+    const resolve=document.createElement('button');resolve.type='button';resolve.className='secondary';resolve.textContent='موضوع حل شوې وټاکه';
+    resolve.addEventListener('click',async()=>{
+     if(!confirm('ایا دا موضوع حل شوې ده؟'))return;
+     resolve.disabled=true;
+     try{
+      const response=await fetch('/api/admin/support/escalations/'+ticket.escalation_id+'/resolve',{method:'POST',headers:adminHeaders(true),body:JSON.stringify({}),cache:'no-store'});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||'موضوع حل شوې ونه ثبت شوه.');
+      meta.textContent='موضوع حل شوې ثبت شوه · حالت: '+result.escalation.status;
+      acknowledge.disabled=true;resolve.textContent='حل ثبت شو';
+     }catch(error){meta.textContent=error.message;resolve.disabled=false;}
+    });
+    actions.append(acknowledge,resolve);
+   }
+   if(adminRole==='support'&&ticket.escalation_status!=='pending'){
+    const escalate=document.createElement('button');escalate.type='button';escalate.className='secondary';escalate.textContent='Owner ته د بیاکتنې لپاره وسپاره';
+    escalate.addEventListener('click',async()=>{
+     escalate.disabled=true;
+     try{const response=await fetch('/api/admin/support/tickets/'+ticket.id+'/escalate',{method:'POST',headers:adminHeaders(true),body:JSON.stringify({note:'د Support Admin له خوا د Owner بیاکتنې ته وسپارل شو.'}),cache:'no-store'});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'موضوع Owner ته ونه سپارل شوه.');meta.textContent='موضوع Owner ته وسپارل شوه · حالت: pending';escalate.textContent='Owner ته وسپارل شو';}
+     catch(error){meta.textContent=error.message;escalate.disabled=false;}
+    });
+    actions.append(escalate);
+   }
+   actions.append(send);card.append(title,body,meta,reply,actions);output.append(card);
+  });
+ }catch(error){const failed=document.createElement('div');failed.className='status error';failed.textContent=error.message;output.append(failed);}
  finally{button.disabled=false;}
 });
 document.getElementById('clearKey').addEventListener('click',()=>{keyInput.value='';keyInput.focus();setNotice('اډمین کیلي پاکه شوه.','ok');});
