@@ -198,9 +198,11 @@ module.exports = function registerSupportRoutes({ app, pool, requireAdmin }) {
       const result = await pool.query(
         `UPDATE support_ticket_escalations
          SET status = 'resolved', acknowledged_at = COALESCE(acknowledged_at, NOW()),
-             acknowledged_by_uid = COALESCE(acknowledged_by_uid, $2)
+             acknowledged_by_uid = COALESCE(acknowledged_by_uid, $2),
+             resolved_at = NOW(), resolved_by_uid = $2
          WHERE id = $1 AND status IN ('pending', 'acknowledged')
-         RETURNING id, ticket_id, status, note, created_at, acknowledged_at, acknowledged_by_uid`,
+         RETURNING id, ticket_id, status, note, created_at, acknowledged_at, acknowledged_by_uid,
+                   resolved_at, resolved_by_uid`,
         [escalationId, adminUid]
       );
       if (result.rowCount !== 1) return res.status(409).json({ error: 'Escalation is already resolved or does not exist.' });
