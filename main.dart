@@ -1810,69 +1810,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
     });
   }
 
-  Future<void> pickTopUpContact() async {
-    try {
-      final granted = await FlutterContacts.requestPermission(readonly: true);
-      if (!granted) {
-        showMessage(t('permissionDenied'));
-        return;
-      }
-      final contacts = await FlutterContacts.getContacts(withProperties: true);
-      final available = contacts.where((c) => c.phones.isNotEmpty).toList()
-        ..sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
-      if (!mounted) return;
-      if (available.isEmpty) {
-        showMessage(t('noContacts'));
-        return;
-      }
-      final selected = await showModalBottomSheet<Contact>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: pageBg,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-        ),
-        builder: (sheetContext) => SafeArea(
-          child: SizedBox(
-            height: MediaQuery.of(sheetContext).size.height * 0.72,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(t('chooseContact'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryRed))),
-                      IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: available.length,
-                    itemBuilder: (context, index) {
-                      final contact = available[index];
-                      return ListTile(
-                        leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-                        title: Text(contact.displayName),
-                        subtitle: Text(contact.phones.first.number),
-                        onTap: () => Navigator.pop(sheetContext, contact),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-      if (selected == null || !mounted) return;
-      phoneController.text = selected.phones.first.number;
-      handlePhoneChanged(phoneController.text);
-    } catch (_) {
-      if (mounted) showMessage('Could not open contacts. Please try again.');
-    }
-  }
-
   void handlePhoneChanged(String value) {
     if (mounted) setState(() {});
     if (selectedCountry.code != 'AF') return;
