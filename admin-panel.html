@@ -540,7 +540,7 @@ firebaseAuth.onAuthStateChanged(async user=>{
 document.getElementById('sendAdminCode').addEventListener('click',async()=>{
  const phone=document.getElementById('adminPhone').value.trim();
  const button=document.getElementById('sendAdminCode');
- if(!/^\\+[1-9]\\d{7,14}$/.test(phone)){setNotice('د موبایل شمېره د نړیوالې بڼې په ډول ولیکئ، لکه +33…','warn');return;}
+ if(!/^\+[1-9]\d{7,14}$/.test(phone)){setNotice('د موبایل شمېره د نړیوالې بڼې په ډول ولیکئ، لکه +33…','warn');return;}
  button.disabled=true;setNotice('د Firebase له لارې د تایید کوډ لېږل کېږي…');
  try{
   if(!recaptchaVerifier)recaptchaVerifier=new firebase.auth.RecaptchaVerifier('recaptcha-container',{size:'invisible'});
@@ -552,7 +552,7 @@ document.getElementById('sendAdminCode').addEventListener('click',async()=>{
 });
 document.getElementById('verifyAdminCode').addEventListener('click',async()=>{
  const code=document.getElementById('adminOtp').value.trim();const button=document.getElementById('verifyAdminCode');
- if(!/^\\d{6}$/.test(code)){setNotice('د SMS شپږ عددي کوډ ولیکئ.','warn');return;}
+ if(!/^\d{6}$/.test(code)){setNotice('د SMS شپږ عددي کوډ ولیکئ.','warn');return;}
  button.disabled=true;
  try{
   const credential=await adminConfirmation.confirm(code);adminIdToken=await credential.user.getIdToken(true);
