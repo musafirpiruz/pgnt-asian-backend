@@ -31,3 +31,18 @@ test('admin panel uses the dedicated escalation endpoint, not ticket PATCH', () 
   assert.match(panel, /adminRole==='support'/);
   assert.match(panel, /Owner بیاکتنه/);
 });
+
+test('owner escalation lifecycle endpoints require the owner role and verified UID', () => {
+  assert.match(support, /api\/admin\/support\/escalations\/:escalationId\/acknowledge/);
+  assert.match(support, /api\/admin\/support\/escalations\/:escalationId\/resolve/);
+  assert.equal((support.match(/req\.admin\?\.role !== 'owner'/g) || []).length, 2);
+  assert.match(support, /acknowledged_by_uid = \$2/);
+  assert.match(support, /status = 'resolved'/);
+});
+
+test('owner inbox exposes acknowledge and resolve actions', () => {
+  assert.match(panel, /د سپارل شوې موضوع منل/);
+  assert.match(panel, /موضوع حل شوې وټاکه/);
+  assert.match(panel, /\/acknowledge/);
+  assert.match(panel, /\/resolve/);
+});
