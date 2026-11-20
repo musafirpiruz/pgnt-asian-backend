@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PGNT ASIAN TOPUP — ساده اډمین</title>
+<title>PGNT ASIAN TOPUP — د مدیریت مرکز</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <style>
@@ -58,10 +58,52 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 @media(min-width:980px){main{grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr)}.card:first-child{grid-column:1/-1}.card:nth-child(2){grid-column:1}.card:nth-child(3){grid-column:2}.card:nth-child(4){grid-column:1/-1}}
 @media(max-width:480px){header{padding:21px 15px}main{padding:12px 10px 24px;gap:12px}.card{padding:14px;border-radius:13px}.detail dl{grid-template-columns:1fr;gap:2px}.detail dd{margin-bottom:7px}.actions button{flex-basis:100%}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{transition:none!important}}
+
+/* Organized admin dashboard layout */
+:root{--red:#7a0c10;--gold:#d4b896;--ink:#202124;--muted:#626b76;--line:#e3e7ec;--bg:#f4f5f7;--surface:#fff}
+header{padding:22px 18px 20px}
+.brandline{display:flex;align-items:center;gap:14px}
+.brandmark{width:48px;height:48px;display:grid;place-items:center;border:1px solid #d4b896;border-radius:14px;color:#ffd700;font-weight:850;font-size:1.55rem;background:#ffffff12}
+.brandline>div:nth-child(2){min-width:0;flex:1}
+.env-label{font-size:.72rem;letter-spacing:.12em;font-weight:800;color:#f4dfc4;border:1px solid #ffffff55;border-radius:999px;padding:6px 10px}
+.section-nav{position:sticky;top:0;z-index:20;display:flex;gap:7px;overflow-x:auto;padding:10px max(14px,calc((100vw - 1120px)/2));background:#fff;border-bottom:1px solid var(--line);box-shadow:0 5px 18px #1822300a;scrollbar-width:thin}
+.section-nav a{flex:0 0 auto;text-decoration:none;color:#454b54;font-size:.88rem;font-weight:650;padding:8px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fafafa}
+.section-nav a:hover,.section-nav a:focus-visible{color:var(--red);border-color:var(--gold);background:#fffaf2;outline:2px solid #d4b89655}
+main{max-width:1120px;padding:22px 16px 42px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.card{border-radius:16px;padding:20px;border:1px solid #e4e6ea;box-shadow:0 8px 26px #18223009;scroll-margin-top:78px}
+.card h2{font-size:1.08rem;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid #edf0f2;gap:10px}
+.section-number{display:inline-grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border-radius:9px;background:#f8eee7;color:var(--red);font-size:.78rem;font-weight:800}
+#loginCard{border-top:4px solid var(--gold)}
+#supportCard{border-top:4px solid #d4b896}
+#catalogSection{border-top:3px solid #7a0c10}
+#ordersSection,#pricingSection,#diagnosticSection,#walletSection,#referralCreateSection,#referralReportSection,#safetySection{border-top:3px solid #e5e7eb}
+.card>p.muted{max-width:850px;line-height:1.65}
+.actions{gap:10px}
+.actions button{min-height:44px}
+input,select,textarea{border-radius:10px}
+.status{line-height:1.6}
+.empty{border-radius:12px}
+#safetySection .safe{border-left-width:5px}
+@media(min-width:900px){
+ main{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+ #loginCard,#catalogSection,#ordersSection,#safetySection,#supportCard{grid-column:1/-1}
+ #pricingSection,#diagnosticSection,#walletSection,#referralCreateSection,#referralReportSection{grid-column:span 1}
+}
+@media(max-width:560px){
+ .brandmark{width:42px;height:42px}
+ .env-label{font-size:.62rem;padding:5px 8px}
+ .section-nav{padding:8px 10px}
+ main{padding:14px 10px 28px;gap:12px}
+ .card{padding:15px}
+}
+
 </style>
 </head>
 <body>
-<header><div class="wrap"><h1>PGNT ASIAN TOPUP</h1><p>ساده اډمین — د فرمایشونو او تادیاتو کتنه</p></div></header>
+<header><div class="wrap"><div class="brandline"><div class="brandmark">P</div><div><h1>PGNT ASIAN TOPUP</h1><p>د مدیریت مرکز · خوندي اډمین ډشبورډ</p></div><span class="env-label">ADMIN PANEL</span></div></div></header>
+<nav class="section-nav" aria-label="د اډمین برخې">
+ <a href="#loginCard">ننوتل</a><a href="#catalogSection">شبکې او محصولات</a><a href="#ordersSection">فرمایشونه</a><a href="#pricingSection">بیې او فیسونه</a><a href="#diagnosticSection">تشخیص</a><a href="#walletSection">Wallet</a><a href="#referralCreateSection">Referral</a><a href="#supportCard">Support</a>
+</nav>
 <main id="adminMain">
 <section class="card" id="loginCard">
 <h2>۱. د اډمین خوندي ننوتل</h2>
@@ -87,38 +129,38 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div class="actions"><button id="loadSupportTickets" type="button">د ملاتړ ټکټونه ولوله</button></div>
 <div id="supportTickets"><div class="empty">د ملاتړ ټکټونه لا نه دي لوستل شوي.</div></div>
 </section>
-<section class="card">
-<h2>۲. د شبکو او محصولاتو اتومات تصدیق</h2>
+<section class="card" id="catalogSection">
+<h2><span class="section-number">01</span> شبکې او محصولات</h2>
 <p class="muted">د هرې شبکې لپاره یوازې یو نمونه محصول په لاسي ډول تایید کړئ. وروسته نور محصولات په هر پړاو کې تر ۲۵ پورې په اتومات ډول ارزول کېږي. دا کار محصولات نه فعالوي او تادیه یا Top-up نه ترسره کوي.</p>
 <div class="actions"><button id="loadOperatorCatalog" type="button">د شبکو او محصولاتو لېست ولوله</button></div>
 <div id="operatorCatalog"><div class="empty">د شبکو د لېست لپاره پورته تڼۍ کېکاږئ.</div></div>
 </section>
-<section class="card">
-<h2>۳. هغه فرمایشونه چې کتنې ته اړتیا لري</h2>
+<section class="card" id="ordersSection">
+<h2><span class="section-number">02</span> د کتنې وړ فرمایشونه</h2>
 <p class="muted">یوازې د کتنې لپاره. دلته د فرمایش بیا لېږل، د پیسو بېرته ورکول، یا د محصول فعالول نه کېږي.</p>
 <div id="queue"><div class="empty">تر اوسه فرمایشونه نه دي لوستل شوي.</div></div>
 </section>
-<section class="card">
-<h2>۴. د بیو او فیسونو لنډ راپور</h2>
+<section class="card" id="pricingSection">
+<h2><span class="section-number">03</span> بیې او فیسونه</h2>
 <p class="muted">دا برخه یوازې اوسني ثبت شوي تنظیمات ښيي؛ هېڅ ارزښت نه بدلوي.</p>
 <div id="pricing"><div class="empty">د راپور د لوستلو لپاره پورته «د بیو او فیسونو کتنه» کېکاږئ.</div></div>
 </section>
-<section class="card">
-<h2>۵. د محصول د قیمت تشخیص (یوازې لوستل)</h2>
+<section class="card" id="diagnosticSection">
+<h2><span class="section-number">04</span> د محصول قیمت او Checkout تشخیص</h2>
 <p class="muted">د DT One د محصول ID ولیکئ. دا برخه د محصول، بیې، اسعارو او تادیې د چمتووالي ستونزې ښيي؛ هېڅ محصول نه فعالوي او هېڅ قیمت نه بدلوي.</p>
 <label for="diagnosticProductId">DT One Product ID</label>
 <input id="diagnosticProductId" inputmode="numeric" autocomplete="off" placeholder="د محصول ID، لکه 7194">
 <div class="actions"><button id="loadDiagnostic">د محصول تشخیص پیل کړه</button></div>
 <div id="diagnostic"><div class="empty">د تشخیص لپاره د محصول ID ولیکئ.</div></div>
 </section>
-<section class="card">
-<h2>۶. د Wallet او Ledger د Migration خوندیتوب (یوازې لوستل)</h2>
+<section class="card" id="walletSection">
+<h2><span class="section-number">05</span> Wallet او Ledger خوندیتوب</h2>
 <p class="muted">دا کتنه د اصلي Database د تکراري Wallet حسابونو، تکراري Ledger حوالو او د مالي تاریخ د حذف کېدو احتمالي خطرونه شمېري. هېڅ Migration، مالي لیکنه یا د Wallet فعالول نه ترسره کوي.</p>
 <div class="actions"><button class="secondary" id="loadWalletPreflight">د Wallet خوندیتوب راپور ولوله</button></div>
 <div id="walletPreflight"><div class="empty">د راپور لپاره پورته تڼۍ کېکاږئ. د اډمین کیلي یوازې د دې پاڼې په حافظه کې کارول کېږي.</div></div>
 </section>
-<section class="card">
-<h2>د نوي Referral کوډ جوړول (غیرفعال)</h2>
+<section class="card" id="referralCreateSection">
+<h2><span class="section-number">06</span> Referral کوډ جوړول</h2>
 <p class="muted">کوډ به یوازې د اډمین تر غوښتنې وروسته جوړ شي، خو په اتومات ډول به غیرفعال پاتې شي. ثابت انعام €0.07 دی. د کوډ فعالول، د انعام منظورول او تادیه په دې برخه کې نشته.</p>
 <label for="newReferralCode">Referral code</label>
 <input id="newReferralCode" maxlength="40" autocomplete="off" placeholder="مثلاً FRIEND2026">
@@ -129,14 +171,14 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 <div class="actions"><button id="createReferralCode" type="button">غیرفعال کوډ جوړ کړه</button></div>
 <div id="createReferralResult" class="status" role="status" aria-live="polite">کوډ یوازې د اډمین په کلیک جوړېږي او غیرفعال پاتې کېږي.</div>
 </section>
-<section class="card">
-<h2>د Referral کوډونو راپور (یوازې لوستل)</h2>
+<section class="card" id="referralReportSection">
+<h2><span class="section-number">07</span> Referral راپور</h2>
 <p class="muted">دا راپور د ځانګړو بلنو کوډونو حالت، ثبت شوي دعوتونه او د انعامونو شمېرې ښيي. دلته کوډ نه فعالېږي، انعام نه منظورېږي او هېڅ پیسې نه لېږل کېږي.</p>
 <div class="actions"><button class="secondary" id="loadReferralReport" type="button">د Referral راپور ولوله</button></div>
 <div id="referralReport"><div class="empty">د راپور د لوستلو لپاره پورته تڼۍ کېکاږئ.</div></div>
 </section>
-<section class="card">
-<h2>د خوندیتوب یادونه</h2>
+<section class="card" id="safetySection">
+<h2><span class="section-number">08</span> امنیتي لارښوونې</h2>
 <div class="safe">که د Stripe یا DT One حالت روښانه نه وي، بیا تادیه یا بیا Top-up مه کوئ. لومړی د دواړو حالتونه وګورئ. دا پاڼه یوازې د کتنې لپاره ده؛ Refund او نور مالي بدلونونه پکې نشته.</div>
 </section>
 </main>
