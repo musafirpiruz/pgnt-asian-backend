@@ -224,6 +224,11 @@ module.exports = function registerSupportRoutes({ app, pool, requireAdmin }) {
     const hasReply = Object.prototype.hasOwnProperty.call(body, 'adminReply');
     const adminReply = hasReply ? String(body.adminReply ?? '').trim() : null;
 
+    // Support administrators may only send customer replies. Ticket workflow
+    // status and priority remain Owner-controlled, even if a client bypasses the UI.
+    if (req.admin?.role === 'support' && (status !== null || priority !== null || !hasReply)) {
+      return res.status(403).json({ error: 'Support administrators may only send customer replies.' });
+    }
     if (status !== null && !TICKET_STATUSES.has(status)) return res.status(400).json({ error: 'Unsupported ticket status.' });
     if (priority !== null && !TICKET_PRIORITIES.has(priority)) return res.status(400).json({ error: 'Unsupported ticket priority.' });
     if (hasReply && adminReply.length > 4000) return res.status(400).json({ error: 'Admin reply must be 4000 characters or fewer.' });
