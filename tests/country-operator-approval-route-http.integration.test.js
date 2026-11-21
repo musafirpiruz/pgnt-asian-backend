@@ -307,7 +307,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(autoResponse.status, 200);
     const autoBody = await autoResponse.json();
     assert.equal(autoBody.requestedCount, 5);
-    assert.equal(autoBody.verifiedCount, 1);
+    assert.equal(autoBody.verifiedCount, 1, 'Expected the matching auto-verification candidate to pass; results: ' + JSON.stringify(autoBody.items));
     assert.equal(autoBody.reviewCount, 4);
     assert.ok(autoBody.items.some(item => item.productCatalogId === autoNotFound.productCatalogId && item.reasons.includes('provider_product_not_found')));
     assert.ok(autoBody.items.some(item => item.productCatalogId === autoUnavailable.productCatalogId && item.reasons.includes('provider_unavailable')));
@@ -325,7 +325,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
       body:JSON.stringify({limit:25,afterProductCatalogId:0}),
     });
     assert.equal(staleCursor.status,409);
-    assert.equal((await staleCursor.json()).nextAfterProductCatalogId,autoBody.nextAfterProductCatalogId);
+    assert.equal(Number((await staleCursor.json()).nextAfterProductCatalogId),Number(autoBody.nextAfterProductCatalogId));
     const autoState = await db.query(
       "SELECT m.verified_at,p.price_eur_cents,p.wholesale_price_eur_cents,p.active,m.active AS mapping_active,(SELECT COUNT(*)::int FROM catalog_verification_audit a WHERE a.operator_id=$1 AND a.product_catalog_id=$2 AND a.event_type='product_verified') AS verified_audits FROM country_operator_products m JOIN product_catalog p ON p.id=m.product_catalog_id WHERE m.product_catalog_id=$2",
       [good.operatorId, autoCandidate.productCatalogId],
@@ -491,6 +491,8 @@ test('country operator approval HTTP routes persist samples safely and roll back
       await db.query('DROP FUNCTION IF EXISTS ci_fail_country_approval_audit()');
     }
     for (const item of fixtures) {
+      // Progress references approvals with ON DELETE RESTRICT; clean only this fixture first.
+      await db.query('DELETE FROM country_operator_catalog_verification_progress WHERE operator_id=$1', [item.operatorId]);
       await db.query('DELETE FROM country_operator_approvals WHERE operator_id=$1', [item.operatorId]);
       await db.query('DELETE FROM catalog_verification_audit WHERE operator_id=$1', [item.operatorId]);
       await db.query('DELETE FROM country_operator_products WHERE product_catalog_id=$1', [item.productCatalogId]);
