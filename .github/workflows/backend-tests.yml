@@ -60,3 +60,10 @@ jobs:
         run: node --test tests/canonical-country-registry-reconciliation.integration.test.js
       - name: Run regression tests
         run: npm test
+      - name: Set up Java for Firebase Auth Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Run Firebase Auth Emulator integration test without real SMS
+        run: npx --yes firebase-tools@13.35.1 emulators:exec --only auth --project demo-pgnt-asian-topup "node --test tests/firebase-auth-emulator.integration.test.js"
