@@ -43,3 +43,12 @@ test('referral link admin API returns a one-time opaque link but never the inter
 test('opaque referral migration is registered in the existing migration runner', () => {
   assert.match(migrations, /version: "027_opaque_referral_links", file: "027_opaque_referral_links\.sql"/);
 });
+
+test('Android APK workflow registers the app invite URI scheme and runs on this feature branch', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'build-apk.yml'), 'utf8');
+  assert.match(workflow, /feature\/referral-links-no-manual-codes/);
+  assert.match(workflow, /Register the private referral invite URI scheme/);
+  assert.match(workflow, /android\.intent\.action\.VIEW/);
+  assert.match(workflow, /pgntasian/);
+  assert.match(workflow, /referral/);
+});
