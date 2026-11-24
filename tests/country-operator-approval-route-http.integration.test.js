@@ -307,7 +307,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(autoResponse.status, 200);
     const autoBody = await autoResponse.json();
     assert.equal(autoBody.requestedCount, 5);
-    assert.equal(autoBody.verifiedCount, 1);
+    assert.equal(autoBody.verifiedCount, 1, JSON.stringify(autoBody));
     assert.equal(autoBody.reviewCount, 4);
     assert.ok(autoBody.items.some(item => item.productCatalogId === autoNotFound.productCatalogId && item.reasons.includes('provider_product_not_found')));
     assert.ok(autoBody.items.some(item => item.productCatalogId === autoUnavailable.productCatalogId && item.reasons.includes('provider_unavailable')));
