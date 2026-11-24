@@ -39,10 +39,11 @@ function registerReferralAttributionRoute({ app, pool, authMiddleware }) {
     const tokenHash = crypto.createHash('sha256')
       .update(token, 'utf8')
       .digest('hex');
-    const client = await pool.connect();
+    let client = null;
     let transactionOpen = false;
 
     try {
+      client = await pool.connect();
       await client.query('BEGIN');
       transactionOpen = true;
 
@@ -123,7 +124,7 @@ function registerReferralAttributionRoute({ app, pool, authMiddleware }) {
         code: 'REFERRAL_ATTRIBUTION_FAILED',
       });
     } finally {
-      client.release();
+      if (client) client.release();
     }
   });
 }
