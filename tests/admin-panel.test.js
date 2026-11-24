@@ -104,10 +104,15 @@ test('referral admin report is read-only and uses the existing admin-authenticat
   assert.doesNotMatch(html, /fetch\('\/api\/admin\/referrals'\s*,\s*\{\s*method\s*:\s*'POST'/);
 });
 
-test('referral code creation UI only sends the fixed seven-cent reward and never activates a code', () => {
+test('admin creates opaque referral invite links with a fixed seven-cent reward and no manual customer code', () => {
   assert.match(html, /createReferralCode/);
-  assert.match(html, /adminPost\('\/api\/admin\/referrals\/codes'/);
+  assert.match(html, /adminPost\('\/api\/admin\/referrals\/links'/);
   assert.match(html, /rewardEurCents:7/);
-  assert.match(server, /VALUES \(\$1,\$2,\$3,\$4,\$5,FALSE\)/);
+  assert.match(html, /inviteLink/);
+  assert.match(html, /لینک یوازې یو ځل/);
+  assert.doesNotMatch(html, /newReferralCode/);
+  assert.doesNotMatch(html, /adminPost\('\/api\/admin\/referrals\/codes'/);
+  assert.match(server, /app\.post\('\/api\/admin\/referrals\/links'/);
+  assert.match(server, /VALUES \(\$1,\$2,\$3,7,\$4,FALSE,\$5,NOW\(\)\)/);
   assert.doesNotMatch(html, /active\s*:\s*true|rewardEurCents\s*:\s*(?!7\b)\d+/);
-});
+});;
