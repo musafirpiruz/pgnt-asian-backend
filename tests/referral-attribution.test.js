@@ -10,9 +10,11 @@ const tokenHash = crypto.createHash('sha256').update(token, 'utf8').digest('hex'
 
 function setup({ referralRows = [{ code: 'INTERNAL_ONLY' }], insertRows = [{ id: 1 }], existingRows = [] } = {}) {
   let handler;
+  let auth;
   const app = {
     post(path, auth, callback) {
       assert.equal(path, '/api/referrals/attribute');
+      auth = middleware;
       handler = callback;
     },
   };
@@ -46,7 +48,8 @@ function setup({ referralRows = [{ code: 'INTERNAL_ONLY' }], insertRows = [{ id:
         status(code) { this.statusCode = code; return this; },
         json(value) { this.body = value; return this; },
       };
-      await handler(req, res);
+      await auth(req, res, () => {});
+      if (!res.body) await handler(req, res);
       return { req, res };
     },
   };
