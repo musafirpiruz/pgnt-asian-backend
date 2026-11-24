@@ -12,9 +12,9 @@ function setup({ referralRows = [{ code: 'INTERNAL_ONLY' }], insertRows = [{ id:
   let handler;
   let auth;
   const app = {
-    post(path, auth, callback) {
+    post(path, authMiddlewareArg, callback) {
       assert.equal(path, '/api/referrals/attribute');
-      auth = middleware;
+      auth = authMiddlewareArg;
       handler = callback;
     },
   };
