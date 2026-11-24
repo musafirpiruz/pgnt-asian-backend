@@ -3772,6 +3772,7 @@ app.post('/api/admin/referrals/links', requireAdmin, async (req, res) => {
   const ownerContact = String(body.ownerContact || '').trim() || null;
   const maxRewards = body.maxRewards === undefined || body.maxRewards === null || body.maxRewards === '' ? null : Number(body.maxRewards);
   if (!ownerName || ownerName.length > 120) return res.status(400).json({ error: 'A valid link owner name is required.' });
+  if (ownerContact && ownerContact.length > 254) return res.status(400).json({ error: 'ownerContact must be 254 characters or fewer.' });
   if (maxRewards !== null && (!Number.isSafeInteger(maxRewards) || maxRewards < 0)) return res.status(400).json({ error: 'maxRewards must be a non-negative integer.' });
   const token = crypto.randomBytes(32).toString('base64url');
   const tokenHash = crypto.createHash('sha256').update(token, 'utf8').digest('hex');
