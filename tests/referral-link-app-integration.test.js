@@ -37,7 +37,7 @@ test('referral link admin API returns a one-time opaque link but never the inter
   assert.match(route, /link_token_hash/);
   assert.match(route, /inviteLink: publicUrl/);
   assert.doesNotMatch(route, /returning\s+code/i);
-  assert.match(route, /active, TRUE|FALSE/);
+  assert.match(route, /VALUES \(\$1,\$2,\$3,7,\$4,FALSE,\$5,NOW\(\)\)/);
 });
 
 test('opaque referral migration is registered in the existing migration runner', () => {
