@@ -90,10 +90,10 @@ test('referral invite creation validates the owner contact length server-side', 
 
 test('Firebase UID referral migration preserves legacy hashes and adds unique verified-identity keys', () => {
   const migration = fs.readFileSync(path.join(__dirname, '..', 'migrations', '028_firebase_uid_referral_identity.sql'), 'utf8');
-  assert.match(migrations, /version: "028_firebase_uid_referral_identity", file: "028_firebase_uid_referral_identity\\.sql"/);
+  assert.ok(migrations.includes('version: "028_firebase_uid_referral_identity", file: "028_firebase_uid_referral_identity.sql"'));
   assert.match(migration, /ALTER COLUMN install_id_hash DROP NOT NULL/);
-  assert.match(migration, /ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR\\(128\\)/);
-  assert.match(migration, /ADD COLUMN IF NOT EXISTS referral_firebase_uid VARCHAR\\(128\\)/);
+  assert.ok(migration.includes("ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128)"));
+  assert.ok(migration.includes("ADD COLUMN IF NOT EXISTS referral_firebase_uid VARCHAR(128)"));
   assert.match(migration, /uq_referral_attributions_firebase_uid/);
   assert.match(migration, /uq_referral_ledger_firebase_uid/);
   assert.match(migration, /WHERE firebase_uid IS NOT NULL/);
