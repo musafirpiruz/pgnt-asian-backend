@@ -3841,16 +3841,8 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
   const fields = [];
   const values = [code];
 
+  const activating = body.active === true;
   if (typeof body.active === 'boolean') {
-    if (body.active === true) {
-      const link = await pool.query(
-        'SELECT link_token_hash, link_token_revoked_at FROM referral_codes WHERE code = $1',
-        [code]
-      );
-      if (link.rowCount !== 1 || !link.rows[0].link_token_hash || link.rows[0].link_token_revoked_at) {
-        return res.status(409).json({ error: 'Only a valid, non-revoked invite link can be activated. Create a new invite link for this referral.' });
-      }
-    }
     values.push(body.active);
     fields.push(`active = ${values.length}`);
   }
@@ -3878,11 +3870,20 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
   }
 
   try {
+    const activationGuard = activating
+      ? ' AND link_token_hash IS NOT NULL AND link_token_revoked_at IS NULL'
+      : '';
     const result = await pool.query(
-      `UPDATE referral_codes SET ${fields.join(', ')} WHERE code = $1
+      `UPDATE referral_codes SET ${fields.join(', ')} WHERE code = $1${activationGuard}
        RETURNING code, owner_name, owner_contact, reward_eur_cents, max_rewards, active, created_at`,
       values
     );
+    if (!result.rowCount && activating) {
+      const existing = await pool.query('SELECT 1 FROM referral_codes WHERE code = $1', [code]);
+      if (existing.rowCount) {
+        return res.status(409).json({ error: 'Only a valid, non-revoked invite link can be activated. Create a new invite link for this referral.' });
+      }
+    }
     if (!result.rowCount) return res.status(404).json({ error: 'Referral code not found.' });
     return res.json({ referral: result.rows[0] });
   } catch (error) {
