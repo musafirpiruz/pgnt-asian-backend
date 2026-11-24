@@ -215,7 +215,7 @@ async function adminRequest(url){
  const response=await fetch(url,{method:'GET',headers:adminHeaders(),cache:'no-store'});
  const raw=await response.text();let data={};
  try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('سرور د لوستلو وړ ځواب ورنه کړ (HTTP '+response.status+').');}
- if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
+ if(!response.ok)throw new Error((data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'))+(data.providerStatus?' · DT One HTTP '+data.providerStatus:''));
  return data;
 }
 async function adminPost(url,body){
@@ -223,7 +223,7 @@ async function adminPost(url,body){
  const response=await fetch(url,{method:'POST',headers:adminHeaders(true),body:JSON.stringify(body),cache:'no-store'});
  const raw=await response.text();let data={};
  try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('سرور د لوستلو وړ ځواب ورنه کړ (HTTP '+response.status+').');}
- if(!response.ok)throw new Error(data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'));
+ if(!response.ok)throw new Error((data.error||('غوښتنه ناکامه شوه (HTTP '+response.status+').'))+(data.providerStatus?' · DT One HTTP '+data.providerStatus:''));
  return data;
 }
 function addField(dl,label,value){const dt=document.createElement('dt');dt.textContent=label;const dd=document.createElement('dd');dd.textContent=escapeText(value);dl.append(dt,dd);}
