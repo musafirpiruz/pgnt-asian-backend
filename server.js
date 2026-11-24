@@ -3763,6 +3763,58 @@ app.post('/api/admin/referrals/codes', requireAdmin, async (req, res) => {
   }
 });
 
+// Opaque referral links: raw random tokens are shown only once to the admin.
+// Internal referral codes remain database-only and are never requested from customers.
+app.post('/api/admin/referrals/links', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const body = req.body || {};
+  const ownerName = String(body.ownerName || '').trim();
+  const ownerContact = String(body.ownerContact || '').trim() || null;
+  const maxRewards = body.maxRewards === undefined || body.maxRewards === null || body.maxRewards === '' ? null : Number(body.maxRewards);
+  if (!ownerName || ownerName.length > 120) return res.status(400).json({ error: 'A valid link owner name is required.' });
+  if (maxRewards !== null && (!Number.isSafeInteger(maxRewards) || maxRewards < 0)) return res.status(400).json({ error: 'maxRewards must be a non-negative integer.' });
+  const token = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+  const internalCode = 'RL_' + crypto.randomBytes(18).toString('hex').toUpperCase();
+  try {
+    const result = await pool.query(
+      `INSERT INTO referral_codes
+         (code, owner_name, owner_contact, reward_eur_cents, max_rewards, active,
+          link_token_hash, link_token_created_at)
+       VALUES ($1,$2,$3,7,$4,FALSE,$5,NOW())
+       RETURNING owner_name, owner_contact, reward_eur_cents, max_rewards, active, created_at`,
+      [internalCode, ownerName, ownerContact, maxRewards, tokenHash]
+    );
+    const publicUrl = 'pgntasian://referral?token=' + encodeURIComponent(token);
+    return res.status(201).json({
+      referral: result.rows[0],
+      inviteLink: publicUrl,
+      activationRequired: true,
+      shareTokenShownOnce: true,
+    });
+  } catch (error) {
+    console.error('Referral link creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create referral link.' });
+  }
+});
+
+app.post('/api/admin/referrals/links/:code/revoke', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(
+      `UPDATE referral_codes SET active = FALSE, link_token_hash = NULL,
+         link_token_revoked_at = NOW(), updated_at = NOW()
+       WHERE code = $1 RETURNING owner_name, active, link_token_revoked_at`,
+      [String(req.params.code || '').trim().toUpperCase()]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Referral link not found.' });
+    return res.json({ revoked: true, referral: result.rows[0] });
+  } catch (error) {
+    console.error('Referral link revocation failed:', error.message);
+    return res.status(500).json({ error: 'Could not revoke referral link.' });
+  }
+});
+
 app.get('/api/admin/referrals', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   try {
