@@ -19,13 +19,6 @@ function createFirebaseAuthMiddleware({
     : null;
 
   return async function firebaseAuthMiddleware(req, res, next) {
-    if (!configured) {
-      return res.status(503).json({
-        error: 'Firebase authentication is not configured.',
-        code: 'FIREBASE_AUTH_NOT_CONFIGURED',
-      });
-    }
-
     const authorization = String(req.get
       ? req.get('authorization') || ''
       : req.headers?.authorization || '').trim();
@@ -33,6 +26,18 @@ function createFirebaseAuthMiddleware({
     if (!match && allowAnonymous) {
       req.auth = null;
       return next();
+    }
+
+    if (!match && allowAnonymous) {
+      req.auth = null;
+      return next();
+    }
+
+    if (!configured) {
+      return res.status(503).json({
+        error: 'Firebase authentication is not configured.',
+        code: 'FIREBASE_AUTH_NOT_CONFIGURED',
+      });
     }
 
     if (!match) {
