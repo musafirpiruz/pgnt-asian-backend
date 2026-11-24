@@ -2165,20 +2165,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildReferralCodeField() {
-    return TextField(
-      controller: referralCodeController,
-      textCapitalization: TextCapitalization.characters,
-      autocorrect: false,
-      enableSuggestions: false,
-      maxLength: 40,
-      decoration: InputDecoration(
-        labelText: t('referralCode'),
-        hintText: t('referralCode'),
-        helperText: t('referralHint'),
-        prefixIcon: const Icon(Icons.card_giftcard, color: primaryRed),
-        counterText: '',
-      ),
-    );
+    // Referral invitations are link-only. There is intentionally no manual
+    // code entry; the opaque token is captured from the invite link privately.
+    return const SizedBox.shrink();
   }
 
   Widget buildPhoneField() {
