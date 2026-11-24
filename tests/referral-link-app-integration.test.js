@@ -86,3 +86,26 @@ test('referral invite creation validates the owner contact length server-side', 
   assert.match(route, /ownerContact && ownerContact\.length > 254/);
   assert.match(route, /ownerContact must be 254 characters or fewer/);
 });
+
+test('Firebase UID referral migration preserves legacy hashes and adds unique verified-identity keys', () => {
+  const migration = fs.readFileSync(path.join(__dirname, '..', 'migrations', '028_firebase_uid_referral_identity.sql'), 'utf8');
+  assert.match(migrations, /version: "028_firebase_uid_referral_identity", file: "028_firebase_uid_referral_identity\\.sql"/);
+  assert.match(migration, /ALTER COLUMN install_id_hash DROP NOT NULL/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR\\(128\\)/);
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS referral_firebase_uid VARCHAR\\(128\\)/);
+  assert.match(migration, /uq_referral_attributions_firebase_uid/);
+  assert.match(migration, /uq_referral_ledger_firebase_uid/);
+  assert.match(migration, /WHERE firebase_uid IS NOT NULL/);
+  assert.match(migration, /VALIDATE CONSTRAINT referral_attributions_identity_required/);
+  assert.match(migration, /VALIDATE CONSTRAINT referral_ledger_identity_required/);
+  assert.doesNotMatch(migration, /DROP TABLE|DELETE FROM/);
+});
+
+test('Firebase UID schema foundation does not activate referral checkout or phone SMS', () => {
+  const checkoutStart = server.indexOf("app.post('/api/payments/checkout'");
+  const checkoutEnd = server.indexOf('// Dedicated Stripe + DT One end-to-end test.', checkoutStart);
+  const checkout = server.slice(checkoutStart, checkoutEnd);
+  assert.match(checkout, /REFERRAL_IDENTITY_VERIFICATION_REQUIRED/);
+  assert.match(server, /app\.post\('\/api\/auth\/phone\/send'/);
+  assert.match(server, /phone-auth/);
+});
