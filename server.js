@@ -3250,6 +3250,14 @@ require('./phone-auth').registerPhoneAuthRoutes({
   authMiddleware: firebaseAuthMiddleware,
 });
 
+// Referral attribution is bound to the verified Firebase UID only.
+// Checkout rewards remain disabled until the full payment/callback integration is tested.
+require('./referral-attribution').registerReferralAttributionRoute({
+  app,
+  pool,
+  authMiddleware: firebaseAuthMiddleware,
+});
+
 
 
 // Admin sample approval: verify one authoritative DT One product per operator.
