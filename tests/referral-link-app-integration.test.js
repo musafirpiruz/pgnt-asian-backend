@@ -8,6 +8,7 @@ const path = require('node:path');
 const app = fs.readFileSync(path.join(__dirname, '..', 'main.dart'), 'utf8');
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const migrations = fs.readFileSync(path.join(__dirname, '..', 'migrate.js'), 'utf8');
+const phoneAuth = fs.readFileSync(path.join(__dirname, '..', 'phone-auth.js'), 'utf8');
 
 test('Flutter invite handler accepts opaque link tokens and stores them securely', () => {
   const start = app.indexOf('Future<void> _applyReferralUri(Uri uri)');
@@ -106,6 +107,7 @@ test('Firebase UID schema foundation does not activate referral checkout or phon
   const checkoutEnd = server.indexOf('// Dedicated Stripe + DT One end-to-end test.', checkoutStart);
   const checkout = server.slice(checkoutStart, checkoutEnd);
   assert.match(checkout, /REFERRAL_IDENTITY_VERIFICATION_REQUIRED/);
-  assert.match(server, /app\.post\('\/api\/auth\/phone\/send'/);
-  assert.match(server, /phone-auth/);
+  assert.match(server, /registerPhoneAuthRoutes/);
+  assert.match(phoneAuth, /app\.post\('\/api\/auth\/phone\/send', deferred\)/);
+  assert.match(phoneAuth, /app\.post\('\/api\/auth\/phone\/verify', deferred\)/);
 });
