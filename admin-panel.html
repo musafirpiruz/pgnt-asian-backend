@@ -144,8 +144,15 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.82rem;background:#f5f
 'use strict';
 const keyInput=document.getElementById('adminKey');
 const firebaseConfig={apiKey:"AIzaSyCbQZv-n9mtf6zG4HNGa2aIhIM76sHkSlY",authDomain:"pgnt-asian-topup.firebaseapp.com",projectId:"pgnt-asian-topup",storageBucket:"pgnt-asian-topup.firebasestorage.app",messagingSenderId:"992919566178",appId:"1:992919566178:web:9e40deec1331aa202c1e3b"};
-const firebaseApp=firebase.apps.length?firebase.app():firebase.initializeApp(firebaseConfig);
-const firebaseAuth=firebase.auth();
+let firebaseAuth=null;
+try{
+ if(typeof firebase!=='undefined'&&typeof firebase.auth==='function'){
+  const firebaseApp=firebase.apps.length?firebase.app():firebase.initializeApp(firebaseConfig);
+  firebaseAuth=firebase.auth();
+ }
+}catch(error){
+ firebaseAuth=null;
+}
 let adminConfirmation=null;
 let adminIdToken=null;
 let adminRole=null;
@@ -532,12 +539,15 @@ document.getElementById('createReferralCode').addEventListener('click',async()=>
  }catch(error){result.className='status error';result.textContent=error.message;}
  finally{button.disabled=false;}
 });
-firebaseAuth.onAuthStateChanged(async user=>{
- if(!user)return;
- try{adminIdToken=await user.getIdToken(true);await activateAdminSession();}
- catch(error){setNotice('Firebase حساب تایید شو، خو د اډمین رول لا فعال نه دی. د Owner لپاره د پخوانۍ API Key موقتي لاره شته.','warn');}
-});
+if(firebaseAuth){
+ firebaseAuth.onAuthStateChanged(async user=>{
+  if(!user)return;
+  try{adminIdToken=await user.getIdToken(true);await activateAdminSession();}
+  catch(error){setNotice('Firebase حساب تایید شو، خو د اډمین رول لا فعال نه دی. د Owner لپاره د پخوانۍ API Key موقتي لاره شته.','warn');}
+ });
+}
 document.getElementById('sendAdminCode').addEventListener('click',async()=>{
+ if(!firebaseAuth){setNotice('Firebase Login کتابتون بار نه شو. د SMS ننوتل اوس شتون نه لري؛ د Owner موقتي API Key لاره وکاروئ.','error');return;}
  const phone=document.getElementById('adminPhone').value.trim();
  const button=document.getElementById('sendAdminCode');
  if(!/^\+[1-9]\d{7,14}$/.test(phone)){setNotice('د موبایل شمېره د نړیوالې بڼې په ډول ولیکئ، لکه +33…','warn');return;}
@@ -551,6 +561,7 @@ document.getElementById('sendAdminCode').addEventListener('click',async()=>{
  finally{button.disabled=false;}
 });
 document.getElementById('verifyAdminCode').addEventListener('click',async()=>{
+ if(!adminConfirmation){setNotice('د Firebase تایید ناسته پیل شوې.','warn');return;}
  const code=document.getElementById('adminOtp').value.trim();const button=document.getElementById('verifyAdminCode');
  if(!/^\d{6}$/.test(code)){setNotice('د SMS شپږ عددي کوډ ولیکئ.','warn');return;}
  button.disabled=true;
@@ -566,7 +577,7 @@ document.getElementById('legacyOwnerLogin').addEventListener('click',async()=>{
  try{await activateAdminSession();}catch(error){setNotice(error.message,'error');}
 });
 document.getElementById('adminSignOut').addEventListener('click',async()=>{
- try{await firebaseAuth.signOut();}catch(_){}
+ try{if(firebaseAuth)await firebaseAuth.signOut();}catch(_){};
  adminIdToken=null;adminRole=null;document.body.classList.remove('authenticated');
  document.querySelectorAll('#adminMain > .card').forEach(card=>{card.hidden=false;});
  document.getElementById('supportCard').hidden=true;document.getElementById('adminSignOut').hidden=true;
