@@ -4019,15 +4019,15 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <p>Admin-only test. Uses Stripe test mode and DT One pre-production with a fixed test recipient. A successful test payment submits one sandbox top-up. It does not activate the ATOMA catalog product. Do not use real card details.</p>
 <label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
 <button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
-<h2>Referral code administration</h2>
-<p>Create referral codes, activate or deactivate them, and review attributed installs and reward totals. Every eligible referral reward is fixed at €0.07 after the referred customer’s first successful top-up. New codes are disabled until you activate them.</p>
-<label for="referralCode">Referral code (4–40 letters, numbers, _ or -)</label><input id="referralCode" maxlength="40" autocomplete="off" placeholder="e.g. FRIEND2026">
-<label for="referralOwner">Code owner name</label><input id="referralOwner" maxlength="120" autocomplete="name" placeholder="Owner or partner name">
-<label for="referralContact">Owner contact (optional)</label><input id="referralContact" maxlength="200" autocomplete="off" placeholder="Optional contact reference">
-<label for="referralMaxRewards">Maximum rewards (optional; blank = unlimited)</label><input id="referralMaxRewards" type="number" min="0" step="1" placeholder="e.g. 100">
-<p><strong>Reward per eligible referral: €0.07 (fixed)</strong></p>
-<button type="button" id="createReferralCode">Create referral code (starts disabled)</button>
-<button type="button" id="loadReferralReport">Load referral report</button>
+<h2>د Referral بلنې لینکونه</h2>
+<p>د هر شریک لپاره نوی خوندي لینک جوړ کړئ. داخلي Referral کوډ سیستم پخپله جوړوي او مشتری ته نه ښکاري. لینک یوازې یو ځل د جوړولو پر وخت ښودل کېږي؛ لینکونه په پیل کې غیرفعال وي. انعام ثابت €0.07 دی، یوازې د لومړي بشپړ بریالي Top-up وروسته.</p>
+<label for="referralOwner">د لینک د مالک نوم</label><input id="referralOwner" maxlength="120" autocomplete="name" placeholder="د شریک یا مالک نوم">
+<label for="referralContact">د مالک اړیکه (اختیاري)</label><input id="referralContact" maxlength="200" autocomplete="off" placeholder="اختیاري اړیکه">
+<label for="referralMaxRewards">د انعامونو اعظمي شمېر (اختیاري)</label><input id="referralMaxRewards" type="number" min="0" step="1" placeholder="لکه 100">
+<p><strong>هر وړ Referral انعام: €0.07 (ثابت)</strong></p>
+<button type="button" id="createReferralLink">نوی خوندي بلنې لینک جوړ کړئ</button>
+<button type="button" id="loadReferralReport">د Referral راپور وګورئ</button>
+<div id="referralCreatedLink" aria-live="polite"></div>
 <div id="referralReport" aria-live="polite"></div>
 <h2>Admin pricing controls</h2>
 <p>Choose any supported country to manage its EUR app fee, local-currency reference rate, and estimated Stripe fees. Reference exchange rates are indicative and must be checked before production. Keep unverified products disabled.</p>
@@ -4627,23 +4627,27 @@ checkLiveDtOneStatus.addEventListener('click',async()=>{
  finally{key.value='';checkLiveDtOneStatus.disabled=false;}
 });
 
-document.getElementById('createReferralCode').addEventListener('click',async()=>{
+document.getElementById('createReferralLink').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
- const code=document.getElementById('referralCode').value.trim().toUpperCase();
  const ownerName=document.getElementById('referralOwner').value.trim();
  const ownerContact=document.getElementById('referralContact').value.trim();
  const maxText=document.getElementById('referralMaxRewards').value.trim();
- if(!/^[A-Z0-9_-]{4,40}$/.test(code)){result.textContent='Referral code must be 4–40 letters, numbers, _ or -.';return;}
- if(!ownerName||ownerName.length>120){result.textContent='Enter a valid code owner name.';return;}
- const payload={code,ownerName,ownerContact,rewardEurCents:7,maxRewards:maxText===''?null:Number(maxText)};
- if(maxText!==''&&(!Number.isSafeInteger(payload.maxRewards)||payload.maxRewards<0)){result.textContent='Maximum rewards must be a non-negative whole number or blank.';return;}
- if(!confirm('Create referral code '+code+' with a fixed €0.07 reward? The code will remain DISABLED until you activate it.'))return;
- const button=document.getElementById('createReferralCode');button.disabled=true;
+ const maxRewards=maxText===''?null:Number(maxText);
+ if(!ownerName||ownerName.length>120){result.textContent='Enter a valid link owner name.';return;}
+ if(maxText!==''&&(!Number.isSafeInteger(maxRewards)||maxRewards<0)){result.textContent='Maximum rewards must be a non-negative whole number or blank.';return;}
+ if(!confirm('Create a private referral invite link with a fixed €0.07 reward? It remains DISABLED until activated. The link is shown only once.'))return;
+ const button=document.getElementById('createReferralLink');button.disabled=true;
  try{
-  const data=await adminRequest('/api/admin/referrals/codes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  result.textContent=JSON.stringify({created:true,activationRequired:data.activationRequired,referral:data.referral},null,2);
+  const data=await adminRequest('/api/admin/referrals/links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ownerName,ownerContact,maxRewards})});
+  const host=document.getElementById('referralCreatedLink');host.replaceChildren();
+  host.append(makeTicketElement('p','New invite link — copy it now. It will not be shown again:'));
+  host.append(makeTicketElement('code',data.inviteLink));
+  const copy=makeTicketElement('button','Copy new invite link');copy.type='button';
+  copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(data.inviteLink);result.textContent='Invite link copied.';}catch(error){result.textContent='Clipboard unavailable; select and copy the link shown above.';}});
+  host.append(copy);
+  host.append(makeTicketElement('p','Status: DISABLED. Activate it from the report after checking the owner.'));
   await refreshReferralReport();
- }catch(error){result.textContent='Could not create referral code: '+error.message;}
+ }catch(error){result.textContent='Could not create referral link: '+error.message;}
  finally{key.value='';button.disabled=false;}
 });
 async function refreshReferralReport(){
@@ -4659,29 +4663,18 @@ async function refreshReferralReport(){
   for(const ref of rows){
    const card=makeTicketElement('section',undefined,'ticket-card');
    card.append(makeTicketElement('h3',ref.code+' — '+ref.owner_name));
-   const inviteUrl='pgntasian://referral?code='+encodeURIComponent(ref.code);
-   const copyInvite=makeTicketElement('button','Copy app invite link');
-   copyInvite.type='button';
-   copyInvite.addEventListener('click',async()=>{
-    if(!ref.active){result.textContent='Activate this referral code before sharing its invite link.';return;}
-    try{
-     await navigator.clipboard.writeText(inviteUrl);
-     result.textContent='App invite link copied: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
-    }catch(error){
-     result.textContent='Copy was unavailable. Copy this invite link manually: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
-    }
-   });
-   card.append(copyInvite);
+   card.append(makeTicketElement('p','Invite token is shown only once at creation. Create a replacement link if needed.'));
+    
    card.append(makeTicketElement('p','Status: '+(ref.active?'ACTIVE':'DISABLED')+' | Reward: €'+(Number(ref.reward_eur_cents||0)/100).toFixed(2)));
    card.append(makeTicketElement('p','Attributed installs: '+ref.attributed_installs+' | Eligible rewards: '+ref.reward_eligible+' | Paid rewards: '+ref.rewards_paid));
    card.append(makeTicketElement('p','Reward ledger total: €'+(Number(ref.reward_total_eur_cents||0)/100).toFixed(2)+' | Cap: '+(ref.max_rewards===null?'unlimited':ref.max_rewards)));
-   const toggle=makeTicketElement('button',ref.active?'Deactivate code':'Activate code');
+   const toggle=makeTicketElement('button',ref.active?'Revoke invite link':'Activate invite link');
    toggle.type='button';toggle.addEventListener('click',async()=>{
     if(!key.value){result.textContent='Enter the admin API key again before changing a code.';return;}
-    if(!confirm((ref.active?'Deactivate':'Activate')+' referral code '+ref.code+'?'))return;
+    if(!confirm((ref.active?'Revoke':'Activate')+' referral invite link for '+ref.owner_name+'?'))return;
     toggle.disabled=true;
     try{
-     const changed=await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!ref.active})});
+     const changed=ref.active ? await adminRequest('/api/admin/referrals/links/'+encodeURIComponent(ref.code)+'/revoke',{method:'POST'}) : await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:true})});
      result.textContent=JSON.stringify({updated:true,referral:changed.referral},null,2);
      await refreshReferralReport();
     }catch(error){result.textContent='Could not update referral code: '+error.message;toggle.disabled=false;}
