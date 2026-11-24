@@ -491,6 +491,9 @@ test('country operator approval HTTP routes persist samples safely and roll back
       await db.query('DROP FUNCTION IF EXISTS ci_fail_country_approval_audit()');
     }
     for (const item of fixtures) {
+      // Progress is tied to the current approval with ON DELETE RESTRICT;
+      // remove the scoped cursor before deleting its approval fixture.
+      await db.query('DELETE FROM country_operator_catalog_verification_progress WHERE operator_id=$1', [item.operatorId]);
       await db.query('DELETE FROM country_operator_approvals WHERE operator_id=$1', [item.operatorId]);
       await db.query('DELETE FROM catalog_verification_audit WHERE operator_id=$1', [item.operatorId]);
       await db.query('DELETE FROM country_operator_products WHERE product_catalog_id=$1', [item.productCatalogId]);
