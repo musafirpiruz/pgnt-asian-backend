@@ -4678,17 +4678,23 @@ async function refreshReferralReport(){
    card.append(makeTicketElement('p','Status: '+(ref.active?'ACTIVE':'DISABLED')+' | Reward: €'+(Number(ref.reward_eur_cents||0)/100).toFixed(2)));
    card.append(makeTicketElement('p','Attributed installs: '+ref.attributed_installs+' | Eligible rewards: '+ref.reward_eligible+' | Paid rewards: '+ref.rewards_paid));
    card.append(makeTicketElement('p','Reward ledger total: €'+(Number(ref.reward_total_eur_cents||0)/100).toFixed(2)+' | Cap: '+(ref.max_rewards===null?'unlimited':ref.max_rewards)));
-   const toggle=makeTicketElement('button',ref.active?'Revoke invite link':'Activate invite link');
-   toggle.type='button';toggle.addEventListener('click',async()=>{
-    if(!key.value){result.textContent='Enter the admin API key again before changing a code.';return;}
-    if(!confirm((ref.active?'Revoke':'Activate')+' referral invite link for '+ref.owner_name+'?'))return;
+   const toggle=makeTicketElement('button',ref.active?'Revoke invite link':(ref.has_invite_link?'Activate invite link':'Legacy code — no invite link'));
+   toggle.type='button';
+   if(!ref.has_invite_link){
     toggle.disabled=true;
-    try{
-     const changed=ref.active ? await adminRequest('/api/admin/referrals/links/'+encodeURIComponent(ref.code)+'/revoke',{method:'POST'}) : await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:true})});
-     result.textContent=JSON.stringify({updated:true,referral:changed.referral},null,2);
-     await refreshReferralReport();
-    }catch(error){result.textContent='Could not update referral code: '+error.message;toggle.disabled=false;}
-   });
+    toggle.title='This legacy referral record has no valid opaque invite token. Create a new invite link instead.';
+   }else{
+    toggle.addEventListener('click',async()=>{
+     if(!key.value){result.textContent='Enter the admin API key again before changing a link.';return;}
+     if(!confirm((ref.active?'Revoke':'Activate')+' referral invite link for '+ref.owner_name+'?'))return;
+     toggle.disabled=true;
+     try{
+      const changed=ref.active ? await adminRequest('/api/admin/referrals/links/'+encodeURIComponent(ref.code)+'/revoke',{method:'POST'}) : await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:true})});
+      result.textContent=JSON.stringify({updated:true,referral:changed.referral},null,2);
+      await refreshReferralReport();
+     }catch(error){result.textContent='Could not update referral link: '+error.message;toggle.disabled=false;}
+    });
+   }
    const remove=makeTicketElement('button','Delete / archive code');
    remove.type='button';remove.addEventListener('click',async()=>{
     if(!key.value){result.textContent='Enter the admin API key again before deleting or archiving a code.';return;}
