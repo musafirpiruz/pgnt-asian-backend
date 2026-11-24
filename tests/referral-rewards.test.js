@@ -171,11 +171,11 @@ test('admin page creates opaque referral links without manual codes and supports
   assert.doesNotMatch(page, /id="referralCode"/);
   assert.match(page, /id="loadReferralReport"/);
   assert.match(page, /id="referralReport"/);
-  assert.match(page, /\\/api\\/admin\\/referrals\\/links/);
-  assert.match(page, /\\/api\\/admin\\/referrals/);
+  assert.ok(page.includes('/api/admin/referrals/links'));
+  assert.ok(page.includes('/api/admin/referrals'));
   assert.match(page, /maxRewards/);
   assert.match(page, /shown only once/);
-  assert.match(page, /\\/api\\/admin\\/referrals\\/links\\/.*\\/revoke/);
+  assert.ok(page.includes("'/api/admin/referrals/links/'+encodeURIComponent(ref.code)+'/revoke'"));
 });
 
 
