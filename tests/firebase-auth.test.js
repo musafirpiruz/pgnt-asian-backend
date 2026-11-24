@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createFirebaseAuthMiddleware } = require('../firebase-auth');
+const { createFirebaseAuthMiddleware, createOptionalFirebaseAuthMiddleware } = require('../firebase-auth');
 
 const projectId = 'pgnt-test-project';
 const validClaims = () => ({
@@ -123,4 +123,29 @@ test('requires verified E.164 phone claim only when configured', async () => {
   assert.equal(result.res.statusCode, 401);
   assert.equal(result.res.body.code, 'FIREBASE_PHONE_CLAIM_REQUIRED');
   assert.equal(result.nextCalled, false);
+});
+
+
+test('optional Firebase auth allows guests without a bearer token', async () => {
+  let calls = 0;
+  const middleware = createOptionalFirebaseAuthMiddleware({
+    projectId,
+    verifyIdToken: async () => { calls += 1; return validClaims(); },
+  });
+  const result = await invoke(middleware, null);
+  assert.equal(result.nextCalled, true);
+  assert.equal(result.req.auth, null);
+  assert.equal(result.res.statusCode, null);
+  assert.equal(calls, 0);
+});
+
+test('optional Firebase auth still rejects invalid supplied bearer tokens', async () => {
+  const middleware = createOptionalFirebaseAuthMiddleware({
+    projectId,
+    verifyIdToken: async () => { throw new Error('invalid token'); },
+  });
+  const result = await invoke(middleware, 'Bearer invalid-token');
+  assert.equal(result.nextCalled, false);
+  assert.equal(result.res.statusCode, 401);
+  assert.equal(result.res.body.code, 'FIREBASE_TOKEN_REJECTED');
 });
