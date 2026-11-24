@@ -900,6 +900,7 @@ async function runMigration() {
       { version: "025_country_operator_catalog_progress", file: "025_country_operator_catalog_progress.sql" },
       { version: "026_support_ticket_escalation_inbox", file: "026_support_ticket_escalation_inbox.sql" },
       { version: "027_opaque_referral_links", file: "027_opaque_referral_links.sql" },
+      { version: "028_firebase_uid_referral_identity", file: "028_firebase_uid_referral_identity.sql" },
     ];
     for (const migration of canonicalCountryMigrations) {
       const applied = await client.query(
