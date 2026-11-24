@@ -194,6 +194,20 @@ const pricing=document.getElementById('pricing');
 const loadQueueButton=document.getElementById('loadQueue');
 const loadPricingButton=document.getElementById('loadPricing');
 function setNotice(message,type=''){notice.className='status'+(type?' '+type:'');notice.textContent=message;}
+document.getElementById('legacyOwnerLogin').addEventListener('click',async()=>{
+ const button=document.getElementById('legacyOwnerLogin');
+ if(!keyInput.value.trim()){setNotice('د Owner پخوانۍ API Key ولیکئ.','warn');return;}
+ button.disabled=true;setNotice('د Owner لاسرسی له سرور سره تاییدېږي…');
+ try{
+  adminIdToken=null;
+  const response=await fetch('/api/admin/session',{method:'GET',headers:adminHeaders(),cache:'no-store'});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error((data.code||'HTTP_'+response.status)+': '+(data.error||'د ننوتلو غوښتنه رد شوه.'));
+  setAuthenticatedView(data.role);
+  setNotice('خوندي ننوتل بریالي شول.','ok');
+ }catch(error){setNotice('د ننوتلو ستونزه: '+error.message,'error');}
+ finally{button.disabled=false;}
+});
 function escapeText(value){return String(value??'—');}
 function moneyEur(cents){const n=Number(cents);return Number.isFinite(n)?new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(n/100):'—';}
 async function adminRequest(url){
@@ -570,11 +584,6 @@ document.getElementById('verifyAdminCode').addEventListener('click',async()=>{
   await activateAdminSession();
  }catch(error){setNotice('ننوتل تایید نه شول: '+(error.code||error.message),'error');}
  finally{button.disabled=false;}
-});
-document.getElementById('legacyOwnerLogin').addEventListener('click',async()=>{
- if(!keyInput.value.trim()){setNotice('د Owner پخوانۍ API Key ولیکئ.','warn');return;}
- adminIdToken=null;
- try{await activateAdminSession();}catch(error){setNotice(error.message,'error');}
 });
 document.getElementById('adminSignOut').addEventListener('click',async()=>{
  try{if(firebaseAuth)await firebaseAuth.signOut();}catch(_){};
