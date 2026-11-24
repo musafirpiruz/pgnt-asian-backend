@@ -162,18 +162,20 @@ test('admin referral code creation and updates enforce the fixed €0.07 reward'
 });
 
 
-test('admin page exposes referral code creation, activation, and reporting controls', () => {
+test('admin page creates opaque referral links without manual codes and supports revocation', () => {
   const pageStart = server.indexOf("app.get('/admin-dtone-check'");
-  const pageEnd = server.indexOf('`);\n});', pageStart);
+  const pageEnd = server.indexOf('`);\\n});', pageStart);
   const page = pageStart >= 0 && pageEnd > pageStart ? server.slice(pageStart, pageEnd) : '';
   assert.ok(pageStart >= 0);
-  assert.match(page, /id="createReferralCode"/);
+  assert.match(page, /id="createReferralLink"/);
+  assert.doesNotMatch(page, /id="referralCode"/);
   assert.match(page, /id="loadReferralReport"/);
   assert.match(page, /id="referralReport"/);
-  assert.match(page, /\/api\/admin\/referrals\/codes/);
-  assert.match(page, /\/api\/admin\/referrals/);
-  assert.match(page, /rewardEurCents:7/);
-  assert.match(page, /starts disabled/);
+  assert.match(page, /\\/api\\/admin\\/referrals\\/links/);
+  assert.match(page, /\\/api\\/admin\\/referrals/);
+  assert.match(page, /maxRewards/);
+  assert.match(page, /shown only once/);
+  assert.match(page, /\\/api\\/admin\\/referrals\\/links\\/.*\\/revoke/);
 });
 
 
