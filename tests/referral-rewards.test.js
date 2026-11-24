@@ -164,7 +164,7 @@ test('admin referral code creation and updates enforce the fixed €0.07 reward'
 
 test('admin page creates opaque referral links without manual codes and supports revocation', () => {
   const pageStart = server.indexOf("app.get('/admin-dtone-check'");
-  const pageEnd = server.indexOf('`);\\n});', pageStart);
+  const pageEnd = server.indexOf('`);\n});', pageStart);
   const page = pageStart >= 0 && pageEnd > pageStart ? server.slice(pageStart, pageEnd) : '';
   assert.ok(pageStart >= 0);
   assert.match(page, /id="createReferralLink"/);
