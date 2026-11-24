@@ -3820,6 +3820,7 @@ app.get('/api/admin/referrals', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT c.code, c.owner_name, c.owner_contact, c.reward_eur_cents, c.max_rewards, c.active, c.created_at,
+        (c.link_token_hash IS NOT NULL AND c.link_token_revoked_at IS NULL) AS has_invite_link,
         (SELECT COUNT(*) FROM referral_attributions a WHERE a.referral_code=c.code) AS attributed_installs,
         (SELECT COUNT(*) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status IN ('pending','approved','paid')) AS reward_eligible,
         (SELECT COALESCE(SUM(l.reward_eur_cents),0) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status IN ('pending','approved','paid')) AS reward_total_eur_cents,
@@ -3841,8 +3842,17 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
   const values = [code];
 
   if (typeof body.active === 'boolean') {
+    if (body.active === true) {
+      const link = await pool.query(
+        'SELECT link_token_hash, link_token_revoked_at FROM referral_codes WHERE code = $1',
+        [code]
+      );
+      if (link.rowCount !== 1 || !link.rows[0].link_token_hash || link.rows[0].link_token_revoked_at) {
+        return res.status(409).json({ error: 'Only a valid, non-revoked invite link can be activated. Create a new invite link for this referral.' });
+      }
+    }
     values.push(body.active);
-    fields.push(`active = $${values.length}`);
+    fields.push(`active = ${values.length}`);
   }
 
   if (body.rewardEurCents !== undefined) {
