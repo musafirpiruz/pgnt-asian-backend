@@ -60,14 +60,15 @@ test('legacy referral records without a live opaque token cannot be activated', 
 
 test('admin report disables activation controls for legacy records without invite tokens', () => {
   const pageStart = server.indexOf("app.get('/admin-dtone-check'");
-  const pageEnd = server.indexOf('`);\\n});', pageStart);
-  const page = server.slice(pageStart, pageEnd);
-  assert.match(page, /ref\.has_invite_link/);
-  assert.match(page, /Legacy code — no invite link/);
-  assert.match(page, /toggle\.disabled=true/);
-  assert.match(page, /referral\/links\//);
+  const controlStart = server.indexOf("const toggle=makeTicketElement('button',ref.active?", pageStart);
+  const controlEnd = server.indexOf("const remove=makeTicketElement('button'", controlStart);
+  assert.ok(pageStart >= 0 && controlStart > pageStart && controlEnd > controlStart);
+  const controls = server.slice(controlStart, controlEnd);
+  assert.match(controls, /ref\.has_invite_link/);
+  assert.match(controls, /Legacy code — no invite link/);
+  assert.match(controls, /toggle\.disabled=true/);
+  assert.match(controls, /api\/admin\/referrals\/links\//);
 });
-
 test('Android APK workflow registers the app invite URI scheme and runs on this feature branch', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'build-apk.yml'), 'utf8');
   assert.match(workflow, /feature\/referral-links-no-manual-codes/);
