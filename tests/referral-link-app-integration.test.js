@@ -77,3 +77,12 @@ test('Android APK workflow registers the app invite URI scheme and runs on this 
   assert.match(workflow, /pgntasian/);
   assert.match(workflow, /referral/);
 });
+
+test('referral invite creation validates the owner contact length server-side', () => {
+  const start = server.indexOf("app.post('/api/admin/referrals/links'");
+  const end = server.indexOf("app.post('/api/admin/referrals/links/:code/revoke'", start);
+  assert.ok(start >= 0 && end > start);
+  const route = server.slice(start, end);
+  assert.match(route, /ownerContact && ownerContact\.length > 254/);
+  assert.match(route, /ownerContact must be 254 characters or fewer/);
+});
