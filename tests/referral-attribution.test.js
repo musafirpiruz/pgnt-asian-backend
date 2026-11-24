@@ -66,8 +66,8 @@ test('new invite attribution uses only verified Firebase UID and stores only tok
   const insert = state.queries.find((entry) => entry.sql.includes('INSERT INTO referral_attributions'));
   assert.deepEqual(insert.params, ['verified-firebase-uid', 'INTERNAL_ONLY']);
   assert.equal(insert.sql.includes('install_id_hash'), true);
-  assert.equal(state.queries.some((entry) => JSON.stringify(entry.params).includes(token)), false);
-  assert.equal(state.queries.some((entry) => JSON.stringify(entry.params).includes('attacker-supplied-uid')), false);
+  assert.equal(state.queries.some((entry) => (JSON.stringify(entry.params) || '').includes(token)), false);
+  assert.equal(state.queries.some((entry) => (JSON.stringify(entry.params) || '').includes('attacker-supplied-uid')), false);
   assert.ok(state.queries.some((entry) => entry.sql === 'COMMIT'));
   assert.equal(state.released, true);
 });
