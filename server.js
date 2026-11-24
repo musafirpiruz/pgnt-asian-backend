@@ -62,6 +62,16 @@ const DTONE_API_BASE_URL = configuredDtOneBaseUrl
   .replace(/^https:\/\/preprod-api\.dtone\.com$/i, 'https://preprod-dvs-api.dtone.com')
   .replace(/\/v1$/i, '');
 
+// Keep catalog verification requests bounded and configurable for isolated tests.
+// Clamp the value to avoid accidental zero-length or excessively long provider waits.
+const configuredCatalogVerificationTimeoutMs = Number.parseInt(
+  process.env.DTONE_CATALOG_VERIFY_TIMEOUT_MS || '10000',
+  10
+);
+const catalogVerificationTimeoutMs = Number.isFinite(configuredCatalogVerificationTimeoutMs)
+  ? Math.min(30000, Math.max(100, configuredCatalogVerificationTimeoutMs))
+  : 10000;
+
 const DTONE_CALLBACK_URL =
   process.env.DTONE_CALLBACK_URL ||
   `${APP_BASE_URL}/api/dtone/callback`;
