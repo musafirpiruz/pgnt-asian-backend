@@ -205,6 +205,15 @@ test('Support can reply but cannot change ticket status or priority', async () =
   assert.equal(calls.length, 1);
   assert.equal(calls[0].params[1], null, 'Support cannot change ticket status');
   assert.equal(calls[0].params[2], null, 'Support cannot change ticket priority');
+
+  const emptyReplyRes = responseRecorder();
+  await handler({
+    params: { ticketId: '42' },
+    admin: { uid: 'support-uid', role: 'support' },
+    body: { adminReply: '   ' },
+  }, emptyReplyRes);
+  assert.equal(emptyReplyRes.statusCode, 403, 'Support cannot submit an empty or whitespace-only reply');
+  assert.equal(calls.length, 1, 'empty Support reply must not reach the database');
 });
 
 test('Owner retains ticket status and priority controls', async () => {
