@@ -14,22 +14,23 @@ function permissionForAdminRequest(req) {
   const method = String(req?.method || '').toUpperCase();
   const path = String(req?.path || req?.originalUrl || '').split('?')[0];
 
-  if (method === 'GET' && path === '/api/admin/support/tickets') {
-    return 'support.tickets.read';
-  }
+  // The session endpoint is needed by the panel to discover the authenticated
+  // administrator's limited role and permissions after Firebase sign-in.
   if (method === 'GET' && path === '/api/admin/session') {
     return 'support.orders.read_limited';
+  }
+  if (method === 'GET' && path === '/api/admin/support/tickets') {
+    return 'support.tickets.read';
   }
   if (method === 'PATCH' && /^\/api\/admin\/support\/tickets\/\d+$/.test(path)) {
     return 'support.tickets.reply';
   }
-
   if (method === 'POST' && /^\/api\/admin\/support\/tickets\/[1-9]\d*\/escalate$/.test(path)) {
     return 'support.tickets.escalate';
   }
 
-  // Default deny-by-role: all existing finance, catalog, payment, refund,
-  // referral, wallet, DT One and configuration routes are Owner-only.
+  // Default deny-by-role: all finance, catalog, payment, refund, referral,
+  // wallet, DT One, configuration and escalation-lifecycle routes are Owner-only.
   return 'owner.only';
 }
 
