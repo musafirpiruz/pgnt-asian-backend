@@ -28,11 +28,6 @@ function createFirebaseAuthMiddleware({
       return next();
     }
 
-    if (!match && allowAnonymous) {
-      req.auth = null;
-      return next();
-    }
-
     if (!configured) {
       return res.status(503).json({
         error: 'Firebase authentication is not configured.',
