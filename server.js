@@ -3513,6 +3513,9 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
       return res.status(409).json({error:'Another verification page advanced the saved cursor. Reload and continue.' ,nextAfterProductCatalogId:persistedCursor});
     }
     if(lockedApproval.rowCount!==1||lockedOperator.rowCount!==1||lockedOperator.rows[0].active||
+       String(lockedApproval.rows[0].id)!==String(approval.id)||
+       String(lockedApproval.rows[0].sample_product_catalog_id)!==String(approval.sample_product_catalog_id)||
+       String(lockedApproval.rows[0].provider||'')!==String(approval.provider||'')||
        String(lockedApproval.rows[0].provider_operator_id)!==String(approval.provider_operator_id)||
        String(lockedOperator.rows[0].provider_operator_id||'')!==String(approval.provider_operator_id)){
       await client.query('ROLLBACK');
