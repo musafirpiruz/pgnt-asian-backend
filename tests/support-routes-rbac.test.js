@@ -172,3 +172,59 @@ test('Support is blocked from Owner escalation lifecycle routes while Owner can 
   await app.routes.get('POST /api/admin/support/escalations/:escalationId/resolve').at(-1)(ownerReq, ownerRes);
   assert.equal(ownerRes.statusCode, 200);
 });
+
+
+test('Support can reply but cannot change ticket status or priority', async () => {
+  const app = makeApp();
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rowCount: 1, rows: [{ id: 42, admin_reply: params[4] }] };
+    },
+  };
+  registerSupportRoutes({ app, pool, requireAdmin: (_req, _res, next) => next() });
+  const handler = app.routes.get('PATCH /api/admin/support/tickets/:ticketId');
+
+  const deniedRes = responseRecorder();
+  await handler({
+    params: { ticketId: '42' },
+    admin: { uid: 'support-uid', role: 'support' },
+    body: { adminReply: 'We are checking this for you.', status: 'resolved' },
+  }, deniedRes);
+  assert.equal(deniedRes.statusCode, 403);
+  assert.equal(calls.length, 0, 'denied Support mutation must not reach the database');
+
+  const replyRes = responseRecorder();
+  await handler({
+    params: { ticketId: '42' },
+    admin: { uid: 'support-uid', role: 'support' },
+    body: { adminReply: 'We are checking this for you.' },
+  }, replyRes);
+  assert.equal(replyRes.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].params[1], null, 'Support cannot change ticket status');
+  assert.equal(calls[0].params[2], null, 'Support cannot change ticket priority');
+});
+
+test('Owner retains ticket status and priority controls', async () => {
+  const app = makeApp();
+  let captured;
+  const pool = {
+    async query(sql, params) {
+      captured = params;
+      return { rowCount: 1, rows: [{ id: 42, status: 'resolved', priority: 'normal' }] };
+    },
+  };
+  registerSupportRoutes({ app, pool, requireAdmin: (_req, _res, next) => next() });
+  const handler = app.routes.get('PATCH /api/admin/support/tickets/:ticketId');
+  const res = responseRecorder();
+  await handler({
+    params: { ticketId: '42' },
+    admin: { uid: 'owner-uid', role: 'owner' },
+    body: { status: 'resolved', priority: 'normal' },
+  }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(captured[1], 'resolved');
+  assert.equal(captured[2], 'normal');
+});
