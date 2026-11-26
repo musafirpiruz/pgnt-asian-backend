@@ -102,11 +102,12 @@ test('Stripe checkout creation failure releases the reserved referral slot', () 
   assert.ok(checkout.includes("WHERE order_id = $1 AND status = 'reserved'"));
 });
 
-test('capped referral rewards are serialized and count reserved rewards', () => {
-  assert.ok(checkout.includes('FROM referral_codes WHERE code = $1 FOR UPDATE'));
-  assert.ok(checkout.includes('COUNT(*)::int AS count FROM referral_ledger'));
-  assert.ok(checkout.includes("status IN ('reserved','pending','approved','paid')"));
-  assert.ok(checkout.includes('This referral code has reached its reward limit'));
+test('checkout reads referral attribution only from the verified UID and active internal invite record', () => {
+  assert.match(checkout, /FROM referral_attributions ra/);
+  assert.match(checkout, /JOIN referral_codes rc ON rc\\.code = ra\\.referral_code/);
+  assert.match(checkout, /WHERE ra\\.firebase_uid = \\$1/);
+  assert.match(checkout, /rc\\.active = TRUE/);
+  assert.doesNotMatch(checkout, /req\\.body\\?\\.referralCode|req\\.body\\?\\.referralInstallId/);
 });
 
 test('repeated successful DT One callbacks cannot promote or insert a second reward', () => {
