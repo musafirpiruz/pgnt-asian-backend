@@ -107,6 +107,12 @@ test('Firebase UID schema foundation does not activate referral checkout or phon
   const checkoutEnd = server.indexOf('// Dedicated Stripe + DT One end-to-end test.', checkoutStart);
   const checkout = server.slice(checkoutStart, checkoutEnd);
   assert.match(checkout, /REFERRAL_IDENTITY_VERIFICATION_REQUIRED/);
+  assert.match(checkout, /optionalCheckoutFirebaseAuth/);
+  assert.match(checkout, /req\.auth\?\.uid/);
+  assert.match(checkout, /referral_firebase_uid/);
+  assert.match(checkout, /WHERE ra\.firebase_uid = \$1/);
+  assert.doesNotMatch(checkout, /referralInstallId|referralInstallHash|install_id_hash/);
+  assert.match(checkout, /Rewards remain disabled/);
   assert.match(server, /registerPhoneAuthRoutes/);
   assert.match(phoneAuth, /app\.post\('\/api\/auth\/phone\/send', deferred\)/);
   assert.match(phoneAuth, /app\.post\('\/api\/auth\/phone\/verify', deferred\)/);
