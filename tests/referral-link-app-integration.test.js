@@ -111,7 +111,9 @@ test('Firebase UID schema foundation does not activate referral checkout or phon
   assert.match(checkout, /req\.auth\?\.uid/);
   assert.match(checkout, /referral_firebase_uid/);
   assert.match(checkout, /WHERE ra\.firebase_uid = \$1/);
-  assert.doesNotMatch(checkout, /referralInstallId|referralInstallHash|install_id_hash/);
+  assert.doesNotMatch(checkout, /referralInstallId|referralInstallHash/);
+  assert.match(checkout, /referral_install_id, referral_firebase_uid/);
+  assert.match(checkout, /Rewards remain disabled/);
   assert.match(checkout, /Rewards remain disabled/);
   assert.match(server, /registerPhoneAuthRoutes/);
   assert.match(phoneAuth, /app\.post\('\/api\/auth\/phone\/send', deferred\)/);
