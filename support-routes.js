@@ -227,6 +227,9 @@ module.exports = function registerSupportRoutes({ app, pool, requireAdmin }) {
     if (status !== null && !TICKET_STATUSES.has(status)) return res.status(400).json({ error: 'Unsupported ticket status.' });
     if (priority !== null && !TICKET_PRIORITIES.has(priority)) return res.status(400).json({ error: 'Unsupported ticket priority.' });
     if (hasReply && adminReply.length > 4000) return res.status(400).json({ error: 'Admin reply must be 4000 characters or fewer.' });
+    if (req.admin?.role === 'support' && (!hasReply || status !== null || priority !== null)) {
+      return res.status(403).json({ error: 'Support administrators may only send customer replies; use the separate escalation action for Owner review.' });
+    }
     if (status === null && priority === null && !hasReply) return res.status(400).json({ error: 'Provide status, priority, or adminReply.' });
 
     try {
