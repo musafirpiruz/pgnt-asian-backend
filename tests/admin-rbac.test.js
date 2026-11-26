@@ -1,109 +1,145 @@
 'use strict';
 
-// Role assignment is bound only to Firebase UIDs verified by firebase-auth.js.
-// No role is accepted from request bodies, headers, query parameters, or custom
-// token claims. The second administrator is intentionally support-only.
-const SUPPORT_PERMISSIONS = Object.freeze([
-  'support.orders.read_limited',
-  'support.tickets.read',
-  'support.tickets.reply',
-  'support.tickets.escalate',
-]);
-
-function permissionForAdminRequest(req) {
-  const method = String(req?.method || '').toUpperCase();
-  const path = String(req?.path || req?.originalUrl || '').split('?')[0];
-
-  if (method === 'GET' && path === '/api/admin/support/tickets') {
-    return 'support.tickets.read';
-  }
-  if (method === 'PATCH' && /^\/api\/admin\/support\/tickets\/\d+$/.test(path)) {
-    return 'support.tickets.reply';
-  }
-
-  // Default deny-by-role: all existing finance, catalog, payment, refund,
-  // referral, wallet, DT One and configuration routes are Owner-only.
-  return 'owner.only';
-}
-
-function createAdminRbac({
-  firebaseAuthMiddleware,
-  ownerUid,
-  supportUid,
-} = {}) {
-  const normalizedOwnerUid = typeof ownerUid === 'string' ? ownerUid.trim() : '';
-  const normalizedSupportUid = typeof supportUid === 'string' ? supportUid.trim() : '';
-  const configured = typeof firebaseAuthMiddleware === 'function' &&
-    normalizedOwnerUid.length > 0 &&
-    normalizedSupportUid.length > 0 &&
-    normalizedOwnerUid !== normalizedSupportUid;
-
-  async function authenticateAdmin(req, res, next) {
-    if (!configured) {
-      return res.status(503).json({
-        error: 'Two-account administrator authentication is not configured.',
-        code: 'ADMIN_RBAC_NOT_CONFIGURED',
-      });
-    }
-
-    let authenticated = false;
-    await firebaseAuthMiddleware(req, res, () => {
-      authenticated = true;
-    });
-    if (!authenticated) return undefined;
-
-    const uid = typeof req.auth?.uid === 'string' ? req.auth.uid : '';
-    let role;
-    let permissions;
-
-    if (uid === normalizedOwnerUid) {
-      role = 'owner';
-      permissions = Object.freeze(['*']);
-    } else if (uid === normalizedSupportUid) {
-      role = 'support';
-      permissions = SUPPORT_PERMISSIONS;
-    } else {
-      return res.status(403).json({
-        error: 'This identity is not authorized as an administrator.',
-        code: 'ADMIN_IDENTITY_NOT_ALLOWED',
-      });
-    }
-
-    req.admin = Object.freeze({ uid, role, permissions });
-    return next();
-  }
-
-  function requireAdminPermission(permission) {
-    const required = String(permission || '').trim();
-    if (!required) throw new Error('A named administrator permission is required.');
-
-    return function adminPermissionMiddleware(req, res, next) {
-      const admin = req.admin;
-      if (!admin || !Array.isArray(admin.permissions)) {
-        return res.status(401).json({
-          error: 'Administrator authentication is required.',
-          code: 'ADMIN_AUTH_REQUIRED',
-        });
-      }
-      if (admin.role === 'owner' || admin.permissions.includes(required)) {
-        return next();
-      }
-      return res.status(403).json({
-        error: 'This administrator does not have permission for this action.',
-        code: 'ADMIN_PERMISSION_DENIED',
-      });
-    };
-  }
-
-  return Object.freeze({
-    configured,
-    authenticateAdmin,
-    requireAdminPermission,
-  });
-}
-
-module.exports = {
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const {
   createAdminRbac,
   SUPPORT_PERMISSIONS,
   permissionForAdminRequest,
-};
+} = require('../admin-rbac');
+
+function responseRecorder() {
+  return {
+    statusCode: null,
+    body: null,
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+  };
+}
+
+async function authenticate(rbac, uid) {
+  const req = { auth: { uid } };
+  const res = responseRecorder();
+  let nextCalled = false;
+  await rbac.authenticateAdmin(req, res, () => { nextCalled = true; });
+  return { req, res, nextCalled };
+}
+
+test('Support role has only the intended support permissions', async () => {
+  const rbac = createAdminRbac({
+    firebaseAuthMiddleware: async (req, res, next) => next(),
+    ownerUid: 'owner-firebase-uid',
+    supportUid: 'support-firebase-uid',
+  });
+  const result = await authenticate(rbac, 'support-firebase-uid');
+  assert.equal(result.nextCalled, true);
+  assert.equal(result.req.admin.role, 'support');
+  assert.equal(result.req.admin.uid, 'support-firebase-uid');
+  assert.deepEqual(result.req.admin.permissions, SUPPORT_PERMISSIONS);
+  assert.equal(Object.isFrozen(result.req.admin), true);
+});
+
+test('Owner role is assigned only to the configured Owner Firebase UID', async () => {
+  const rbac = createAdminRbac({
+    firebaseAuthMiddleware: async (req, res, next) => next(),
+    ownerUid: 'owner-firebase-uid',
+    supportUid: 'support-firebase-uid',
+  });
+  const result = await authenticate(rbac, 'owner-firebase-uid');
+  assert.equal(result.nextCalled, true);
+  assert.equal(result.req.admin.role, 'owner');
+  assert.deepEqual(result.req.admin.permissions, ['*']);
+});
+
+test('unknown Firebase identities are rejected', async () => {
+  const rbac = createAdminRbac({
+    firebaseAuthMiddleware: async (req, res, next) => next(),
+    ownerUid: 'owner-firebase-uid',
+    supportUid: 'support-firebase-uid',
+  });
+  const result = await authenticate(rbac, 'unlisted-firebase-uid');
+  assert.equal(result.nextCalled, false);
+  assert.equal(result.res.statusCode, 403);
+  assert.equal(result.res.body.code, 'ADMIN_IDENTITY_NOT_ALLOWED');
+});
+
+test('RBAC fails closed unless two distinct administrator UIDs are configured', async () => {
+  for (const config of [
+    {},
+    { ownerUid: 'same-uid', supportUid: 'same-uid' },
+    { ownerUid: 'owner-only', supportUid: '' },
+  ]) {
+    const rbac = createAdminRbac({
+      firebaseAuthMiddleware: async (req, res, next) => next(),
+      ...config,
+    });
+    assert.equal(rbac.configured, false);
+    const result = await authenticate(rbac, 'same-uid');
+    assert.equal(result.nextCalled, false);
+    assert.equal(result.res.statusCode, 503);
+    assert.equal(result.res.body.code, 'ADMIN_RBAC_NOT_CONFIGURED');
+  }
+});
+
+test('Support can read its session, read/reply to tickets and escalate to Owner', () => {
+  const routes = [
+    [{ method: 'GET', path: '/api/admin/session' }, 'support.orders.read_limited'],
+    [{ method: 'GET', path: '/api/admin/support/tickets' }, 'support.tickets.read'],
+    [{ method: 'PATCH', path: '/api/admin/support/tickets/42' }, 'support.tickets.reply'],
+    [{ method: 'POST', path: '/api/admin/support/tickets/42/escalate' }, 'support.tickets.escalate'],
+  ];
+  for (const [request, expected] of routes) {
+    assert.equal(permissionForAdminRequest(request), expected);
+    const middleware = createAdminRbac({
+      firebaseAuthMiddleware: async (req, res, next) => next(),
+      ownerUid: 'owner',
+      supportUid: 'support',
+    }).requireAdminPermission(expected);
+    const req = { admin: { uid: 'support', role: 'support', permissions: SUPPORT_PERMISSIONS } };
+    const res = responseRecorder();
+    let nextCalled = false;
+    middleware(req, res, () => { nextCalled = true; });
+    assert.equal(nextCalled, true, request.method + ' ' + request.path);
+  }
+});
+
+test('Support is denied Owner-only catalog, payment and escalation lifecycle routes', () => {
+  const routes = [
+    { method: 'POST', path: '/api/admin/country-operators/1/approve-sample' },
+    { method: 'POST', path: '/api/admin/support/escalations/7/acknowledge' },
+    { method: 'POST', path: '/api/admin/support/escalations/7/resolve' },
+    { method: 'GET', path: '/api/admin/wallets/diagnostics' },
+  ];
+  const middleware = createAdminRbac({
+    firebaseAuthMiddleware: async (req, res, next) => next(),
+    ownerUid: 'owner',
+    supportUid: 'support',
+  }).requireAdminPermission('owner.only');
+
+  for (const request of routes) {
+    assert.equal(permissionForAdminRequest(request), 'owner.only');
+    const req = {
+      ...request,
+      admin: { uid: 'support', role: 'support', permissions: SUPPORT_PERMISSIONS },
+    };
+    const res = responseRecorder();
+    let nextCalled = false;
+    middleware(req, res, () => { nextCalled = true; });
+    assert.equal(nextCalled, false);
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.body.code, 'ADMIN_PERMISSION_DENIED');
+  }
+});
+
+test('Owner can pass every named permission', () => {
+  const middleware = createAdminRbac({
+    firebaseAuthMiddleware: async (req, res, next) => next(),
+    ownerUid: 'owner',
+    supportUid: 'support',
+  }).requireAdminPermission('owner.only');
+  const req = { admin: { uid: 'owner', role: 'owner', permissions: ['*'] } };
+  const res = responseRecorder();
+  let nextCalled = false;
+  middleware(req, res, () => { nextCalled = true; });
+  assert.equal(nextCalled, true);
+});
