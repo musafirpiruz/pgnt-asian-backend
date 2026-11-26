@@ -1405,8 +1405,7 @@ class _PgntHomePageState extends State<PgntHomePage> {
   final TextEditingController phoneController =
       TextEditingController();
   final TextEditingController customAmountController = TextEditingController();
-  final TextEditingController referralCodeController =
-      TextEditingController();
+  static const String _pendingReferralTokenKey = 'pgnt_pending_referral_token_v1';
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _referralLinkSubscription;
   final TextEditingController supportSubjectController =
@@ -1443,26 +1442,24 @@ class _PgntHomePageState extends State<PgntHomePage> {
     }).catchError((Object _) {});
   }
 
-  void _applyReferralUri(Uri uri) {
+  Future<void> _applyReferralUri(Uri uri) async {
     if (!mounted) return;
-    // Supported invite links use: pgntasian://referral?code=FRIEND2026
+    // Invite URLs carry only an opaque token. Never accept/display an internal code.
     if (uri.scheme.toLowerCase() != 'pgntasian' ||
         uri.host.toLowerCase() != 'referral') {
       return;
     }
-    final code = (uri.queryParameters['code'] ??
-            uri.queryParameters['referralCode'] ?? '')
-        .trim()
-        .toUpperCase();
-    if (!RegExp(r'^[A-Z0-9_-]{4,40}$').hasMatch(code)) return;
-
-    // Never overwrite a different code the user has already entered.
-    final currentCode = referralCodeController.text.trim().toUpperCase();
-    if (currentCode.isEmpty || currentCode == code) {
-      referralCodeController.value = TextEditingValue(
-        text: code,
-        selection: TextSelection.collapsed(offset: code.length),
+    final token = (uri.queryParameters['token'] ?? '').trim();
+    if (!RegExp(r'^[A-Za-z0-9_-]{40,100}$').hasMatch(token)) return;
+    try {
+      // Keep the invite token in secure storage. It is deliberately not sent
+      // to checkout until Firebase identity and server-side attribution are enabled.
+      await _secureStorage.write(
+        key: _pendingReferralTokenKey,
+        value: token,
       );
+    } catch (_) {
+      // A failed secure write must not affect ordinary recharge functionality.
     }
   }
 
@@ -1753,7 +1750,6 @@ class _PgntHomePageState extends State<PgntHomePage> {
     _referralLinkSubscription?.cancel();
     phoneController.dispose();
     customAmountController.dispose();
-    referralCodeController.dispose();
     supportSubjectController.dispose();
     supportMessageController.dispose();
     super.dispose();
@@ -2169,20 +2165,9 @@ class _PgntHomePageState extends State<PgntHomePage> {
   }
 
   Widget buildReferralCodeField() {
-    return TextField(
-      controller: referralCodeController,
-      textCapitalization: TextCapitalization.characters,
-      autocorrect: false,
-      enableSuggestions: false,
-      maxLength: 40,
-      decoration: InputDecoration(
-        labelText: t('referralCode'),
-        hintText: t('referralCode'),
-        helperText: t('referralHint'),
-        prefixIcon: const Icon(Icons.card_giftcard, color: primaryRed),
-        counterText: '',
-      ),
-    );
+    // Referral invitations are link-only. There is intentionally no manual
+    // code entry; the opaque token is captured from the invite link privately.
+    return const SizedBox.shrink();
   }
 
   Widget buildPhoneField() {

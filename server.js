@@ -1150,6 +1150,26 @@ app.get('/api/pricing/quote', async (req, res) => {
 // Register the Stripe webhook BEFORE express.json().
 // =====================================================
 
+// Checkout accepts guests. If an Authorization header is supplied, it must
+// pass Firebase verification; invalid tokens never fall back to guest access.
+let firebaseAuthMiddleware = null;
+function optionalCheckoutFirebaseAuth(req, res, next) {
+  const authorization = String(req.get
+    ? req.get('authorization') || ''
+    : req.headers?.authorization || '').trim();
+  if (!authorization) {
+    req.auth = null;
+    return next();
+  }
+  if (typeof firebaseAuthMiddleware !== 'function') {
+    return res.status(503).json({
+      error: 'Firebase authentication is not configured.',
+      code: 'FIREBASE_AUTH_NOT_CONFIGURED',
+    });
+  }
+  return firebaseAuthMiddleware(req, res, next);
+}
+
 function createOrderId() {
   return crypto.randomUUID();
 }
@@ -1165,7 +1185,7 @@ function getCheckoutUrls() {
 
 // Create a checkout session and store its order.
 // IMPORTANT: register this route AFTER express.json().
-app.post('/api/payments/checkout', async (req, res) => {
+app.post('/api/payments/checkout', optionalCheckoutFirebaseAuth, async (req, res) => {
   if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
     console.error('Checkout blocked: Stripe mode and DT One environment do not match.');
     return res.status(503).json({
@@ -1230,60 +1250,23 @@ app.post('/api/payments/checkout', async (req, res) => {
     const pricing = await resolveProductPricing(client, input.country, product.name, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
 
-    // Referral attribution is server-validated and tied to a stable
-    // client-generated install identifier. This is abuse friction, not
-    // proof of a unique human/device; reward approval remains manual.
-    let referralRewardCents = null;
-    const referralCode = String(req.body?.referralCode || '').trim().toUpperCase();
-    const referralInstallId = String(req.body?.referralInstallId || '').trim();
-    let referralInstallHash = null;
-    if (referralCode || referralInstallId) {
-      if (!/^[A-Z0-9_-]{4,40}$/.test(referralCode) ||
-          !/^[A-Za-z0-9._:-]{16,128}$/.test(referralInstallId)) {
-        throw new Error('A valid referral code and install identifier are required together.');
-      }
-      referralInstallHash = crypto.createHash('sha256')
-        .update(referralInstallId, 'utf8').digest('hex');
-      const referral = await client.query(
-        `SELECT code, reward_eur_cents, max_rewards, active
-         FROM referral_codes WHERE code = $1 FOR UPDATE`,
-        [referralCode]
-      );
-      if (referral.rowCount !== 1 || referral.rows[0].active !== true) {
-        throw new Error('This referral code is invalid or inactive.');
-      }
-      // The reward contract is fixed at €0.07. Fail closed for legacy or
-      // manually edited database rows instead of reserving a different amount.
-      if (Number(referral.rows[0].reward_eur_cents) !== 7) {
-        throw new Error('This referral code has an invalid reward configuration. Please contact support.');
-      }
-      referralRewardCents = 7;
-      const cap = referral.rows[0].max_rewards;
-      if (cap !== null) {
-        const used = await client.query(
-          `SELECT COUNT(*)::int AS count FROM referral_ledger
-           WHERE referral_code = $1 AND status IN ('reserved','pending','approved','paid')`,
-          [referralCode]
-        );
-        if (Number(used.rows[0].count) >= Number(cap)) {
-          throw new Error('This referral code has reached its reward limit.');
-        }
-      }
+    // Attach only an attribution previously saved against a verified Firebase UID.
+    // The customer cannot submit a UID, internal code, or install ID. Rewards remain
+    // disabled until owner identity and final-callback eligibility are independently verified.
+    let referralCode = null;
+    const referralFirebaseUid = req.auth?.uid || null;
+    if (referralFirebaseUid) {
       const attribution = await client.query(
-        `INSERT INTO referral_attributions (install_id_hash, referral_code, first_order_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (install_id_hash) DO NOTHING
-         RETURNING referral_code`,
-        [referralInstallHash, referralCode, null]
+        `SELECT ra.referral_code
+         FROM referral_attributions ra
+         JOIN referral_codes rc ON rc.code = ra.referral_code
+         WHERE ra.firebase_uid = $1
+           AND rc.active = TRUE
+         FOR UPDATE OF ra, rc`,
+        [referralFirebaseUid]
       );
-      if (attribution.rowCount === 0) {
-        const existing = await client.query(
-          'SELECT referral_code FROM referral_attributions WHERE install_id_hash = $1 FOR UPDATE',
-          [referralInstallHash]
-        );
-        if (existing.rowCount !== 1 || existing.rows[0].referral_code !== referralCode) {
-          throw new Error('This install is already attributed to another referral code.');
-        }
+      if (attribution.rowCount === 1) {
+        referralCode = attribution.rows[0].referral_code;
       }
     }
 
@@ -1297,30 +1280,18 @@ app.post('/api/payments/checkout', async (req, res) => {
          order_id, country, operator, phone, product_id,
          amount, currency, product_price_cents, fee_cents,
          charge_cents, status, order_access_token_hash, referral_code,
-         referral_install_id, created_at, updated_at
+         referral_install_id, referral_firebase_uid, created_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         'awaiting_payment', $11, $12, $13, NOW(), NOW()
+         'awaiting_payment', $11, $12, NULL, $13, NOW(), NOW()
        )`,
       [
         orderId, input.country, product.name, input.phone,
         product.id, product.localAmount, product.currency,
         price.basePriceCents, price.feeCents, price.finalPriceCents,
-        orderAccessTokenHash, referralCode || null, referralInstallHash,
+        orderAccessTokenHash, referralCode, referralFirebaseUid,
       ]
     );
-
-    // Reserve a referral reward slot in the same transaction as the order.
-    // The referral_codes row lock serializes capped checkouts.
-    if (referralInstallHash && referralCode && referralRewardCents !== null) {
-      await client.query(
-        `INSERT INTO referral_ledger
-           (referral_code, install_id_hash, order_id, reward_eur_cents, status)
-         VALUES ($1, $2, $3, $4, 'reserved')
-         ON CONFLICT DO NOTHING`,
-        [referralCode, referralInstallHash, orderId, referralRewardCents]
-      );
-    }
 
     await client.query('COMMIT');
     transactionOpen = false;
@@ -1414,12 +1385,7 @@ app.post('/api/payments/checkout', async (req, res) => {
       }
     }
 
-    const referralClientErrors = new Set([
-      'A valid referral code and install identifier are required together.',
-      'This referral code is invalid or inactive.',
-      'This referral code has reached its reward limit.',
-      'This install is already attributed to another referral code.',
-    ]);
+    const referralClientErrors = new Set();
     if (referralClientErrors.has(error.message)) {
       return res.status(400).json({ error: error.message });
     }
@@ -3227,7 +3193,7 @@ try {
   console.error('Firebase Admin configuration is invalid; authentication remains disabled.');
 }
 
-const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
+firebaseAuthMiddleware = createFirebaseAuthMiddleware({
   projectId: firebaseAdminConfig.projectId,
   verifyIdToken: firebaseAdminConfig.verifyIdToken,
   requirePhoneNumber: true,
@@ -3245,6 +3211,14 @@ permissionForAdminRequest = resolveAdminPermission;
 
 // International customer phone authentication (Firebase; SMS remains deferred).
 require('./phone-auth').registerPhoneAuthRoutes({
+  app,
+  pool,
+  authMiddleware: firebaseAuthMiddleware,
+});
+
+// Referral attribution is bound to the verified Firebase UID only.
+// Checkout rewards remain disabled until the full payment/callback integration is tested.
+require('./referral-attribution').registerReferralAttributionRoute({
   app,
   pool,
   authMiddleware: firebaseAuthMiddleware,
@@ -3763,11 +3737,65 @@ app.post('/api/admin/referrals/codes', requireAdmin, async (req, res) => {
   }
 });
 
+// Opaque referral links: raw random tokens are shown only once to the admin.
+// Internal referral codes remain database-only and are never requested from customers.
+app.post('/api/admin/referrals/links', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  const body = req.body || {};
+  const ownerName = String(body.ownerName || '').trim();
+  const ownerContact = String(body.ownerContact || '').trim() || null;
+  const maxRewards = body.maxRewards === undefined || body.maxRewards === null || body.maxRewards === '' ? null : Number(body.maxRewards);
+  if (!ownerName || ownerName.length > 120) return res.status(400).json({ error: 'A valid link owner name is required.' });
+  if (ownerContact && ownerContact.length > 254) return res.status(400).json({ error: 'ownerContact must be 254 characters or fewer.' });
+  if (maxRewards !== null && (!Number.isSafeInteger(maxRewards) || maxRewards < 0)) return res.status(400).json({ error: 'maxRewards must be a non-negative integer.' });
+  const token = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+  const internalCode = 'RL_' + crypto.randomBytes(18).toString('hex').toUpperCase();
+  try {
+    const result = await pool.query(
+      `INSERT INTO referral_codes
+         (code, owner_name, owner_contact, reward_eur_cents, max_rewards, active,
+          link_token_hash, link_token_created_at)
+       VALUES ($1,$2,$3,7,$4,FALSE,$5,NOW())
+       RETURNING owner_name, owner_contact, reward_eur_cents, max_rewards, active, created_at`,
+      [internalCode, ownerName, ownerContact, maxRewards, tokenHash]
+    );
+    const publicUrl = 'pgntasian://referral?token=' + encodeURIComponent(token);
+    return res.status(201).json({
+      referral: result.rows[0],
+      inviteLink: publicUrl,
+      activationRequired: true,
+      shareTokenShownOnce: true,
+    });
+  } catch (error) {
+    console.error('Referral link creation failed:', error.message);
+    return res.status(500).json({ error: 'Could not create referral link.' });
+  }
+});
+
+app.post('/api/admin/referrals/links/:code/revoke', requireAdmin, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
+  try {
+    const result = await pool.query(
+      `UPDATE referral_codes SET active = FALSE, link_token_hash = NULL,
+         link_token_revoked_at = NOW(), updated_at = NOW()
+       WHERE code = $1 RETURNING owner_name, active, link_token_revoked_at`,
+      [String(req.params.code || '').trim().toUpperCase()]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Referral link not found.' });
+    return res.json({ revoked: true, referral: result.rows[0] });
+  } catch (error) {
+    console.error('Referral link revocation failed:', error.message);
+    return res.status(500).json({ error: 'Could not revoke referral link.' });
+  }
+});
+
 app.get('/api/admin/referrals', requireAdmin, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database is not configured.' });
   try {
     const result = await pool.query(`
       SELECT c.code, c.owner_name, c.owner_contact, c.reward_eur_cents, c.max_rewards, c.active, c.created_at,
+        (c.link_token_hash IS NOT NULL AND c.link_token_revoked_at IS NULL) AS has_invite_link,
         (SELECT COUNT(*) FROM referral_attributions a WHERE a.referral_code=c.code) AS attributed_installs,
         (SELECT COUNT(*) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status IN ('pending','approved','paid')) AS reward_eligible,
         (SELECT COALESCE(SUM(l.reward_eur_cents),0) FROM referral_ledger l WHERE l.referral_code=c.code AND l.status IN ('pending','approved','paid')) AS reward_total_eur_cents,
@@ -3788,9 +3816,10 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
   const fields = [];
   const values = [code];
 
+  const activating = body.active === true;
   if (typeof body.active === 'boolean') {
     values.push(body.active);
-    fields.push(`active = $${values.length}`);
+    fields.push(`active = ${values.length}`);
   }
 
   if (body.rewardEurCents !== undefined) {
@@ -3816,11 +3845,20 @@ app.patch('/api/admin/referrals/codes/:code', requireAdmin, async (req, res) => 
   }
 
   try {
+    const activationGuard = activating
+      ? ' AND link_token_hash IS NOT NULL AND link_token_revoked_at IS NULL'
+      : '';
     const result = await pool.query(
-      `UPDATE referral_codes SET ${fields.join(', ')} WHERE code = $1
+      `UPDATE referral_codes SET ${fields.join(', ')} WHERE code = $1${activationGuard}
        RETURNING code, owner_name, owner_contact, reward_eur_cents, max_rewards, active, created_at`,
       values
     );
+    if (!result.rowCount && activating) {
+      const existing = await pool.query('SELECT 1 FROM referral_codes WHERE code = $1', [code]);
+      if (existing.rowCount) {
+        return res.status(409).json({ error: 'Only a valid, non-revoked invite link can be activated. Create a new invite link for this referral.' });
+      }
+    }
     if (!result.rowCount) return res.status(404).json({ error: 'Referral code not found.' });
     return res.json({ referral: result.rows[0] });
   } catch (error) {
@@ -3967,15 +4005,15 @@ small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f
 <p>Admin-only test. Uses Stripe test mode and DT One pre-production with a fixed test recipient. A successful test payment submits one sandbox top-up. It does not activate the ATOMA catalog product. Do not use real card details.</p>
 <label style="display:flex;gap:8px;align-items:center"><input id="confirmStripeDtoneSandbox" type="checkbox" style="width:auto"> I confirm this is a Stripe TEST + DT One PRE-PRODUCTION test</label>
 <button type="button" id="runStripeDtoneSandbox">Create test checkout</button>
-<h2>Referral code administration</h2>
-<p>Create referral codes, activate or deactivate them, and review attributed installs and reward totals. Every eligible referral reward is fixed at €0.07 after the referred customer’s first successful top-up. New codes are disabled until you activate them.</p>
-<label for="referralCode">Referral code (4–40 letters, numbers, _ or -)</label><input id="referralCode" maxlength="40" autocomplete="off" placeholder="e.g. FRIEND2026">
-<label for="referralOwner">Code owner name</label><input id="referralOwner" maxlength="120" autocomplete="name" placeholder="Owner or partner name">
-<label for="referralContact">Owner contact (optional)</label><input id="referralContact" maxlength="200" autocomplete="off" placeholder="Optional contact reference">
-<label for="referralMaxRewards">Maximum rewards (optional; blank = unlimited)</label><input id="referralMaxRewards" type="number" min="0" step="1" placeholder="e.g. 100">
-<p><strong>Reward per eligible referral: €0.07 (fixed)</strong></p>
-<button type="button" id="createReferralCode">Create referral code (starts disabled)</button>
-<button type="button" id="loadReferralReport">Load referral report</button>
+<h2>د Referral بلنې لینکونه</h2>
+<p>د هر شریک لپاره نوی خوندي لینک جوړ کړئ. داخلي Referral کوډ سیستم پخپله جوړوي او مشتری ته نه ښکاري. لینک یوازې یو ځل د جوړولو پر وخت ښودل کېږي؛ لینکونه په پیل کې غیرفعال وي. انعام ثابت €0.07 دی، یوازې د لومړي بشپړ بریالي Top-up وروسته.</p>
+<label for="referralOwner">د لینک د مالک نوم</label><input id="referralOwner" maxlength="120" autocomplete="name" placeholder="د شریک یا مالک نوم">
+<label for="referralContact">د مالک اړیکه (اختیاري)</label><input id="referralContact" maxlength="200" autocomplete="off" placeholder="اختیاري اړیکه">
+<label for="referralMaxRewards">د انعامونو اعظمي شمېر (اختیاري)</label><input id="referralMaxRewards" type="number" min="0" step="1" placeholder="لکه 100">
+<p><strong>هر وړ Referral انعام: €0.07 (ثابت)</strong></p>
+<button type="button" id="createReferralLink">نوی خوندي بلنې لینک جوړ کړئ</button>
+<button type="button" id="loadReferralReport">د Referral راپور وګورئ</button>
+<div id="referralCreatedLink" aria-live="polite"></div>
 <div id="referralReport" aria-live="polite"></div>
 <h2>Admin pricing controls</h2>
 <p>Choose any supported country to manage its EUR app fee, local-currency reference rate, and estimated Stripe fees. Reference exchange rates are indicative and must be checked before production. Keep unverified products disabled.</p>
@@ -4575,23 +4613,27 @@ checkLiveDtOneStatus.addEventListener('click',async()=>{
  finally{key.value='';checkLiveDtOneStatus.disabled=false;}
 });
 
-document.getElementById('createReferralCode').addEventListener('click',async()=>{
+document.getElementById('createReferralLink').addEventListener('click',async()=>{
  if(!key.value){result.textContent='Enter the admin API key first.';return;}
- const code=document.getElementById('referralCode').value.trim().toUpperCase();
  const ownerName=document.getElementById('referralOwner').value.trim();
  const ownerContact=document.getElementById('referralContact').value.trim();
  const maxText=document.getElementById('referralMaxRewards').value.trim();
- if(!/^[A-Z0-9_-]{4,40}$/.test(code)){result.textContent='Referral code must be 4–40 letters, numbers, _ or -.';return;}
- if(!ownerName||ownerName.length>120){result.textContent='Enter a valid code owner name.';return;}
- const payload={code,ownerName,ownerContact,rewardEurCents:7,maxRewards:maxText===''?null:Number(maxText)};
- if(maxText!==''&&(!Number.isSafeInteger(payload.maxRewards)||payload.maxRewards<0)){result.textContent='Maximum rewards must be a non-negative whole number or blank.';return;}
- if(!confirm('Create referral code '+code+' with a fixed €0.07 reward? The code will remain DISABLED until you activate it.'))return;
- const button=document.getElementById('createReferralCode');button.disabled=true;
+ const maxRewards=maxText===''?null:Number(maxText);
+ if(!ownerName||ownerName.length>120){result.textContent='Enter a valid link owner name.';return;}
+ if(maxText!==''&&(!Number.isSafeInteger(maxRewards)||maxRewards<0)){result.textContent='Maximum rewards must be a non-negative whole number or blank.';return;}
+ if(!confirm('Create a private referral invite link with a fixed €0.07 reward? It remains DISABLED until activated. The link is shown only once.'))return;
+ const button=document.getElementById('createReferralLink');button.disabled=true;
  try{
-  const data=await adminRequest('/api/admin/referrals/codes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  result.textContent=JSON.stringify({created:true,activationRequired:data.activationRequired,referral:data.referral},null,2);
+  const data=await adminRequest('/api/admin/referrals/links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ownerName,ownerContact,maxRewards})});
+  const host=document.getElementById('referralCreatedLink');host.replaceChildren();
+  host.append(makeTicketElement('p','New invite link — copy it now. It will not be shown again:'));
+  host.append(makeTicketElement('code',data.inviteLink));
+  const copy=makeTicketElement('button','Copy new invite link');copy.type='button';
+  copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(data.inviteLink);result.textContent='Invite link copied.';}catch(error){result.textContent='Clipboard unavailable; select and copy the link shown above.';}});
+  host.append(copy);
+  host.append(makeTicketElement('p','Status: DISABLED. Activate it from the report after checking the owner.'));
   await refreshReferralReport();
- }catch(error){result.textContent='Could not create referral code: '+error.message;}
+ }catch(error){result.textContent='Could not create referral link: '+error.message;}
  finally{key.value='';button.disabled=false;}
 });
 async function refreshReferralReport(){
@@ -4607,33 +4649,28 @@ async function refreshReferralReport(){
   for(const ref of rows){
    const card=makeTicketElement('section',undefined,'ticket-card');
    card.append(makeTicketElement('h3',ref.code+' — '+ref.owner_name));
-   const inviteUrl='pgntasian://referral?code='+encodeURIComponent(ref.code);
-   const copyInvite=makeTicketElement('button','Copy app invite link');
-   copyInvite.type='button';
-   copyInvite.addEventListener('click',async()=>{
-    if(!ref.active){result.textContent='Activate this referral code before sharing its invite link.';return;}
-    try{
-     await navigator.clipboard.writeText(inviteUrl);
-     result.textContent='App invite link copied: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
-    }catch(error){
-     result.textContent='Copy was unavailable. Copy this invite link manually: '+inviteUrl+'\\nThis opens the app only when PGNT ASIAN TOPUP is installed; Play Store install attribution is not included yet.';
-    }
-   });
-   card.append(copyInvite);
+   card.append(makeTicketElement('p','Invite token is shown only once at creation. Create a replacement link if needed.'));
+    
    card.append(makeTicketElement('p','Status: '+(ref.active?'ACTIVE':'DISABLED')+' | Reward: €'+(Number(ref.reward_eur_cents||0)/100).toFixed(2)));
    card.append(makeTicketElement('p','Attributed installs: '+ref.attributed_installs+' | Eligible rewards: '+ref.reward_eligible+' | Paid rewards: '+ref.rewards_paid));
    card.append(makeTicketElement('p','Reward ledger total: €'+(Number(ref.reward_total_eur_cents||0)/100).toFixed(2)+' | Cap: '+(ref.max_rewards===null?'unlimited':ref.max_rewards)));
-   const toggle=makeTicketElement('button',ref.active?'Deactivate code':'Activate code');
-   toggle.type='button';toggle.addEventListener('click',async()=>{
-    if(!key.value){result.textContent='Enter the admin API key again before changing a code.';return;}
-    if(!confirm((ref.active?'Deactivate':'Activate')+' referral code '+ref.code+'?'))return;
+   const toggle=makeTicketElement('button',ref.active?'Revoke invite link':(ref.has_invite_link?'Activate invite link':'Legacy code — no invite link'));
+   toggle.type='button';
+   if(!ref.has_invite_link){
     toggle.disabled=true;
-    try{
-     const changed=await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!ref.active})});
-     result.textContent=JSON.stringify({updated:true,referral:changed.referral},null,2);
-     await refreshReferralReport();
-    }catch(error){result.textContent='Could not update referral code: '+error.message;toggle.disabled=false;}
-   });
+    toggle.title='This legacy referral record has no valid opaque invite token. Create a new invite link instead.';
+   }else{
+    toggle.addEventListener('click',async()=>{
+     if(!key.value){result.textContent='Enter the admin API key again before changing a link.';return;}
+     if(!confirm((ref.active?'Revoke':'Activate')+' referral invite link for '+ref.owner_name+'?'))return;
+     toggle.disabled=true;
+     try{
+      const changed=ref.active ? await adminRequest('/api/admin/referrals/links/'+encodeURIComponent(ref.code)+'/revoke',{method:'POST'}) : await adminRequest('/api/admin/referrals/codes/'+encodeURIComponent(ref.code),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:true})});
+      result.textContent=JSON.stringify({updated:true,referral:changed.referral},null,2);
+      await refreshReferralReport();
+     }catch(error){result.textContent='Could not update referral link: '+error.message;toggle.disabled=false;}
+    });
+   }
    const remove=makeTicketElement('button','Delete / archive code');
    remove.type='button';remove.addEventListener('click',async()=>{
     if(!key.value){result.textContent='Enter the admin API key again before deleting or archiving a code.';return;}

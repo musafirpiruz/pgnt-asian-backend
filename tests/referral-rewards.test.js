@@ -19,21 +19,20 @@ const callback = callbackStart >= 0 && callbackEnd > callbackStart
   ? server.slice(callbackStart, callbackEnd)
   : '';
 
-test('checkout requires a valid referral code and stable install identifier together', () => {
+test('checkout never accepts customer-supplied referral codes or install identifiers', () => {
   assert.notEqual(checkoutStart, -1);
-  assert.match(checkout, /referralCode/);
-  assert.match(checkout, /referralInstallId/);
-  assert.match(checkout, /referralClientErrors/);
-  assert.match(checkout, /res\.status\(400\)\.json\(\{ error: error\.message \}\)/);
-  assert.match(checkout, /\^\[A-Z0-9_-\]\{4,40\}\$/);
-  assert.match(checkout, /\^\[A-Za-z0-9._:-\]\{16,128\}\$/);
+  assert.match(checkout, /optionalCheckoutFirebaseAuth/);
+  assert.match(checkout, /req\.auth\?\.uid/);
+  assert.match(checkout, /referral_firebase_uid/);
+  assert.doesNotMatch(checkout, /referralInstallId|referralInstallHash|install_id_hash/);
 });
 
-test('install identifiers are hashed before persistence and cannot be attributed to a different code', () => {
-  assert.match(checkout, /createHash\('sha256'\)/);
-  assert.match(checkout, /ON CONFLICT \(install_id_hash\) DO NOTHING/);
-  assert.match(checkout, /already attributed to another referral code/);
+test('new checkout orders store only a server-verified Firebase UID and never a client install identity', () => {
+  assert.match(checkout, /referralFirebaseUid = req\.auth\?\.uid/);
+  assert.match(checkout, /referral_firebase_uid/);
   assert.match(checkout, /referral_install_id/);
+  assert.match(checkout, /NULL, \$13, NOW\(\), NOW\(\)/);
+  assert.doesNotMatch(checkout, /referralInstallId|referralInstallHash|install_id_hash/);
 });
 
 test('reward ledger is written only on final DT One completed status and is idempotent', () => {
@@ -65,10 +64,9 @@ test('referral tests are source-only and never call provider APIs', () => {
   assert.doesNotMatch(source, /refunds\.create/);
 });
 
-test('checkout reserves referral cap capacity transactionally before commit', () => {
-  assert.match(checkout, /status IN \('reserved','pending','approved','paid'\)/);
-  assert.match(checkout, /VALUES \(\$1, \$2, \$3, \$4, 'reserved'\)/);
-  assert.ok(checkout.indexOf("INSERT INTO referral_ledger") < checkout.indexOf("await client.query('COMMIT')"));
+test('checkout does not reserve referral rewards before owner identity and reward eligibility are verified', () => {
+  assert.doesNotMatch(checkout, /INSERT INTO referral_ledger/);
+  assert.match(checkout, /Rewards remain disabled/);
 });
 
 test('successful DT One callback promotes a reservation instead of consuming a second slot', () => {
@@ -102,11 +100,12 @@ test('Stripe checkout creation failure releases the reserved referral slot', () 
   assert.ok(checkout.includes("WHERE order_id = $1 AND status = 'reserved'"));
 });
 
-test('capped referral rewards are serialized and count reserved rewards', () => {
-  assert.ok(checkout.includes('FROM referral_codes WHERE code = $1 FOR UPDATE'));
-  assert.ok(checkout.includes('COUNT(*)::int AS count FROM referral_ledger'));
-  assert.ok(checkout.includes("status IN ('reserved','pending','approved','paid')"));
-  assert.ok(checkout.includes('This referral code has reached its reward limit'));
+test('checkout reads referral attribution only from the verified UID and active internal invite record', () => {
+  assert.match(checkout, /FROM referral_attributions ra/);
+  assert.match(checkout, /JOIN referral_codes rc ON rc\.code = ra\.referral_code/);
+  assert.match(checkout, /WHERE ra\.firebase_uid = \$1/);
+  assert.match(checkout, /rc\.active = TRUE/);
+  assert.doesNotMatch(checkout, /req\.body\?\.referralCode|req\.body\?\.referralInstallId/);
 });
 
 test('repeated successful DT One callbacks cannot promote or insert a second reward', () => {
@@ -162,18 +161,20 @@ test('admin referral code creation and updates enforce the fixed €0.07 reward'
 });
 
 
-test('admin page exposes referral code creation, activation, and reporting controls', () => {
+test('admin page creates opaque referral links without manual codes and supports revocation', () => {
   const pageStart = server.indexOf("app.get('/admin-dtone-check'");
   const pageEnd = server.indexOf('`);\n});', pageStart);
   const page = pageStart >= 0 && pageEnd > pageStart ? server.slice(pageStart, pageEnd) : '';
   assert.ok(pageStart >= 0);
-  assert.match(page, /id="createReferralCode"/);
+  assert.match(page, /id="createReferralLink"/);
+  assert.doesNotMatch(page, /id="referralCode"/);
   assert.match(page, /id="loadReferralReport"/);
   assert.match(page, /id="referralReport"/);
-  assert.match(page, /\/api\/admin\/referrals\/codes/);
-  assert.match(page, /\/api\/admin\/referrals/);
-  assert.match(page, /rewardEurCents:7/);
-  assert.match(page, /starts disabled/);
+  assert.ok(page.includes('/api/admin/referrals/links'));
+  assert.ok(page.includes('/api/admin/referrals'));
+  assert.match(page, /maxRewards/);
+  assert.match(page, /shown only once/);
+  assert.ok(page.includes("'/api/admin/referrals/links/'+encodeURIComponent(ref.code)+'/revoke'"));
 });
 
 
@@ -206,20 +207,16 @@ test('referral admin page provides an explicit delete/archive action with histor
 });
 
 
-test('checkout rejects legacy or manually edited referral rewards unless exactly €0.07', () => {
-  assert.match(checkout, /Number\(referral\.rows\[0\]\.reward_eur_cents\) !== 7/);
-  assert.match(checkout, /invalid reward configuration/);
-  assert.match(checkout, /referralRewardCents = 7/);
+test('checkout leaves reward activation disabled until verified owner identity and callback integration are complete', () => {
+  assert.match(checkout, /Rewards remain disabled/);
+  assert.doesNotMatch(checkout, /referralRewardCents|INSERT INTO referral_ledger/);
 });
 
-test('checkout rejects referral attribution before database or payment work until verified identity is available', () => {
-  const guardStart = checkout.indexOf('const hasReferralInput = Boolean(');
-  const guardEnd = checkout.indexOf('const client = await pool.connect();', guardStart);
-  assert.ok(guardStart >= 0 && guardEnd > guardStart);
-  const guard = checkout.slice(guardStart, guardEnd);
-  assert.match(guard, /REFERRAL_IDENTITY_VERIFICATION_REQUIRED/);
-  assert.match(guard, /temporarily unavailable until secure account verification is enabled/);
-  assert.match(guard, /referralInstallId/);
-  assert.match(guard, /return res\.status\(503\)/);
-  assert.doesNotMatch(guard, /pool\.connect|stripe\.checkout\.sessions\.create|INSERT INTO referral_ledger/);
+test('checkout permits guest payments and uses only optional verified Firebase identity for referral attribution', () => {
+  assert.match(checkout, /optionalCheckoutFirebaseAuth/);
+  assert.match(checkout, /req\.auth\?\.uid/);
+  assert.match(checkout, /REFERRAL_IDENTITY_VERIFICATION_REQUIRED/);
+  assert.doesNotMatch(checkout, /req\.body\?\.referralCode|req\.body\?\.referralInstallId/);
+  assert.doesNotMatch(checkout, /INSERT INTO referral_ledger/);
 });
+

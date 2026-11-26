@@ -9,6 +9,7 @@ function createFirebaseAuthMiddleware({
   verifyIdToken,
   projectId,
   requirePhoneNumber = false,
+  allowAnonymous = false,
 } = {}) {
   const configured = typeof verifyIdToken === 'function' &&
     typeof projectId === 'string' && projectId.trim().length > 0;
@@ -18,6 +19,15 @@ function createFirebaseAuthMiddleware({
     : null;
 
   return async function firebaseAuthMiddleware(req, res, next) {
+    const authorization = String(req.get
+      ? req.get('authorization') || ''
+      : req.headers?.authorization || '').trim();
+    const match = /^Bearer ([^\s]+)$/i.exec(authorization);
+    if (!match && allowAnonymous) {
+      req.auth = null;
+      return next();
+    }
+
     if (!configured) {
       return res.status(503).json({
         error: 'Firebase authentication is not configured.',
@@ -25,10 +35,6 @@ function createFirebaseAuthMiddleware({
       });
     }
 
-    const authorization = String(req.get
-      ? req.get('authorization') || ''
-      : req.headers?.authorization || '').trim();
-    const match = /^Bearer ([^\s]+)$/i.exec(authorization);
     if (!match) {
       return res.status(401).json({
         error: 'A valid Firebase bearer token is required.',
@@ -87,4 +93,11 @@ function createFirebaseAuthMiddleware({
   };
 }
 
-module.exports = { createFirebaseAuthMiddleware };
+function createOptionalFirebaseAuthMiddleware(options = {}) {
+  return createFirebaseAuthMiddleware({ ...options, allowAnonymous: true });
+}
+
+module.exports = {
+  createFirebaseAuthMiddleware,
+  createOptionalFirebaseAuthMiddleware,
+};

@@ -34,6 +34,7 @@ on:
       - fix/flutter-disable-unverified-referral-ui
       - feature/firebase-id-token-verification-core
       - feat/first-launch-language-welcome
+      - feature/referral-links-no-manual-codes
     paths:
       - 'main.dart'
       - 'main_FIXED_FINAL.dart'
@@ -113,6 +114,49 @@ jobs:
           fi
           test -d android
           test -f android/app/src/main/AndroidManifest.xml
+
+      - name: Register the private referral invite URI scheme
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          tree = ET.parse(path)
+          root = tree.getroot()
+          android = "{http://schemas.android.com/apk/res/android}"
+          activity = None
+          for candidate in root.findall(".//activity"):
+              for intent in candidate.findall("intent-filter"):
+                  actions = [node.get(android + "name") for node in intent.findall("action")]
+                  categories = [node.get(android + "name") for node in intent.findall("category")]
+                  if "android.intent.action.MAIN" in actions and "android.intent.category.LAUNCHER" in categories:
+                      activity = candidate
+                      break
+              if activity is not None:
+                  break
+          if activity is None:
+              raise SystemExit("ERROR: Flutter launcher activity was not found.")
+          for intent in activity.findall("intent-filter"):
+              for data in intent.findall("data"):
+                  if data.get(android + "scheme") == "pgntasian" and data.get(android + "host") == "referral":
+                      break
+              else:
+                  continue
+              break
+          else:
+              intent = ET.SubElement(activity, "intent-filter")
+              ET.SubElement(intent, "action", {android + "name": "android.intent.action.VIEW"})
+              ET.SubElement(intent, "category", {android + "name": "android.intent.category.DEFAULT"})
+              ET.SubElement(intent, "category", {android + "name": "android.intent.category.BROWSABLE"})
+              ET.SubElement(intent, "data", {android + "scheme": "pgntasian", android + "host": "referral"})
+          ET.register_namespace("android", "http://schemas.android.com/apk/res/android")
+          tree.write(path, encoding="utf-8", xml_declaration=True)
+          ET.parse(path)
+          print("Private pgntasian://referral invite URI scheme is registered.")
+          PY
 
       - name: Set and verify permanent Android application ID
         shell: bash
