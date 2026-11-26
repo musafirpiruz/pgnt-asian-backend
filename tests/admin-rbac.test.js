@@ -64,16 +64,18 @@ test('unknown Firebase identities are rejected', async () => {
 });
 
 test('RBAC fails closed unless two distinct administrator UIDs are configured', async () => {
-  for (const config of [
-    {},
-    { ownerUid: 'same-uid', supportUid: 'same-uid' },
-    { ownerUid: 'owner-only', supportUid: '' },
+  for (const [config, rolloutRequested] of [
+    [{}, false],
+    [{ ownerUid: 'same-uid', supportUid: 'same-uid' }, true],
+    [{ ownerUid: 'owner-only', supportUid: '' }, true],
+    [{ ownerUid: '', supportUid: 'support-only' }, true],
   ]) {
     const rbac = createAdminRbac({
       firebaseAuthMiddleware: async (req, res, next) => next(),
       ...config,
     });
     assert.equal(rbac.configured, false);
+    assert.equal(rbac.rolloutRequested, rolloutRequested);
     const result = await authenticate(rbac, 'same-uid');
     assert.equal(result.nextCalled, false);
     assert.equal(result.res.statusCode, 503);
@@ -159,4 +161,20 @@ test('audit actor attribution records verified Firebase UIDs and labels the lega
   assert.deepEqual(adminAuditActorFor(null), {
     type: 'admin_api_key', id: 'shared_admin_api_key',
   });
+});
+
+
+test('partial Firebase administrator rollout is distinguishable from legacy mode', () => {
+  const legacy = createAdminRbac({ firebaseAuthMiddleware: async (_req, _res, next) => next() });
+  const partialOwner = createAdminRbac({
+    firebaseAuthMiddleware: async (_req, _res, next) => next(), ownerUid: 'owner-only',
+  });
+  const partialSupport = createAdminRbac({
+    firebaseAuthMiddleware: async (_req, _res, next) => next(), supportUid: 'support-only',
+  });
+  assert.equal(legacy.rolloutRequested, false);
+  assert.equal(partialOwner.rolloutRequested, true);
+  assert.equal(partialSupport.rolloutRequested, true);
+  assert.equal(partialOwner.configured, false);
+  assert.equal(partialSupport.configured, false);
 });
