@@ -41,6 +41,7 @@ function createAdminRbac({
 } = {}) {
   const normalizedOwnerUid = typeof ownerUid === 'string' ? ownerUid.trim() : '';
   const normalizedSupportUid = typeof supportUid === 'string' ? supportUid.trim() : '';
+  const rolloutRequested = normalizedOwnerUid.length > 0 || normalizedSupportUid.length > 0;
   const configured = typeof firebaseAuthMiddleware === 'function' &&
     normalizedOwnerUid.length > 0 &&
     normalizedSupportUid.length > 0 &&
@@ -105,6 +106,7 @@ function createAdminRbac({
 
   return Object.freeze({
     configured,
+    rolloutRequested,
     authenticateAdmin,
     requireAdminPermission,
   });
