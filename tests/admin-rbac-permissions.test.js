@@ -55,12 +55,13 @@ test('every registered admin API route is guarded by requireAdmin', () => {
   const path = require('node:path');
   const sources = ['server.js', 'support-routes.js'].map((file) => ({
     file,
-    lines: fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\\n'),
+    lines: fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n'),
   }));
   let total = 0;
   for (const source of sources) {
     for (let index = 0; index < source.lines.length; index += 1) {
-      if (!/app\\.(?:get|post|patch|put|delete)\\(\\s*['\x22\x27\\x60]\\/api\\/admin\\//.test(source.lines[index])) continue;
+      const line = source.lines[index];
+      if (!/app\.(?:get|post|patch|put|delete)\(/.test(line) || !line.includes('/api/admin/')) continue;
       total += 1;
       const declaration = source.lines.slice(index, index + 3).join(' ');
       assert.match(declaration, /requireAdmin/, source.file + ':' + (index + 1) + ' must be protected');
