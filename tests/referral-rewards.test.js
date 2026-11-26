@@ -22,16 +22,16 @@ const callback = callbackStart >= 0 && callbackEnd > callbackStart
 test('checkout never accepts customer-supplied referral codes or install identifiers', () => {
   assert.notEqual(checkoutStart, -1);
   assert.match(checkout, /optionalCheckoutFirebaseAuth/);
-  assert.match(checkout, /req\\.auth\\?\\.uid/);
+  assert.match(checkout, /req\.auth\?\.uid/);
   assert.match(checkout, /referral_firebase_uid/);
   assert.doesNotMatch(checkout, /referralInstallId|referralInstallHash|install_id_hash/);
 });
 
 test('new checkout orders store only a server-verified Firebase UID and never a client install identity', () => {
-  assert.match(checkout, /referralFirebaseUid = req\\.auth\\?\\.uid/);
+  assert.match(checkout, /referralFirebaseUid = req\.auth\?\.uid/);
   assert.match(checkout, /referral_firebase_uid/);
   assert.match(checkout, /referral_install_id/);
-  assert.match(checkout, /NULL, \\$13, NOW\\(\\), NOW\\(\\)/);
+  assert.match(checkout, /NULL, \$13, NOW\(\), NOW\(\)/);
   assert.doesNotMatch(checkout, /referralInstallId|referralInstallHash|install_id_hash/);
 });
 
@@ -102,10 +102,10 @@ test('Stripe checkout creation failure releases the reserved referral slot', () 
 
 test('checkout reads referral attribution only from the verified UID and active internal invite record', () => {
   assert.match(checkout, /FROM referral_attributions ra/);
-  assert.match(checkout, /JOIN referral_codes rc ON rc\\.code = ra\\.referral_code/);
-  assert.match(checkout, /WHERE ra\\.firebase_uid = \\$1/);
-  assert.match(checkout, /rc\\.active = TRUE/);
-  assert.doesNotMatch(checkout, /req\\.body\\?\\.referralCode|req\\.body\\?\\.referralInstallId/);
+  assert.match(checkout, /JOIN referral_codes rc ON rc\.code = ra\.referral_code/);
+  assert.match(checkout, /WHERE ra\.firebase_uid = \$1/);
+  assert.match(checkout, /rc\.active = TRUE/);
+  assert.doesNotMatch(checkout, /req\.body\?\.referralCode|req\.body\?\.referralInstallId/);
 });
 
 test('repeated successful DT One callbacks cannot promote or insert a second reward', () => {
@@ -214,9 +214,9 @@ test('checkout leaves reward activation disabled until verified owner identity a
 
 test('checkout permits guest payments and uses only optional verified Firebase identity for referral attribution', () => {
   assert.match(checkout, /optionalCheckoutFirebaseAuth/);
-  assert.match(checkout, /req\\.auth\\?\\.uid/);
+  assert.match(checkout, /req\.auth\?\.uid/);
   assert.match(checkout, /REFERRAL_IDENTITY_VERIFICATION_REQUIRED/);
-  assert.doesNotMatch(checkout, /req\\.body\\?\\.referralCode|req\\.body\\?\\.referralInstallId/);
+  assert.doesNotMatch(checkout, /req\.body\?\.referralCode|req\.body\?\.referralInstallId/);
   assert.doesNotMatch(checkout, /INSERT INTO referral_ledger/);
 });
 
