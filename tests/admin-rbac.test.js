@@ -143,3 +143,20 @@ test('Owner can pass every named permission', () => {
   middleware(req, res, () => { nextCalled = true; });
   assert.equal(nextCalled, true);
 });
+
+
+test('audit actor attribution records verified Firebase UIDs and labels the legacy shared key', () => {
+  const { adminAuditActorFor } = require('../admin-rbac');
+  assert.deepEqual(adminAuditActorFor({ uid: 'owner-firebase-uid', role: 'owner' }), {
+    type: 'admin_user', id: 'owner-firebase-uid',
+  });
+  assert.deepEqual(adminAuditActorFor({ uid: 'support-firebase-uid', role: 'support' }), {
+    type: 'admin_user', id: 'support-firebase-uid',
+  });
+  assert.deepEqual(adminAuditActorFor({ uid: 'legacy-admin-key', role: 'owner' }), {
+    type: 'admin_api_key', id: 'shared_admin_api_key',
+  });
+  assert.deepEqual(adminAuditActorFor(null), {
+    type: 'admin_api_key', id: 'shared_admin_api_key',
+  });
+});
