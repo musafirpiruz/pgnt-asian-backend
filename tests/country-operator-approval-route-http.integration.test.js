@@ -44,8 +44,17 @@ test('country operator approval HTTP routes persist samples safely and roll back
   const db = new Pool({ connectionString: databaseUrl, max: 4 });
   const providerProducts = new Map();
   const providerFailures = new Map();
-  const providerServer = http.createServer((req, res) => {
+  const providerMutations = new Map();
+  const providerServer = http.createServer(async (req, res) => {
     const id = decodeURIComponent((req.url || '').split('/').pop());
+    const mutation = providerMutations.get(id);
+    if (mutation) {
+      providerMutations.delete(id);
+      await db.query(
+        "UPDATE country_operator_approvals SET sample_product_catalog_id=$1 WHERE operator_id=$2 AND status='approved'",
+        [mutation.sampleProductCatalogId, mutation.operatorId],
+      );
+    }
     const failure = providerFailures.get(id);
     if (failure && failure.delay) return setTimeout(() => res.writeHead(failure.status || 200).end(JSON.stringify({ error: 'simulated provider delay' })), failure.delay);
     if (failure) return res.writeHead(failure).end(JSON.stringify({ error: 'simulated provider failure' }));
@@ -364,6 +373,45 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(retryRun.status,200);
     const retryRunBody=await retryRun.json();
     assert.ok(retryRunBody.items.some(item=>item.productCatalogId===autoMismatch.productCatalogId));
+
+    // A sample approval changed while the provider request was in flight must
+    // invalidate the page before any verification audit, price, mapping or cursor write.
+    const raceProduct = await db.query(
+      "INSERT INTO product_catalog (country,operator,amount,currency,product_id,price_eur_cents,wholesale_price_eur_cents,active,updated_at) VALUES ('AF',$1,116,'AFN',2147483011,350,300,FALSE,NOW()) RETURNING id",
+      [good.operatorName],
+    );
+    const raceCandidate = {operatorId:good.operatorId,productCatalogId:raceProduct.rows[0].id,
+      productId:2147483011,operatorName:good.operatorName,amount:116};
+    fixtures.push(raceCandidate);
+    await db.query(
+      'INSERT INTO country_operator_products (country_code,operator_key,product_catalog_id,active,verified_at) SELECT country_code,operator_key,$1,FALSE,NULL FROM country_operators WHERE id=$2',
+      [raceCandidate.productCatalogId,good.operatorId],
+    );
+    providerProducts.set(String(raceCandidate.productId),
+      providerProduct(raceCandidate.productId,'provider-operator-good',good.operatorName,raceCandidate.amount));
+    providerMutations.set(String(raceCandidate.productId),{
+      operatorId:good.operatorId,sampleProductCatalogId:mismatch.productCatalogId,
+    });
+    const progressBeforeRace = await db.query(
+      'SELECT last_processed_product_catalog_id,pages_completed FROM country_operator_catalog_verification_progress WHERE operator_id=$1',
+      [good.operatorId],
+    );
+    const raceResponse = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/catalog-auto-verify',{
+      method:'POST',headers:{'content-type':'application/json','x-admin-api-key':adminKey},
+      body:JSON.stringify({limit:25}),
+    });
+    assert.equal(raceResponse.status,409);
+    assert.match((await raceResponse.json()).error,/approval or identity changed/);
+    const raceState = await db.query(
+      "SELECT p.verified_at,p.price_eur_cents,m.active,(SELECT COUNT(*)::int FROM catalog_verification_audit a WHERE a.operator_id=$1 AND a.product_catalog_id=$2 AND a.event_type IN ('product_verified','product_rejected')) AS audit_count,(SELECT last_processed_product_catalog_id FROM country_operator_catalog_verification_progress WHERE operator_id=$1) AS cursor,(SELECT pages_completed FROM country_operator_catalog_verification_progress WHERE operator_id=$1) AS pages FROM product_catalog p JOIN country_operator_products m ON m.product_catalog_id=p.id WHERE p.id=$2",
+      [good.operatorId,raceCandidate.productCatalogId],
+    );
+    assert.equal(raceState.rows[0].verified_at,null);
+    assert.equal(raceState.rows[0].price_eur_cents,350);
+    assert.equal(raceState.rows[0].active,false);
+    assert.equal(raceState.rows[0].audit_count,0);
+    assert.equal(String(raceState.rows[0].cursor),String(progressBeforeRace.rows[0].last_processed_product_catalog_id));
+    assert.equal(Number(raceState.rows[0].pages),Number(progressBeforeRace.rows[0].pages_completed));
 
     const duplicate = await fetch(baseUrl + '/api/admin/country-operators/' + good.operatorId + '/approve-sample', {
       method: 'POST',
