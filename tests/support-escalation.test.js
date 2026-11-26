@@ -61,3 +61,9 @@ test('Firebase admin phone and SMS code validation use correct digit patterns', 
   assert.equal(otpPattern.test('123456'), true);
   assert.equal(otpPattern.test('12345x'), false);
 });
+
+
+test('support reply UI does not attempt to change ticket status', () => {
+  assert.match(panel, /body:JSON\.stringify\(\{adminReply:reply\.value\}\)/);
+  assert.doesNotMatch(panel, /body:JSON\.stringify\(\{adminReply:reply\.value,status:/);
+});
