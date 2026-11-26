@@ -3000,6 +3000,15 @@ app.get('/api/admin/session', requireAdmin, (req, res) => {
 });
 
 function requireAdmin(req, res, next) {
+  // Once either administrator UID is supplied, never fall back to the legacy
+  // shared Owner key if the two-account allow-list is incomplete.
+  if (adminRbac?.rolloutRequested && !adminRbac.configured) {
+    return res.status(503).json({
+      error: 'Two-account administrator authentication is incomplete; legacy key access is disabled.',
+      code: 'ADMIN_RBAC_NOT_CONFIGURED',
+    });
+  }
+
   if (adminRbac && adminRbac.configured) {
     return adminRbac.authenticateAdmin(req, res, () => {
       const permission = permissionForAdminRequest(req);
