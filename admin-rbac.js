@@ -110,8 +110,17 @@ function createAdminRbac({
   });
 }
 
+function adminAuditActorFor(admin) {
+  const uid = typeof admin?.uid === 'string' ? admin.uid.trim() : '';
+  if (uid && uid !== 'legacy-admin-key') {
+    return Object.freeze({ type: 'admin_user', id: uid });
+  }
+  return Object.freeze({ type: 'admin_api_key', id: 'shared_admin_api_key' });
+}
+
 module.exports = {
   createAdminRbac,
   SUPPORT_PERMISSIONS,
   permissionForAdminRequest,
+  adminAuditActorFor,
 };
