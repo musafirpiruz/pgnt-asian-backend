@@ -48,3 +48,23 @@ test('escalation acknowledgement and resolution remain Owner-only', () => {
     assert.equal(permissionForAdminRequest({ method: 'POST', path }), 'owner.only');
   }
 });
+
+
+test('every registered admin API route is guarded by requireAdmin', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const sources = ['server.js', 'support-routes.js'].map((file) => ({
+    file,
+    lines: fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\\n'),
+  }));
+  let total = 0;
+  for (const source of sources) {
+    for (let index = 0; index < source.lines.length; index += 1) {
+      if (!/app\\.(?:get|post|patch|put|delete)\\(\\s*['\x22\x27\\x60]\\/api\\/admin\\//.test(source.lines[index])) continue;
+      total += 1;
+      const declaration = source.lines.slice(index, index + 3).join(' ');
+      assert.match(declaration, /requireAdmin/, source.file + ':' + (index + 1) + ' must be protected');
+    }
+  }
+  assert.ok(total >= 38, 'expected to inventory all admin API routes');
+});
