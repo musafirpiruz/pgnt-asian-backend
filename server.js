@@ -3235,7 +3235,7 @@ const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
 
 // Firebase UID allow-list is optional during the staged rollout. It activates
 // role enforcement only after both distinct administrator UIDs are configured.
-const { createAdminRbac, permissionForAdminRequest: resolveAdminPermission } = require('./admin-rbac');
+const { createAdminRbac, permissionForAdminRequest: resolveAdminPermission, adminAuditActorFor } = require('./admin-rbac');
 adminRbac = createAdminRbac({
   firebaseAuthMiddleware,
   ownerUid: process.env.ADMIN_OWNER_FIREBASE_UID,
@@ -3336,9 +3336,7 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
     return res.status(400).json({approved:false,error:'Valid operatorId and productCatalogId are required.'});
   if(req.body?.confirmApproval!==true)
     return res.status(400).json({approved:false,confirmationRequired:true,error:'Send confirmApproval: true to approve this sample.'});
-  const auditActor = req.admin?.uid && req.admin.uid !== 'legacy-admin-key'
-    ? { type: 'admin_user', id: req.admin.uid }
-    : { type: 'admin_api_key', id: 'shared_admin_api_key' };
+  const auditActor = adminAuditActorFor(req.admin);
   if(!DTONE_API_KEY||!DTONE_API_SECRET)
     return res.status(503).json({approved:false,error:'DT One credentials are not configured.'});
 
@@ -3635,6 +3633,9 @@ app.post('/api/admin/country-operators/:operatorId/catalog-batch-preview', requi
   if(!DTONE_API_KEY||!DTONE_API_SECRET)
     return res.status(503).json({dryRun:true,error:'DT One credentials are not configured.'});
 
+  // Attribute dry-run audit rows to the verified Firebase administrator;
+  // keep the legacy shared-key label only while that fallback is in use.
+  const auditActor = adminAuditActorFor(req.admin);
   let client;
   try {
     const candidates=await pool.query(
@@ -3713,8 +3714,8 @@ app.post('/api/admin/country-operators/:operatorId/catalog-batch-preview', requi
       await client.query(
         `INSERT INTO catalog_verification_audit
           (operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
-         VALUES($1,$2,'batch_previewed','admin_api_key','shared_admin_api_key','preview',$3,$4::jsonb)`,
-        [operatorId,item.productCatalogId,item.reasons,
+         VALUES($1,$2,'batch_previewed',$3,$4,'preview',$5,$6::jsonb)`,
+        [operatorId,item.productCatalogId,auditActor.type,auditActor.id,item.reasons,
          JSON.stringify({dryRun:true,verified:item.verified,providerProductId:item.providerProductId,
            providerStatus:item.providerStatus||null,providerEvidence:item.evidence||null})]
       );
