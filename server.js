@@ -1150,6 +1150,26 @@ app.get('/api/pricing/quote', async (req, res) => {
 // Register the Stripe webhook BEFORE express.json().
 // =====================================================
 
+// Checkout accepts guests. If an Authorization header is supplied, it must
+// pass Firebase verification; invalid tokens never fall back to guest access.
+let firebaseAuthMiddleware = null;
+function optionalCheckoutFirebaseAuth(req, res, next) {
+  const authorization = String(req.get
+    ? req.get('authorization') || ''
+    : req.headers?.authorization || '').trim();
+  if (!authorization) {
+    req.auth = null;
+    return next();
+  }
+  if (typeof firebaseAuthMiddleware !== 'function') {
+    return res.status(503).json({
+      error: 'Firebase authentication is not configured.',
+      code: 'FIREBASE_AUTH_NOT_CONFIGURED',
+    });
+  }
+  return firebaseAuthMiddleware(req, res, next);
+}
+
 function createOrderId() {
   return crypto.randomUUID();
 }
@@ -1165,7 +1185,7 @@ function getCheckoutUrls() {
 
 // Create a checkout session and store its order.
 // IMPORTANT: register this route AFTER express.json().
-app.post('/api/payments/checkout', async (req, res) => {
+app.post('/api/payments/checkout', optionalCheckoutFirebaseAuth, async (req, res) => {
   if (!arePaymentAndFulfillmentEnvironmentsCompatible()) {
     console.error('Checkout blocked: Stripe mode and DT One environment do not match.');
     return res.status(503).json({
@@ -1230,60 +1250,23 @@ app.post('/api/payments/checkout', async (req, res) => {
     const pricing = await resolveProductPricing(client, input.country, product.name, product, basePricing);
     const price = calculateFinalPrice(product, pricing);
 
-    // Referral attribution is server-validated and tied to a stable
-    // client-generated install identifier. This is abuse friction, not
-    // proof of a unique human/device; reward approval remains manual.
-    let referralRewardCents = null;
-    const referralCode = String(req.body?.referralCode || '').trim().toUpperCase();
-    const referralInstallId = String(req.body?.referralInstallId || '').trim();
-    let referralInstallHash = null;
-    if (referralCode || referralInstallId) {
-      if (!/^[A-Z0-9_-]{4,40}$/.test(referralCode) ||
-          !/^[A-Za-z0-9._:-]{16,128}$/.test(referralInstallId)) {
-        throw new Error('A valid referral code and install identifier are required together.');
-      }
-      referralInstallHash = crypto.createHash('sha256')
-        .update(referralInstallId, 'utf8').digest('hex');
-      const referral = await client.query(
-        `SELECT code, reward_eur_cents, max_rewards, active
-         FROM referral_codes WHERE code = $1 FOR UPDATE`,
-        [referralCode]
-      );
-      if (referral.rowCount !== 1 || referral.rows[0].active !== true) {
-        throw new Error('This referral code is invalid or inactive.');
-      }
-      // The reward contract is fixed at €0.07. Fail closed for legacy or
-      // manually edited database rows instead of reserving a different amount.
-      if (Number(referral.rows[0].reward_eur_cents) !== 7) {
-        throw new Error('This referral code has an invalid reward configuration. Please contact support.');
-      }
-      referralRewardCents = 7;
-      const cap = referral.rows[0].max_rewards;
-      if (cap !== null) {
-        const used = await client.query(
-          `SELECT COUNT(*)::int AS count FROM referral_ledger
-           WHERE referral_code = $1 AND status IN ('reserved','pending','approved','paid')`,
-          [referralCode]
-        );
-        if (Number(used.rows[0].count) >= Number(cap)) {
-          throw new Error('This referral code has reached its reward limit.');
-        }
-      }
+    // Attach only an attribution previously saved against a verified Firebase UID.
+    // The customer cannot submit a UID, internal code, or install ID. Rewards remain
+    // disabled until owner identity and final-callback eligibility are independently verified.
+    let referralCode = null;
+    const referralFirebaseUid = req.auth?.uid || null;
+    if (referralFirebaseUid) {
       const attribution = await client.query(
-        `INSERT INTO referral_attributions (install_id_hash, referral_code, first_order_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (install_id_hash) DO NOTHING
-         RETURNING referral_code`,
-        [referralInstallHash, referralCode, null]
+        `SELECT ra.referral_code
+         FROM referral_attributions ra
+         JOIN referral_codes rc ON rc.code = ra.referral_code
+         WHERE ra.firebase_uid = $1
+           AND rc.active = TRUE
+         FOR UPDATE OF ra, rc`,
+        [referralFirebaseUid]
       );
-      if (attribution.rowCount === 0) {
-        const existing = await client.query(
-          'SELECT referral_code FROM referral_attributions WHERE install_id_hash = $1 FOR UPDATE',
-          [referralInstallHash]
-        );
-        if (existing.rowCount !== 1 || existing.rows[0].referral_code !== referralCode) {
-          throw new Error('This install is already attributed to another referral code.');
-        }
+      if (attribution.rowCount === 1) {
+        referralCode = attribution.rows[0].referral_code;
       }
     }
 
@@ -1297,30 +1280,18 @@ app.post('/api/payments/checkout', async (req, res) => {
          order_id, country, operator, phone, product_id,
          amount, currency, product_price_cents, fee_cents,
          charge_cents, status, order_access_token_hash, referral_code,
-         referral_install_id, created_at, updated_at
+         referral_install_id, referral_firebase_uid, created_at, updated_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         'awaiting_payment', $11, $12, $13, NOW(), NOW()
+         'awaiting_payment', $11, $12, NULL, $13, NOW(), NOW()
        )`,
       [
         orderId, input.country, product.name, input.phone,
         product.id, product.localAmount, product.currency,
         price.basePriceCents, price.feeCents, price.finalPriceCents,
-        orderAccessTokenHash, referralCode || null, referralInstallHash,
+        orderAccessTokenHash, referralCode, referralFirebaseUid,
       ]
     );
-
-    // Reserve a referral reward slot in the same transaction as the order.
-    // The referral_codes row lock serializes capped checkouts.
-    if (referralInstallHash && referralCode && referralRewardCents !== null) {
-      await client.query(
-        `INSERT INTO referral_ledger
-           (referral_code, install_id_hash, order_id, reward_eur_cents, status)
-         VALUES ($1, $2, $3, $4, 'reserved')
-         ON CONFLICT DO NOTHING`,
-        [referralCode, referralInstallHash, orderId, referralRewardCents]
-      );
-    }
 
     await client.query('COMMIT');
     transactionOpen = false;
@@ -1414,12 +1385,7 @@ app.post('/api/payments/checkout', async (req, res) => {
       }
     }
 
-    const referralClientErrors = new Set([
-      'A valid referral code and install identifier are required together.',
-      'This referral code is invalid or inactive.',
-      'This referral code has reached its reward limit.',
-      'This install is already attributed to another referral code.',
-    ]);
+    const referralClientErrors = new Set();
     if (referralClientErrors.has(error.message)) {
       return res.status(400).json({ error: error.message });
     }
@@ -3227,7 +3193,7 @@ try {
   console.error('Firebase Admin configuration is invalid; authentication remains disabled.');
 }
 
-const firebaseAuthMiddleware = createFirebaseAuthMiddleware({
+firebaseAuthMiddleware = createFirebaseAuthMiddleware({
   projectId: firebaseAdminConfig.projectId,
   verifyIdToken: firebaseAdminConfig.verifyIdToken,
   requirePhoneNumber: true,
