@@ -149,3 +149,19 @@ test('optional Firebase auth still rejects invalid supplied bearer tokens', asyn
   assert.equal(result.res.statusCode, 401);
   assert.equal(result.res.body.code, 'FIREBASE_TOKEN_REJECTED');
 });
+
+test('optional Firebase auth allows guests when Firebase is not configured', async () => {
+  const middleware = createOptionalFirebaseAuthMiddleware({});
+  const result = await invoke(middleware, null);
+  assert.equal(result.nextCalled, true);
+  assert.equal(result.req.auth, null);
+  assert.equal(result.res.statusCode, null);
+});
+
+test('optional Firebase auth rejects supplied tokens when Firebase is not configured', async () => {
+  const middleware = createOptionalFirebaseAuthMiddleware({});
+  const result = await invoke(middleware, 'Bearer supplied-token');
+  assert.equal(result.nextCalled, false);
+  assert.equal(result.res.statusCode, 503);
+  assert.equal(result.res.body.code, 'FIREBASE_AUTH_NOT_CONFIGURED');
+});
