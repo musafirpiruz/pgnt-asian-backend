@@ -3336,6 +3336,9 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
     return res.status(400).json({approved:false,error:'Valid operatorId and productCatalogId are required.'});
   if(req.body?.confirmApproval!==true)
     return res.status(400).json({approved:false,confirmationRequired:true,error:'Send confirmApproval: true to approve this sample.'});
+  const auditActor = req.admin?.uid && req.admin.uid !== 'legacy-admin-key'
+    ? { type: 'admin_user', id: req.admin.uid }
+    : { type: 'admin_api_key', id: 'shared_admin_api_key' };
   if(!DTONE_API_KEY||!DTONE_API_SECRET)
     return res.status(503).json({approved:false,error:'DT One credentials are not configured.'});
 
@@ -3365,8 +3368,8 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
     if(!evaluated.verified){
       await client.query(
         `INSERT INTO catalog_verification_audit(operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,reason_codes,evidence)
-         VALUES($1,$2,'product_rejected','admin_api_key','shared_admin_api_key','rejected',$3,$4::jsonb)`,
-        [operatorId,productCatalogId,evaluated.reasons,JSON.stringify({providerProductId:String(providerProduct?.id??''),providerOperatorId:String(providerProduct?.operator?.id??'')})]);
+         VALUES($1,$2,'product_rejected',$3,$4,'rejected',$5,$6::jsonb)`,
+        [operatorId,productCatalogId,auditActor.type,auditActor.id,evaluated.reasons,JSON.stringify({providerProductId:String(providerProduct?.id??''),providerOperatorId:String(providerProduct?.operator?.id??'')})]);
       await client.query('COMMIT');
       return res.status(422).json({approved:false,verified:false,reasons:evaluated.reasons,activationChanged:false,transactionCreated:false});
     }
@@ -3381,18 +3384,18 @@ app.post('/api/admin/country-operators/:operatorId/approve-sample', requireAdmin
        (operator_id,sample_product_catalog_id,provider,provider_operator_id,provider_product_id,
         destination_currency,product_type,denomination,retail_price_eur_cents,wholesale_price_eur_cents,
         status,verified_by,evidence)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approved','shared_admin_api_key',$11::jsonb)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'approved',$11,$12::jsonb)
        RETURNING id,verified_at`,
       [operatorId,productCatalogId,row.provider,p.operatorId,p.productId,p.currency,p.productType,p.amount,
-       p.retailPriceEurCents,p.wholesalePriceEurCents,
+       p.retailPriceEurCents,p.wholesalePriceEurCents,auditActor.id,
        JSON.stringify({source:'dtone_product_detail',environment:/preprod/i.test(DTONE_API_BASE_URL)?'pre-production':'configured'})]);
     await client.query("UPDATE country_operators SET provider_operator_id=$1,verified_at=NOW(),updated_at=NOW() WHERE id=$2",[p.operatorId,operatorId]);
     await client.query("UPDATE country_operator_products SET verified_at=NOW(),updated_at=NOW() WHERE id=$1",[row.mapping_id]);
     await client.query("UPDATE product_catalog SET price_eur_cents=$1,wholesale_price_eur_cents=$2,updated_at=NOW() WHERE id=$3 AND active=FALSE",[p.retailPriceEurCents,p.wholesalePriceEurCents,productCatalogId]);
     await client.query(
       `INSERT INTO catalog_verification_audit(operator_id,product_catalog_id,event_type,actor_type,actor_id,outcome,evidence)
-       VALUES($1,$2,'sample_approved','admin_api_key','shared_admin_api_key','success',$3::jsonb)`,
-      [operatorId,productCatalogId,JSON.stringify({approvalId:approval.rows[0].id,providerProductId:p.productId,
+       VALUES($1,$2,'sample_approved',$3,$4,'success',$5::jsonb)`,
+      [operatorId,productCatalogId,auditActor.type,auditActor.id,JSON.stringify({approvalId:approval.rows[0].id,providerProductId:p.productId,
         providerOperatorId:p.operatorId,currency:p.currency,denomination:p.amount,
         retailPriceEurCents:p.retailPriceEurCents,wholesalePriceEurCents:p.wholesalePriceEurCents})]);
     await client.query('COMMIT');
