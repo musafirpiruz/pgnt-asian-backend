@@ -3498,7 +3498,7 @@ app.post('/api/admin/country-operators/:operatorId/catalog-auto-verify', require
     client=await pool.connect();
     await client.query('BEGIN');
     const lockedApproval=await client.query(
-      "SELECT id,provider_operator_id,sample_product_catalog_id FROM country_operator_approvals WHERE operator_id=$1 AND status='approved' FOR UPDATE",
+      "SELECT id,provider,provider_operator_id,sample_product_catalog_id FROM country_operator_approvals WHERE operator_id=$1 AND status='approved' FOR UPDATE",
       [operatorId]);
     const lockedOperator=await client.query(
       'SELECT id,provider_operator_id,active FROM country_operators WHERE id=$1 FOR UPDATE',[operatorId]);
