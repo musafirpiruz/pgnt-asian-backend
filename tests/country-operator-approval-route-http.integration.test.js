@@ -403,7 +403,7 @@ test('country operator approval HTTP routes persist samples safely and roll back
     assert.equal(raceResponse.status,409);
     assert.match((await raceResponse.json()).error,/approval or identity changed/);
     const raceState = await db.query(
-      "SELECT p.verified_at,p.price_eur_cents,m.active,(SELECT COUNT(*)::int FROM catalog_verification_audit a WHERE a.operator_id=$1 AND a.product_catalog_id=$2 AND a.event_type IN ('product_verified','product_rejected')) AS audit_count,(SELECT last_processed_product_catalog_id FROM country_operator_catalog_verification_progress WHERE operator_id=$1) AS cursor,(SELECT pages_completed FROM country_operator_catalog_verification_progress WHERE operator_id=$1) AS pages FROM product_catalog p JOIN country_operator_products m ON m.product_catalog_id=p.id WHERE p.id=$2",
+      "SELECT m.verified_at,p.price_eur_cents,m.active,(SELECT COUNT(*)::int FROM catalog_verification_audit a WHERE a.operator_id=$1 AND a.product_catalog_id=$2 AND a.event_type IN ('product_verified','product_rejected')) AS audit_count,(SELECT last_processed_product_catalog_id FROM country_operator_catalog_verification_progress WHERE operator_id=$1) AS cursor,(SELECT pages_completed FROM country_operator_catalog_verification_progress WHERE operator_id=$1) AS pages FROM product_catalog p JOIN country_operator_products m ON m.product_catalog_id=p.id WHERE p.id=$2",
       [good.operatorId,raceCandidate.productCatalogId],
     );
     assert.equal(raceState.rows[0].verified_at,null);
